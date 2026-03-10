@@ -1,0 +1,15 @@
+{
+  "name": "mesobuilder",
+  "version": "0.1.0",
+  "description": "MesoBuilder - standalone desktop wrapper",
+  "main": "electron/main.js",
+  "scripts": {
+    "start-electron": "npx electron --js-flags=\"--max-old-space-size=4096\" .",
+    "start-electron-dev": "set MESOBUILDER_EXTERNAL_PATH=%CD% && npx electron --js-flags=\"--max-old-space-size=4096\" .",
+    "package-win": "electron-packager . MesoBuilder --platform=win32 --arch=x64 --out=dist --overwrite"
+  },
+  "devDependencies": {
+    "electron": "^26.0.0",
+    "electron-packager": "^17.1.0"
+  }
+}

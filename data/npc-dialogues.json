@@ -1,0 +1,26 @@
+{
+  "villager": {
+    "phrases": [
+      "Buen día, forastero.",
+      "¿Has visto la cosecha?",
+      "Hace buen tiempo para sembrar.",
+      "Cuidado con los zorros por la noche."
+    ]
+  },
+  "merchant": {
+    "phrases": [
+      "Ofertas especiales hoy.",
+      "¡Puro lino de calidad!",
+      "Intercambio justo, trato honesto.",
+      "Ven, mira mis mercaderías."
+    ]
+  },
+  "guard": {
+    "phrases": [
+      "Todo en orden por aquí.",
+      "Mantén la distancia, por favor.",
+      "Turno de vigilancia activo.",
+      "Quién anda ahí?"
+    ]
+  }
+}

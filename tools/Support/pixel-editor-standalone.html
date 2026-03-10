@@ -1,0 +1,1137 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VSoftware Pixel Art Editor</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: #1a1a1a;
+            color: #e0e0e0;
+            font-family: 'Courier New', monospace;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .container {
+            display: flex;
+            height: 100vh;
+            gap: 0;
+        }
+
+        /* Left Sidebar */
+        .sidebar-left {
+            width: 120px;
+            background-color: #2a2a2a;
+            border-right: 1px solid #3a3a3a;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            overflow-y: auto;
+        }
+
+        .sidebar-title {
+            font-size: 11px;
+            font-weight: bold;
+            color: #00D9FF;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+        }
+
+        .tool-button {
+            padding: 8px 12px;
+            background-color: #3a3a3a;
+            color: #e0e0e0;
+            border: 1px solid #3a3a3a;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 150ms ease;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+        }
+
+        .tool-button:hover {
+            background-color: #00D9FF;
+            color: #1a1a1a;
+            box-shadow: 0 4px 8px rgba(0, 217, 255, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .tool-button.active {
+            background-color: #00D9FF;
+            color: #1a1a1a;
+            box-shadow: 0 0 12px rgba(0, 217, 255, 0.6), inset 0 0 4px rgba(0, 217, 255, 0.3);
+        }
+
+        .tool-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .divider {
+            height: 1px;
+            background-color: #3a3a3a;
+            margin: 8px 0;
+        }
+
+        .slider-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .slider-group label {
+            font-size: 11px;
+            font-weight: bold;
+            color: #00D9FF;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            height: 4px;
+            border-radius: 2px;
+            background: #3a3a3a;
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #00D9FF;
+            cursor: pointer;
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #00D9FF;
+            cursor: pointer;
+            border: none;
+        }
+
+        .slider-value {
+            font-size: 11px;
+            color: #a0a0a0;
+            text-align: center;
+        }
+
+        .checkbox-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        input[type="checkbox"] {
+            width: 14px;
+            height: 14px;
+            cursor: pointer;
+        }
+
+        /* Center Canvas */
+        .canvas-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background-color: #1a1a1a;
+            padding: 32px;
+            gap: 16px;
+        }
+
+        .canvas-header {
+            text-align: center;
+        }
+
+        .canvas-header h1 {
+            font-size: 28px;
+            font-weight: bold;
+            color: #00D9FF;
+            margin-bottom: 4px;
+        }
+
+        .canvas-header p {
+            font-size: 12px;
+            color: #a0a0a0;
+        }
+
+        canvas {
+            border: 2px solid #00D9FF;
+            background-color: #0a0a0a;
+            box-shadow: 0 0 20px rgba(0, 217, 255, 0.2);
+            cursor: crosshair;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+
+        /* Resizer between left sidebar and canvas */
+        #leftResizer {
+            background: linear-gradient(90deg, rgba(255,255,255,0.02), rgba(255,255,255,0.06));
+            transition: background 120ms ease;
+        }
+        #leftResizer:hover { background: linear-gradient(90deg, rgba(255,255,255,0.04), rgba(255,255,255,0.12)); }
+
+        /* Right Sidebar */
+        .sidebar-right {
+            width: 280px;
+            background-color: #2a2a2a;
+            border-left: 1px solid #3a3a3a;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            overflow-y: auto;
+        }
+
+        .color-section {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .color-input-group {
+            display: flex;
+            gap: 8px;
+        }
+
+        input[type="color"] {
+            width: 100%;
+            height: 48px;
+            border: 1px solid #3a3a3a;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+
+        .color-preview {
+            width: 48px;
+            height: 48px;
+            border: 2px solid #3a3a3a;
+            border-radius: 3px;
+            flex-shrink: 0;
+        }
+
+        .palette {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+        }
+
+        .color-swatch {
+            width: 100%;
+            aspect-ratio: 1;
+            border: 2px solid #3a3a3a;
+            border-radius: 3px;
+            cursor: pointer;
+            transition: all 150ms ease;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+        }
+
+        .color-swatch:hover {
+            box-shadow: 0 0 8px rgba(0, 217, 255, 0.5);
+            transform: scale(1.05);
+        }
+
+        .color-swatch.selected {
+            border-color: #00D9FF;
+            box-shadow: 0 0 12px rgba(0, 217, 255, 0.8);
+        }
+
+        .export-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .code-output {
+            background-color: #1a1a1a;
+            border: 1px solid #3a3a3a;
+            border-radius: 3px;
+            padding: 12px;
+            font-size: 11px;
+            font-family: 'Courier New', monospace;
+            color: #00D9FF;
+            max-height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .stats {
+            font-size: 11px;
+            color: #a0a0a0;
+            text-align: center;
+            border-top: 1px solid #3a3a3a;
+            padding-top: 12px;
+            margin-top: auto;
+        }
+
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background-color: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background-color: #2a2a2a;
+            border: 2px solid #00D9FF;
+            border-radius: 3px;
+            padding: 24px;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 0 0 30px rgba(0, 217, 255, 0.3);
+        }
+
+        .modal-content h2 {
+            font-size: 18px;
+            color: #00D9FF;
+            margin-bottom: 16px;
+        }
+
+        .modal-content textarea {
+            width: 100%;
+            height: 200px;
+            background-color: #1a1a1a;
+            border: 1px solid #3a3a3a;
+            border-radius: 3px;
+            padding: 8px;
+            color: #e0e0e0;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            margin-bottom: 16px;
+            resize: vertical;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 8px;
+        }
+
+        .modal-buttons button {
+            flex: 1;
+        }
+
+        /* Toast Notification */
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background-color: #00D9FF;
+            color: #1a1a1a;
+            padding: 12px 16px;
+            border-radius: 3px;
+            font-size: 12px;
+            font-weight: bold;
+            z-index: 2000;
+            animation: slideIn 300ms ease;
+        }
+
+        .toast.error {
+            background-color: #FF6B35;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #1a1a1a;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #3a3a3a;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #4a4a4a;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Left Sidebar -->
+        <div class="sidebar-left">
+            <div class="sidebar-title">TOOLS</div>
+            <button class="tool-button active" data-tool="brush">✏️ Brush</button>
+            <button class="tool-button" data-tool="eraser">🧹 Eraser</button>
+            <button class="tool-button" data-tool="picker">🎨 Picker</button>
+
+            <div class="divider"></div>
+            <div class="color-section">
+                <div class="sidebar-title">LIBRERÍA</div>
+                <select id="entityLibrary" style="width:100%; padding:8px; background:#1f1f1f; color:#e0e0e0; border:1px solid #3a3a3a; margin-bottom:8px;"></select>
+                <div style="display:flex; gap:8px;">
+                    <button class="tool-button" id="reloadLibraryBtn">🔄 Reload</button>
+                    <button class="tool-button" id="saveToLibraryBtn">💾 Save</button>
+                </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="sidebar-title">SIZE</div>
+            <div class="slider-group">
+                <input type="range" id="gridSize" min="8" max="32" value="16">
+                <div class="slider-value"><span id="gridSizeValue">16</span>x<span id="gridSizeValue2">16</span></div>
+            </div>
+
+            <div class="sidebar-title">ZOOM</div>
+            <div class="slider-group">
+                <input type="range" id="zoom" min="1" max="4" value="2">
+                <div class="slider-value"><span id="zoomValue">2</span>x</div>
+            </div>
+
+            <div class="divider"></div>
+            <div class="sidebar-title">EXPORT SCALE</div>
+            <div style="display:flex; flex-direction:column; gap:8px;">
+                <div style="display:flex; gap:8px;">
+                    <button class="tool-button" id="scale2Btn" data-scale="2">2x</button>
+                    <button class="tool-button" id="scale4Btn" data-scale="4">4x</button>
+                    <button class="tool-button" id="scale8Btn" data-scale="8">8x</button>
+                    <button class="tool-button" id="scale16Btn" data-scale="16">16x</button>
+                </div>
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <label style="font-size:11px; color:#a0a0a0;">Custom:</label>
+                    <input id="customScaleInput" type="number" min="1" value="2" style="width:72px; padding:6px; background:#1f1f1f; color:#e0e0e0; border:1px solid #3a3a3a;" />
+                </div>
+            </div>
+
+            <div class="divider"></div>
+            <div class="sidebar-title">SAVE MODE</div>
+            <div style="display:flex; flex-direction:column; gap:8px;">
+                <label class="checkbox-label"><input type="radio" name="saveMode" id="saveModePost" value="post" checked> Post to game (default)</label>
+                <label class="checkbox-label"><input type="radio" name="saveMode" id="saveModeOverwrite" value="overwrite"> Download overwrite (save file)</label>
+                <label class="checkbox-label"><input type="radio" name="saveMode" id="saveModePatch" value="patch"> Download patch (single entry)</label>
+            </div>
+
+            <div class="divider"></div>
+
+            <label class="checkbox-label">
+                <input type="checkbox" id="showGrid" checked>
+                Grid
+            </label>
+
+            <div class="divider"></div>
+
+            <button class="tool-button" id="undoBtn">↶ Undo</button>
+            <button class="tool-button" id="redoBtn">↷ Redo</button>
+            <button class="tool-button" id="clearBtn" style="background-color: #FF6B35; color: #1a1a1a;">🗑️ Clear</button>
+        </div>
+        <div id="leftResizer" style="width:6px; cursor:col-resize; background:transparent;" title="Drag to resize sidebar"></div>
+
+        <!-- Center Canvas -->
+        <div class="canvas-area">
+            <div class="canvas-header">
+                <h1>VSoftware Pixel Editor</h1>
+                <p>Create pixel art and export as JavaScript</p>
+            </div>
+            <canvas id="canvas"></canvas>
+        </div>
+
+        <!-- Right Sidebar -->
+        <div class="sidebar-right">
+            <div class="color-section">
+                <div class="sidebar-title">CURRENT COLOR</div>
+                <div class="color-input-group">
+                    <input type="color" id="colorPicker" value="#00d9ff">
+                    <div class="color-preview" id="colorPreview" style="background-color: #00d9ff;"></div>
+                </div>
+            </div>
+
+            <div class="color-section">
+                <div class="sidebar-title">PALETTE</div>
+                <div class="palette" id="palette"></div>
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="color-section">
+                <div class="sidebar-title">EXPORT</div>
+                <div class="export-buttons">
+                    <button class="tool-button" id="copyBtn">📋 Copy Code</button>
+                    <button class="tool-button" id="downloadBtn">⬇️ Download</button>
+                    <button class="tool-button" id="importBtn">⬆️ Import</button>
+                    <button class="tool-button" id="loadGameDefsBtn">⚙️ Load Game Defs</button>
+                    <button class="tool-button" id="sendToGameBtn">➡️ Import To Game</button>
+                    <button class="tool-button" id="exportGameDefsBtn">⬆️ Export Game Defs</button>
+                </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="color-section">
+                <div class="sidebar-title">CODE OUTPUT</div>
+                <div class="code-output" id="codeOutput">const pixels = [
+// Empty
+];</div>
+            </div>
+
+            <div class="stats">
+                <p>Pixels: <span id="pixelCount">0</span></p>
+                <p>Grid: <span id="gridInfo">16x16</span></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Import Modal -->
+    <div class="modal" id="importModal">
+        <div class="modal-content">
+            <h2>Import Pixel Art</h2>
+            <textarea id="importCode" placeholder="Paste your pixel array code here..."></textarea>
+            <div class="modal-buttons">
+                <button class="tool-button" id="importConfirmBtn">Import</button>
+                <button class="tool-button" id="importCancelBtn" style="background-color: #FF6B35; color: #1a1a1a;">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // State
+        const state = {
+            pixels: [],
+            currentColor: '#00d9ff',
+            tool: 'brush',
+            gridSize: 16,
+            zoom: 2,
+            showGrid: true,
+            history: [[]],
+            historyIndex: 0
+        };
+
+        // Preset Colors
+        const presetColors = [
+            '#FFFFFF', '#000000', '#FF0000', '#00FF00', '#0000FF',
+            '#FFFF00', '#FF00FF', '#00FFFF', '#FFA500', '#800080',
+            '#FFC0CB', '#A52A2A', '#808080', '#00D9FF', '#0066FF',
+            '#FF6B35', '#FF1493', '#FFD700', '#DAA520', '#8B7355'
+        ];
+
+        // DOM Elements
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const gridSizeInput = document.getElementById('gridSize');
+        const zoomInput = document.getElementById('zoom');
+        const showGridCheckbox = document.getElementById('showGrid');
+        const colorPicker = document.getElementById('colorPicker');
+        const colorPreview = document.getElementById('colorPreview');
+        const codeOutput = document.getElementById('codeOutput');
+        const importModal = document.getElementById('importModal');
+        const importCode = document.getElementById('importCode');
+        const palette = document.getElementById('palette');
+        const pixelCountSpan = document.getElementById('pixelCount');
+        const gridInfoSpan = document.getElementById('gridInfo');
+
+        // Initialize Palette
+        presetColors.forEach((color, index) => {
+            const button = document.createElement('button');
+            button.className = 'color-swatch';
+            button.style.backgroundColor = color;
+            button.title = color;
+            button.addEventListener('click', () => {
+                state.currentColor = color;
+                colorPicker.value = color;
+                colorPreview.style.backgroundColor = color;
+                updateColorSwatches();
+            });
+            palette.appendChild(button);
+        });
+
+        // Event Listeners
+        document.querySelectorAll('[data-tool]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('[data-tool]').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                state.tool = btn.dataset.tool;
+            });
+        });
+
+        gridSizeInput.addEventListener('change', (e) => {
+            state.gridSize = parseInt(e.target.value);
+            document.getElementById('gridSizeValue').textContent = state.gridSize;
+            document.getElementById('gridSizeValue2').textContent = state.gridSize;
+            gridInfoSpan.textContent = `${state.gridSize}x${state.gridSize}`;
+            draw();
+        });
+
+        zoomInput.addEventListener('change', (e) => {
+            state.zoom = parseInt(e.target.value);
+            document.getElementById('zoomValue').textContent = state.zoom;
+            draw();
+        });
+
+        showGridCheckbox.addEventListener('change', (e) => {
+            state.showGrid = e.target.checked;
+            draw();
+        });
+
+        colorPicker.addEventListener('change', (e) => {
+            state.currentColor = e.target.value;
+            colorPreview.style.backgroundColor = e.target.value;
+            updateColorSwatches();
+        });
+
+        // --- Game definitions integration ---
+        const loadGameDefsBtn = document.getElementById('loadGameDefsBtn');
+        const sendToGameBtn = document.getElementById('sendToGameBtn');
+        const exportGameDefsBtn = document.getElementById('exportGameDefsBtn');
+        const gameDefsFile = document.createElement('input'); gameDefsFile.type = 'file'; gameDefsFile.accept = 'application/json'; gameDefsFile.style.display = 'none'; document.body.appendChild(gameDefsFile);
+
+        function showToast(msg, isError) {
+            const t = document.createElement('div'); t.className = 'toast' + (isError? ' error' : ''); t.textContent = msg; document.body.appendChild(t);
+            setTimeout(() => { try { document.body.removeChild(t); } catch (e) {} }, 2600);
+        }
+
+        loadGameDefsBtn.addEventListener('click', async () => {
+            // try fetching bundled defs first
+            try {
+                const r = await fetch('/data/entities-defs.json', { cache: 'no-store' });
+                if (!r.ok) throw new Error('No bundled defs');
+                const j = await r.json(); importCode.value = JSON.stringify(j, null, 2); importModal.classList.add('active');
+                showToast('Defs loaded into editor');
+                return;
+            } catch (e) {
+                // fallback to file picker
+                gameDefsFile.click();
+            }
+        });
+
+        gameDefsFile.addEventListener('change', (ev) => {
+            const f = ev.target.files && ev.target.files[0]; if (!f) return; const r = new FileReader();
+            r.onload = () => { try { const j = JSON.parse(String(r.result)); importCode.value = JSON.stringify(j, null, 2); importModal.classList.add('active'); showToast('Defs loaded into editor'); } catch (err) { showToast('Invalid JSON', true); } };
+            r.readAsText(f);
+        });
+
+        sendToGameBtn.addEventListener('click', async () => {
+            // take JSON from importCode textarea and send to opener/parent
+            try {
+                const txt = importCode.value.trim(); if (!txt) { showToast('No JSON present', true); return; }
+                const obj = JSON.parse(txt);
+                // attach current editor sprite data so the game has pixel art
+                try {
+                    obj.sprites = obj.sprites || {};
+                    obj.sprites['editor_current'] = { pixels: state.pixels, gridSize: state.gridSize, zoom: state.zoom, palette: presetColors };
+                } catch (e) {}
+                // prefer direct function call on opener or parent
+                if (window.opener && typeof window.opener.importEntityDefinitionsFromObject === 'function') {
+                    window.opener.importEntityDefinitionsFromObject(obj);
+                    showToast('Defs sent to game');
+                    return;
+                }
+                if (window.parent && window.parent !== window && typeof window.parent.importEntityDefinitionsFromObject === 'function') {
+                    window.parent.importEntityDefinitionsFromObject(obj);
+                    showToast('Defs sent to parent');
+                    return;
+                }
+                // fallback: postMessage
+                if (window.opener) {
+                    window.opener.postMessage({ type: 'meso.importEntityDefs', data: obj }, '*');
+                    showToast('Defs posted to opener');
+                    return;
+                }
+                showToast('No game window found', true);
+            } catch (e) { showToast('Error parsing JSON', true); }
+        });
+
+        exportGameDefsBtn.addEventListener('click', () => {
+            try {
+                if (window.opener && typeof window.opener.exportEntityDefinitionsToJSON === 'function') { window.opener.exportEntityDefinitionsToJSON(); showToast('Export triggered'); return; }
+                if (window.parent && typeof window.parent.exportEntityDefinitionsToJSON === 'function') { window.parent.exportEntityDefinitionsToJSON(); showToast('Export triggered'); return; }
+                showToast('No game window found', true);
+            } catch (e) { showToast('Export failed', true); }
+        });
+
+        // listen for messages (in case parent responds)
+        window.addEventListener('message', (ev) => {
+            try {
+                if (!ev.data) return;
+                if (ev.data.type === 'meso.importResult') {
+                    showToast(ev.data.msg || 'Imported');
+                }
+                if (ev.data.type === 'entityPixelsLoaded') {
+                    // remote notified library loaded (optional)
+                    try { loadEntityPixelLibrary(); } catch (e) {}
+                }
+            } catch (e) {}
+        });
+
+        // --- Entity pixel library handling ---
+        const entityLibrarySelect = document.getElementById('entityLibrary');
+        const reloadLibraryBtn = document.getElementById('reloadLibraryBtn');
+        const saveToLibraryBtn = document.getElementById('saveToLibraryBtn');
+        let ENTITY_PIXEL_LIBRARY = {};
+
+        async function loadEntityPixelLibrary() {
+            try {
+                const r = await fetch('/data/entity-pixels.json?v=' + Date.now(), { cache: 'no-store' });
+                if (!r.ok) throw new Error('No pixel library');
+                const j = await r.json();
+                ENTITY_PIXEL_LIBRARY = j.icons || j || {};
+                populateLibrarySelect();
+                showToast('Pixel library loaded');
+            } catch (e) {
+                console.warn('Could not load entity-pixels.json', e);
+                ENTITY_PIXEL_LIBRARY = {};
+                populateLibrarySelect();
+            }
+        }
+
+        function populateLibrarySelect() {
+            entityLibrarySelect.innerHTML = '';
+            const keys = Object.keys(ENTITY_PIXEL_LIBRARY);
+            const empty = document.createElement('option'); empty.value = ''; empty.textContent = '-- Select object --'; entityLibrarySelect.appendChild(empty);
+            keys.forEach(k => {
+                const o = document.createElement('option'); o.value = k; o.textContent = k; entityLibrarySelect.appendChild(o);
+            });
+        }
+
+        entityLibrarySelect.addEventListener('change', () => {
+            const k = entityLibrarySelect.value;
+            if (!k) return;
+            const def = ENTITY_PIXEL_LIBRARY[k];
+            if (!def) return;
+            // def.pixels is expected as array [x,y,color]
+            state.pixels = (def.pixels || []).map(p => ({ x: p[0], y: p[1], color: p[2] }));
+            state.gridSize = def.grid || def.gridSize || state.gridSize;
+            gridSizeInput.value = state.gridSize; document.getElementById('gridSizeValue').textContent = state.gridSize; document.getElementById('gridSizeValue2').textContent = state.gridSize; gridInfoSpan.textContent = `${state.gridSize}x${state.gridSize}`;
+            addToHistory(); updateCodeOutput(); draw();
+            showToast(`Loaded ${k}`);
+        });
+
+        reloadLibraryBtn.addEventListener('click', () => loadEntityPixelLibrary());
+
+        // Export multiplier and save-mode helpers
+        let exportMultiplier = 2;
+        const scale2Btn = document.getElementById('scale2Btn');
+        const scale4Btn = document.getElementById('scale4Btn');
+        const scale8Btn = document.getElementById('scale8Btn');
+        const scale16Btn = document.getElementById('scale16Btn');
+        const customScaleInput = document.getElementById('customScaleInput');
+
+        function setExportMultiplier(n) {
+            exportMultiplier = Math.max(1, Math.floor(Number(n) || 1));
+            customScaleInput.value = exportMultiplier;
+            [scale2Btn, scale4Btn, scale8Btn, scale16Btn].forEach(b => {
+                if (!b) return;
+                if (Number(b.dataset.scale) === exportMultiplier) b.classList.add('active'); else b.classList.remove('active');
+            });
+        }
+
+        [scale2Btn, scale4Btn, scale8Btn, scale16Btn].forEach(b => { if (b) b.addEventListener('click', () => { setExportMultiplier(Number(b.dataset.scale)); showToast(`Export scale set ${exportMultiplier}x`); }); });
+        if (customScaleInput) customScaleInput.addEventListener('change', () => { setExportMultiplier(customScaleInput.value); showToast(`Export scale set ${exportMultiplier}x`); });
+
+        // initialize button states
+        setExportMultiplier(exportMultiplier);
+
+        // Resizer behavior for left sidebar
+        (function(){
+            const resizer = document.getElementById('leftResizer');
+            const sidebar = document.querySelector('.sidebar-left');
+            const MIN = 80; const MAX = 520;
+            if (!resizer || !sidebar) return;
+            let dragging = false;
+            resizer.addEventListener('mousedown', (ev) => {
+                dragging = true; document.body.style.userSelect = 'none';
+            });
+            document.addEventListener('mousemove', (ev) => {
+                if (!dragging) return;
+                const containerRect = document.querySelector('.container').getBoundingClientRect();
+                let newWidth = ev.clientX - containerRect.left;
+                newWidth = Math.max(MIN, Math.min(MAX, newWidth));
+                sidebar.style.width = newWidth + 'px';
+                // trigger canvas resize if function exists
+                try { if (typeof resizeCanvas === 'function') resizeCanvas(); } catch (e) {}
+            });
+            document.addEventListener('mouseup', () => { if (dragging) { dragging = false; document.body.style.userSelect = ''; } });
+        })();
+
+        function downloadJSON(filename, obj) {
+            const el = document.createElement('a');
+            const data = JSON.stringify(obj, null, 2);
+            el.setAttribute('href', 'data:application/json;charset=utf-8,' + encodeURIComponent(data));
+            el.setAttribute('download', filename);
+            el.style.display = 'none'; document.body.appendChild(el); el.click(); document.body.removeChild(el);
+        }
+
+        // Save current edited sprite back to game/editor; supports post, overwrite (download full library) and patch (download single entry)
+        saveToLibraryBtn.addEventListener('click', () => {
+            const key = entityLibrarySelect.value || 'editor_custom';
+            const grid = state.gridSize;
+            const pixels = state.pixels.map(p => [p.x, p.y, p.color]);
+            const newLib = Object.assign({}, ENTITY_PIXEL_LIBRARY);
+            newLib[key] = { grid: grid, pixels: pixels };
+            const payload = { icons: newLib, meta: { exportMultiplier } };
+            const saveMode = (document.querySelector('input[name="saveMode"]:checked') || {}).value || 'post';
+            try {
+                if (saveMode === 'post') {
+                    if (window.opener && window.opener !== window) { window.opener.postMessage({ type: 'saveEntityPixels', data: payload }, '*'); showToast('Saved to game (posted)'); return; }
+                    if (window.parent && window.parent !== window) { window.parent.postMessage({ type: 'saveEntityPixels', data: payload }, '*'); showToast('Saved to parent (posted)'); return; }
+                    showToast('No game window found to post save', true);
+                    return;
+                }
+                if (saveMode === 'overwrite') {
+                    downloadJSON('entity-pixels.json', { icons: newLib });
+                    if (window.opener && window.opener !== window) { window.opener.postMessage({ type: 'saveEntityPixels', data: payload }, '*'); showToast('Downloaded overwrite and posted to game'); return; }
+                    if (window.parent && window.parent !== window) { window.parent.postMessage({ type: 'saveEntityPixels', data: payload }, '*'); showToast('Downloaded overwrite and posted to parent'); return; }
+                    showToast('Downloaded overwrite (no game window)', false);
+                    return;
+                }
+                if (saveMode === 'patch') {
+                    const patch = { icons: {} };
+                    patch.icons[key] = newLib[key];
+                    const name = `entity-pixels.patch.${key}.json`;
+                    downloadJSON(name, patch);
+                    if (window.opener && window.opener !== window) { window.opener.postMessage({ type: 'saveEntityPixelsPatch', data: patch, meta: { key, exportMultiplier } }, '*'); showToast('Downloaded patch and posted to game'); return; }
+                    if (window.parent && window.parent !== window) { window.parent.postMessage({ type: 'saveEntityPixelsPatch', data: patch, meta: { key, exportMultiplier } }, '*'); showToast('Downloaded patch and posted to parent'); return; }
+                    showToast('Downloaded patch (no game window)', false);
+                    return;
+                }
+            } catch (e) { showToast('Save failed', true); }
+        });
+
+        // Load library at start
+        loadEntityPixelLibrary();
+
+        canvas.addEventListener('click', handleCanvasClick);
+        canvas.addEventListener('mousemove', handleCanvasDrag);
+
+        document.getElementById('undoBtn').addEventListener('click', undo);
+        document.getElementById('redoBtn').addEventListener('click', redo);
+        document.getElementById('clearBtn').addEventListener('click', clear);
+        document.getElementById('copyBtn').addEventListener('click', copyCode);
+        document.getElementById('downloadBtn').addEventListener('click', downloadCode);
+        document.getElementById('importBtn').addEventListener('click', () => importModal.classList.add('active'));
+        document.getElementById('importCancelBtn').addEventListener('click', () => importModal.classList.remove('active'));
+        document.getElementById('importConfirmBtn').addEventListener('click', () => {
+            // try detect entity-defs JSON: has `buildings` or `trees` or `animals`
+            const txt = importCode.value && importCode.value.trim();
+            if (!txt) { showToast('No content to import', true); return; }
+            try {
+                const obj = JSON.parse(txt);
+                if (obj && (obj.buildings || obj.trees || obj.animals)) {
+                    // treat as entity definitions: send to game
+                    if (window.opener && typeof window.opener.importEntityDefinitionsFromObject === 'function') {
+                        window.opener.importEntityDefinitionsFromObject(obj);
+                        showToast('Entity definitions imported to game');
+                        importModal.classList.remove('active');
+                        return;
+                    }
+                    if (window.parent && window.parent !== window && typeof window.parent.importEntityDefinitionsFromObject === 'function') {
+                        window.parent.importEntityDefinitionsFromObject(obj);
+                        showToast('Entity definitions imported to parent');
+                        importModal.classList.remove('active');
+                        return;
+                    }
+                    if (window.opener) { window.opener.postMessage({ type: 'meso.importEntityDefs', data: obj }, '*'); showToast('Posted defs to opener'); importModal.classList.remove('active'); return; }
+                    showToast('No game window found to import defs', true);
+                    return;
+                }
+            } catch (e) {
+                // not JSON or invalid JSON — fall through to pixel import handler
+            }
+            // fallback: original pixel import flow
+            try { importPixels(); importModal.classList.remove('active'); } catch (e) { showToast('Invalid code format', true); }
+        });
+
+        // Functions
+        function resizeCanvas() {
+            const pixelSize = state.gridSize * state.zoom;
+            canvas.width = pixelSize * state.gridSize;
+            canvas.height = pixelSize * state.gridSize;
+            draw();
+        }
+
+        function draw() {
+            const pixelSize = state.gridSize * state.zoom;
+            ctx.fillStyle = '#0a0a0a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw grid
+            if (state.showGrid) {
+                ctx.strokeStyle = '#2a2a2a';
+                ctx.lineWidth = 0.5;
+                for (let i = 0; i <= canvas.width; i += pixelSize) {
+                    ctx.beginPath();
+                    ctx.moveTo(i, 0);
+                    ctx.lineTo(i, canvas.height);
+                    ctx.stroke();
+                }
+                for (let i = 0; i <= canvas.height; i += pixelSize) {
+                    ctx.beginPath();
+                    ctx.moveTo(0, i);
+                    ctx.lineTo(canvas.width, i);
+                    ctx.stroke();
+                }
+            }
+
+            // Draw pixels
+            state.pixels.forEach(pixel => {
+                ctx.fillStyle = pixel.color;
+                ctx.fillRect(
+                    pixel.x * pixelSize,
+                    pixel.y * pixelSize,
+                    pixelSize,
+                    pixelSize
+                );
+            });
+        }
+
+        function handleCanvasClick(e) {
+            const rect = canvas.getBoundingClientRect();
+            const pixelSize = state.gridSize * state.zoom;
+            const x = Math.floor((e.clientX - rect.left) / pixelSize);
+            const y = Math.floor((e.clientY - rect.top) / pixelSize);
+
+            if (x < 0 || x >= state.gridSize || y < 0 || y >= state.gridSize) return;
+
+            if (state.tool === 'brush') {
+                const existingIndex = state.pixels.findIndex(p => p.x === x && p.y === y);
+                if (existingIndex >= 0) {
+                    state.pixels[existingIndex].color = state.currentColor;
+                } else {
+                    state.pixels.push({ x, y, color: state.currentColor });
+                }
+            } else if (state.tool === 'eraser') {
+                state.pixels = state.pixels.filter(p => !(p.x === x && p.y === y));
+            } else if (state.tool === 'picker') {
+                const pixel = state.pixels.find(p => p.x === x && p.y === y);
+                if (pixel) {
+                    state.currentColor = pixel.color;
+                    colorPicker.value = pixel.color;
+                    colorPreview.style.backgroundColor = pixel.color;
+                    updateColorSwatches();
+                    state.tool = 'brush';
+                    document.querySelectorAll('[data-tool]').forEach(b => b.classList.remove('active'));
+                    document.querySelector('[data-tool="brush"]').classList.add('active');
+                }
+            }
+
+            addToHistory();
+            updateCodeOutput();
+            draw();
+        }
+
+        function handleCanvasDrag(e) {
+            if (e.buttons !== 1) return;
+            handleCanvasClick(e);
+        }
+
+        function addToHistory() {
+            const newHistory = state.history.slice(0, state.historyIndex + 1);
+            newHistory.push(JSON.parse(JSON.stringify(state.pixels)));
+            state.history = newHistory;
+            state.historyIndex = newHistory.length - 1;
+            updateHistoryButtons();
+        }
+
+        function undo() {
+            if (state.historyIndex > 0) {
+                state.historyIndex--;
+                state.pixels = JSON.parse(JSON.stringify(state.history[state.historyIndex]));
+                updateCodeOutput();
+                updateHistoryButtons();
+                draw();
+                showToast('Undo');
+            }
+        }
+
+        function redo() {
+            if (state.historyIndex < state.history.length - 1) {
+                state.historyIndex++;
+                state.pixels = JSON.parse(JSON.stringify(state.history[state.historyIndex]));
+                updateCodeOutput();
+                updateHistoryButtons();
+                draw();
+                showToast('Redo');
+            }
+        }
+
+        function clear() {
+            state.pixels = [];
+            addToHistory();
+            updateCodeOutput();
+            draw();
+            showToast('Canvas cleared');
+        }
+
+        function updateCodeOutput() {
+            pixelCountSpan.textContent = state.pixels.length;
+            if (state.pixels.length === 0) {
+                codeOutput.textContent = 'const pixels = [\n// Empty\n];';
+            } else {
+                const lines = state.pixels.map(p => `  [${p.x},${p.y},'${p.color}']`);
+                codeOutput.textContent = 'const pixels = [\n' + lines.join(',\n') + '\n];';
+            }
+        }
+
+        function copyCode() {
+            const code = codeOutput.textContent;
+            navigator.clipboard.writeText(code).then(() => {
+                showToast('Code copied to clipboard!');
+            });
+        }
+
+        function downloadCode() {
+            const code = codeOutput.textContent;
+            const saveMode = (document.querySelector('input[name="saveMode"]:checked') || {}).value || 'post';
+            const key = entityLibrarySelect.value || 'editor_custom';
+            const grid = state.gridSize;
+            const pixels = state.pixels.map(p => [p.x, p.y, p.color]);
+            const exportMultiplierLocal = (typeof exportMultiplier !== 'undefined') ? exportMultiplier : 1;
+
+            if (saveMode === 'post') {
+                const patch = { icons: {} };
+                patch.icons[key] = { grid: grid, pixels: pixels };
+                // post as a patch so game merges it
+                if (window.opener && window.opener !== window) { window.opener.postMessage({ type: 'saveEntityPixelsPatch', data: patch, meta: { key, exportMultiplier: exportMultiplierLocal } }, '*'); showToast('Posted sprite patch to game'); return; }
+                if (window.parent && window.parent !== window) { window.parent.postMessage({ type: 'saveEntityPixelsPatch', data: patch, meta: { key, exportMultiplier: exportMultiplierLocal } }, '*'); showToast('Posted sprite patch to parent'); return; }
+                // fallback: offer patch download
+                const name = `entity-pixels.patch.${key}.js`;
+                const el = document.createElement('a');
+                el.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(code));
+                el.setAttribute('download', name);
+                el.style.display = 'none'; document.body.appendChild(el); el.click(); document.body.removeChild(el);
+                showToast('No game window found — patch downloaded');
+                return;
+            }
+
+            if (saveMode === 'overwrite') {
+                // update the in-memory library and download full JSON for overwrite
+                try {
+                    const newLib = Object.assign({}, ENTITY_PIXEL_LIBRARY);
+                    newLib[key] = { grid: grid, pixels: pixels };
+                    const blob = new Blob([JSON.stringify({ icons: newLib }, null, 2)], { type: 'application/json' });
+                    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'entity-pixels.json'; document.body.appendChild(a); a.click(); setTimeout(() => { try { document.body.removeChild(a); URL.revokeObjectURL(a.href); } catch (e) {} }, 200);
+                    // also post to game if present
+                    const payload = { icons: newLib, meta: { exportMultiplier: exportMultiplierLocal } };
+                    if (window.opener && window.opener !== window) { window.opener.postMessage({ type: 'saveEntityPixels', data: payload }, '*'); showToast('Downloaded overwrite and posted to game'); return; }
+                    if (window.parent && window.parent !== window) { window.parent.postMessage({ type: 'saveEntityPixels', data: payload }, '*'); showToast('Downloaded overwrite and posted to parent'); return; }
+                    showToast('Downloaded overwrite (no game window)');
+                    return;
+                } catch (e) { showToast('Overwrite export failed', true); return; }
+            }
+
+            if (saveMode === 'patch') {
+                // download only the JS code as a single-entry patch file
+                const patchObj = { icons: {} };
+                patchObj.icons[key] = { grid: grid, pixels: pixels };
+                const fname = `entity-pixels.patch.${key}.json`;
+                const el = document.createElement('a');
+                el.setAttribute('href', 'data:application/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(patchObj, null, 2)));
+                el.setAttribute('download', fname);
+                el.style.display = 'none'; document.body.appendChild(el); el.click(); document.body.removeChild(el);
+                // post patch as well if game present
+                if (window.opener && window.opener !== window) { window.opener.postMessage({ type: 'saveEntityPixelsPatch', data: patchObj, meta: { key, exportMultiplier: exportMultiplierLocal } }, '*'); showToast('Downloaded patch and posted to game'); return; }
+                if (window.parent && window.parent !== window) { window.parent.postMessage({ type: 'saveEntityPixelsPatch', data: patchObj, meta: { key, exportMultiplier: exportMultiplierLocal } }, '*'); showToast('Downloaded patch and posted to parent'); return; }
+                showToast('Patch downloaded (no game window)');
+                return;
+            }
+
+            // default fallback: download the JS code as before
+            const element = document.createElement('a');
+            element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(code));
+            element.setAttribute('download', 'pixel-art.js');
+            element.style.display = 'none';
+            document.body.appendChild(element);
+            element.click();
+            document.body.removeChild(element);
+            showToast('Code downloaded!');
+        }
+
+        function importPixels() {
+            try {
+                const code = importCode.value;
+                const match = code.match(/\[\s*(\d+)\s*,\s*(\d+)\s*,\s*['"]([^'"]+)['"]\s*\]/g);
+                
+                if (!match) {
+                    showToast('Invalid code format', true);
+                    return;
+                }
+
+                const newPixels = [];
+                match.forEach(item => {
+                    const parsed = item.match(/\[\s*(\d+)\s*,\s*(\d+)\s*,\s*['"]([^'"]+)['"]\s*\]/);
+                    if (parsed) {
+                        newPixels.push({
+                            x: parseInt(parsed[1]),
+                            y: parseInt(parsed[2]),
+                            color: parsed[3]
+                        });
+                    }
+                });
+
+                state.pixels = newPixels;
+                addToHistory();
+                updateCodeOutput();
+                importModal.classList.remove('active');
+                importCode.value = '';
+                draw();
+                showToast('Pixels imported successfully!');
+            } catch (error) {
+                showToast('Error importing pixels', true);
+            }
+        }
+
+        function updateColorSwatches() {
+            document.querySelectorAll('.color-swatch').forEach(swatch => {
+                if (swatch.style.backgroundColor === state.currentColor) {
+                    swatch.classList.add('selected');
+                } else {
+                    swatch.classList.remove('selected');
+                }
+            });
+        }
+
+        function updateHistoryButtons() {
+            document.getElementById('undoBtn').disabled = state.historyIndex === 0;
+            document.getElementById('redoBtn').disabled = state.historyIndex === state.history.length - 1;
+        }
+
+        function showToast(message, isError = false) {
+            const toast = document.createElement('div');
+            toast.className = `toast ${isError ? 'error' : ''}`;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 2000);
+        }
+
+        // Initialize
+        resizeCanvas();
+        updateHistoryButtons();
+        updateCodeOutput();
+    </script>
+</body>
+</html>

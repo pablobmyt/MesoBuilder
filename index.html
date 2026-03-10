@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MesoBuilder</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- TOP BAR -->
+  <div id="topbar">
+    <h1>&#x2605; MesoBuilder &#x2605;</h1>
+    <div class="res-group">
+      <div class="res-item">
+        <canvas class="res-icon" id="icon-wheat" width="18" height="18"></canvas>
+        <span>Trigo:</span>
+        <span class="res-val" id="res-wheat">50</span>
+      </div>
+      <div class="res-item">
+        <canvas class="res-icon" id="icon-brick" width="18" height="18"></canvas>
+        <span>Ladrillos:</span>
+        <span class="res-val" id="res-brick">40</span>
+      </div>
+      <div class="res-item">
+        <canvas class="res-icon" id="icon-pop" width="18" height="18"></canvas>
+        <span>Población:</span>
+        <span class="res-val" id="res-pop">0</span>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div id="turn-info">Turno <span id="turn-num">1</span></div>
+      <button id="btn-endturn">Siguiente Turno &#x25B6;</button>
+    </div>
+  </div>
+
+  <!-- TOOLBAR -->
+  <div id="toolbar">
+    <div class="tool-group">
+      <span class="tool-label">Modo</span>
+      <button class="tool-btn" id="btn-mode-edit">Edicion</button>
+      <button class="tool-btn" id="btn-mode-free">Libre</button>
+    </div>
+    <div class="tool-group">
+      <span class="tool-label">Vista</span>
+      <button class="tool-btn" id="btn-view-ortho">Ortogonal</button>
+      <button class="tool-btn" id="btn-view-iso">Isometrica</button>
+    </div>
+    <div class="tool-group">
+      <span class="tool-label">Camara</span>
+      <button class="tool-btn" id="btn-panmode">Desplazar</button>
+      <button class="tool-btn" id="btn-resetcam">Centrar</button>
+    </div>
+    <div class="tool-group">
+      <span class="tool-label">Paneles</span>
+      <button class="tool-btn" id="btn-advstats">Estadistica avanzada</button>
+      <button class="tool-btn" id="btn-floatpanels">Paneles flotantes</button>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div id="main">
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- RIGHT PANEL -->
+    <div id="panel">
+      <div class="panel-section">
+        <div class="panel-title">Construir</div>
+
+        <button class="build-btn" data-type="house" id="btn-house">
+          <canvas class="bicon" id="icon-house" width="22" height="22"></canvas>
+          <div>
+            <span class="bname">Casa</span>
+            <span class="bcost">&#x1F9F1; 5 &#x1F33E; 2</span>
+          </div>
+        </button>
+
+        <button class="build-btn" data-type="farm" id="btn-farm">
+          <canvas class="bicon" id="icon-farm" width="22" height="22"></canvas>
+          <div>
+            <span class="bname">Granja</span>
+            <span class="bcost">&#x1F33E; 3 &#x1F9F1; 1</span>
+          </div>
+        </button>
+
+        <button class="build-btn" data-type="temple" id="btn-temple">
+          <canvas class="bicon" id="icon-temple" width="22" height="22"></canvas>
+          <div>
+            <span class="bname">Templo</span>
+            <span class="bcost">&#x1F9F1; 15 &#x1F33E; 5</span>
+          </div>
+        </button>
+
+        <button class="build-btn" data-type="market" id="btn-market">
+          <canvas class="bicon" id="icon-market" width="22" height="22"></canvas>
+          <div>
+            <span class="bname">Mercado</span>
+            <span class="bcost">&#x1F9F1; 8 &#x1F33E; 4</span>
+          </div>
+        </button>
+
+        <button class="build-btn" data-type="granary" id="btn-granary">
+          <canvas class="bicon" id="icon-granary" width="22" height="22"></canvas>
+          <div>
+            <span class="bname">Granero</span>
+            <span class="bcost">&#x1F9F1; 6 &#x1F33E; 0</span>
+          </div>
+        </button>
+
+        <button class="build-btn" data-type="ziggurat" id="btn-ziggurat">
+          <canvas class="bicon" id="icon-ziggurat" width="22" height="22"></canvas>
+          <div>
+            <span class="bname">Zigurat</span>
+            <span class="bcost">&#x1F9F1; 30 &#x1F33E; 10</span>
+          </div>
+        </button>
+
+        <button class="build-btn" data-type="road" id="btn-road">
+          <canvas class="bicon" id="icon-road" width="22" height="22"></canvas>
+          <div>
+            <span class="bname">Camino</span>
+            <span class="bcost">&#x1F9F1; 0 &#x1F33E; 0</span>
+          </div>
+        </button>
+
+        <button id="btn-demolish" data-type="demolish">
+          <span style="font-size:1.1em;">&#x2716;</span>
+          <div>
+            <span class="bname" style="color:inherit;">Demoler</span>
+            <span class="bcost" style="color:#884444;">Recupera 50%</span>
+          </div>
+        </button>
+      </div>
+
+      <div class="panel-section">
+        <div class="panel-title">Producción / Turno</div>
+        <div style="font-size:0.65rem;color:var(--ui-dim);line-height:1.8;">
+          <div>&#x1F33E; <span id="prod-wheat">+0</span> trigo</div>
+          <div>&#x1F9F1; <span id="prod-brick">+0</span> ladrillos</div>
+          <div>&#x1F464; <span id="prod-pop">+0</span> población</div>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <div class="panel-title">Inventario</div>
+        <div id="inventory-list" style="font-size:0.75rem;color:var(--ui-text);padding-top:6px;"></div>
+      </div>
+
+      <div class="panel-section">
+        <div class="panel-title">Acciones</div>
+        <ul class="actions-list" id="actions-list"></ul>
+      </div>
+
+      <div id="log">
+        <p class="new">&#x25B6; Bienvenido a Mesopotamia.</p>
+        <p>Construye cerca del río para prosperar.</p>
+      </div>
+    </div>
+
+    <!-- FALLOUT CHARACTER CARD -->
+    <div id="char-card">
+      <div class="char-header">
+        <canvas id="char-portrait" width="54" height="54"></canvas>
+        <button id="btn-center-player" class="tool-btn" title="Centrar cámara en jugador">Ir a jugador</button>
+        <div class="char-name-block">
+          <div class="char-name" id="char-name">Ur-Nammu</div>
+          <div class="char-title" id="char-title">Rey de Sumer</div>
+          <div class="char-level">NIV. <span id="char-lv">1</span></div>
+        </div>
+      </div>
+
+      <div class="stat-bar-row">
+        <span class="stat-bar-label">VIT</span>
+        <div class="stat-bar-track">
+          <div class="stat-bar-fill hp" id="bar-hp" style="width:100%"></div>
+        </div>
+        <span class="stat-bar-val" id="val-hp">100/100</span>
+      </div>
+      <div class="stat-bar-row">
+        <span class="stat-bar-label">ACT</span>
+        <div class="stat-bar-track">
+          <div class="stat-bar-fill ap" id="bar-ap" style="width:80%"></div>
+        </div>
+        <span class="stat-bar-val" id="val-ap">8/10</span>
+      </div>
+      <div class="stat-bar-row">
+        <span class="stat-bar-label">EXP</span>
+        <div class="stat-bar-track">
+          <div class="stat-bar-fill xp" id="bar-xp" style="width:0%"></div>
+        </div>
+        <span class="stat-bar-val" id="val-xp">0/100</span>
+      </div>
+
+      <div class="special-grid" id="special-grid">
+        <!-- filled by JS -->
+      </div>
+    </div>
+
+    <!-- TOOLTIP -->
+    <div id="tooltip"></div>
+
+    <!-- NOTIFICATION -->
+    <div id="notif"></div>
+  </div>
+
+  <!-- CHARACTER SELECT -->
+  <div id="char-select" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-title">Parametros iniciales</div>
+      <div class="modal-tabs">
+        <button class="tool-btn" id="btn-tab-presets">Predeterminados</button>
+          <button class="tool-btn" id="btn-tab-custom">Crear</button>
+          <button class="tool-btn" id="btn-tab-params">Parámetros</button>
+      </div>
+      <div class="modal-panel" id="panel-presets">
+        <div class="char-grid" id="char-grid"></div>
+      </div>
+        <div class="modal-panel hidden" id="panel-custom">
+        <div class="custom-row">
+          <label class="custom-label">Nombre</label>
+          <input id="char-name-input" class="custom-input" type="text" maxlength="14" placeholder="Tu nombre">
+        </div>
+        <div class="custom-row">
+          <label class="custom-label">Clase</label>
+          <select id="char-class" class="custom-input"></select>
+        </div>
+        <div class="custom-row">
+          <label class="custom-label">Piel</label>
+          <div class="palette-row" id="palette-skin"></div>
+        </div>
+        <div class="custom-row">
+          <label class="custom-label">Cabello</label>
+          <div class="palette-row" id="palette-hair"></div>
+        </div>
+        <div class="custom-row">
+          <label class="custom-label">Vestimenta</label>
+          <div class="palette-row" id="palette-cloth"></div>
+        </div>
+        <div class="custom-row">
+          <label class="custom-label">Detalles</label>
+          <div class="palette-row" id="palette-trim"></div>
+        </div>
+        <div class="custom-preview">
+          <canvas id="char-custom-preview" width="64" height="64"></canvas>
+        </div>
+      </div>
+      <div class="modal-panel hidden" id="panel-params">
+        <div class="param-panel">
+          <div class="param-nav" style="display:flex;align-items:center;gap:10px">
+            <button class="tool-btn" id="param-prev">◀</button>
+              <div style="flex:1;display:flex;align-items:center;gap:8px">
+                <canvas id="param-icon" width="28" height="28" style="flex:0 0 28px;image-rendering:pixelated;border-radius:4px;background:transparent"></canvas>
+                <div>
+                  <div id="param-title" style="font-weight:700;color:var(--sand-mid);font-size:0.95rem">NPCs</div>
+                  <div id="param-desc" style="font-size:0.78rem;color:var(--ui-dim);margin-top:4px">Ajusta la densidad de habitantes inicial.</div>
+                </div>
+              </div>
+            <button class="tool-btn" id="param-next">▶</button>
+          </div>
+          <div style="margin-top:12px">
+            <input id="density-range" type="range" min="0.25" max="2.0" step="0.05" value="1.0" style="width:100%">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">
+              <div style="font-size:0.82rem;color:var(--ui-dim)">Valor: <span id="density-value">1.00x</span></div>
+              <div style="font-size:0.82rem;color:var(--ui-dim)">Rango: 0.25x - 2.00x</div>
+            </div>
+          </div>
+          <div id="param-indicator" style="margin-top:8px;font-size:12px;color:#c8b87a">1 / 3</div>
+          <div style="margin-top:8px;font-size:12px;color:#c8b87a">Estos parámetros ajustan la densidad inicial del mundo al crear una nueva partida.</div>
+        </div>
+      </div>
+      <label class="char-save">
+        <input type="checkbox" id="char-save">
+        Guardar seleccion para el inicio de la partida
+      </label>
+      <div class="modal-actions">
+        <button class="tool-btn" id="btn-char-start">Comenzar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<!-- MENU + DYNAMIC LOADER -->
+<div id="main-menu-root" style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,#071022,#0c1b2b);z-index:99999">
+  <div id="main-menu-box" style="width:900px;max-width:94%;display:flex;background:rgba(255,255,255,0.03);border-radius:12px;padding:22px;gap:20px;box-shadow:0 12px 40px rgba(0,0,0,0.6);border:1px solid rgba(255,255,255,0.04)">
+    <div style="flex:1;display:flex;flex-direction:column;gap:12px;color:#fff">
+      <h1 style="margin:0;font-size:34px;letter-spacing:1px">MesoBuilder</h1>
+      <div style="color:#cfc6b3;max-width:520px">Construye, sobrevive y proclama tu reino. Crea una nueva ciudad o continúa una partida guardada. Personaliza tu gobernante antes de empezar.</div>
+      <div style="display:flex;gap:12px;margin-top:12px">
+        <button id="menu-new" style="padding:12px 18px;background:#2E6FA3;border:none;border-radius:8px;color:#fff;font-weight:700">Nueva partida</button>
+        <button id="menu-load" style="padding:12px 18px;background:transparent;border:1px solid rgba(255,255,255,0.06);border-radius:8px;color:#fff">Cargar partida</button>
+        <button id="menu-import" style="padding:12px 18px;background:transparent;border:1px solid rgba(255,255,255,0.06);border-radius:8px;color:#fff">Importar partida</button>
+        <button id="menu-options" style="padding:12px 18px;background:transparent;border:1px solid rgba(255,255,255,0.06);border-radius:8px;color:#fff">Opciones</button>
+      </div>
+      <div style="margin-top:8px;color:#aab">Consejo: Construye cerca del río para un mejor rendimiento de cultivos.</div>
+    </div>
+    <div style="width:340px;display:flex;flex-direction:column;align-items:center;gap:10px">
+      <canvas id="menu-scene" width="320" height="320" style="width:320px;height:320px;border-radius:8px;background:linear-gradient(#8ccf8a,#3a7b3a);image-rendering:pixelated;box-shadow:inset 0 0 0 2px rgba(0,0,0,0.12)"></canvas>
+      <div id="menu-saves" style="width:100%;color:#dcd8c4;background:rgba(0,0,0,0.06);padding:8px;border-radius:6px;font-size:13px;display:flex;flex-direction:column;gap:6px;align-items:stretch">
+        <div style="font-weight:700;color:#fff">Partidas guardadas</div>
+        <div id="menu-saves-list" style="display:flex;flex-direction:column;gap:6px"></div>
+        <div style="display:flex;gap:8px;justify-content:center">
+          <button id="menu-credits" style="padding:8px 12px;background:transparent;border:1px solid rgba(255,255,255,0.06);border-radius:8px;color:#fff">Créditos</button>
+          <button id="menu-exit" style="padding:8px 12px;background:transparent;border:1px solid rgba(255,255,255,0.06);border-radius:8px;color:#fff">Salir</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Startup params modal (hidden) -->
+  <div id="menu-startup-modal" style="position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:100000">
+    <div style="background:rgba(10,10,10,0.96);padding:18px;border-radius:10px;border:1px solid rgba(255,255,255,0.04);width:640px;color:#fff">
+      <h3 style="margin:0 0 8px 0">Parámetros de nueva partida</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div>
+          <label style="font-size:13px">Densidad NPCs: <span id="label-npc">1.0</span></label>
+          <input id="menu-density-npcs" type="range" min="0.2" max="3.0" step="0.1" value="1.0" style="width:100%">
+        </div>
+        <div>
+          <label style="font-size:13px">Densidad animales: <span id="label-animals">1.0</span></label>
+          <input id="menu-density-animals" type="range" min="0.2" max="3.0" step="0.1" value="1.0" style="width:100%">
+        </div>
+        <div>
+          <label style="font-size:13px">Densidad vegetación: <span id="label-veg">1.0</span></label>
+          <input id="menu-density-vegetation" type="range" min="0.2" max="3.0" step="0.1" value="1.0" style="width:100%">
+        </div>
+        <div>
+          <label style="font-size:13px">Nombre del gobernante</label>
+          <input id="menu-char-name" type="text" maxlength="14" placeholder="Tu nombre" style="width:100%;padding:8px;border-radius:6px;background:#111;border:1px solid rgba(255,255,255,0.04);color:#fff">
+        </div>
+        <div>
+          <label style="font-size:13px">Apariencia</label>
+          <select id="menu-char-preset" style="width:100%;padding:8px;border-radius:6px;background:#111;border:1px solid rgba(255,255,255,0.04);color:#fff">
+            <option value="villager">Habitante</option>
+            <option value="villager2">Habitante 2</option>
+            <option value="merchant">Mercader</option>
+            <option value="guard">Guardia</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:13px">Color ropa</label>
+          <input id="menu-char-cloth" type="color" value="#7a3a2a" style="width:100%;height:38px;border-radius:6px;padding:4px;border:1px solid rgba(255,255,255,0.04);background:#111">
+        </div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+        <button id="menu-start-cancel" style="padding:8px 12px;background:transparent;border:1px solid rgba(255,255,255,0.06);border-radius:8px;color:#fff">Cancelar</button>
+        <button id="menu-start-confirm" style="padding:8px 14px;background:#2E6FA3;border:none;border-radius:8px;color:#fff;font-weight:700">Comenzar</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+  // External menu host flag so engine won't show its internal menu
+  window._externalMenu = true;
+
+  // create a custom pixel cursor and apply to game canvas and menu scene
+  (function(){
+    try {
+      const cursorSize = 24;
+      const cc = document.createElement('canvas'); cc.width = cursorSize; cc.height = cursorSize; const cctx = cc.getContext('2d');
+      // draw a small pixelated pointer with a dark outline
+      cctx.scale(1,1);
+      cctx.imageSmoothingEnabled = false;
+      // transparent background
+      cctx.clearRect(0,0,cursorSize,cursorSize);
+      // draw pointer shape (simple arrow)
+      cctx.fillStyle = '#111';
+      cctx.beginPath(); cctx.moveTo(4,3); cctx.lineTo(18,12); cctx.lineTo(12,14); cctx.lineTo(14,19); cctx.closePath(); cctx.fill();
+      cctx.fillStyle = '#FFD27A'; cctx.beginPath(); cctx.moveTo(5,4); cctx.lineTo(16,12); cctx.lineTo(11,13); cctx.lineTo(13,18); cctx.closePath(); cctx.fill();
+      // small accent
+      cctx.fillStyle = '#fff'; cctx.fillRect(6,5,2,2);
+      const data = cc.toDataURL('image/png');
+      const css = 'url(' + data + ') 6 6, auto';
+      try { document.querySelectorAll('#gameCanvas, #menu-scene').forEach(el => { if (el) el.style.cursor = css; }); } catch (e) {}
+      // also set body fallback
+      document.body.style.cursor = css;
+    } catch (e) { console.warn('cursor create failed', e); }
+  })();
+
+  // draw a simple composited scene: trees + big pixel player
+  (function() {
+    const c = document.getElementById('menu-scene'); if (!c) return; const ctx = c.getContext('2d'); ctx.imageSmoothingEnabled = false;
+    const W = c.width, H = c.height;
+    // sky / gradient handled by CSS background; draw simple stylized trees and central player
+    function drawTree(x,y,scale,colorLeaf='#2e8b3a'){
+      ctx.fillStyle = '#6b3f1f'; ctx.fillRect(x-2*scale,y+20*scale,4*scale,20*scale);
+      ctx.fillStyle = colorLeaf; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x-22*scale, y+28*scale); ctx.lineTo(x+22*scale, y+28*scale); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(x, y+6*scale); ctx.lineTo(x-16*scale, y+34*scale); ctx.lineTo(x+16*scale, y+34*scale); ctx.closePath(); ctx.fill();
+    }
+    function clear(){ ctx.clearRect(0,0,W,H); ctx.fillStyle='rgba(0,0,0,0)'; ctx.fillRect(0,0,W,H); }
+    function drawScene(){ clear();
+      // grass base
+      ctx.fillStyle = '#4aa02c'; ctx.fillRect(0,H*0.6,W,H*0.4);
+      // draw trees background
+      for(let i=0;i<6;i++){ const tx = 20 + i*38 + (i%2?10:0); const ty = 50 + (i%2?6:0); const s = 1.0 + ((i%3)/6); drawTree(tx,ty,s,'#2e8b3a'); }
+      // draw some distant hills
+      ctx.fillStyle='#2f6b3a'; ctx.beginPath(); ctx.ellipse(60,180,90,30,0,0,Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.ellipse(200,170,110,38,0,0,Math.PI*2); ctx.fill();
+      // big pixel player in center
+      const px = W/2, py = H*0.52;
+      // simple pixel-art character (scaled blocks)
+      const S = 6; // block size
+      const palette = { skin:'#d3a57a', hair:'#2b170b', cloth:'#7a2e1c', trim:'#d4b76a' };
+      const pattern = [
+        [0,0,1,1,1,0,0],
+        [0,1,1,1,1,1,0],
+        [0,0,1,1,1,0,0],
+        [0,0,2,2,2,0,0],
+        [0,3,3,4,3,3,0],
+        [0,0,3,3,3,0,0],
+        [0,0,0,3,0,0,0]
+      ];
+      for(let r=0;r<pattern.length;r++){ for(let c0=0;c0<pattern[r].length;c0++){ const v = pattern[r][c0]; if(v===0) continue; let col = palette.skin; if(v===1) col=palette.hair; if(v===2) col=palette.cloth; if(v===3) col=palette.cloth; if(v===4) col=palette.trim; ctx.fillStyle=col; const bx = px + (c0 - 3)*S; const by = py + (r-5)*S; ctx.fillRect(bx, by, S-1, S-1); }}
+    }
+    drawScene();
+    // subtle animation: sway trees slightly
+    let t = 0; setInterval(() => { t+=0.08; const ctx2 = c.getContext('2d'); ctx2.imageSmoothingEnabled=false; // animate slight horizontal shift of leaves
+      ctx2.save(); ctx2.translate(Math.sin(t)*1.5,0); drawScene(); ctx2.restore(); }, 140);
+  })();
+
+  // helper to dynamically load the engine module and start the game
+  function loadEngineAndStart(opts){
+     // set externalMenu flag so engine doesn't re-show its internal menu
+    window._externalMenu = true;
+    // Capture console and runtime errors so we can surface them in the loader overlay
+    (function(){
+      try {
+        if (window.__loader_console_wrapped) return; window.__loader_console_wrapped = true;
+        const orig = { log: console.log.bind(console), warn: console.warn.bind(console), error: console.error.bind(console) };
+        function appendToOverlay(level, args) {
+          try {
+            const load = document.getElementById('global-loading-overlay');
+            if (!load) return;
+            let consoleArea = document.getElementById('global-loading-console');
+            if (!consoleArea) {
+              consoleArea = document.createElement('pre'); consoleArea.id = 'global-loading-console';
+              consoleArea.style.marginTop = '12px'; consoleArea.style.background = 'rgba(0,0,0,0.45)'; consoleArea.style.color = '#cfe3d9';
+              consoleArea.style.maxHeight = '160px'; consoleArea.style.overflow = 'auto'; consoleArea.style.padding = '8px'; consoleArea.style.borderRadius = '6px';
+              consoleArea.style.fontSize = '12px'; consoleArea.style.textAlign = 'left'; consoleArea.style.whiteSpace = 'pre-wrap';
+              // try to insert inside the overlay's main box
+              const inner = load.querySelector('div'); if (inner) inner.appendChild(consoleArea); else load.appendChild(consoleArea);
+            }
+            const msg = Array.from(args).map(a => { try { if (typeof a === 'object') return JSON.stringify(a); return String(a); } catch (e) { return String(a); } }).join(' ');
+            const time = (new Date()).toLocaleTimeString();
+            consoleArea.textContent += `[${time}] ${level}: ${msg}\n`;
+            consoleArea.scrollTop = consoleArea.scrollHeight;
+          } catch (e) { try { orig.warn('appendToOverlay err', e); } catch (ee) {} }
+        }
+        console.log = function() { orig.log.apply(null, arguments); appendToOverlay('LOG', arguments); };
+        console.warn = function() { orig.warn.apply(null, arguments); appendToOverlay('WARN', arguments); };
+        console.error = function() { orig.error.apply(null, arguments); appendToOverlay('ERROR', arguments); };
+        window.addEventListener('error', function(ev){ try { appendToOverlay('ERROR', [ev.message || ev.error || ev.filename || ev]); } catch(e){} });
+        window.addEventListener('unhandledrejection', function(ev){ try { appendToOverlay('ERROR', ['unhandledrejection', ev && ev.reason ? ev.reason : ev]); } catch(e){} });
+      } catch (e) {}
+    })();
+    // mark game started and show panels before engine init so module's init() can start the loop
+    try { window._gameStarted = true; window._showPanels = true; } catch (e) {}
+    if (opts && opts.forceNew) localStorage.setItem('meso.forceNew','1');
+    // remove menu UI
+    try { document.getElementById('main-menu-root').remove(); } catch (e) {}
+    // show a global loading overlay while engine initializes and generates the map
+    try {
+      let load = document.getElementById('global-loading-overlay');
+      if (!load) {
+        load = document.createElement('div'); load.id = 'global-loading-overlay';
+        load.style.position = 'fixed'; load.style.left = '0'; load.style.top = '0'; load.style.right = '0'; load.style.bottom = '0';
+        load.style.display = 'flex'; load.style.alignItems = 'center'; load.style.justifyContent = 'center';
+        load.style.background = 'rgba(0,0,0,0.85)'; load.style.zIndex = 300000; load.style.color = '#FFD27A';
+        load.innerHTML = '<div style="text-align:center;font-family:sans-serif;color:#fff"><div style="font-size:20px;margin-bottom:12px">Cargando partida...</div><div style="width:220px;height:14px;background:#222;border-radius:8px;overflow:hidden;margin:0 auto"><div id="global-loading-bar" style="height:100%;width:0%;background:linear-gradient(90deg,#DAA520,#FFD27A)"></div></div><div id="global-loading-msg" style="margin-top:10px;color:#ccc;font-size:13px">Preparando recursos...</div><div id="global-loading-note" style="margin-top:8px;color:#9aa;font-size:12px">Si la carga se detiene, abre la consola del navegador (F12) para ver errores.</div></div>';
+        document.body.appendChild(load);
+      }
+      load.style.display = 'flex';
+      // handler from engine to hide overlay when ready (animated)
+      window._onEngineReady = function() {
+        try { console.log('loader: engine reported ready (_onEngineReady)'); } catch (e) {}
+        try { if (window._engineLoaderTimeoutId) { clearTimeout(window._engineLoaderTimeoutId); window._engineLoaderTimeoutId = null; } } catch (e) {}
+        try { const bar = document.getElementById('global-loading-bar'); if (bar) bar.style.transition = 'width 420ms ease'; bar.style.width = '100%'; } catch (e) {}
+        try {
+          const l = document.getElementById('global-loading-overlay'); if (l) {
+            l.style.transition = 'opacity 450ms ease, transform 450ms ease'; l.style.opacity = '1'; l.style.transform = 'scale(1)';
+            // start fade after a short delay so user sees 100% briefly
+            setTimeout(() => { try { l.style.opacity = '0'; l.style.transform = 'scale(0.98)'; setTimeout(() => { try { l.style.display = 'none'; } catch (e) {} }, 480); } catch (e) {} }, 220);
+          }
+        } catch (e) {}
+      };
+      // allow engine to report intermediate progress
+      window._onEngineProgress = function(p, msg) {
+        try { console.log('loader: progress', p, msg); const bar = document.getElementById('global-loading-bar'); if (bar) { bar.style.width = Math.max(0, Math.min(100, p)) + '%'; } } catch (e) {}
+        try { const m = document.getElementById('global-loading-msg'); if (m && msg) m.textContent = msg; } catch (e) {}
+        try { if (window._engineLoaderTimeoutId) { clearTimeout(window._engineLoaderTimeoutId); window._engineLoaderTimeoutId = null; } } catch (e) {}
+      };
+    } catch (e) { /* ignore overlay errors */ }
+    // inject module script
+    const s = document.createElement('script'); s.type = 'module'; s.src = 'engine/game-engine.js';
+    console.log('loader: appending engine script', s.src);
+    s.onload = () => { try { console.log('loader: engine script loaded (onload)'); } catch (e) {} };
+    s.onerror = (e) => { console.error('loader: failed to load engine script', e); try { const msg = document.getElementById('global-loading-msg'); if (msg) msg.textContent = 'Error cargando el motor.'; } catch (er) {} };
+    document.body.appendChild(s);
+
+    // fallback: if engine doesn't report progress within 12s, show a continue button and diagnostics
+    try {
+      const TO = 12000;
+      const tid = setTimeout(() => {
+        try {
+          console.warn('loader: engine init timeout after ' + TO + 'ms');
+          const l = document.getElementById('global-loading-overlay'); if (!l) return;
+          const footer = document.createElement('div'); footer.style.marginTop = '12px'; footer.style.display = 'flex'; footer.style.justifyContent = 'center'; footer.style.gap = '8px';
+          const btnCont = document.createElement('button'); btnCont.textContent = 'Forzar continuar'; btnCont.style.padding = '8px 12px'; btnCont.style.borderRadius = '6px'; btnCont.style.background = '#DAA520'; btnCont.style.border='none'; btnCont.onclick = function() {
+            try { l.style.display = 'none'; } catch (e) {}
+            console.log('loader: forced continue clicked');
+            // if engine hasn't started, allow engine to show its own internal loader by toggling externalMenu
+            try { window._externalMenu = false; } catch (e) {}
+            // attempt to call engine init functions if present
+            try { if (typeof init === 'function') { console.log('loader: calling init() fallback'); init(); } } catch (e) { console.warn('loader: init fallback failed', e); }
+          };
+          const info = document.createElement('div'); info.style.color='#ccc'; info.style.fontSize='13px'; info.style.textAlign='center'; info.textContent = 'Tiempo de espera excedido. Puedes forzar continuar o revisar la consola.';
+          footer.appendChild(btnCont); footer.appendChild(info);
+          l.appendChild(footer);
+        } catch (e) { console.error('loader timeout handler err', e); }
+      }, TO);
+      // store id so engine can clear if it reports progress
+      window._engineLoaderTimeoutId = tid;
+    } catch (e) { console.warn('loader: failed to install timeout', e); }
+    
+  }
+
+  // show startup params when user clicks New
+  document.getElementById('menu-new').addEventListener('click', () => {
+    const m = document.getElementById('menu-startup-modal'); if (m) m.style.display = 'flex';
+  });
+  // Load existing save directly
+  document.getElementById('menu-load').addEventListener('click', () => { loadEngineAndStart({ forceNew:false }); });
+  // Import a save from a JSON file
+  try {
+    const impBtn = document.getElementById('menu-import');
+    if (impBtn) {
+      // create hidden file input
+      let fi = document.getElementById('menu-import-file');
+      if (!fi) {
+        fi = document.createElement('input'); fi.type = 'file'; fi.accept = '.json,application/json'; fi.id = 'menu-import-file'; fi.style.display = 'none'; document.body.appendChild(fi);
+      }
+      impBtn.addEventListener('click', () => { try { fi.value = ''; fi.click(); } catch (e) {} });
+      fi.addEventListener('change', (ev) => {
+        const f = ev.target.files && ev.target.files[0]; if (!f) return;
+        const r = new FileReader();
+        r.onload = () => {
+          try {
+            const txt = r.result; const obj = JSON.parse(txt);
+            // store into local cache key used by loader
+            try { localStorage.setItem('meso.appState', JSON.stringify(obj)); } catch (e) {}
+            try { if (typeof notify === 'function') notify('Partida importada. Cargando...'); } catch (e) {}
+            loadEngineAndStart({ forceNew:false });
+          } catch (e) { alert('Error importando partida: ' + (e && e.message)); }
+        };
+        r.readAsText(f);
+      });
+    }
+  } catch (e) {}
+  document.getElementById('menu-credits').addEventListener('click', () => { alert('MesoBuilder - by VSoftware'); });
+  document.getElementById('menu-exit').addEventListener('click', () => { window.close && window.close(); });
+
+  // startup modal handlers
+  try {
+    const dn = document.getElementById('menu-density-npcs'); const da = document.getElementById('menu-density-animals'); const dv = document.getElementById('menu-density-vegetation');
+    const ln = document.getElementById('label-npc'); const la = document.getElementById('label-animals'); const lv = document.getElementById('label-veg');
+    if (dn && ln) dn.addEventListener('input', () => { ln.textContent = dn.value; });
+    if (da && la) da.addEventListener('input', () => { la.textContent = da.value; });
+    if (dv && lv) dv.addEventListener('input', () => { lv.textContent = dv.value; });
+    document.getElementById('menu-start-cancel').addEventListener('click', () => { const m = document.getElementById('menu-startup-modal'); if (m) m.style.display = 'none'; });
+    document.getElementById('menu-start-confirm').addEventListener('click', () => {
+      // apply parameters to global so engine picks them up when loaded
+      try { window._DEFAULT_DENSITIES = { npc: parseFloat(dn.value), animals: parseFloat(da.value), vegetation: parseFloat(dv.value) }; } catch (e) {}
+      const name = (document.getElementById('menu-char-name') || {}).value || '';
+      const preset = (document.getElementById('menu-char-preset') || {}).value || '';
+      const cloth = (document.getElementById('menu-char-cloth') || {}).value || '';
+      try { if (name) localStorage.setItem('meso.playerName', name); } catch (e) {}
+      try { if (preset) localStorage.setItem('meso.playerPreset', preset); } catch (e) {}
+      try { if (cloth) localStorage.setItem('meso.playerCloth', cloth); } catch (e) {}
+      // force new map then load engine
+      try { localStorage.setItem('meso.forceNew','1'); } catch (e) {}
+      const m = document.getElementById('menu-startup-modal'); if (m) m.style.display = 'none';
+      loadEngineAndStart({ forceNew:true });
+    });
+  } catch (e) { /* ignore modal hookup errors */ }
+
+  // populate saves list
+  try {
+    const savesList = document.getElementById('menu-saves-list'); if (savesList) {
+      const key = 'meso.appState'; const raw = localStorage.getItem(key);
+      if (!raw) { const n = document.createElement('div'); n.style.color='#ccc'; n.textContent = 'No hay partidas guardadas en caché.'; savesList.appendChild(n); }
+      else {
+        try { const s = document.createElement('div'); s.style.display='flex'; s.style.justifyContent='space-between'; s.style.alignItems='center'; s.style.gap='8px'; s.style.background='rgba(0,0,0,0.04)'; s.style.padding='6px'; s.style.borderRadius='6px'; const meta = JSON.parse(raw); const label = document.createElement('div'); label.textContent = (meta && meta.player && meta.player.name) ? ('Jugador: ' + meta.player.name) : 'Partida guardada'; s.appendChild(label); const btn = document.createElement('button'); btn.textContent='Cargar'; btn.style.padding='6px 8px'; btn.addEventListener('click', () => { loadEngineAndStart({ forceNew:false }); }); s.appendChild(btn); savesList.appendChild(s); } catch (e) { const n = document.createElement('div'); n.style.color='#ccc'; n.textContent = 'Partida guardada (metadata no parseable)'; savesList.appendChild(n); }
+      }
+    }
+  } catch (e) {}
+</script>
+</body>
+</html>

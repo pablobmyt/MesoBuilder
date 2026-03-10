@@ -1,0 +1,15 @@
+{
+  "width": 6,
+  "height": 5,
+  "entryCol": 2,
+  "entryRow": 3,
+  "exitCol": 2,
+  "exitRow": 4,
+  "tiles": [
+    ["wall","wall","wall","wall","wall","wall"],
+    ["wall","floor","floor","floor","floor","wall"],
+    ["wall","floor","floor","floor","floor","wall"],
+    ["wall","floor","floor","door","floor","wall"],
+    ["wall","wall","wall","wall","wall","wall"]
+  ]
+}
