@@ -1,11 +1,3 @@
-<!doctype html>
-<html><head><meta charset='utf-8'><title>MesoBuilder - Sprite Renderer</title>
-<style>body{font-family:segui UI,Arial;margin:16px;background:#f6f6f6;color:#111}#container{display:flex;flex-wrap:wrap;gap:16px} .icon{background:#fff;border:1px solid #ddd;padding:8px;border-radius:6px;width:calc(200px);box-shadow:0 1px 2px rgba(0,0,0,0.06)} .icon canvas{display:block;margin:6px 0;background:transparent} .icon .title{font-weight:600;font-size:0.95rem}</style>
-</head><body>
-<h1>MesoBuilder — Sprite Renderer</h1>
-<p>Se generan los sprites a partir de <code>data/entity-pixels.json</code>. Haz click en "Download" para guardar cada PNG.</p>
-<div id='container'></div>
-<script id='sprite-data' type='application/json'>
 {
   "icons": {
     "house": {
@@ -178,41 +170,6 @@
         [2,9,"#A8865D"],[3,9,"#A8865D"],[4,9,"#A8865D"],[5,9,"#A8865D"],[6,9,"#A8865D"],[7,9,"#A8865D"],[8,9,"#A8865D"],[9,9,"#A8865D"],
         [1,10,"#8B7355"],[2,10,"#8B7355"],[3,10,"#8B7355"],[4,10,"#8B7355"],[5,10,"#8B7355"],[6,10,"#8B7355"],[7,10,"#8B7355"],[8,10,"#8B7355"],[9,10,"#8B7355"],[10,10,"#8B7355"]
       ]
-    },
-    "detailed_rabbit": {
-      "grid": 16,
-      "pixels": [
-        [6,3,"#F8F5EE"],[7,3,"#F8F5EE"],[10,3,"#F8F5EE"],[11,3,"#F8F5EE"],
-        [5,4,"#E6DCCD"],[6,4,"#FFFFFF"],[7,4,"#FFFFFF"],[8,4,"#E6DCCD"],[9,4,"#E6DCCD"],[10,4,"#FFFFFF"],[11,4,"#FFFFFF"],[12,4,"#E6DCCD"],
-        [5,5,"#E6DCCD"],[6,5,"#FFFFFF"],[7,5,"#FFFFFF"],[8,5,"#E6DCCD"],[9,5,"#E6DCCD"],[10,5,"#FFFFFF"],[11,5,"#FFFFFF"],[12,5,"#E6DCCD"],
-        [5,6,"#E6DCCD"],[6,6,"#F8F5EE"],[7,6,"#F8F5EE"],[8,6,"#F8F5EE"],[9,6,"#F8F5EE"],[10,6,"#F8F5EE"],[11,6,"#F8F5EE"],[12,6,"#E6DCCD"],
-        [5,7,"#E6DCCD"],[6,7,"#FFFFFF"],[7,7,"#FFFFFF"],[8,7,"#FFFFFF"],[9,7,"#FFFFFF"],[10,7,"#FFFFFF"],[11,7,"#E6DCCD"],
-        [4,8,"#E6DCCD"],[5,8,"#FFFFFF"],[6,8,"#1F1A17"],[7,8,"#FFFFFF"],[8,8,"#FFFFFF"],[9,8,"#1F1A17"],[10,8,"#FFFFFF"],[11,8,"#E6DCCD"],
-        [4,9,"#E6DCCD"],[5,9,"#FFFFFF"],[6,9,"#FFFFFF"],[7,9,"#FFC8D2"],[8,9,"#FFC8D2"],[9,9,"#FFFFFF"],[10,9,"#FFFFFF"],[11,9,"#E6DCCD"],
-        [5,10,"#E6DCCD"],[6,10,"#F8F5EE"],[7,10,"#F8F5EE"],[8,10,"#F8F5EE"],[9,10,"#F8F5EE"],[10,10,"#E6DCCD"],
-        [4,11,"#E6DCCD"],[5,11,"#FFFFFF"],[6,11,"#FFFFFF"],[7,11,"#FFFFFF"],[8,11,"#FFFFFF"],[9,11,"#FFFFFF"],[10,11,"#FFFFFF"],[11,11,"#E6DCCD"],
-        [3,12,"#D8CCB9"],[4,12,"#F8F5EE"],[5,12,"#FFFFFF"],[6,12,"#FFFFFF"],[7,12,"#FFFFFF"],[8,12,"#FFFFFF"],[9,12,"#FFFFFF"],[10,12,"#FFFFFF"],[11,12,"#F8F5EE"],[12,12,"#D8CCB9"],
-        [3,13,"#D8CCB9"],[4,13,"#E6DCCD"],[5,13,"#E6DCCD"],[6,13,"#E6DCCD"],[7,13,"#E6DCCD"],[8,13,"#E6DCCD"],[9,13,"#E6DCCD"],[10,13,"#E6DCCD"],[11,13,"#E6DCCD"],[12,13,"#D8CCB9"],
-        [4,14,"#B08A53"],[5,14,"#B08A53"],[10,14,"#B08A53"],[11,14,"#B08A53"],
-        [13,11,"#FFFFFF"],[14,11,"#FFFFFF"],[13,12,"#FFFFFF"],[14,12,"#FFFFFF"]
-      ]
-    },
-    "detailed_fox": {
-      "grid": 16,
-      "pixels": [
-        [10,2,"#5B2F18"],[11,2,"#5B2F18"],[12,2,"#5B2F18"],
-        [8,3,"#B85E28"],[9,3,"#B85E28"],[10,3,"#E07A2D"],[11,3,"#E07A2D"],[12,3,"#B85E28"],[13,3,"#B85E28"],
-        [6,4,"#A64F22"],[7,4,"#D46A27"],[8,4,"#E07A2D"],[9,4,"#F29A4A"],[10,4,"#F7E8D6"],[11,4,"#F29A4A"],[12,4,"#E07A2D"],[13,4,"#D46A27"],[14,4,"#A64F22"],
-        [5,5,"#7F3D1C"],[6,5,"#B85E28"],[7,5,"#E07A2D"],[8,5,"#F29A4A"],[9,5,"#F7E8D6"],[10,5,"#F7E8D6"],[11,5,"#F29A4A"],[12,5,"#E07A2D"],[13,5,"#B85E28"],[14,5,"#7F3D1C"],
-        [4,6,"#7F3D1C"],[5,6,"#B85E28"],[6,6,"#D46A27"],[7,6,"#E07A2D"],[8,6,"#F29A4A"],[9,6,"#F7E8D6"],[10,6,"#F7E8D6"],[11,6,"#F29A4A"],[12,6,"#E07A2D"],[13,6,"#D46A27"],[14,6,"#B85E28"],
-        [3,7,"#6A3118"],[4,7,"#A64F22"],[5,7,"#D46A27"],[6,7,"#E07A2D"],[7,7,"#F29A4A"],[8,7,"#F7E8D6"],[9,7,"#1E1712"],[10,7,"#F7E8D6"],[11,7,"#F29A4A"],[12,7,"#E07A2D"],[13,7,"#D46A27"],[14,7,"#A64F22"],
-        [2,8,"#5B2F18"],[3,8,"#A64F22"],[4,8,"#D46A27"],[5,8,"#E07A2D"],[6,8,"#F29A4A"],[7,8,"#F7E8D6"],[8,8,"#F7E8D6"],[9,8,"#F7E8D6"],[10,8,"#F7E8D6"],[11,8,"#F29A4A"],[12,8,"#E07A2D"],[13,8,"#D46A27"],[14,8,"#A64F22"],
-        [1,9,"#4A2413"],[2,9,"#7F3D1C"],[3,9,"#B85E28"],[4,9,"#D46A27"],[5,9,"#E07A2D"],[6,9,"#F29A4A"],[7,9,"#F7E8D6"],[8,9,"#F7E8D6"],[9,9,"#E07A2D"],[10,9,"#E07A2D"],[11,9,"#D46A27"],[12,9,"#B85E28"],[13,9,"#7F3D1C"],
-        [1,10,"#F7E8D6"],[2,10,"#F7E8D6"],[3,10,"#4A2413"],[4,10,"#7F3D1C"],[5,10,"#A64F22"],[6,10,"#D46A27"],[7,10,"#E07A2D"],[8,10,"#E07A2D"],[9,10,"#D46A27"],[10,10,"#A64F22"],[11,10,"#7F3D1C"],[12,10,"#4A2413"],
-        [2,11,"#F7E8D6"],[3,11,"#F7E8D6"],[4,11,"#4A2413"],[5,11,"#5B2F18"],[6,11,"#7F3D1C"],[7,11,"#A64F22"],[8,11,"#A64F22"],[9,11,"#7F3D1C"],[10,11,"#5B2F18"],[11,11,"#4A2413"],
-        [4,12,"#4A2413"],[5,12,"#5B2F18"],[6,12,"#7F3D1C"],[7,12,"#7F3D1C"],[8,12,"#7F3D1C"],[9,12,"#5B2F18"],[10,12,"#4A2413"],
-        [5,13,"#FFF9F2"],[6,13,"#FFF9F2"],[9,13,"#FFF9F2"],[10,13,"#FFF9F2"]
-      ]
     }
     ,
     "mountain": {
@@ -266,8 +223,3 @@
     }
   }
 }
-
-</script>
-<script>
-(function(){const dataEl=document.getElementById('sprite-data');let data={};try{data=JSON.parse(dataEl.textContent)}catch(e){document.body.innerHTML='<h2>Error parsing JSON</h2><pre>'+e+'</pre>';return;}const container=document.getElementById('container');const pixelSize=8;for(const key in data.icons){const def=data.icons[key];let maxX=0,maxY=0;def.pixels.forEach(function(p){if(p[0]>maxX)maxX=p[0];if(p[1]>maxY)maxY=p[1];});const canvas=document.createElement('canvas');canvas.width=(maxX+1)*pixelSize;canvas.height=(maxY+1)*pixelSize;const ctx=canvas.getContext('2d');ctx.imageSmoothingEnabled=false;def.pixels.forEach(function(p){ctx.fillStyle=p[2];ctx.fillRect(p[0]*pixelSize,p[1]*pixelSize,pixelSize,pixelSize)});const wrap=document.createElement('div');wrap.className='icon';const title=document.createElement('div');title.className='title';title.textContent=key;const dl=document.createElement('a');dl.href=canvas.toDataURL();dl.download=key+'.png';dl.textContent='Download';wrap.appendChild(title);wrap.appendChild(canvas);wrap.appendChild(dl);container.appendChild(wrap);} })();</script>
-</body></html>

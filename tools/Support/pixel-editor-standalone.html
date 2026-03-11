@@ -363,6 +363,65 @@
             }
         }
 
+        /* Code output editable state */
+        .code-output-wrapper {
+            position: relative;
+        }
+        .code-output:hover {
+            border-color: #555;
+        }
+        .code-edit-pencil {
+            position: absolute;
+            top: 6px;
+            right: 6px;
+            background: #2a2a2a;
+            border: 1px solid #3a3a3a;
+            color: #00D9FF;
+            font-size: 13px;
+            cursor: pointer;
+            padding: 2px 7px;
+            border-radius: 3px;
+            opacity: 0;
+            transition: opacity 150ms ease;
+            z-index: 10;
+            user-select: none;
+        }
+        .code-output-wrapper:hover .code-edit-pencil {
+            opacity: 1;
+        }
+        .code-edit-area {
+            background-color: #111;
+            border: 1px solid #00D9FF;
+            border-radius: 3px;
+            padding: 10px;
+            font-size: 11px;
+            font-family: 'Courier New', monospace;
+            color: #e0e0e0;
+            max-height: 280px;
+            min-height: 120px;
+            overflow-y: auto;
+            width: 100%;
+            resize: vertical;
+            display: none;
+            box-sizing: border-box;
+            tab-size: 2;
+        }
+        .code-edit-actions {
+            display: none;
+            gap: 6px;
+        }
+        /* auto-save indicator */
+        #autoSaveIndicator {
+            font-size: 10px;
+            color: #4caf50;
+            text-align: right;
+            opacity: 0;
+            transition: opacity 600ms ease;
+            height: 14px;
+            margin-top: 2px;
+        }
+        #autoSaveIndicator.visible { opacity: 1; }
+
         /* Scrollbar */
         ::-webkit-scrollbar {
             width: 8px;
@@ -495,9 +554,19 @@
 
             <div class="color-section">
                 <div class="sidebar-title">CODE OUTPUT</div>
-                <div class="code-output" id="codeOutput">const pixels = [
-// Empty
-];</div>
+                <div class="code-output-wrapper">
+                    <div class="code-output" id="codeOutput" title="Pasa el cursor y haz clic en ✏️ para editar">{
+  "grid": 16,
+  "pixels": []
+}</div>
+                    <button class="code-edit-pencil" id="codeEditPencil" title="Editar y guardar en fichero">✏️</button>
+                    <textarea class="code-edit-area" id="codeEditArea" spellcheck="false"></textarea>
+                </div>
+                <div class="code-edit-actions" id="codeEditActions" style="display:flex;">
+                    <button class="tool-button" id="applyCodeBtn" style="flex:1;display:none;background:#00D9FF;color:#1a1a1a;">✅ Aplicar</button>
+                    <button class="tool-button" id="cancelCodeBtn" style="flex:1;display:none;background:#FF6B35;color:#1a1a1a;">✖ Cancelar</button>
+                </div>
+                <div id="autoSaveIndicator">✓ Guardado</div>
             </div>
 
             <div class="stats">
@@ -942,6 +1011,7 @@
             addToHistory();
             updateCodeOutput();
             draw();
+            scheduleAutoSave();
         }
 
         function handleCanvasDrag(e) {
@@ -989,16 +1059,28 @@
 
         function updateCodeOutput() {
             pixelCountSpan.textContent = state.pixels.length;
+            if (typeof _codeEditMode !== 'undefined' && _codeEditMode) return; // don't clobber live edit
+            const key = entityLibrarySelect.value || 'editor_custom';
+            const grid = state.gridSize;
             if (state.pixels.length === 0) {
-                codeOutput.textContent = 'const pixels = [\n// Empty\n];';
+                codeOutput.textContent = JSON.stringify({ grid, pixels: [] }, null, 2);
             } else {
-                const lines = state.pixels.map(p => `  [${p.x},${p.y},'${p.color}']`);
-                codeOutput.textContent = 'const pixels = [\n' + lines.join(',\n') + '\n];';
+                const pxArr = state.pixels.map(p => [p.x, p.y, p.color]);
+                const entry = { grid, pixels: pxArr };
+                // Pretty-print with compact pixel rows
+                const pxLines = pxArr.map(p => `    [${p[0]},${p[1]},"${p[2]}"]`);
+                const pretty = `{
+  "grid": ${grid},
+  "pixels": [\n${pxLines.join(',\n')}\n  ]
+}`;
+                codeOutput.textContent = pretty;
             }
         }
 
         function copyCode() {
-            const code = codeOutput.textContent;
+            const code = (typeof _codeEditMode !== 'undefined' && _codeEditMode)
+                ? document.getElementById('codeEditArea').value
+                : codeOutput.textContent;
             navigator.clipboard.writeText(code).then(() => {
                 showToast('Code copied to clipboard!');
             });
@@ -1114,6 +1196,123 @@
                 }
             });
         }
+
+        // ── Auto-save to disk + game ─────────────────────────────────────────
+        let _autoSaveTimer = null;
+        const _autoSaveIndicator = document.getElementById('autoSaveIndicator');
+
+        function scheduleAutoSave() {
+            clearTimeout(_autoSaveTimer);
+            _autoSaveTimer = setTimeout(doAutoSave, 600);
+        }
+
+        async function doAutoSave() {
+            const key = entityLibrarySelect.value || 'editor_custom';
+            const grid = state.gridSize;
+            const pixels = state.pixels.map(p => [p.x, p.y, p.color]);
+            // Update in-memory library
+            ENTITY_PIXEL_LIBRARY[key] = { grid, pixels };
+            const newLib = Object.assign({}, ENTITY_PIXEL_LIBRARY);
+            // 1 — write to disk via local save-server
+            try {
+                const r = await fetch('http://localhost:3001/save-entity-pixels', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ icons: newLib })
+                });
+                if (!r.ok) throw new Error('server error');
+            } catch (e) {
+                // server not running — silent, will still update game
+            }
+            // 2 — update live game window (patch)
+            const patch = { icons: {} };
+            patch.icons[key] = { grid, pixels };
+            const msg = { type: 'saveEntityPixelsPatch', data: patch, meta: { key } };
+            try { if (window.opener && window.opener !== window) window.opener.postMessage(msg, '*'); } catch (e) {}
+            try { if (window.parent && window.parent !== window) window.parent.postMessage(msg, '*'); } catch (e) {}
+            // 3 — show indicator
+            if (_autoSaveIndicator) {
+                _autoSaveIndicator.textContent = '✓ ' + key + ' guardado';
+                _autoSaveIndicator.classList.add('visible');
+                setTimeout(() => _autoSaveIndicator.classList.remove('visible'), 2000);
+            }
+        }
+
+        // ── Code output pencil edit mode ──────────────────────────────────────
+        const codeEditPencil = document.getElementById('codeEditPencil');
+        const codeEditArea = document.getElementById('codeEditArea');
+        const applyCodeBtn = document.getElementById('applyCodeBtn');
+        const cancelCodeBtn = document.getElementById('cancelCodeBtn');
+        let _codeEditMode = false;
+
+        function enterCodeEditMode() {
+            if (_codeEditMode) return;
+            _codeEditMode = true;
+            codeEditArea.value = codeOutput.textContent;
+            codeOutput.style.display = 'none';
+            codeEditArea.style.display = 'block';
+            applyCodeBtn.style.display = 'flex';
+            cancelCodeBtn.style.display = 'flex';
+            codeEditPencil.textContent = '👁️';
+            codeEditPencil.title = 'Ver código generado';
+            codeEditArea.focus();
+        }
+
+        function exitCodeEditMode() {
+            _codeEditMode = false;
+            codeOutput.style.display = '';
+            codeEditArea.style.display = 'none';
+            applyCodeBtn.style.display = 'none';
+            cancelCodeBtn.style.display = 'none';
+            codeEditPencil.textContent = '✏️';
+            codeEditPencil.title = 'Editar y guardar en fichero';
+        }
+
+        codeEditPencil.addEventListener('click', () => {
+            if (_codeEditMode) exitCodeEditMode();
+            else enterCodeEditMode();
+        });
+
+        cancelCodeBtn.addEventListener('click', exitCodeEditMode);
+
+        applyCodeBtn.addEventListener('click', async () => {
+            const raw = codeEditArea.value.trim();
+            try {
+                const obj = JSON.parse(raw);
+                const grid = (typeof obj.grid === 'number') ? obj.grid : state.gridSize;
+                const pxRaw = Array.isArray(obj.pixels) ? obj.pixels : [];
+                const newPixels = pxRaw.map(p => ({ x: Number(p[0]), y: Number(p[1]), color: p[2] })).filter(p => p.color);
+                // Apply to edtor state
+                state.gridSize = grid;
+                gridSizeInput.value = grid;
+                document.getElementById('gridSizeValue').textContent = grid;
+                document.getElementById('gridSizeValue2').textContent = grid;
+                gridInfoSpan.textContent = `${grid}x${grid}`;
+                state.pixels = newPixels;
+                addToHistory();
+                updateCodeOutput();
+                resizeCanvas();
+                draw();
+                // Save to disk immediately
+                const key = entityLibrarySelect.value || 'editor_custom';
+                ENTITY_PIXEL_LIBRARY[key] = { grid, pixels: pxRaw };
+                const newLib = Object.assign({}, ENTITY_PIXEL_LIBRARY);
+                try {
+                    const r = await fetch('http://localhost:3001/save-entity-pixels', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ icons: newLib })
+                    });
+                    if (r.ok) showToast('Guardado en entity-pixels.json');
+                    else showToast('Servidor no disponible — datos actualizados en memoria', false);
+                } catch (e) {
+                    showToast('Servidor no disponible — datos actualizados en memoria', false);
+                }
+                exitCodeEditMode();
+            } catch (e) {
+                showToast('JSON inválido: ' + e.message, true);
+            }
+        });
 
         function updateHistoryButtons() {
             document.getElementById('undoBtn').disabled = state.historyIndex === 0;

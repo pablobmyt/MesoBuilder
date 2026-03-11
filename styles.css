@@ -36,6 +36,152 @@ html, body {
   height: 100vh;
 }
 
+/* ── EXTERNAL MAIN MENU ───────────────────────────────────── */
+#main-menu-root {
+  background:
+    radial-gradient(circle at top, rgba(200,168,75,0.12), transparent 34%),
+    linear-gradient(180deg, #0d0a04 0%, #1a1208 55%, #120d05 100%) !important;
+}
+
+#main-menu-box {
+  background: linear-gradient(180deg, rgba(20,14,6,0.98), rgba(12,9,4,0.97)) !important;
+  border: 2px solid var(--ui-border) !important;
+  border-radius: 0 !important;
+  box-shadow: 0 0 0 2px rgba(80,58,21,0.6), 0 18px 48px rgba(0,0,0,0.72) !important;
+  position: relative;
+  overflow: hidden;
+}
+
+#main-menu-box::before {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  border: 1px solid rgba(232,213,163,0.14);
+  pointer-events: none;
+}
+
+#main-menu-box h1 {
+  color: var(--sand-mid) !important;
+  text-transform: uppercase;
+  letter-spacing: 4px !important;
+  text-shadow: 0 0 12px rgba(200,168,75,0.35);
+}
+
+#main-menu-box > div:first-child > div:nth-child(2),
+#main-menu-box > div:first-child > div:last-child {
+  color: var(--ui-text) !important;
+}
+
+#menu-new,
+#menu-load,
+#menu-import,
+#menu-options,
+#menu-credits,
+#menu-exit,
+#menu-char-random,
+#menu-char-reset,
+#menu-start-cancel,
+#menu-start-confirm,
+#menu-start-tab-character,
+#menu-start-tab-options {
+  font-family: inherit !important;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  border-radius: 0 !important;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
+}
+
+#menu-new,
+#menu-start-confirm,
+#menu-start-tab-character {
+  background: linear-gradient(180deg, var(--sand-mid), var(--sand-dark)) !important;
+  border: 1px solid #f0d790 !important;
+  color: #1a1208 !important;
+  box-shadow: inset 0 1px 0 rgba(255,245,220,0.4);
+}
+
+#menu-load,
+#menu-import,
+#menu-options,
+#menu-credits,
+#menu-exit,
+#menu-char-random,
+#menu-char-reset,
+#menu-start-cancel,
+#menu-start-tab-options {
+  background: rgba(26,18,8,0.92) !important;
+  border: 1px solid #5a4520 !important;
+  color: var(--ui-text) !important;
+}
+
+#menu-new:hover,
+#menu-load:hover,
+#menu-import:hover,
+#menu-options:hover,
+#menu-credits:hover,
+#menu-exit:hover,
+#menu-char-random:hover,
+#menu-char-reset:hover,
+#menu-start-cancel:hover,
+#menu-start-confirm:hover,
+#menu-start-tab-character:hover,
+#menu-start-tab-options:hover {
+  border-color: var(--sand-light) !important;
+  transform: translateY(-1px);
+}
+
+#menu-scene {
+  border: 2px solid var(--ui-border) !important;
+  border-radius: 0 !important;
+  background: linear-gradient(180deg, #d5b36d 0%, #88aa63 58%, #4a7c3f 100%) !important;
+  box-shadow: inset 0 0 0 2px rgba(10,8,2,0.28), 0 10px 28px rgba(0,0,0,0.35) !important;
+}
+
+#menu-saves {
+  background: rgba(12,9,4,0.92) !important;
+  border: 1px solid #4e3a1a;
+  border-radius: 0 !important;
+  color: var(--ui-text) !important;
+}
+
+#menu-startup-modal {
+  background: rgba(0,0,0,0.48);
+  backdrop-filter: blur(3px);
+}
+
+#menu-startup-modal > div {
+  background: linear-gradient(180deg, rgba(18,14,6,0.98), rgba(10,8,3,0.98)) !important;
+  border: 2px solid var(--ui-border) !important;
+  border-radius: 0 !important;
+  box-shadow: 0 18px 40px rgba(0,0,0,0.6);
+}
+
+#menu-startup-modal h3,
+#menu-startup-modal label,
+#menu-startup-modal div,
+#menu-startup-modal span {
+  color: var(--ui-text);
+}
+
+#menu-char-name,
+#menu-char-preset,
+#menu-char-cloth,
+#menu-density-preset,
+#menu-density-npcs,
+#menu-density-animals,
+#menu-density-vegetation {
+  accent-color: var(--sand-mid);
+}
+
+#menu-char-name,
+#menu-char-preset,
+#menu-density-preset {
+  background: #120d05 !important;
+  border: 1px solid #5a4520 !important;
+  border-radius: 0 !important;
+  color: var(--sand-light) !important;
+}
+
 /* ── TOP BAR ──────────────────────────────────────────────── */
 #topbar {
   display: flex;
@@ -256,7 +402,7 @@ html, body {
   background: rgba(10, 8, 2, 0.93);
   border: 2px solid var(--ui-border);
   padding: 10px;
-  pointer-events: none;
+  pointer-events: auto;
   z-index: 10;
 }
 
@@ -277,7 +423,7 @@ html, body {
   margin-bottom: 8px;
 }
 
-#btn-center-player { height: 28px; margin-left: 6px; align-self: center; padding: 4px 8px; font-size:0.68rem }
+#btn-center-player { height: 28px; margin-left: 6px; align-self: center; padding: 4px 8px; font-size:0.68rem; pointer-events: auto; }
 
 #char-portrait {
   width: 54px; height: 54px;

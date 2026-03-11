@@ -1,0 +1,8 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^node tools/syntax_check\\.js$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}

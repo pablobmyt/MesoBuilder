@@ -76,6 +76,14 @@
           </div>
         </button>
 
+        <button class="build-btn" data-type="mesopotamian_villa_detailed" id="btn-mesopotamian-villa-detailed">
+          <canvas class="bicon" width="22" height="22"></canvas>
+          <div>
+            <span class="bname">Villa mesopotámica</span>
+            <span class="bcost">&#x1F9F1; 24 &#x1F33E; 8</span>
+          </div>
+        </button>
+
         <button class="build-btn" data-type="farm" id="btn-farm">
           <canvas class="bicon" id="icon-farm" width="22" height="22"></canvas>
           <div>
@@ -312,20 +320,12 @@
   <!-- Startup params modal (hidden) -->
   <div id="menu-startup-modal" style="position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:100000">
     <div style="background:rgba(10,10,10,0.96);padding:18px;border-radius:10px;border:1px solid rgba(255,255,255,0.04);width:640px;color:#fff">
-      <h3 style="margin:0 0 8px 0">Parámetros de nueva partida</h3>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <div>
-          <label style="font-size:13px">Densidad NPCs: <span id="label-npc">1.0</span></label>
-          <input id="menu-density-npcs" type="range" min="0.2" max="3.0" step="0.1" value="1.0" style="width:100%">
-        </div>
-        <div>
-          <label style="font-size:13px">Densidad animales: <span id="label-animals">1.0</span></label>
-          <input id="menu-density-animals" type="range" min="0.2" max="3.0" step="0.1" value="1.0" style="width:100%">
-        </div>
-        <div>
-          <label style="font-size:13px">Densidad vegetación: <span id="label-veg">1.0</span></label>
-          <input id="menu-density-vegetation" type="range" min="0.2" max="3.0" step="0.1" value="1.0" style="width:100%">
-        </div>
+      <h3 style="margin:0 0 8px 0">Nueva partida</h3>
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <button id="menu-start-tab-character" style="padding:8px 12px;background:#2E6FA3;border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#fff;font-weight:700">Creación de personaje</button>
+        <button id="menu-start-tab-options" style="padding:8px 12px;background:transparent;border:1px solid rgba(255,255,255,0.08);border-radius:8px;color:#fff">Opciones</button>
+      </div>
+      <div id="menu-panel-character" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
         <div>
           <label style="font-size:13px">Nombre del gobernante</label>
           <input id="menu-char-name" type="text" maxlength="14" placeholder="Tu nombre" style="width:100%;padding:8px;border-radius:6px;background:#111;border:1px solid rgba(255,255,255,0.04);color:#fff">
@@ -343,6 +343,34 @@
           <label style="font-size:13px">Color ropa</label>
           <input id="menu-char-cloth" type="color" value="#7a3a2a" style="width:100%;height:38px;border-radius:6px;padding:4px;border:1px solid rgba(255,255,255,0.04);background:#111">
         </div>
+        <div style="display:flex;align-items:flex-end;gap:8px">
+          <button id="menu-char-random" style="padding:8px 12px;background:transparent;border:1px solid rgba(255,255,255,0.08);border-radius:8px;color:#fff">Aleatorizar</button>
+          <button id="menu-char-reset" style="padding:8px 12px;background:transparent;border:1px solid rgba(255,255,255,0.08);border-radius:8px;color:#fff">Restablecer</button>
+        </div>
+      </div>
+      <div id="menu-panel-options" style="display:none;grid-template-columns:1fr 1fr;gap:10px">
+        <div>
+          <label style="font-size:13px">Preset de mundo</label>
+          <select id="menu-density-preset" style="width:100%;padding:8px;border-radius:6px;background:#111;border:1px solid rgba(255,255,255,0.04);color:#fff">
+            <option value="custom">Personalizado</option>
+            <option value="calm">Tranquilo</option>
+            <option value="balanced">Equilibrado</option>
+            <option value="alive">Muy vivo</option>
+          </select>
+        </div>
+        <div style="font-size:12px;color:#c8b87a;display:flex;align-items:flex-end">Los cambios afectan a la generación inicial del mundo.</div>
+        <div>
+          <label style="font-size:13px">Densidad NPCs: <span id="label-npc">1.0</span></label>
+          <input id="menu-density-npcs" type="range" min="0.2" max="3.0" step="0.1" value="1.0" style="width:100%">
+        </div>
+        <div>
+          <label style="font-size:13px">Densidad animales: <span id="label-animals">1.0</span></label>
+          <input id="menu-density-animals" type="range" min="0.2" max="3.0" step="0.1" value="1.0" style="width:100%">
+        </div>
+        <div style="grid-column:1 / span 2">
+          <label style="font-size:13px">Densidad vegetación: <span id="label-veg">1.0</span></label>
+          <input id="menu-density-vegetation" type="range" min="0.2" max="3.0" step="0.1" value="1.0" style="width:100%">
+        </div>
       </div>
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
         <button id="menu-start-cancel" style="padding:8px 12px;background:transparent;border:1px solid rgba(255,255,255,0.06);border-radius:8px;color:#fff">Cancelar</button>
@@ -355,7 +383,7 @@
   // External menu host flag so engine won't show its internal menu
   window._externalMenu = true;
 
-  // create a custom pixel cursor and apply to game canvas and menu scene
+  // create a custom pixel cursor and apply globally
   (function(){
     try {
       const cursorSize = 24;
@@ -373,9 +401,14 @@
       cctx.fillStyle = '#fff'; cctx.fillRect(6,5,2,2);
       const data = cc.toDataURL('image/png');
       const css = 'url(' + data + ') 6 6, auto';
-      try { document.querySelectorAll('#gameCanvas, #menu-scene').forEach(el => { if (el) el.style.cursor = css; }); } catch (e) {}
-      // also set body fallback
-      document.body.style.cursor = css;
+      document.documentElement.style.setProperty('--meso-global-cursor', css);
+      let styleEl = document.getElementById('meso-global-cursor-style');
+      if (!styleEl) {
+        styleEl = document.createElement('style');
+        styleEl.id = 'meso-global-cursor-style';
+        document.head.appendChild(styleEl);
+      }
+      styleEl.textContent = `*, *::before, *::after { cursor: var(--meso-global-cursor) !important; }`;
     } catch (e) { console.warn('cursor create failed', e); }
   })();
 
@@ -526,11 +559,36 @@
   }
 
   // show startup params when user clicks New
-  document.getElementById('menu-new').addEventListener('click', () => {
-    const m = document.getElementById('menu-startup-modal'); if (m) m.style.display = 'flex';
-  });
+  function showStartupModal(tab) {
+    const modal = document.getElementById('menu-startup-modal');
+    const charPanel = document.getElementById('menu-panel-character');
+    const optPanel = document.getElementById('menu-panel-options');
+    const charTab = document.getElementById('menu-start-tab-character');
+    const optTab = document.getElementById('menu-start-tab-options');
+    if (!modal || !charPanel || !optPanel || !charTab || !optTab) return;
+    const active = tab === 'options' ? 'options' : 'character';
+    charPanel.style.display = active === 'character' ? 'grid' : 'none';
+    optPanel.style.display = active === 'options' ? 'grid' : 'none';
+    charTab.style.background = active === 'character' ? '#2E6FA3' : 'transparent';
+    charTab.style.border = active === 'character' ? '1px solid rgba(255,255,255,0.12)' : '1px solid rgba(255,255,255,0.08)';
+    charTab.style.fontWeight = active === 'character' ? '700' : '400';
+    optTab.style.background = active === 'options' ? '#2E6FA3' : 'transparent';
+    optTab.style.border = active === 'options' ? '1px solid rgba(255,255,255,0.12)' : '1px solid rgba(255,255,255,0.08)';
+    optTab.style.fontWeight = active === 'options' ? '700' : '400';
+    modal.style.display = 'flex';
+  }
+  document.getElementById('menu-new').addEventListener('click', () => { showStartupModal('character'); });
+  document.getElementById('menu-options').addEventListener('click', () => { showStartupModal('options'); });
   // Load existing save directly
-  document.getElementById('menu-load').addEventListener('click', () => { loadEngineAndStart({ forceNew:false }); });
+  document.getElementById('menu-load').addEventListener('click', () => {
+    try {
+      if (!localStorage.getItem('meso.appState')) {
+        alert('No hay ninguna partida guardada para cargar.');
+        return;
+      }
+    } catch (e) {}
+    loadEngineAndStart({ forceNew:false });
+  });
   // Import a save from a JSON file
   try {
     const impBtn = document.getElementById('menu-import');
@@ -547,9 +605,10 @@
         r.onload = () => {
           try {
             const txt = r.result; const obj = JSON.parse(txt);
-            // store into local cache key used by loader
-            try { localStorage.setItem('meso.appState', JSON.stringify(obj)); } catch (e) {}
-            try { if (typeof notify === 'function') notify('Partida importada. Cargando...'); } catch (e) {}
+            const state = (obj && obj.appState && typeof obj.appState === 'object') ? obj.appState : obj;
+            if (!state || typeof state !== 'object') throw new Error('Formato de partida no válido');
+            // store normalized save into local cache key used by loader
+            try { localStorage.setItem('meso.appState', JSON.stringify(state)); } catch (e) {}
             loadEngineAndStart({ forceNew:false });
           } catch (e) { alert('Error importando partida: ' + (e && e.message)); }
         };
@@ -560,20 +619,142 @@
   document.getElementById('menu-credits').addEventListener('click', () => { alert('MesoBuilder - by VSoftware'); });
   document.getElementById('menu-exit').addEventListener('click', () => { window.close && window.close(); });
 
+  // Easter egg in external menu: 10 clicks on MesoBuilder title opens pixel editor
+  try {
+    const logoTargets = Array.from(document.querySelectorAll('h1')).filter(h => /mesobuilder/i.test((h.textContent || '').trim()));
+    let logoClicks = 0;
+    let logoTimer = null;
+    const requiredClicks = 10;
+
+    function resetLogoCounter() {
+      logoClicks = 0;
+      if (logoTimer) {
+        clearTimeout(logoTimer);
+        logoTimer = null;
+      }
+    }
+
+    function openPixelEditorFromMenu() {
+      const editorUrl = 'tools/Support/pixel-editor-standalone.html';
+      try {
+        const popup = window.open(editorUrl, '_blank', 'noopener,noreferrer,width=1200,height=900');
+        if (popup && typeof popup.focus === 'function') popup.focus();
+        if (!popup) window.location.href = editorUrl;
+      } catch (e) {
+        try { window.location.href = editorUrl; } catch (err) {}
+      }
+    }
+
+    function onLogoTap() {
+      logoClicks++;
+      if (logoTimer) clearTimeout(logoTimer);
+      logoTimer = setTimeout(resetLogoCounter, 5000);
+      if (logoClicks >= requiredClicks) {
+        resetLogoCounter();
+        openPixelEditorFromMenu();
+      }
+    }
+
+    logoTargets.forEach(el => {
+      try {
+        el.style.cursor = 'pointer';
+        el.addEventListener('click', onLogoTap);
+      } catch (e) {}
+    });
+  } catch (e) {}
+
   // startup modal handlers
   try {
     const dn = document.getElementById('menu-density-npcs'); const da = document.getElementById('menu-density-animals'); const dv = document.getElementById('menu-density-vegetation');
     const ln = document.getElementById('label-npc'); const la = document.getElementById('label-animals'); const lv = document.getElementById('label-veg');
-    if (dn && ln) dn.addEventListener('input', () => { ln.textContent = dn.value; });
-    if (da && la) da.addEventListener('input', () => { la.textContent = da.value; });
-    if (dv && lv) dv.addEventListener('input', () => { lv.textContent = dv.value; });
+    const presetSelect = document.getElementById('menu-density-preset');
+    const tabCharacter = document.getElementById('menu-start-tab-character');
+    const tabOptions = document.getElementById('menu-start-tab-options');
+    const charNameInput = document.getElementById('menu-char-name');
+    const charPresetInput = document.getElementById('menu-char-preset');
+    const charClothInput = document.getElementById('menu-char-cloth');
+    const randomCharBtn = document.getElementById('menu-char-random');
+    const resetCharBtn = document.getElementById('menu-char-reset');
+
+    function setDensityValues(npc, animals, vegetation) {
+      if (dn) dn.value = String(npc);
+      if (da) da.value = String(animals);
+      if (dv) dv.value = String(vegetation);
+      if (ln && dn) ln.textContent = dn.value;
+      if (la && da) la.textContent = da.value;
+      if (lv && dv) lv.textContent = dv.value;
+    }
+
+    function syncPresetFromSliders() {
+      if (!presetSelect || !dn || !da || !dv) return;
+      const n = parseFloat(dn.value || '1');
+      const a = parseFloat(da.value || '1');
+      const v = parseFloat(dv.value || '1');
+      const eq = (x, y) => Math.abs(x - y) < 0.001;
+      if (eq(n, 0.7) && eq(a, 0.7) && eq(v, 0.9)) presetSelect.value = 'calm';
+      else if (eq(n, 1.0) && eq(a, 1.0) && eq(v, 1.0)) presetSelect.value = 'balanced';
+      else if (eq(n, 1.6) && eq(a, 1.5) && eq(v, 1.4)) presetSelect.value = 'alive';
+      else presetSelect.value = 'custom';
+    }
+
+    function applyDensityPreset(value) {
+      if (value === 'calm') setDensityValues(0.7, 0.7, 0.9);
+      else if (value === 'balanced') setDensityValues(1.0, 1.0, 1.0);
+      else if (value === 'alive') setDensityValues(1.6, 1.5, 1.4);
+    }
+
+    const savedDens = (() => { try { return JSON.parse(localStorage.getItem('meso.menuDensities') || 'null'); } catch (e) { return null; } })();
+    const defaults = (window._DEFAULT_DENSITIES && typeof window._DEFAULT_DENSITIES === 'object') ? window._DEFAULT_DENSITIES : (savedDens || { npc: 1.0, animals: 1.0, vegetation: 1.0 });
+    setDensityValues(defaults.npc || 1.0, defaults.animals || 1.0, defaults.vegetation || 1.0);
+    syncPresetFromSliders();
+
+    if (dn) dn.addEventListener('input', () => { if (ln) ln.textContent = dn.value; syncPresetFromSliders(); });
+    if (da) da.addEventListener('input', () => { if (la) la.textContent = da.value; syncPresetFromSliders(); });
+    if (dv) dv.addEventListener('input', () => { if (lv) lv.textContent = dv.value; syncPresetFromSliders(); });
+    if (presetSelect) presetSelect.addEventListener('change', () => { applyDensityPreset(presetSelect.value); syncPresetFromSliders(); });
+
+    if (tabCharacter) tabCharacter.addEventListener('click', () => { showStartupModal('character'); });
+    if (tabOptions) tabOptions.addEventListener('click', () => { showStartupModal('options'); });
+
+    try { if (charNameInput) charNameInput.value = localStorage.getItem('meso.playerName') || ''; } catch (e) {}
+    try { if (charPresetInput) charPresetInput.value = localStorage.getItem('meso.playerPreset') || 'villager'; } catch (e) {}
+    try { if (charClothInput) charClothInput.value = localStorage.getItem('meso.playerCloth') || '#7a3a2a'; } catch (e) {}
+
+    if (randomCharBtn) {
+      randomCharBtn.addEventListener('click', () => {
+        const names = ['Iktan', 'Nahuel', 'Luma', 'Tariq', 'Aixa', 'Naira', 'Koa', 'Mara'];
+        const presets = ['villager', 'villager2', 'merchant', 'guard'];
+        const clothColors = ['#7a3a2a', '#3a5e8a', '#5d7a2a', '#6a2a7a', '#8a5a2a'];
+        if (charNameInput && !charNameInput.value.trim()) charNameInput.value = names[Math.floor(Math.random() * names.length)];
+        if (charPresetInput) charPresetInput.value = presets[Math.floor(Math.random() * presets.length)];
+        if (charClothInput) charClothInput.value = clothColors[Math.floor(Math.random() * clothColors.length)];
+      });
+    }
+
+    if (resetCharBtn) {
+      resetCharBtn.addEventListener('click', () => {
+        if (charNameInput) charNameInput.value = '';
+        if (charPresetInput) charPresetInput.value = 'villager';
+        if (charClothInput) charClothInput.value = '#7a3a2a';
+      });
+    }
+
     document.getElementById('menu-start-cancel').addEventListener('click', () => { const m = document.getElementById('menu-startup-modal'); if (m) m.style.display = 'none'; });
     document.getElementById('menu-start-confirm').addEventListener('click', () => {
       // apply parameters to global so engine picks them up when loaded
-      try { window._DEFAULT_DENSITIES = { npc: parseFloat(dn.value), animals: parseFloat(da.value), vegetation: parseFloat(dv.value) }; } catch (e) {}
-      const name = (document.getElementById('menu-char-name') || {}).value || '';
-      const preset = (document.getElementById('menu-char-preset') || {}).value || '';
-      const cloth = (document.getElementById('menu-char-cloth') || {}).value || '';
+      let densities = { npc: 1.0, animals: 1.0, vegetation: 1.0 };
+      try {
+        densities = {
+          npc: parseFloat((dn && dn.value) || '1.0'),
+          animals: parseFloat((da && da.value) || '1.0'),
+          vegetation: parseFloat((dv && dv.value) || '1.0')
+        };
+        window._DEFAULT_DENSITIES = densities;
+      } catch (e) {}
+      try { localStorage.setItem('meso.menuDensities', JSON.stringify(densities)); } catch (e) {}
+      const name = (charNameInput || {}).value || '';
+      const preset = (charPresetInput || {}).value || '';
+      const cloth = (charClothInput || {}).value || '';
       try { if (name) localStorage.setItem('meso.playerName', name); } catch (e) {}
       try { if (preset) localStorage.setItem('meso.playerPreset', preset); } catch (e) {}
       try { if (cloth) localStorage.setItem('meso.playerCloth', cloth); } catch (e) {}

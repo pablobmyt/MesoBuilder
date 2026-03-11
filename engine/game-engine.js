@@ -200,6 +200,127 @@ window._selectedEntities = window._selectedEntities || [];
 let _isSelecting = false;
 let _selectStart = null; // { sx, sy }
 let _selectRect = null; // { x,y,w,h }
+window._unitCommandTarget = window._unitCommandTarget || null;
+
+function _isControllableUnit(ent) {
+  try {
+    if (!ent) return false;
+    const id = String(ent.id || '');
+    return id.startsWith('npc-') || id.startsWith('rabbit-') || id.startsWith('fox-');
+  } catch (e) { return false; }
+}
+
+function _getSelectedEntities() {
+  try {
+    const list = Array.isArray(window._selectedEntities) ? window._selectedEntities : [];
+    const seen = new Set();
+    const out = [];
+    for (const ent of list) {
+      if (!ent || !_isControllableUnit(ent)) continue;
+      const key = ent.id || `${ent.kind}:${ent.col},${ent.row}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(ent);
+    }
+    window._selectedEntities = out;
+    return out;
+  } catch (e) { return []; }
+}
+
+function _setSelectedEntities(list, append = false) {
+  try {
+    const base = append ? _getSelectedEntities().slice() : [];
+    const incoming = Array.isArray(list) ? list : [];
+    const merged = base.concat(incoming);
+    const seen = new Set();
+    const out = [];
+    for (const ent of merged) {
+      if (!ent || !_isControllableUnit(ent)) continue;
+      const key = ent.id || `${ent.kind}:${ent.col},${ent.row}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(ent);
+    }
+    window._selectedEntities = out;
+    window._selectPreviewCount = out.length;
+    try { if (window.renderNPCList) window.renderNPCList(); } catch (e) {}
+    return out;
+  } catch (e) { return []; }
+}
+
+function _getSelectedNPCs() {
+  try {
+    return _getSelectedEntities().filter(en => String(en.id || '').startsWith('npc-'));
+  } catch (e) { return []; }
+}
+
+function _assignTaskToNPCs(npcs, actionId) {
+  try {
+    const arr = Array.isArray(npcs) ? npcs : [];
+    let assigned = 0;
+    for (const npc of arr) {
+      if (!npc) continue;
+      npc.task = { id: actionId, progress: 0, assignedAt: Date.now() };
+      assigned++;
+    }
+    if (assigned > 0) {
+      notify(`Tarea ${actionId} asignada a ${assigned} aldeano(s)`);
+      try { if (window.renderNPCList) window.renderNPCList(); } catch (e) {}
+    }
+    return assigned;
+  } catch (e) { return 0; }
+}
+
+function _issueGroupMoveCommand(tx, ty, opts = {}) {
+  try {
+    const units = _getSelectedEntities();
+    if (!units.length) return 0;
+    const radius = opts.radius || 0.75;
+    const n = units.length;
+    for (let i = 0; i < n; i++) {
+      const ent = units[i];
+      if (!ent) continue;
+      const angle = (i / Math.max(1, n)) * Math.PI * 2;
+      const spread = n <= 1 ? 0 : radius;
+      const targetX = tx + Math.cos(angle) * spread;
+      const targetY = ty + Math.sin(angle) * spread;
+      ent.moveTarget = { x: targetX, y: targetY };
+      try {
+        if (Math.abs(targetX - ent.x) > Math.abs(targetY - ent.y)) ent.dir = (targetX < ent.x) ? 'left' : 'right';
+        else ent.dir = (targetY < ent.y) ? 'up' : 'down';
+      } catch (e) {}
+    }
+    window._unitCommandTarget = { x: tx, y: ty, until: Date.now() + 1200, color: 'rgba(80,170,255,0.95)' };
+    notify(`Orden de movimiento: ${units.length} unidad(es)`);
+    return units.length;
+  } catch (e) { return 0; }
+}
+
+function _sendSelectedNPCsToGather() {
+  try {
+    const npcs = _getSelectedNPCs();
+    if (!npcs.length) { notify('Selecciona aldeanos para recolectar.'); return 0; }
+    const resources = entities.filter(ent => ent && (ent.kind === 'resource' || ent.kind === 'tree'));
+    if (!resources.length) { notify('No hay recursos cercanos disponibles.'); return 0; }
+    for (const npc of npcs) {
+      let nearest = null;
+      let best = Infinity;
+      for (const res of resources) {
+        const rx = (res.x !== undefined ? res.x : (res.col + 0.5));
+        const ry = (res.y !== undefined ? res.y : (res.row + 0.5));
+        const dist = Math.hypot((npc.x || npc.col) - rx, (npc.y || npc.row) - ry);
+        if (dist < best) { best = dist; nearest = { x: rx, y: ry }; }
+      }
+      if (nearest) {
+        npc.moveTarget = { x: nearest.x, y: nearest.y };
+        npc.task = { id: 'gather', progress: 0, assignedAt: Date.now() };
+      }
+    }
+    try { if (window.renderNPCList) window.renderNPCList(); } catch (e) {}
+    notify(`Recolectar cercano: ${npcs.length} aldeano(s)`);
+    return npcs.length;
+  } catch (e) { return 0; }
+}
 
 // Simple loading overlay (spinner + text) used by several flows
 function showLoadingOverlay(text) {
@@ -663,8 +784,6 @@ function rebuildMapCacheDebounced(delay = GRAPHICS_CONFIG.cacheRebuildDelay) {
 
 function rebuildMapCache() {
   // create offscreen canvas sized for current viewMode at current zoom
-  // If we're in free mode (not editMode) we prefer per-tile rendering — skip building a cache.
-  if (!editMode) { mapCache = null; mapCacheDirty = true; return; }
   const tileSize = getTileSize();
   if (viewMode === 'iso') {
     // compute projected iso extents at current zoom
@@ -826,6 +945,7 @@ const BUILDINGS = {
 
 // House with garden variant
 BUILDINGS.house_garden = { name: 'Casa con jardín', costBrick: 12, costWheat: 3, prodPop: 5, prodWheat:0, prodBrick:0, color:'#C8A84B', roofColor:'#E04A3F', desc:'Casa con pequeño jardín.', size: { w:2, h:2 } };
+BUILDINGS.mesopotamian_villa_detailed = { name: 'Villa mesopotámica', costBrick: 24, costWheat: 8, prodPop: 12, prodWheat:0, prodBrick:0, color:'#C19A6B', roofColor:'#8B7355', desc:'Residencia amplia y ornamentada para familias nobles.', size: { w:3, h:3 } };
 
 // Road definition: small footprint, player-can-build
 BUILDINGS.road = { name: 'Camino', costBrick:0, costWheat:0, prodPop:0, prodWheat:0, prodBrick:0, color:'#8B7B5B', roofColor:'#8B7B5B', desc:'Conecta edificios.', size: { w:1, h:1 } };
@@ -946,11 +1066,23 @@ let editMode = true;
 // App-wide state persistence key
 const APP_STATE_KEY = 'meso.appState';
 
+function unwrapSavedAppState(data) {
+  try {
+    if (!data || typeof data !== 'object') return null;
+    if (data.appState && typeof data.appState === 'object') return { ...data, ...data.appState };
+    return data;
+  } catch (e) {
+    return null;
+  }
+}
+
 // Debounced save helper
 let _saveTimer = null;
 function saveAppStateDebounced(delay = 250) {
   if (_saveTimer) clearTimeout(_saveTimer);
-  _saveTimer = setTimeout(() => { try { saveAppState(); } catch (e) {} }, delay);
+  const busyCamera = isPanning || isZooming || zoomAnimating || (Date.now() - lastCameraInputAt) < 350;
+  const finalDelay = busyCamera ? Math.max(delay, 900) : delay;
+  _saveTimer = setTimeout(() => { try { saveAppState(); } catch (e) {} }, finalDelay);
 }
 
 function saveAppState() {
@@ -989,7 +1121,8 @@ function saveAppState() {
       enemies: (typeof enemies !== 'undefined' && Array.isArray(enemies)) ? enemies.map(en => ({ ...en })) : [],
       effectParticles: (typeof effectParticles !== 'undefined' && Array.isArray(effectParticles)) ? effectParticles.map(p => ({ ...p })) : [],
       floatingTexts: (typeof window.floatingTexts !== 'undefined' && Array.isArray(window.floatingTexts)) ? window.floatingTexts.map(t => ({ ...t })) : [],
-      villages: (window._VILLAGES && Array.isArray(window._VILLAGES)) ? window._VILLAGES.map(v => ({ ...v })) : []
+      villages: (window._VILLAGES && Array.isArray(window._VILLAGES)) ? window._VILLAGES.map(v => ({ ...v })) : [],
+      interiorDoors: (window.INTERIOR_DOORS && Array.isArray(window.INTERIOR_DOORS)) ? window.INTERIOR_DOORS.map(d => ({ ...d })) : []
     };
     localStorage.setItem(APP_STATE_KEY, JSON.stringify(state));
     // Also save transient panel visibility/position to sessionStorage so it survives reloads in this session
@@ -1001,7 +1134,7 @@ function loadAppState() {
   try {
     const raw = localStorage.getItem(APP_STATE_KEY);
     if (!raw) return null;
-    const s = JSON.parse(raw);
+    const s = unwrapSavedAppState(JSON.parse(raw));
     if (!s) return null;
     // restore biomes and grid if present (be tolerant of older/smaller saves)
     try {
@@ -1100,6 +1233,11 @@ function loadAppState() {
         if (s.villages && Array.isArray(s.villages)) {
           try { window._VILLAGES = s.villages.map(v => ({ ...v })); } catch (e) { window._VILLAGES = window._VILLAGES || []; }
         }
+        if (s.interiorDoors && Array.isArray(s.interiorDoors)) {
+          try { window.INTERIOR_DOORS = s.interiorDoors.map(d => ({ ...d })); } catch (e) { window.INTERIOR_DOORS = window.INTERIOR_DOORS || []; }
+        } else {
+          try { rebuildInteriorDoorsFromGrid(); } catch (e) {}
+        }
       } catch (e) { /* ignore restore errors */ }
     // restore panels metadata later when panels are registered
     window._MESO_SAVED_STATE = s;
@@ -1175,9 +1313,9 @@ function importGameFromObject(data) {
     if (!confirm('Importar partida: esto sobrescribirá el estado actual. ¿Continuar?')) return;
     // If save contains appState, persist and apply
     if (data.appState) {
-      try { localStorage.setItem(APP_STATE_KEY, JSON.stringify(data.appState)); } catch (e) {}
+      try { localStorage.setItem(APP_STATE_KEY, JSON.stringify(unwrapSavedAppState(data))); } catch (e) {}
       // apply sparse structures (tolerant copy)
-      const s = data.appState;
+      const s = unwrapSavedAppState(data);
       try {
         if (s.tileBiome && Array.isArray(s.tileBiome)) {
           const copyRows = Math.min(ROWS, s.tileBiome.length);
@@ -1397,7 +1535,26 @@ let panMode = false;
 const ISO_RATIO = 0.6;
 let lastFrameTime = Date.now();
 let frameCounter = 0;
+let lastCameraInputAt = 0;
 let lastSavePosTime = 0;
+let _interactionScanAt = 0;
+let _interactionScanCache = null;
+let _renderLoopActive = false;
+let worldMapOverlayVisible = false;
+
+function markCameraInput() {
+  lastCameraInputAt = Date.now();
+}
+
+function startRenderLoop() {
+  if (_renderLoopActive) return;
+  _renderLoopActive = true;
+  requestAnimationFrame(render);
+}
+
+function stopRenderLoop() {
+  _renderLoopActive = false;
+}
 // Right-button drag/zoom state
 let rightDown = false, rightDownX = 0, rightDownY = 0, rightMoved = false;
 // Day-night cycle
@@ -1559,6 +1716,32 @@ function drawEntitySpriteAt(name, x, y, w, h) {
   } catch (e) { console.warn('drawEntitySpriteAt err', name, e); }
 }
 
+function hasRegisteredSprite(name) {
+  try {
+    return !!(
+      (window._SPRITE_IMAGES && window._SPRITE_IMAGES[name]) ||
+      (window._ICON_BITMAPS && window._ICON_BITMAPS[name]) ||
+      (window._ENTITY_BITMAPS && window._ENTITY_BITMAPS[name]) ||
+      (window.ENTITY_PIXEL_LIBRARY && window.ENTITY_PIXEL_LIBRARY[name])
+    );
+  } catch (e) {
+    return false;
+  }
+}
+
+function resolveBuildingSpriteKey(type) {
+  const aliases = {
+    house_small: 'house',
+    house_large: 'house',
+    house_garden: 'house_garden',
+    longhouse: 'longhouse',
+    stone_house: 'stone_house'
+  };
+  if (hasRegisteredSprite(type)) return type;
+  const alias = aliases[type];
+  return alias && hasRegisteredSprite(alias) ? alias : null;
+}
+
 function drawWheatIcon(ctx, w, h) {
   ctx.clearRect(0,0,w,h);
   ctx.fillStyle = '#DAA520';
@@ -1615,22 +1798,65 @@ function drawWheatIcon(ctx, w, h) {
   } catch (e) { console.warn('ensureEntityPixelsLibrary err', e); }
 })();
 
-// Easter egg: click the exact title "★ Mesopotamia ★" 10 times (completely secret)
+// Easter egg: click the MesoBuilder logo/title 10 times to open pixel editor
 (function mesopotamiaEasterEgg() {
   try {
-    const headers = Array.from(document.querySelectorAll('h1'));
-    const titleEl = headers.find(h => /★\s*MesoBuilder\s*★/i.test((h.textContent || '').trim()));
-    if (!titleEl) return;
-    let clicks = 0; let timer = null; const required = 10;
-    function reset() { clicks = 0; if (timer) { clearTimeout(timer); timer = null; } }
-    titleEl.addEventListener('click', () => {
+    const headers = Array.from(document.querySelectorAll('#topbar h1, #main-menu-root h1, h1'));
+    const logoTargets = headers.filter(h => /mesobuilder/i.test((h.textContent || '').trim()));
+    if (!logoTargets.length) return;
+
+    let clicks = 0;
+    let timer = null;
+    const required = 10;
+
+    function reset() {
+      clicks = 0;
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    }
+
+    function openPixelEditorSecret() {
+      const editorUrl = 'tools/Support/pixel-editor-standalone.html';
+      try {
+        const w = window.open(editorUrl, '_blank', 'noopener,noreferrer,width=1200,height=900');
+        if (w && typeof w.focus === 'function') w.focus();
+        try { notify('Editor de píxeles abierto'); } catch (e) {}
+        return;
+      } catch (e) {}
+
+      try {
+        const a = document.createElement('a');
+        a.href = editorUrl;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => { try { document.body.removeChild(a); } catch (e) {} }, 120);
+        try { notify('Editor de píxeles abierto'); } catch (e) {}
+      } catch (err) {
+        console.warn('pixel editor open error', err);
+        try { notify('No se pudo abrir el editor de píxeles'); } catch (e) {}
+      }
+    }
+
+    function onLogoClick() {
       clicks++;
       if (timer) clearTimeout(timer);
-      timer = setTimeout(reset, 3000);
+      timer = setTimeout(reset, 4000);
       if (clicks >= required) {
         reset();
-        try { notify('Mesopotamia desbloqueado (secreto)'); } catch (e) { console.log('Easter egg triggered'); }
+        openPixelEditorSecret();
       }
+    }
+
+    logoTargets.forEach(el => {
+      try {
+        el.style.cursor = 'pointer';
+        el.addEventListener('click', onLogoClick);
+      } catch (e) {}
     });
   } catch (err) { console.warn('mesopotamiaEasterEgg err', err); }
 })();
@@ -1903,6 +2129,15 @@ function getBuildingSize(type) {
   return b && b.size ? b.size : { w: 1, h: 1 };
 }
 
+function isShelterBuildingType(type) {
+  try {
+    const t = String(type || '').toLowerCase();
+    return t.includes('house') || t.includes('villa') || t === 'longhouse' || t === 'hut';
+  } catch (e) {
+    return false;
+  }
+}
+
 function getCellInfo(col, row) {
   const cell = grid[row][col];
   if (!cell) return null;
@@ -1917,6 +2152,32 @@ function getCellInfo(col, row) {
   };
 }
 
+function rebuildInteriorDoorsFromGrid() {
+  try {
+    const doors = [];
+    const seen = new Set();
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const info = getCellInfo(c, r);
+        if (!info || !info.isBase) continue;
+        const type = String(info.type || '');
+        if (!isShelterBuildingType(type)) continue;
+        const size = getBuildingSize(type);
+        const doorCol = Math.max(0, Math.min(COLS - 1, info.baseCol + Math.floor((size.w - 1) / 2)));
+        const doorRow = Math.max(0, Math.min(ROWS - 1, info.baseRow + size.h - 1));
+        const key = `${doorCol},${doorRow}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        doors.push({ col: doorCol, row: doorRow, interiorId: 'house-small', buildingType: type });
+      }
+    }
+    window.INTERIOR_DOORS = doors;
+    return doors;
+  } catch (e) { return []; }
+}
+
+try { window.rebuildInteriorDoorsFromGrid = rebuildInteriorDoorsFromGrid; } catch (e) {}
+
 function setBuildingCells(baseCol, baseRow, type) {
   const size = getBuildingSize(type);
   for (let r = 0; r < size.h; r++) {
@@ -1924,6 +2185,7 @@ function setBuildingCells(baseCol, baseRow, type) {
       grid[baseRow + r][baseCol + c] = { type, baseCol, baseRow };
     }
   }
+  try { rebuildInteriorDoorsFromGrid(); } catch (e) {}
   try { saveAppStateDebounced(); } catch (e) {}
   try { mapCacheDirty = true; rebuildMapCacheDebounced(); } catch (e) {}
 }
@@ -2085,6 +2347,7 @@ function clearBuildingCells(baseCol, baseRow, type) {
       }
     }
   }
+  try { rebuildInteriorDoorsFromGrid(); } catch (e) {}
   try { saveAppStateDebounced(); } catch (e) {}
   try { mapCacheDirty = true; rebuildMapCacheDebounced(); } catch (e) {}
 }
@@ -2140,6 +2403,14 @@ function tryMovePlayer(dx, dy) {
 
 // New canWalkTo: disallow stepping into buildings or river
 function canWalkTo(col, row) {
+  if (window.currentInterior) {
+    const interior = window.currentInterior;
+    const cols = interior.width || interior.cols || (interior.tiles && interior.tiles[0] ? interior.tiles[0].length : 8);
+    const rows = interior.height || interior.rows || (interior.tiles ? interior.tiles.length : 6);
+    if (col < 0 || col >= cols || row < 0 || row >= rows) return false;
+    const tile = (interior.tiles && interior.tiles[row] && interior.tiles[row][col]) ? interior.tiles[row][col] : 'floor';
+    return tile !== 'wall';
+  }
   if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return false;
   if (grid[row][col]) return false;
   return true;
@@ -2349,6 +2620,7 @@ function generateMap(mapType) {
     }
   } catch (e) {}
 
+  try { rebuildInteriorDoorsFromGrid(); } catch (e) {}
   // mark cache dirty after regenerating map
   try { mapCacheDirty = true; rebuildMapCacheDebounced(10); } catch (e) {}
 }
@@ -2367,6 +2639,21 @@ function drawBuilding(col, row, type, alpha) {
 
   ctx.save();
   ctx.globalAlpha = alpha !== undefined ? alpha : 1;
+
+  const houseTypes = new Set(['house', 'house_small', 'house_large', 'house_garden', 'longhouse', 'stone_house', 'mesopotamian_villa_detailed']);
+  const spriteKey = resolveBuildingSpriteKey(type);
+
+  if (houseTypes.has(type)) {
+    if (spriteKey) drawEntitySpriteAt(spriteKey, x + W * 0.5, y + H, W, H);
+    ctx.restore();
+    return;
+  }
+
+  if (spriteKey && type !== 'road') {
+    drawEntitySpriteAt(spriteKey, x + W * 0.5, y + H, W, H);
+    ctx.restore();
+    return;
+  }
 
   // Shadow
   ctx.fillStyle = 'rgba(0,0,0,0.25)';
@@ -2623,6 +2910,120 @@ function drawTileHighlight(col, row, fillStyle, strokeStyle, lineWidth) {
   }
 }
 
+function getWorldMapBiomeColor(col, row) {
+  try {
+    if (tileBiome[row][col] === 'water' || isRiver(col)) return '#2E6FA3';
+    const biome = tileBiome[row][col] || 'sand';
+    if (biome === 'road') return '#B9A37A';
+    if (biome === 'forest') return '#507B48';
+    if (biome === 'hills') return '#8F7A45';
+    if (biome === 'grass') return '#88AA63';
+    return '#C8A86A';
+  } catch (e) {
+    return '#C8A86A';
+  }
+}
+
+function getWorldMapBuildingColor(type) {
+  if (!type) return '#E8D5A3';
+  if (type.includes('house') || type.includes('villa') || type === 'longhouse' || type === 'hut') return '#F4E1A1';
+  if (type === 'farm') return '#7FB24A';
+  if (type === 'temple') return '#F5ECD7';
+  if (type === 'market') return '#D97A32';
+  if (type === 'granary') return '#DAB24A';
+  if (type === 'ziggurat') return '#EAD9B8';
+  if (type === 'tower') return '#B7B7B7';
+  if (type === 'road') return '#9E8A6A';
+  return '#E8D5A3';
+}
+
+function drawWorldMapOverlay(W, H) {
+  try {
+    ctx.save();
+    ctx.fillStyle = 'rgba(5, 10, 18, 0.74)';
+    ctx.fillRect(0, 0, W, H);
+
+    const panelPad = Math.max(22, Math.floor(Math.min(W, H) * 0.03));
+    const titleH = 34;
+    const innerW = W - panelPad * 2;
+    const innerH = H - panelPad * 2 - titleH;
+    const cell = Math.max(2, Math.min(innerW / COLS, innerH / ROWS));
+    const mapW = COLS * cell;
+    const mapH = ROWS * cell;
+    const mapX = Math.round((W - mapW) / 2);
+    const mapY = Math.round((H - mapH) / 2 + 8);
+
+    ctx.fillStyle = 'rgba(12, 18, 28, 0.92)';
+    ctx.fillRect(mapX - 14, mapY - 42, mapW + 28, mapH + 56);
+    ctx.strokeStyle = 'rgba(255, 210, 122, 0.85)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(mapX - 14, mapY - 42, mapW + 28, mapH + 56);
+
+    ctx.fillStyle = '#FFD27A';
+    ctx.font = 'bold 18px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('Mapa cenital', mapX - 2, mapY - 18);
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    ctx.font = '12px sans-serif';
+    ctx.fillText('M para cerrar · Punto rojo: jugador · Marco: vista actual', mapX - 2, mapY - 2);
+
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        ctx.fillStyle = getWorldMapBiomeColor(c, r);
+        ctx.fillRect(mapX + c * cell, mapY + r * cell, Math.ceil(cell), Math.ceil(cell));
+      }
+    }
+
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const info = getCellInfo(c, r);
+        if (!info || !info.isBase) continue;
+        const size = getBuildingSize(info.type);
+        ctx.fillStyle = getWorldMapBuildingColor(info.type);
+        ctx.fillRect(mapX + info.baseCol * cell, mapY + info.baseRow * cell, Math.max(cell, size.w * cell), Math.max(cell, size.h * cell));
+        ctx.strokeStyle = 'rgba(20, 16, 8, 0.45)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(mapX + info.baseCol * cell, mapY + info.baseRow * cell, Math.max(cell, size.w * cell), Math.max(cell, size.h * cell));
+      }
+    }
+
+    try {
+      const samples = [[0, 0], [W, 0], [W, H], [0, H], [W * 0.5, 0], [W * 0.5, H], [0, H * 0.5], [W, H * 0.5]]
+        .map(([sx, sy]) => screenToWorldFloat(sx, sy))
+        .filter(p => p && Number.isFinite(p.x) && Number.isFinite(p.y));
+      if (samples.length) {
+        const minX = Math.max(0, Math.min(...samples.map(p => p.x)));
+        const maxX = Math.min(COLS, Math.max(...samples.map(p => p.x)));
+        const minY = Math.max(0, Math.min(...samples.map(p => p.y)));
+        const maxY = Math.min(ROWS, Math.max(...samples.map(p => p.y)));
+        ctx.strokeStyle = 'rgba(255,255,255,0.92)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(mapX + minX * cell, mapY + minY * cell, Math.max(cell, (maxX - minX) * cell), Math.max(cell, (maxY - minY) * cell));
+      }
+    } catch (e) {}
+
+    ctx.fillStyle = '#FF5E57';
+    ctx.beginPath();
+    ctx.arc(mapX + player.x * cell, mapY + player.y * cell, Math.max(3, cell * 0.45), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    if (window.currentInterior) {
+      ctx.fillStyle = 'rgba(0,0,0,0.7)';
+      ctx.fillRect(mapX + 10, mapY + mapH - 34, 214, 24);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = '12px sans-serif';
+      ctx.fillText('Estás en un interior: el mapa muestra el exterior.', mapX + 18, mapY + mapH - 17);
+    }
+
+    ctx.restore();
+  } catch (e) {
+    console.warn('drawWorldMapOverlay err', e);
+  }
+}
+
 function drawPlayer() {
   const { x, y } = worldToScreen(player.x, player.y);
   if (viewMode === 'iso') {
@@ -2757,6 +3158,7 @@ function render() {
   lastFrameTime = now;
   // If the game hasn't been started from the main menu, don't run the simulation loop.
   if (!window._gameStarted) {
+    stopRenderLoop();
     // keep canvas quiet while menu is active
     try { ctx.clearRect(0,0,canvas.width, canvas.height); } catch (e) {}
     return;
@@ -2795,6 +3197,7 @@ function render() {
   }
   const tileSize = getTileSize();
   const isoSize = getIsoTileSize();
+  const cameraBusy = isPanning || isZooming || zoomAnimating || (now - lastCameraInputAt) < 220;
   frameCounter++;
   try {
     // optional console debug logging controlled by Dev menu
@@ -2808,15 +3211,16 @@ function render() {
     } catch (e) {}
     ctx.clearRect(0, 0, W, H);
 
-    // Debug overlay (visible during development)
-    try {
-      ctx.fillStyle = 'rgba(0,0,0,0.6)';
-      ctx.font = '12px sans-serif';
-      const dbg = `mode:${editMode? 'EDIT':'FREE'} px:${(player.x||0).toFixed(2)} py:${(player.y||0).toFixed(2)} col:${player.col},${player.row} path:${movePath? movePath.length:0}`;
-      ctx.fillText(dbg, 12, 18);
-    } catch (dbgErr) {
-      // ignore debug overlay errors
-      console.warn('Debug overlay error', dbgErr);
+    // Debug overlay (opt-in)
+    if (window.DEBUG_HUD) {
+      try {
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.font = '12px sans-serif';
+        const dbg = `mode:${editMode? 'EDIT':'FREE'} px:${(player.x||0).toFixed(2)} py:${(player.y||0).toFixed(2)} col:${player.col},${player.row} path:${movePath? movePath.length:0}`;
+        ctx.fillText(dbg, 12, 18);
+      } catch (dbgErr) {
+        console.warn('Debug overlay error', dbgErr);
+      }
     }
 
     // draw selection rectangle (screen space)
@@ -2847,7 +3251,7 @@ function render() {
     try { drawMountainsBackground(ctx, W, H); } catch (e) {}
 
   // Update player movement in free mode (continuous)
-  if (!editMode) {
+  if (!editMode && !worldMapOverlayVisible) {
     // move player by tiles in small steps to avoid skipping collisions when sprinting
     function applyPlayerMoveTiles(dxTiles, dyTiles) {
       try {
@@ -2964,7 +3368,7 @@ function render() {
         }
       }
     }
-  } else {
+  } else if (editMode) {
     // snap float position to grid when in edit mode
     player.x = player.col; player.y = player.row;
   }
@@ -3081,16 +3485,38 @@ function render() {
     } catch (e) { console.warn('Error rendering interior', e); }
   }
   // compute visible world bounds to avoid iterating entire map
-  if (viewMode === 'iso') {
-    // Render entire map in isometric mode to avoid missing fragments when zoomed
-    minC = 0; maxC = COLS - 1; minR = 0; maxR = ROWS - 1;
-  } else {
-    const topLeft = screenToWorld(0, 0);
-    const bottomRight = screenToWorld(W, H);
-    minC = Math.max(0, Math.floor(Math.min(topLeft.col, bottomRight.col) - 2));
-    maxC = Math.min(COLS - 1, Math.ceil(Math.max(topLeft.col, bottomRight.col) + 2));
-    minR = Math.max(0, Math.floor(Math.min(topLeft.row, bottomRight.row) - 2));
-    maxR = Math.min(ROWS - 1, Math.ceil(Math.max(topLeft.row, bottomRight.row) + 2));
+  if (!window.currentInterior) {
+    if (viewMode === 'iso') {
+      const samples = [
+        [0, 0], [W, 0], [0, H], [W, H],
+        [W * 0.5, 0], [W * 0.5, H], [0, H * 0.5], [W, H * 0.5],
+        [W * 0.5, H * 0.5]
+      ];
+      let sMinC = Infinity, sMaxC = -Infinity, sMinR = Infinity, sMaxR = -Infinity;
+      for (const [sx, sy] of samples) {
+        const p = screenToWorldFloat(sx, sy);
+        if (!p) continue;
+        sMinC = Math.min(sMinC, p.x);
+        sMaxC = Math.max(sMaxC, p.x);
+        sMinR = Math.min(sMinR, p.y);
+        sMaxR = Math.max(sMaxR, p.y);
+      }
+      const pad = cameraBusy ? 14 : 10;
+      minC = Math.max(0, Math.floor(sMinC - pad));
+      maxC = Math.min(COLS - 1, Math.ceil(sMaxC + pad));
+      minR = Math.max(0, Math.floor(sMinR - pad));
+      maxR = Math.min(ROWS - 1, Math.ceil(sMaxR + pad));
+      if (!isFinite(minC) || !isFinite(maxC) || !isFinite(minR) || !isFinite(maxR)) {
+        minC = 0; maxC = COLS - 1; minR = 0; maxR = ROWS - 1;
+      }
+    } else {
+      const topLeft = screenToWorld(0, 0);
+      const bottomRight = screenToWorld(W, H);
+      minC = Math.max(0, Math.floor(Math.min(topLeft.col, bottomRight.col) - 2));
+      maxC = Math.min(COLS - 1, Math.ceil(Math.max(topLeft.col, bottomRight.col) + 2));
+      minR = Math.max(0, Math.floor(Math.min(topLeft.row, bottomRight.row) - 2));
+      maxR = Math.min(ROWS - 1, Math.ceil(Math.max(topLeft.row, bottomRight.row) + 2));
+    }
   }
 
   // Debug overlay: show projected map corners and world bounds when enabled
@@ -3118,9 +3544,8 @@ function render() {
   for (let r = minR; r <= maxR; r++) {
     for (let c = minC; c <= maxC; c++) {
       const { x, y } = worldToScreen(c, r);
-      // If we have a map cache and it's fresh and we're in edit mode, draw it once and skip per-tile drawing
-      // In free mode we prefer per-tile high-detail rendering, so bypass the cache.
-      if (mapCache && !mapCacheDirty && editMode) {
+      // If we have a map cache and it's fresh, use it during edit mode or camera-heavy interactions.
+      if (mapCache && !mapCacheDirty && (editMode || cameraBusy || zoom < 0.9)) {
         const cacheZoom = mapCache._cacheZoom || zoom;
         const scale = zoom / cacheZoom;
         if (viewMode === 'iso' && mapCache._isoOffset) {
@@ -3156,7 +3581,7 @@ function render() {
           // cheaper water rendering: single color + occasional streaks
           const base = `hsl(205,60%,${40 + Math.sin((now)*0.002 + r*0.4 + c*0.3) * 2}%)`;
           drawDiamond(x, y, w, h, base, null, null);
-          if (frameCounter % 6 === 0) {
+          if (!cameraBusy && frameCounter % 6 === 0) {
             ctx.strokeStyle = 'rgba(255,255,255,0.12)';
             ctx.lineWidth = 1;
             for (let i = 0; i < 2; i++) {
@@ -3193,7 +3618,7 @@ function render() {
           const base = `hsl(205,60%,${40 + Math.sin((now)*0.002 + r*0.4 + c*0.3) * 2}%)`;
           ctx.fillStyle = base;
           ctx.fillRect(x, y, tileSize, tileSize);
-          if (frameCounter % 6 === 0) {
+          if (!cameraBusy && frameCounter % 6 === 0) {
             ctx.strokeStyle = 'rgba(255,255,255,0.12)';
             ctx.lineWidth = 1;
             for (let i = 0; i < 3; i++) {
@@ -3207,7 +3632,7 @@ function render() {
         } else {
           const biome = tileBiome[r][c] || 'sand';
           // micro-tiles inside each tile for higher-detail landscapes
-          const subdiv = Math.min(4, Math.max(1, Math.floor(tileSize / 8)));
+          const subdiv = cameraBusy ? 1 : Math.min(4, Math.max(1, Math.floor(tileSize / 8)));
           if (subdiv > 1) {
             const sw = tileSize / subdiv;
             for (let sy = 0; sy < subdiv; sy++) {
@@ -3277,8 +3702,12 @@ function render() {
 
   // ── BUILDINGS ─────────────────────────────────────────────
   // Trees are now entities (each tree is an entity) — entity rendering handles them
-  for (let r = 0; r < ROWS; r++) {
-    for (let c = 0; c < COLS; c++) {
+  const bMinC = Math.max(0, minC - 4);
+  const bMaxC = Math.min(COLS - 1, maxC + 4);
+  const bMinR = Math.max(0, minR - 4);
+  const bMaxR = Math.min(ROWS - 1, maxR + 4);
+  for (let r = bMinR; r <= bMaxR; r++) {
+    for (let c = bMinC; c <= bMaxC; c++) {
       const info = getCellInfo(c, r);
       if (!info || !info.isBase) continue;
       drawBuilding(info.baseCol, info.baseRow, info.type);
@@ -3292,8 +3721,11 @@ function render() {
     if (typeof ent.x !== 'number') ent.x = ent.col;
     if (typeof ent.y !== 'number') ent.y = ent.row;
     const { x, y } = worldToScreen(ent.x, ent.y);
+    const offPad = viewMode === 'iso' ? Math.max(24, isoSize.w) : Math.max(24, tileSize);
+    const isOffscreen = (x < -offPad || x > W + offPad || y < -offPad || y > H + offPad);
     const nowEnt = Date.now();
     if (ent.kind === 'resource') {
+      if (isOffscreen) return;
       const subtype = ent.subtype;
       // add a subtle pulsing to resources so they look special
       // slower, gentler pulse
@@ -3393,6 +3825,7 @@ function render() {
             ent._walkFrame = Math.floor(ent._walkTime * 3) % 2;
           }
         } catch (e) {}
+      if (isOffscreen) return;
       try {
         const palette = ent.palette || DEFAULT_PALETTE;
         // choose a small scale so the sprite fits inside the tile
@@ -3451,6 +3884,7 @@ function render() {
         }
       } catch (e) {}
     } else if (ent.kind === 'tree') {
+      if (isOffscreen) return;
       // variant-aware pixel-art tree/vegetation drawing
       const tileSize = getTileSize();
       const variant = (ent.variant || 'oak');
@@ -3561,8 +3995,10 @@ function render() {
     const { col, row, hp, maxHp, size } = rab;
     const { x, y } = worldToScreen(rab.x, rab.y);
     const tileSize = getTileSize();
+    const offPad = viewMode === 'iso' ? Math.max(24, isoSize.w) : Math.max(24, tileSize);
+    if (x < -offPad || x > W + offPad || y < -offPad || y > H + offPad) return;
     // rabbit: prefer pixel-art bitmap if available, else fallback to simple vector art
-    const bmpRabbit = (window._ENTITY_BITMAPS && (window._ENTITY_BITMAPS['rabbit'] || window._ENTITY_BITMAPS['animal.rabbit'] || window._ENTITY_BITMAPS['rabbit-0'])) ? (window._ENTITY_BITMAPS['rabbit'] || window._ENTITY_BITMAPS['animal.rabbit'] || window._ENTITY_BITMAPS['rabbit-0']) : null;
+    const bmpRabbit = (window._ENTITY_BITMAPS && (window._ENTITY_BITMAPS['detailed_rabbit'] || window._ENTITY_BITMAPS['rabbit'] || window._ENTITY_BITMAPS['animal.rabbit'] || window._ENTITY_BITMAPS['rabbit-0'])) ? (window._ENTITY_BITMAPS['detailed_rabbit'] || window._ENTITY_BITMAPS['rabbit'] || window._ENTITY_BITMAPS['animal.rabbit'] || window._ENTITY_BITMAPS['rabbit-0']) : null;
     const rsz = Math.max(6, tileSize * (size || 0.45));
     if (bmpRabbit) {
       try {
@@ -3662,7 +4098,9 @@ function render() {
       const fxPos = (typeof fox.x === 'number' && typeof fox.y === 'number') ? { x: fox.x, y: fox.y } : { x: col, y: row };
       const { x, y } = worldToScreen(fxPos.x, fxPos.y);
       const tileSize = getTileSize();
-      const bmpFox = (window._ENTITY_BITMAPS && (window._ENTITY_BITMAPS['fox'] || window._ENTITY_BITMAPS['animal.fox'] || window._ENTITY_BITMAPS['fox-0'])) ? (window._ENTITY_BITMAPS['fox'] || window._ENTITY_BITMAPS['animal.fox'] || window._ENTITY_BITMAPS['fox-0']) : null;
+      const offPad = viewMode === 'iso' ? Math.max(24, isoSize.w) : Math.max(24, tileSize);
+      if (x < -offPad || x > W + offPad || y < -offPad || y > H + offPad) return;
+      const bmpFox = (window._ENTITY_BITMAPS && (window._ENTITY_BITMAPS['detailed_fox'] || window._ENTITY_BITMAPS['fox'] || window._ENTITY_BITMAPS['animal.fox'] || window._ENTITY_BITMAPS['fox-0'])) ? (window._ENTITY_BITMAPS['detailed_fox'] || window._ENTITY_BITMAPS['fox'] || window._ENTITY_BITMAPS['animal.fox'] || window._ENTITY_BITMAPS['fox-0']) : null;
       const fsz = Math.max(8, tileSize * (size || 0.7));
       if (bmpFox) {
         try {
@@ -3825,6 +4263,22 @@ function render() {
       ctx.fillRect(Math.round(sx-4), Math.round(sy-4), 8, 8);
     }
   }
+  // Draw group-command marker (selected units order target)
+  try {
+    const cmd = window._unitCommandTarget;
+    if (cmd && cmd.until && Date.now() <= cmd.until) {
+      const { x: sx, y: sy } = worldToScreen(cmd.x, cmd.y);
+      const t = Math.max(0, Math.min(1, (cmd.until - Date.now()) / 1200));
+      ctx.save();
+      ctx.globalAlpha = Math.max(0.25, t);
+      ctx.strokeStyle = cmd.color || 'rgba(80,170,255,0.95)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(sx, sy, 8 + (1 - t) * 10, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+  } catch (e) {}
 
   // Rabbit AI: move each rabbit on its own timer to slow movement
   const nowRab = now;
@@ -3925,66 +4379,65 @@ function render() {
   try {
     window._interactionTarget = null;
     if (!window.currentInterior) {
-      // find nearest door, resource or tree (priority order: door > resource > tree)
-      let bestDoor = null, bestDoorDist = 9e9;
-      if (Array.isArray(window.INTERIOR_DOORS) && window.INTERIOR_DOORS.length > 0) {
-        for (const d of window.INTERIOR_DOORS) {
-          if (!d) continue;
-          const dx = (d.col + 0.5) - (player.x || 0);
-          const dy = (d.row + 0.5) - (player.y || 0);
-          const dist = Math.hypot(dx, dy);
-          if (dist < bestDoorDist && dist <= 1.25) { bestDoor = d; bestDoorDist = dist; }
-        }
-      }
-      let bestRes = null, bestResDist = 9e9;
-      for (let i = 0; i < entities.length; i++) {
-        const ent = entities[i];
-        if (!ent) continue;
-        if (ent.kind === 'resource') {
-          const dx = (ent.col + 0.5) - (player.x || 0);
-          const dy = (ent.row + 0.5) - (player.y || 0);
-          const dist = Math.hypot(dx, dy);
-          if (dist < bestResDist && dist <= 1.5) { bestRes = ent; bestResDist = dist; }
-        }
-      }
-      let bestTree = null, bestTreeDist = 9e9;
-      for (let i = 0; i < entities.length; i++) {
-        const ent = entities[i];
-        if (!ent) continue;
-        if (ent.kind === 'tree') {
-          const dx = (ent.col + 0.5) - (player.x || 0);
-          const dy = (ent.row + 0.5) - (player.y || 0);
-          const dist = Math.hypot(dx, dy);
-          if (dist < bestTreeDist && dist <= 1.5) { bestTree = ent; bestTreeDist = dist; }
-        }
-      }
-
       let chosen = null;
-      if (bestDoor) chosen = { kind: 'door', ref: bestDoor, actionText: 'Entrar' };
-      else if (bestRes) chosen = { kind: 'resource', ref: bestRes, actionText: bestRes.subtype ? ('Recoger ' + bestRes.subtype) : 'Recoger' };
-      else if (bestTree) chosen = { kind: 'tree', ref: bestTree, actionText: 'Talar' };
+      const scanInterval = cameraBusy ? 220 : 120;
+      if (!_interactionScanCache || (now - _interactionScanAt) >= scanInterval) {
+        _interactionScanAt = now;
+        // find nearest door, resource or tree (priority order: door > resource > tree)
+        let bestDoor = null, bestDoorDist = 9e9;
+        if (Array.isArray(window.INTERIOR_DOORS) && window.INTERIOR_DOORS.length > 0) {
+          for (const d of window.INTERIOR_DOORS) {
+            if (!d) continue;
+            const dx = (d.col + 0.5) - (player.x || 0);
+            const dy = (d.row + 0.5) - (player.y || 0);
+            const dist = Math.hypot(dx, dy);
+            if (dist < bestDoorDist && dist <= 1.35) { bestDoor = d; bestDoorDist = dist; }
+          }
+        }
+        let bestRes = null, bestResDist = 9e9;
+        let bestTree = null, bestTreeDist = 9e9;
+        for (let i = 0; i < entities.length; i++) {
+          const ent = entities[i];
+          if (!ent) continue;
+          const ex = (ent.x !== undefined ? ent.x : ent.col) + 0.5;
+          const ey = (ent.y !== undefined ? ent.y : ent.row) + 0.5;
+          const dist = Math.hypot(ex - (player.x || 0), ey - (player.y || 0));
+          if (ent.kind === 'resource') {
+            if (dist < bestResDist && dist <= 1.6) { bestRes = ent; bestResDist = dist; }
+          } else if (ent.kind === 'tree') {
+            if (dist < bestTreeDist && dist <= 1.6) { bestTree = ent; bestTreeDist = dist; }
+          }
+        }
+        if (bestDoor) _interactionScanCache = { kind: 'door', ref: bestDoor, actionText: 'Entrar', showPrompt: true };
+        else if (bestRes) _interactionScanCache = { kind: 'resource', ref: bestRes, actionText: bestRes.subtype ? ('Recoger ' + bestRes.subtype) : 'Recoger', showPrompt: true };
+        else if (bestTree) _interactionScanCache = { kind: 'tree', ref: bestTree, actionText: 'Talar', showPrompt: false };
+        else _interactionScanCache = null;
+      }
+      chosen = _interactionScanCache;
 
       if (chosen) {
         window._interactionTarget = chosen;
-        try {
-          const tileSize = getTileSize();
-          const screen = worldToScreen((player.x || 0) + 0.5, (player.y || 0) - 0.3);
-          ctx.save();
-          ctx.font = Math.max(10, Math.floor(12 * (tileSize / 32))) + 'px sans-serif';
-          ctx.fillStyle = 'rgba(255,255,255,0.95)';
-          ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-          ctx.lineWidth = 3;
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          // action text above
-          ctx.strokeText(chosen.actionText, screen.x, screen.y - 30);
-          ctx.fillText(chosen.actionText, screen.x, screen.y - 30);
-          // big E below
-          ctx.font = Math.max(12, Math.floor(14 * (tileSize / 32))) + 'px sans-serif';
-          ctx.strokeText('E', screen.x, screen.y - 10);
-          ctx.fillText('E', screen.x, screen.y - 10);
-          ctx.restore();
-        } catch (e) {}
+        if (chosen.showPrompt !== false) {
+          try {
+            const tileSize = getTileSize();
+            const screen = worldToScreen((player.x || 0) + 0.5, (player.y || 0) - 0.3);
+            ctx.save();
+            ctx.font = Math.max(10, Math.floor(12 * (tileSize / 32))) + 'px sans-serif';
+            ctx.fillStyle = 'rgba(255,255,255,0.95)';
+            ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+            ctx.lineWidth = 3;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            // action text above
+            ctx.strokeText(chosen.actionText, screen.x, screen.y - 30);
+            ctx.fillText(chosen.actionText, screen.x, screen.y - 30);
+            // big E below
+            ctx.font = Math.max(12, Math.floor(14 * (tileSize / 32))) + 'px sans-serif';
+            ctx.strokeText('E', screen.x, screen.y - 10);
+            ctx.fillText('E', screen.x, screen.y - 10);
+            ctx.restore();
+          } catch (e) {}
+        }
       }
     }
   } catch (e) {}
@@ -4075,6 +4528,8 @@ function render() {
     for (let i = entities.length - 1; i >= 0; i--) {
       const en = entities[i];
       if (!en || !en.id || en.id.indexOf('npc-') !== 0) continue;
+      if (en._holdUntil && nowNpc < en._holdUntil) continue;
+      if (en._holdUntil && nowNpc >= en._holdUntil) delete en._holdUntil;
       if (!en.nextMove) en.nextMove = nowNpc + 1000 + Math.floor(Math.random() * 3000);
       if (nowNpc >= en.nextMove) {
         en.nextMove = nowNpc + 1200 + Math.floor(Math.random() * 5000);
@@ -4143,7 +4598,11 @@ function render() {
   } catch (e) {}
 
   try { tickEnemies(now); } catch (e) { /* ignore enemy tick errors */ }
-  if (window._gameStarted) requestAnimationFrame(render);
+  if (worldMapOverlayVisible) {
+    try { drawWorldMapOverlay(W, H); } catch (e) {}
+  }
+  if (window._gameStarted && _renderLoopActive) requestAnimationFrame(render);
+  else stopRenderLoop();
   } catch (err) {
     // draw error message to canvas for debugging
     console.error(err);
@@ -4379,7 +4838,7 @@ function applyDailyProduction() {
   for (let oy=-1; oy<=1; oy++) for (let ox=-1; ox<=1; ox++) {
     const c = player.col + ox, r = player.row + oy;
     const info = (c>=0 && c<COLS && r>=0 && r<ROWS) ? getCellInfo(c,r) : null;
-    if (info && info.isBase && info.type === 'house') nearHouse = true;
+    if (info && info.isBase && isShelterBuildingType(info.type)) nearHouse = true;
   }
   if (nearHouse) {
     char.hp = Math.min(char.maxHp, char.hp + 2);
@@ -4422,6 +4881,27 @@ function updateUI() {
   updateCharCard();
 }
 
+function refreshBuildButtonsFromDefinitions() {
+  try {
+    document.querySelectorAll('.build-btn').forEach(btn => {
+      const type = btn.dataset.type;
+      const def = BUILDINGS[type];
+      if (!type || !def) return;
+      const nameEl = btn.querySelector('.bname');
+      const costEl = btn.querySelector('.bcost');
+      const icon = btn.querySelector('.bicon');
+      if (nameEl) nameEl.textContent = def.name || type;
+      if (costEl) costEl.innerHTML = `&#x1F9F1; ${def.costBrick || 0} &#x1F33E; ${def.costWheat || 0}`;
+      if (icon && icon.getContext) {
+        try {
+          if (type === 'road') drawRoadIcon(icon.getContext('2d'), icon.width || 22, icon.height || 22);
+          else drawRegisteredIcon(icon.getContext('2d'), type, icon.width || 22, icon.height || 22);
+        } catch (e) {}
+      }
+    });
+  } catch (e) { /* ignore */ }
+}
+
 function isNearPlayerShelter(target) {
   // if a target (entity or player) is adjacent to a house, treat as sheltered
   const tc = target.col, tr = target.row;
@@ -4429,7 +4909,7 @@ function isNearPlayerShelter(target) {
     const c = tc + ox, r = tr + oy;
     if (c<0||c>=COLS||r<0||r>=ROWS) continue;
     const info = getCellInfo(c,r);
-    if (info && info.isBase && info.type === 'house') return true;
+    if (info && info.isBase && isShelterBuildingType(info.type)) return true;
   }
   return false;
 }
@@ -4453,6 +4933,109 @@ function addToInventory(item, qty) {
       if (changed && window.renderMissions) window.renderMissions();
     }
   } catch (err) { }
+}
+
+function drawItemIcon(ctx, itemId, w = 28, h = 28) {
+  if (!ctx) return;
+  const id = String(itemId || '').toLowerCase();
+  ctx.clearRect(0, 0, w, h);
+
+  if (id === 'wheat') {
+    try {
+      const hudWheat = document.getElementById('icon-wheat');
+      if (hudWheat && hudWheat.tagName === 'CANVAS') {
+        ctx.drawImage(hudWheat, 0, 0, hudWheat.width, hudWheat.height, 0, 0, w, h);
+        return;
+      }
+    } catch (e) {}
+    ctx.fillStyle = '#DAA520'; ctx.fillRect(6, 8, 16, 12);
+    ctx.fillStyle = '#4A7C3F'; ctx.fillRect(12, 4, 3, 11);
+    return;
+  }
+  if (id === 'brick' || id === 'brick-block') {
+    ctx.fillStyle = '#B04A2D'; ctx.fillRect(4, 8, 20, 12);
+    ctx.fillStyle = 'rgba(0,0,0,0.12)';
+    ctx.fillRect(7, 10, 5, 3); ctx.fillRect(14, 10, 5, 3); ctx.fillRect(10, 14, 5, 3);
+    return;
+  }
+  if (id === 'wood' || id === 'plank') {
+    ctx.fillStyle = '#8B5A38'; ctx.fillRect(4, 8, 20, 12);
+    ctx.fillStyle = '#7A4A2A';
+    for (let i = 0; i < 3; i++) ctx.fillRect(6 + i * 6, 9 + (i % 2), 1, 10);
+    return;
+  }
+  if (id === 'stone') {
+    ctx.fillStyle = '#808080'; ctx.fillRect(5, 8, 18, 12);
+    ctx.fillStyle = '#6b6b6b'; ctx.fillRect(7, 11, 5, 6);
+    return;
+  }
+  if (id === 'food' || id === 'berry' || id === 'bush') {
+    ctx.fillStyle = '#7A3B1E'; ctx.fillRect(12, 6, 3, 5);
+    ctx.fillStyle = '#D14A3A'; ctx.beginPath(); ctx.arc(10, 14, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(16, 14, 4, 0, Math.PI * 2); ctx.fill();
+    return;
+  }
+  if (id === 'water') {
+    ctx.fillStyle = '#2E8BFF';
+    ctx.beginPath(); ctx.moveTo(14, 5); ctx.bezierCurveTo(19, 11, 21, 14, 21, 18); ctx.bezierCurveTo(21, 22, 18, 25, 14, 25); ctx.bezierCurveTo(10, 25, 7, 22, 7, 18); ctx.bezierCurveTo(7, 14, 9, 11, 14, 5); ctx.fill();
+    return;
+  }
+  if (id === 'meat') {
+    ctx.fillStyle = '#A84C3A'; ctx.fillRect(7, 10, 14, 10);
+    ctx.fillStyle = '#F0E5D8'; ctx.fillRect(5, 12, 2, 6); ctx.fillRect(21, 12, 2, 6);
+    return;
+  }
+  if (id === 'stick') {
+    ctx.fillStyle = '#8B5A38'; ctx.fillRect(13, 6, 2, 16);
+    return;
+  }
+  if (id === 'stone-axe' || id === 'axe') {
+    ctx.fillStyle = '#6b6b6b'; ctx.fillRect(5, 9, 15, 6);
+    ctx.fillStyle = '#7a4a2a'; ctx.fillRect(15, 12, 3, 12);
+    return;
+  }
+  if (id === 'stone-pick') {
+    ctx.fillStyle = '#6b6b6b'; ctx.fillRect(5, 8, 14, 5);
+    ctx.fillStyle = '#7a4a2a'; ctx.fillRect(15, 11, 3, 12);
+    return;
+  }
+  if (id === 'stone-sword' || id === 'sword') {
+    ctx.fillStyle = '#9a9a9a'; ctx.fillRect(6, 7, 14, 4);
+    ctx.fillStyle = '#7a4a2a'; ctx.fillRect(16, 11, 3, 12);
+    return;
+  }
+  if (id === 'spear') {
+    ctx.fillStyle = '#7a4a2a'; ctx.fillRect(13, 6, 2, 15);
+    ctx.fillStyle = '#9a9a9a'; ctx.beginPath(); ctx.moveTo(14, 3); ctx.lineTo(17, 8); ctx.lineTo(11, 8); ctx.closePath(); ctx.fill();
+    return;
+  }
+  if (id === 'club') {
+    ctx.fillStyle = '#7a4a2a'; ctx.fillRect(13, 7, 2, 14);
+    ctx.fillStyle = '#6b4a2f'; ctx.beginPath(); ctx.arc(14, 6, 4, 0, Math.PI * 2); ctx.fill();
+    return;
+  }
+  if (id === 'campfire') {
+    ctx.fillStyle = '#7a4a2a'; ctx.fillRect(7, 16, 14, 2); ctx.fillRect(9, 14, 10, 2);
+    ctx.fillStyle = '#E67E22'; ctx.beginPath(); ctx.moveTo(14, 8); ctx.lineTo(18, 15); ctx.lineTo(10, 15); ctx.closePath(); ctx.fill();
+    return;
+  }
+  if (id === 'furnace') {
+    ctx.fillStyle = '#6f6f6f'; ctx.fillRect(6, 7, 16, 16);
+    ctx.fillStyle = '#c85'; ctx.fillRect(11, 13, 6, 5);
+    return;
+  }
+  if (id === 'beacon') {
+    ctx.fillStyle = '#8B5A38'; ctx.fillRect(13, 14, 2, 10);
+    ctx.fillStyle = '#FFD27A'; ctx.fillRect(11, 8, 6, 6);
+    return;
+  }
+  if (id === 'potion') {
+    ctx.fillStyle = '#9a6bd6'; ctx.fillRect(10, 10, 8, 10);
+    ctx.fillStyle = '#ddd'; ctx.fillRect(12, 7, 4, 3);
+    return;
+  }
+
+  ctx.fillStyle = '#666'; ctx.fillRect(6, 6, 16, 16);
 }
 
 // ── CRAFTING SYSTEM ───────────────────────────────────────
@@ -4516,23 +5099,11 @@ function updateInventory() {
     // small canvas icon
     const cv = document.createElement('canvas'); cv.width = 28; cv.height = 28; cv.style.width = '28px'; cv.style.height = '28px';
     const cctx = cv.getContext('2d');
-    // draw simple icon per item
-    if (k === 'wheat') {
-      cctx.fillStyle = '#DAA520'; cctx.fillRect(6,6,16,16);
-      cctx.fillStyle = '#4A7C3F'; cctx.fillRect(10,4,4,10);
-    } else if (k === 'brick') {
-      cctx.fillStyle = '#B04A2D'; cctx.fillRect(4,6,20,12);
-      cctx.fillStyle = 'rgba(0,0,0,0.08)'; cctx.fillRect(8,8,6,4); cctx.fillRect(16,8,6,4);
-    } else if (k === 'wood') {
-      cctx.fillStyle = '#8B5A38'; cctx.fillRect(4,8,20,12);
-      cctx.fillStyle = '#7A4A2A'; for (let i=0;i<3;i++) cctx.fillRect(6 + i*6, 9 + (i%2), 1, 10);
-    } else {
-      cctx.fillStyle = '#666'; cctx.fillRect(6,6,16,16);
-    }
+    drawItemIcon(cctx, k, 28, 28);
     slot.appendChild(cv);
     // allow clicking to equip tools/weapons
     try {
-      const EQUIPPABLE = new Set(['stone-axe','stone-pick','stone-sword','plank','stick','campfire','furnace']);
+      const EQUIPPABLE = new Set(['stone-axe','stone-pick','stone-sword','plank','stick','campfire','furnace','brick-block','beacon']);
       slot.style.cursor = 'pointer';
       slot.addEventListener('click', () => {
         if (EQUIPPABLE.has(k)) {
@@ -5219,7 +5790,17 @@ function createOverlayUI() {
     zc.innerHTML = `<div style="font-weight:700;margin-bottom:6px">Zoom</div><input id="zoom-slider" type="range" min="${ZOOM_MIN}" max="${ZOOM_MAX}" step="0.01" value="${zoom}" style="width:160px">`;
     document.body.appendChild(zc);
     const slider = document.getElementById('zoom-slider');
-    slider.addEventListener('input', () => { zoom = parseFloat(slider.value); clampCamera(); });
+    slider.addEventListener('input', () => {
+      const z = parseFloat(slider.value);
+      if (!isNaN(z)) {
+        targetZoom = z;
+        zoom = z;
+        markCameraInput();
+        clampCamera();
+        mapCacheDirty = true;
+        rebuildMapCacheDebounced(140);
+      }
+    });
   }
 
   // Create top menu bar for window/panel management and settings
@@ -5307,25 +5888,7 @@ function createAbilityBarAndMissions() {
     // draw a small canvas icon for equipped item
     const cv = document.createElement('canvas'); cv.width = 40; cv.height = 28; cv.style.width='40px'; cv.style.height='28px';
     const cctx = cv.getContext('2d');
-    // simple icons
-    if (it === 'stone-axe' || it === 'stone-axe') {
-      cctx.fillStyle = '#6b6b6b'; cctx.fillRect(4,10,24,6); // head
-      cctx.fillStyle = '#7a4a2a'; cctx.fillRect(22,12,6,12); // handle
-    } else if (it === 'stone-pick') {
-      cctx.fillStyle = '#6b6b6b'; cctx.fillRect(4,8,22,6);
-      cctx.fillStyle = '#7a4a2a'; cctx.fillRect(22,12,6,10);
-    } else if (it === 'stone-sword') {
-      cctx.fillStyle = '#9a9a9a'; cctx.fillRect(6,6,18,4);
-      cctx.fillStyle = '#7a4a2a'; cctx.fillRect(18,10,4,12);
-    } else if (it === 'plank' || it === 'stick') {
-      cctx.fillStyle = '#8B5A38'; cctx.fillRect(6,8,28,8);
-    } else if (it === 'furnace' || it === 'campfire') {
-      cctx.fillStyle = '#6f6f6f'; cctx.fillRect(6,6,24,14);
-      cctx.fillStyle = '#c85'; cctx.fillRect(12,10,8,6);
-    } else {
-      // generic box for unknown
-      cctx.fillStyle = '#888'; cctx.fillRect(8,8,20,12);
-    }
+    drawItemIcon(cctx, it, 40, 28);
     icon.appendChild(cv);
     label.textContent = it;
   }
@@ -5487,10 +6050,27 @@ function createMenuBar() {
   // View menu
   const viewBtn = document.createElement('button'); viewBtn.textContent = 'Ver'; viewBtn.style.background='transparent'; viewBtn.style.color='inherit'; viewBtn.style.border='none'; viewBtn.style.cursor='pointer'; viewBtn.className = 'meso-menu-btn';
   const viewMenu = document.createElement('div'); viewMenu.style.position='absolute'; viewMenu.style.top='34px'; viewMenu.style.left='8px'; viewMenu.style.background='rgba(18,18,18,0.98)'; viewMenu.style.border='1px solid #333'; viewMenu.style.display='none'; viewMenu.style.padding='8px'; viewMenu.className = 'meso-menu';
+  let setMenu = null;
+  let devMenu = null;
+  function allMenus() { return [viewMenu, winMenu, fileMenu, setMenu, devMenu].filter(Boolean); }
+  function hasOpenMenus() { return allMenus().some(m => m.style.display !== 'none'); }
+  function closeAllMenus(exceptMenu = null) {
+    allMenus().forEach(m => { if (m !== exceptMenu) m.style.display = 'none'; });
+  }
+  function toggleMenu(menu, beforeOpen) {
+    const isOpen = menu.style.display !== 'none';
+    if (isOpen) {
+      menu.style.display = 'none';
+      return;
+    }
+    closeAllMenus(menu);
+    if (typeof beforeOpen === 'function') beforeOpen();
+    menu.style.display = 'block';
+  }
   const floatToggle = document.createElement('label'); floatToggle.style.cursor='pointer'; floatToggle.innerHTML = `<input type='checkbox' ${document.body.classList.contains('floating-panels') ? 'checked' : ''}> Paneles flotantes`;
   floatToggle.querySelector('input').addEventListener('change', (e) => { setFloatingPanels(e.target.checked); });
   viewMenu.appendChild(floatToggle);
-  viewBtn.addEventListener('click', () => { viewMenu.style.display = viewMenu.style.display === 'none' ? 'block' : 'none'; });
+  viewBtn.addEventListener('click', (ev) => { ev.stopPropagation(); toggleMenu(viewMenu); });
   left.appendChild(viewBtn); left.appendChild(viewMenu);
 
   // Windows menu
@@ -5508,7 +6088,7 @@ function createMenuBar() {
       winMenu.appendChild(label);
     });
   }
-  winBtn.addEventListener('click', () => { rebuildWindowMenu(); winMenu.style.display = winMenu.style.display === 'none' ? 'block' : 'none'; });
+  winBtn.addEventListener('click', (ev) => { ev.stopPropagation(); toggleMenu(winMenu, rebuildWindowMenu); });
   left.appendChild(winBtn); left.appendChild(winMenu);
 
   // File / Save menu (Export / Import)
@@ -5544,12 +6124,12 @@ function createMenuBar() {
     location.reload();
   });
   fileMenu.appendChild(restartBtnFile);
-  fileBtn.addEventListener('click', () => { fileMenu.style.display = fileMenu.style.display === 'none' ? 'block' : 'none'; });
+  fileBtn.addEventListener('click', (ev) => { ev.stopPropagation(); toggleMenu(fileMenu); });
   left.appendChild(fileBtn); left.appendChild(fileMenu);
 
   // Settings menu
   const setBtn = document.createElement('button'); setBtn.textContent = 'Ajustes'; setBtn.style.background='transparent'; setBtn.style.color='inherit'; setBtn.style.border='none'; setBtn.style.cursor='pointer'; setBtn.className = 'meso-menu-btn';
-  const setMenu = document.createElement('div'); setMenu.style.position='absolute'; setMenu.style.top='34px'; setMenu.style.left='170px'; setMenu.style.background='rgba(18,18,18,0.98)'; setMenu.style.border='1px solid #333'; setMenu.style.display='none'; setMenu.style.padding='8px'; setMenu.className = 'meso-menu';
+  setMenu = document.createElement('div'); setMenu.style.position='absolute'; setMenu.style.top='34px'; setMenu.style.left='170px'; setMenu.style.background='rgba(18,18,18,0.98)'; setMenu.style.border='1px solid #333'; setMenu.style.display='none'; setMenu.style.padding='8px'; setMenu.className = 'meso-menu';
   // Graphics options
   const gfxHdr = document.createElement('div'); gfxHdr.style.marginTop = '8px'; gfxHdr.style.fontWeight = '700'; gfxHdr.style.marginBottom = '6px'; gfxHdr.textContent = 'Gráficos'; setMenu.appendChild(gfxHdr);
 
@@ -5621,7 +6201,7 @@ function createMenuBar() {
 
   // Dev menu (debug options)
   const devBtn = document.createElement('button'); devBtn.textContent = 'Dev'; devBtn.style.background='transparent'; devBtn.style.color='inherit'; devBtn.style.border='none'; devBtn.style.cursor='pointer'; devBtn.className = 'meso-menu-btn';
-  const devMenu = document.createElement('div'); devMenu.style.position='absolute'; devMenu.style.top='34px'; devMenu.style.left='230px'; devMenu.style.background='rgba(18,18,18,0.98)'; devMenu.style.border='1px solid #333'; devMenu.style.display='none'; devMenu.style.padding='8px'; devMenu.className = 'meso-menu';
+  devMenu = document.createElement('div'); devMenu.style.position='absolute'; devMenu.style.top='34px'; devMenu.style.left='230px'; devMenu.style.background='rgba(18,18,18,0.98)'; devMenu.style.border='1px solid #333'; devMenu.style.display='none'; devMenu.style.padding='8px'; devMenu.className = 'meso-menu';
   // debug options
   const optLogPlayer = document.createElement('label'); optLogPlayer.style.display='block'; optLogPlayer.style.cursor='pointer'; optLogPlayer.innerHTML = `<input type='checkbox'> Log player pos (console)`;
   optLogPlayer.querySelector('input').addEventListener('change', (e) => { window.DEBUG_LOG_PLAYER_POS = !!e.target.checked; });
@@ -5708,9 +6288,22 @@ function createMenuBar() {
     window.enterInterior = function(id) {
       try {
         fetch('data/interiors/' + id + '.json').then(r => { if (!r.ok) throw new Error('missing'); return r.json(); }).then(data => {
-          window._savedExterior = { col: Math.floor(player.x), row: Math.floor(player.y) };
+          // Save exterior state: position and all entities
+          window._savedExterior = { 
+            col: Math.floor(player.x), 
+            row: Math.floor(player.y),
+            entities: entities.slice(), // make a copy of entities array
+            rabbits: rabbits.slice(),   // make a copy of rabbits array
+            foxes: foxes.slice()        // make a copy of foxes array
+          };
+          // Clear all entities from the board
+          entities.length = 0;
+          rabbits.length = 0;
+          foxes.length = 0;
+          // Load interior
           window.currentInterior = data;
           player.col = data.entryCol || 1; player.row = data.entryRow || 1; player.x = player.col; player.y = player.row;
+          try { targetCam = null; centerCameraOnPlayer(); } catch (e) {}
           notify && notify('Entrando en ' + id);
         }).catch(err => { notify && notify('No se pudo cargar interior: ' + id); });
       } catch (e) {}
@@ -5718,31 +6311,124 @@ function createMenuBar() {
     window.exitInterior = function() {
       try {
         if (window._savedExterior) {
-          player.col = window._savedExterior.col; player.row = window._savedExterior.row; player.x = player.col; player.y = player.row;
+          // Restore player position
+          player.col = window._savedExterior.col; 
+          player.row = window._savedExterior.row; 
+          player.x = player.col; 
+          player.y = player.row;
+          // Restore all entities from exterior
+          if (Array.isArray(window._savedExterior.entities)) {
+            entities.length = 0;
+            entities.push(...window._savedExterior.entities);
+          }
+          if (Array.isArray(window._savedExterior.rabbits)) {
+            rabbits.length = 0;
+            rabbits.push(...window._savedExterior.rabbits);
+          }
+          if (Array.isArray(window._savedExterior.foxes)) {
+            foxes.length = 0;
+            foxes.push(...window._savedExterior.foxes);
+          }
           window._savedExterior = null;
         }
         window.currentInterior = null;
+        try { targetCam = null; centerCameraOnPlayer(); } catch (e) {}
         notify && notify('Saliendo del interior');
       } catch (e) {}
     };
   } catch (e) {}
 
-  const btnAddFood = document.createElement('button'); btnAddFood.textContent = 'Añadir comida'; btnAddFood.style.display='block'; btnAddFood.style.marginTop='6px';
-  btnAddFood.addEventListener('click', () => { try { addToInventory('food', 1); } catch (e) { notify && notify('Error'); } });
-  const btnAddWater = document.createElement('button'); btnAddWater.textContent = 'Añadir agua'; btnAddWater.style.display='block'; btnAddWater.style.marginTop='6px';
-  btnAddWater.addEventListener('click', () => { try { addToInventory('water', 1); } catch (e) { notify && notify('Error'); } });
-  const btnAddSword = document.createElement('button'); btnAddSword.textContent = 'Añadir arma: Espada'; btnAddSword.style.display='block'; btnAddSword.style.marginTop='6px';
-  btnAddSword.addEventListener('click', () => { try { addToInventory('sword', 1); notify && notify('Espada añadida'); } catch (e) { notify && notify('Error'); } });
-  const btnAddItem = document.createElement('button'); btnAddItem.textContent = 'Añadir item (prompt)'; btnAddItem.style.display='block'; btnAddItem.style.marginTop='6px';
+  const devInvTitle = document.createElement('div');
+  devInvTitle.textContent = 'Inventario de prueba';
+  devInvTitle.style.marginTop = '8px';
+  devInvTitle.style.marginBottom = '6px';
+  devInvTitle.style.fontWeight = '700';
+  devMenu.appendChild(devInvTitle);
+
+  const devItemsWrap = document.createElement('div');
+  devItemsWrap.style.display = 'grid';
+  devItemsWrap.style.gridTemplateColumns = 'repeat(2, minmax(0, 1fr))';
+  devItemsWrap.style.gap = '4px';
+  devItemsWrap.style.maxHeight = '220px';
+  devItemsWrap.style.overflow = 'auto';
+  devItemsWrap.style.padding = '4px';
+  devItemsWrap.style.background = 'rgba(255,255,255,0.02)';
+  devItemsWrap.style.borderRadius = '6px';
+
+  const DEV_TEST_ITEMS = [
+    'wood', 'stone', 'wheat', 'brick', 'food', 'water', 'meat',
+    'plank', 'stick', 'stone-pick', 'stone-axe', 'stone-sword',
+    'campfire', 'furnace', 'brick-block', 'beacon',
+    'sword', 'spear', 'club', 'axe'
+  ];
+
+  function addDevItemControls(itemId) {
+    const row = document.createElement('div');
+    row.style.display = 'flex';
+    row.style.alignItems = 'center';
+    row.style.gap = '4px';
+
+    const icon = document.createElement('canvas');
+    icon.width = 18; icon.height = 18;
+    icon.style.width = '18px'; icon.style.height = '18px';
+    try { drawItemIcon(icon.getContext('2d'), itemId, 18, 18); } catch (e) {}
+
+    const add1 = document.createElement('button');
+    add1.textContent = '+';
+    add1.title = 'Añadir 1';
+    add1.style.padding = '2px 6px';
+    add1.addEventListener('click', () => { try { addToInventory(itemId, 1); } catch (e) {} });
+
+    const add10 = document.createElement('button');
+    add10.textContent = '+10';
+    add10.title = 'Añadir 10';
+    add10.style.padding = '2px 6px';
+    add10.addEventListener('click', () => { try { addToInventory(itemId, 10); } catch (e) {} });
+
+    const lbl = document.createElement('span');
+    lbl.textContent = itemId;
+    lbl.style.fontSize = '11px';
+    lbl.style.color = '#ddd';
+
+    row.appendChild(icon);
+    row.appendChild(add1);
+    row.appendChild(add10);
+    row.appendChild(lbl);
+    return row;
+  }
+
+  DEV_TEST_ITEMS.forEach(id => devItemsWrap.appendChild(addDevItemControls(id)));
+  devMenu.appendChild(devItemsWrap);
+
+  const devInvActions = document.createElement('div');
+  devInvActions.style.display = 'flex';
+  devInvActions.style.gap = '6px';
+  devInvActions.style.marginTop = '6px';
+
+  const btnAddAll = document.createElement('button');
+  btnAddAll.textContent = 'Pack x5';
+  btnAddAll.addEventListener('click', () => {
+    try {
+      DEV_TEST_ITEMS.forEach(id => addToInventory(id, 5));
+      notify && notify('Pack de pruebas añadido');
+    } catch (e) { notify && notify('Error añadiendo pack'); }
+  });
+
+  const btnAddItem = document.createElement('button');
+  btnAddItem.textContent = 'Añadir item (prompt)';
   btnAddItem.addEventListener('click', () => {
     try {
       const id = prompt('ID del item (ej: axe, spear, potion):', 'axe');
-      if (!id) return; const qty = parseInt(prompt('Cantidad:', '1') || '1', 10) || 1;
+      if (!id) return;
+      const qty = parseInt(prompt('Cantidad:', '1') || '1', 10) || 1;
       addToInventory(id, qty);
       notify && notify(`${qty}x ${id} añadidos`);
-      try { updateInventory(); } catch (e) {}
     } catch (e) { notify && notify('Error añadiendo item'); }
   });
+
+  devInvActions.appendChild(btnAddAll);
+  devInvActions.appendChild(btnAddItem);
+  devMenu.appendChild(devInvActions);
   const btnCreateDoor = document.createElement('button'); btnCreateDoor.textContent = 'Crear puerta -> house-small'; btnCreateDoor.style.display='block'; btnCreateDoor.style.marginTop='6px';
   btnCreateDoor.addEventListener('click', () => {
     try {
@@ -5753,7 +6439,7 @@ function createMenuBar() {
   });
   const btnListDoors = document.createElement('button'); btnListDoors.textContent = 'Listar puertas interiores'; btnListDoors.style.display='block'; btnListDoors.style.marginTop='6px';
   btnListDoors.addEventListener('click', () => { try { alert(JSON.stringify(window.INTERIOR_DOORS || [], null, 2)); } catch (e) { notify && notify('Error'); } });
-  devMenu.appendChild(btnAddFood); devMenu.appendChild(btnAddWater); devMenu.appendChild(btnAddSword); devMenu.appendChild(btnAddItem); devMenu.appendChild(btnCreateDoor); devMenu.appendChild(btnListDoors);
+  devMenu.appendChild(btnCreateDoor); devMenu.appendChild(btnListDoors);
   const btnConsumeFood = document.createElement('button'); btnConsumeFood.textContent = 'Consumir comida'; btnConsumeFood.style.display='block'; btnConsumeFood.style.marginTop='6px';
   btnConsumeFood.addEventListener('click', () => {
     try {
@@ -5773,7 +6459,7 @@ function createMenuBar() {
     } catch (e) { notify && notify('Error bebiendo'); }
   });
   devMenu.appendChild(btnConsumeFood); devMenu.appendChild(btnConsumeWater);
-  devBtn.addEventListener('click', () => { devMenu.style.display = devMenu.style.display === 'none' ? 'block' : 'none'; });
+  devBtn.addEventListener('click', (ev) => { ev.stopPropagation(); toggleMenu(devMenu); });
   left.appendChild(devBtn); left.appendChild(devMenu);
   // try to restore graphics config from storage
   try {
@@ -5784,7 +6470,7 @@ function createMenuBar() {
     }
   } catch (e) {}
 
-  setBtn.addEventListener('click', () => { setMenu.style.display = setMenu.style.display === 'none' ? 'block' : 'none'; });
+  setBtn.addEventListener('click', (ev) => { ev.stopPropagation(); toggleMenu(setMenu); });
   left.appendChild(setBtn); left.appendChild(setMenu);
 
   bar.appendChild(left);
@@ -5797,6 +6483,7 @@ function createMenuBar() {
 
   // show/hide helpers: reveal when mouse is near the top edge, keep visible while over bar
   let _topBarTimer = null;
+  let _isHoveringTopBar = false;
   function showTopBar() {
     if (_topBarTimer) { clearTimeout(_topBarTimer); _topBarTimer = null; }
     bar.style.top = '0px';
@@ -5806,21 +6493,20 @@ function createMenuBar() {
   function hideTopBarSoon(delay = 800) {
     if (_topBarTimer) clearTimeout(_topBarTimer);
     _topBarTimer = setTimeout(() => {
-      // only hide when the mouse is not over the bar
-      try {
-        const el = document.elementFromPoint(window._lastMouseX || 0, window._lastMouseY || 0);
-        if (el && bar.contains(el)) return; // still over bar
-      } catch (e) {}
+      if (hasOpenMenus()) return;
+      if (_isHoveringTopBar) return;
       bar.style.top = '-44px'; bar.style.opacity = '0'; bar.style.pointerEvents = 'none';
     }, delay);
   }
 
-  // track last mouse so hide logic can check if pointer is over bar
-  document.addEventListener('mousemove', (ev) => { window._lastMouseX = ev.clientX; window._lastMouseY = ev.clientY; if (ev.clientY <= 8) showTopBar(); else if (ev.clientY > 48) hideTopBarSoon(600); });
+  document.addEventListener('mousemove', (ev) => {
+    if (ev.clientY <= 8) showTopBar();
+    else if (ev.clientY > 48 && !hasOpenMenus() && !_isHoveringTopBar) hideTopBarSoon(350);
+  });
 
   // keep bar visible while hovering it
-  bar.addEventListener('mouseenter', () => { showTopBar(); });
-  bar.addEventListener('mouseleave', () => { hideTopBarSoon(500); });
+  bar.addEventListener('mouseenter', () => { _isHoveringTopBar = true; showTopBar(); });
+  bar.addEventListener('mouseleave', () => { _isHoveringTopBar = false; hideTopBarSoon(250); });
 
   // Close any open menu when clicking outside menus or menu buttons
   document.addEventListener('click', (e) => {
@@ -5828,8 +6514,15 @@ function createMenuBar() {
     if (target.closest && (target.closest('.meso-menu') || target.closest('.meso-menu-btn'))) {
       return; // clicked inside a menu or on a menu button
     }
-    const openMenus = document.querySelectorAll('.meso-menu');
-    openMenus.forEach(m => { if (m.style) m.style.display = 'none'; });
+    closeAllMenus();
+    hideTopBarSoon(250);
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      closeAllMenus();
+      hideTopBarSoon(200);
+    }
   });
 }
 
@@ -5854,27 +6547,55 @@ function createTaskPanel() {
     html += `<div style="padding:8px;margin-bottom:8px;border-radius:4px;background:rgba(255,255,255,0.02)"><div style="font-weight:700">${a.title} <button data-action='${a.id}' style='float:right;background:#333;color:#FFD27A;border:none;padding:4px 6px;border-radius:6px'>Asignar</button></div><div style="font-size:12px;color:#ccc;margin-top:6px">${a.desc}</div></div>`;
   });
 
-  html += `<hr style="border:none;border-top:1px solid rgba(255,255,255,0.04);margin:8px 0"><div style="font-weight:700;margin-bottom:6px">Aldeanos</div><div id="npc-list" style="max-height:180px;overflow:auto"></div>`;
+  html += `<hr style="border:none;border-top:1px solid rgba(255,255,255,0.04);margin:8px 0">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <div style="font-weight:700">Aldeanos</div>
+      <div style="font-size:12px;color:#9f9f9f">Selección: <span id='npc-selected-count'>0</span></div>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:8px">
+      <button id="npc-quick-gather" class="tool-btn" style="padding:4px 6px">Recolectar cercano (G)</button>
+      <button id="npc-quick-hold" class="tool-btn" style="padding:4px 6px">Mantener (H)</button>
+    </div>
+    <div id="npc-list" style="max-height:180px;overflow:auto"></div>`;
   panel.innerHTML = html;
   document.body.appendChild(panel);
+  const selectedCountEl = panel.querySelector('#npc-selected-count');
+
+  function updateSelectedCount() {
+    try {
+      if (selectedCountEl) selectedCountEl.textContent = String(_getSelectedNPCs().length);
+    } catch (e) {}
+  }
   // wire assign buttons
   panel.querySelectorAll('button[data-action]').forEach(btn => {
     btn.addEventListener('click', (ev) => {
       const actionId = btn.getAttribute('data-action');
       // select NPCs via checkboxes below
       const checked = Array.from(document.querySelectorAll('#npc-list input[type=checkbox]:checked')).map(c => c.value);
-      if (checked.length === 0) { notify('Selecciona al menos un aldeano.'); return; }
-      const assigned = [];
-      checked.forEach(id => {
-        const npc = entities.find(en => en.id === id);
-        if (npc) {
-          npc.task = { id: actionId, progress: 0, assignedAt: Date.now() };
-          assigned.push(npc.name || npc.id);
-        }
-      });
-      notify(`Tarea ${actionId} asignada a ${assigned.length} aldeano(s)`);
+      let targets = checked.map(id => entities.find(en => en.id === id)).filter(Boolean);
+      if (targets.length === 0) targets = _getSelectedNPCs();
+      if (targets.length === 0) { notify('Selecciona al menos un aldeano.'); return; }
+      _assignTaskToNPCs(targets, actionId);
       renderNPCList();
     });
+  });
+
+  const quickGatherBtn = panel.querySelector('#npc-quick-gather');
+  if (quickGatherBtn) quickGatherBtn.addEventListener('click', () => { _sendSelectedNPCsToGather(); renderNPCList(); });
+  const quickHoldBtn = panel.querySelector('#npc-quick-hold');
+  if (quickHoldBtn) quickHoldBtn.addEventListener('click', () => {
+    const units = _getSelectedEntities();
+    if (!units.length) { notify('No hay unidades seleccionadas.'); return; }
+    const holdUntil = Date.now() + 12000;
+    for (const unit of units) {
+      try {
+        delete unit.moveTarget;
+        unit._holdUntil = holdUntil;
+        if (unit.task && unit.task.id !== 'build' && unit.task.id !== 'trade') delete unit.task;
+      } catch (e) {}
+    }
+    notify(`Mantener posición: ${units.length} unidad(es)`);
+    renderNPCList();
   });
 
   function renderNPCList() {
@@ -5887,10 +6608,23 @@ function createTaskPanel() {
     }
     npcs.forEach(n => {
       const row = document.createElement('div'); row.style.display = 'flex'; row.style.justifyContent = 'space-between'; row.style.alignItems = 'center'; row.style.padding = '6px 0';
-      const left = document.createElement('div'); left.innerHTML = `<label style="font-weight:700"><input type='checkbox' value='${n.id}' style='margin-right:8px'> ${n.name || n.id}</label><div style='font-size:12px;color:#ccc'>HP: ${n.hp||0}/${n.maxHp||0}</div>`;
+      const checked = _getSelectedNPCs().some(sel => sel && sel.id === n.id) ? 'checked' : '';
+      const left = document.createElement('div'); left.innerHTML = `<label style="font-weight:700"><input type='checkbox' value='${n.id}' ${checked} style='margin-right:8px'> ${n.name || n.id}</label><div style='font-size:12px;color:#ccc'>HP: ${n.hp||0}/${n.maxHp||0}</div>`;
       const right = document.createElement('div'); right.style.fontSize='12px'; right.style.color='#9f9f9f'; right.textContent = n.task ? n.task.id : '—';
       row.appendChild(left); row.appendChild(right); list.appendChild(row);
+      const chk = row.querySelector('input[type="checkbox"]');
+      if (chk) {
+        chk.addEventListener('change', () => {
+          const current = _getSelectedNPCs();
+          const npcRef = entities.find(en => en.id === n.id);
+          if (!npcRef) return;
+          if (chk.checked) _setSelectedEntities(current.concat([npcRef]), false);
+          else _setSelectedEntities(current.filter(en => en.id !== n.id), false);
+          updateSelectedCount();
+        });
+      }
     });
+    updateSelectedCount();
   }
 
   // expose for other code to refresh
@@ -5973,7 +6707,6 @@ function savePlayerPos(force) {
     const pos = { x: player.x, y: player.y, col: player.col, row: player.row };
     const key = JSON.stringify([Math.round(pos.x*10), Math.round(pos.y*10)]);
     if (force || _lastSavedPos !== key) {
-      try { console.log('savePlayerPos -> saving', JSON.stringify(pos)); } catch (e) { console.debug('savePlayerPos ->', JSON.stringify(pos)); }
       localStorage.setItem('meso.playerPos', JSON.stringify(pos));
       try { sessionStorage.setItem('meso.playerPos', JSON.stringify(pos)); } catch (e) {}
       _lastSavedPos = key;
@@ -6350,7 +7083,7 @@ function showStartMenu(force) {
         try { if (window._showPanels) { const top = document.getElementById('topbar'); if (top) top.style.display = ''; const toolbar = document.getElementById('toolbar'); if (toolbar) toolbar.style.display = ''; const mainEl = document.getElementById('main'); if (mainEl) mainEl.style.display = ''; } } catch (e) {}
         mapCacheDirty = true; rebuildMapCacheDebounced(10);
         updateUI();
-        try { window._gameStarted = true; requestAnimationFrame(render); } catch (e) {}
+        try { window._gameStarted = true; startRenderLoop(); } catch (e) {}
       } catch (e) { console.error(e); try { prog && prog.hide(); } catch (er) {} notify('Error cargando partida'); }
     });
 
@@ -6480,7 +7213,7 @@ function showStartupParams() {
         try { window._showPanels = true; } catch (e) {}
         try { if (window._showPanels) { const top = document.getElementById('topbar'); if (top) top.style.display = ''; const toolbar = document.getElementById('toolbar'); if (toolbar) toolbar.style.display = ''; const mainEl = document.getElementById('main'); if (mainEl) mainEl.style.display = ''; } } catch (e) {}
         // start the main game loop now that generation and UI restore are complete
-        try { window._gameStarted = true; requestAnimationFrame(render); } catch (e) {}
+        try { window._gameStarted = true; startRenderLoop(); } catch (e) {}
       } catch (err) { try { prog && prog.hide(); } catch (e) {} hideLoadingOverlay(); console.error('start new err', err); }
     });
   } catch (e) { console.error('showStartupParams err', e); }
@@ -6718,6 +7451,7 @@ canvas.addEventListener('mousemove', e => {
   const my = e.clientY - rect.top;
 
   if (isZooming) {
+    markCameraInput();
     const delta = zoomStartY - e.clientY;
     zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoomStart * (1 + delta * 0.005)));
     clampCamera();
@@ -6752,6 +7486,7 @@ canvas.addEventListener('mousemove', e => {
   }
 
   if (isPanning) {
+    markCameraInput();
     const now = Date.now();
     const dx = e.clientX - lastMouseX;
     const dy = e.clientY - lastMouseY;
@@ -6795,6 +7530,7 @@ canvas.addEventListener('mousemove', e => {
 canvas.addEventListener('mousedown', e => {
   if (startLocked) return;
   if (e.button === 1 || (e.button === 0 && panMode)) {
+    markCameraInput();
     isPanning = true;
     panStartX = e.clientX; panStartY = e.clientY;
     camStartX = camX; camStartY = camY;
@@ -6802,6 +7538,7 @@ canvas.addEventListener('mousedown', e => {
     lastMouseX = e.clientX; lastMouseY = e.clientY; lastMouseTime = Date.now();
     e.preventDefault();
   } else if (e.button === 2) {
+    markCameraInput();
     isZooming = true;
     rightDown = true; rightDownX = e.clientX; rightDownY = e.clientY; rightMoved = false;
     zoomStartY = e.clientY;
@@ -6832,25 +7569,10 @@ canvas.addEventListener('mousedown', e => {
 
     if (!editMode) {
       // If there is an active selection, interpret this left-click as a command target
-      if (Array.isArray(window._selectedEntities) && window._selectedEntities.length > 0) {
+      if (_getSelectedEntities().length > 0) {
         try {
           const pos = screenToWorldFloat(mx, my);
-          // distribute targets to avoid stack overlap
-          const n = window._selectedEntities.length;
-          for (let i = 0; i < n; i++) {
-            const ent = window._selectedEntities[i];
-            if (!ent) continue;
-            try {
-              // small spread circle
-              const angle = (i / Math.max(1, n)) * Math.PI * 2;
-              const radius = 0.4; // tiles
-              const tx = pos.x + Math.cos(angle) * radius;
-              const ty = pos.y + Math.sin(angle) * radius;
-              ent.moveTarget = { x: tx, y: ty };
-            } catch (e) {}
-          }
-          // clear selection after issuing command
-          try { window._selectedEntities = []; } catch (e) {}
+          _issueGroupMoveCommand(pos.x, pos.y, { radius: 0.5 });
         } catch (err) {}
         return;
       }
@@ -6858,7 +7580,21 @@ canvas.addEventListener('mousedown', e => {
       try {
         const pos = screenToWorldFloat(mx, my);
         const clicked = findEntityAtWorld(pos.x, pos.y);
-        if (clicked) { showEntityInfo(clicked); } else { notify('No hay entidad en el punto'); }
+        if (clicked && _isControllableUnit(clicked)) {
+          const selected = _getSelectedEntities();
+          const already = selected.some(en => en && en.id === clicked.id);
+          if (e.shiftKey) {
+            if (already) _setSelectedEntities(selected.filter(en => en.id !== clicked.id), false);
+            else _setSelectedEntities(selected.concat([clicked]), false);
+          } else {
+            _setSelectedEntities([clicked], false);
+          }
+          notify(`Seleccionadas: ${_getSelectedEntities().length}`);
+        } else if (clicked) {
+          showEntityInfo(clicked);
+        } else {
+          notify('No hay entidad en el punto');
+        }
       } catch (err) { /* ignore */ }
       return;
     }
@@ -6908,7 +7644,7 @@ document.addEventListener('mouseup', (e) => {
           for (const rbt of (rabbits || [])) { try { if (rbt && rbt.x !== undefined) { if (rbt.x >= minX && rbt.x <= maxX && rbt.y >= minY && rbt.y <= maxY) sel.push(rbt); } } catch (e) {} }
           for (const fx of (foxes || [])) { try { if (fx && fx.x !== undefined) { if (fx.x >= minX && fx.x <= maxX && fx.y >= minY && fx.y <= maxY) sel.push(fx); } } catch (e) {} }
         } catch (e) {}
-        try { window._selectedEntities = sel; } catch (e) {}
+        try { _setSelectedEntities(sel, !!e.shiftKey); } catch (e) {}
       }
       _selectStart = null; _selectRect = null;
       try { document.body.style.userSelect = ''; } catch (u) {}
@@ -6943,6 +7679,7 @@ canvas.addEventListener('wheel', (ev) => {
   camX = mx - ((mx - camX) * ratio);
   camY = my - ((my - camY) * ratio);
   targetZoom = newTarget;
+  markCameraInput();
   clampCamera();
   // mark cache dirty and debounce heavy rebuild until animation settles
   mapCacheDirty = true; rebuildMapCacheDebounced(220);
@@ -6958,6 +7695,10 @@ canvas.addEventListener('contextmenu', e => {
   const mx = e.clientX - rect.left;
   const my = e.clientY - rect.top;
   const pos = screenToWorldFloat(mx, my);
+  if (!editMode && _getSelectedEntities().length > 0) {
+    _issueGroupMoveCommand(pos.x, pos.y, { radius: 0.65 });
+    return;
+  }
   // right-click entity info if clicking on an entity/animal
   try {
     const clicked = findEntityAtWorld(pos.x, pos.y);
@@ -6974,27 +7715,6 @@ canvas.addEventListener('mouseleave', () => {
   document.getElementById('tooltip').style.display = 'none';
   if (isPanning) { isPanning = false; canvas.style.cursor = panMode ? 'grab' : 'crosshair'; }
   if (isZooming) { isZooming = false; canvas.style.cursor = panMode ? 'grab' : 'crosshair'; }
-});
-
-canvas.addEventListener('contextmenu', e => {
-  e.preventDefault();
-  if (startLocked) return;
-  // if user is zooming or panning, don't set move target
-  if (isZooming || isPanning) return;
-  const rect = canvas.getBoundingClientRect();
-  const mx = e.clientX - rect.left;
-  const my = e.clientY - rect.top;
-  const pos = screenToWorldFloat(mx, my);
-  // right-click entity info if clicking on an entity/animal
-  try {
-    const clicked = findEntityAtWorld(pos.x, pos.y);
-    if (clicked && !rightMoved) { showEntityInfo(clicked); return; }
-  } catch (errInfo) { /* ignore */ }
-  // right-click movement target disabled (auto-move removed)
-  if (!editMode && !rightMoved) {
-    notify('Movimiento automático deshabilitado; usa WASD o Flechas.');
-    return;
-  }
 });
 
 document.getElementById('btn-demolish').addEventListener('click', () => {
@@ -7206,6 +7926,12 @@ if (floatBtn) floatBtn.addEventListener('click', () => setFloatingPanels(!docume
 
 // Keyboard shortcuts
 document.addEventListener('keydown', e => {
+  if (e.key && e.key.toLowerCase() === 'm') {
+    worldMapOverlayVisible = !worldMapOverlayVisible;
+    notify(worldMapOverlayVisible ? 'Mapa cenital abierto' : 'Mapa cenital cerrado');
+    e.preventDefault();
+    return;
+  }
   if (!startLocked) {
     const moveMap = {
       ArrowUp: [0, -1],
@@ -7230,7 +7956,7 @@ document.addEventListener('keydown', e => {
     }
   }
   if (editMode) {
-    const map = { h:'house', f:'farm', t:'temple', m:'market', g:'granary', z:'ziggurat', d:'demolish', Escape:null };
+    const map = { h:'house', v:'mesopotamian_villa_detailed', f:'farm', t:'temple', k:'market', g:'granary', z:'ziggurat', d:'demolish', Escape:null };
     if (e.key in map) {
       const type = map[e.key];
       document.querySelectorAll('.build-btn, #btn-demolish').forEach(b => b.classList.remove('selected'));
@@ -7244,6 +7970,44 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Enter') {
     // toggle guide instead of advancing classical turns
     const g = document.getElementById('game-guide'); if (g) g.style.display = g.style.display === 'none' ? 'block' : 'none';
+  }
+  if (e.key === 'Escape' && worldMapOverlayVisible) {
+    worldMapOverlayVisible = false;
+    notify('Mapa cenital cerrado');
+    e.preventDefault();
+    return;
+  }
+  if (!editMode && e.key === 'Escape') {
+    _setSelectedEntities([], false);
+    notify('Selección limpiada');
+  }
+  if (!editMode && e.key && e.key.toLowerCase() === 'g') {
+    _sendSelectedNPCsToGather();
+    e.preventDefault();
+  }
+  if (!editMode && e.key && e.key.toLowerCase() === 'h') {
+    const units = _getSelectedEntities();
+    if (units.length > 0) {
+      const holdUntil = Date.now() + 12000;
+      for (const unit of units) {
+        try {
+          delete unit.moveTarget;
+          unit._holdUntil = holdUntil;
+          if (unit.task && unit.task.id !== 'build' && unit.task.id !== 'trade') delete unit.task;
+        } catch (err) {}
+      }
+      notify(`Mantener posición: ${units.length} unidad(es)`);
+      try { if (window.renderNPCList) window.renderNPCList(); } catch (err) {}
+    }
+    e.preventDefault();
+  }
+  if (!editMode && e.key && e.key.toLowerCase() === 'r') {
+    const units = _getSelectedEntities();
+    if (units.length > 0) {
+      _issueGroupMoveCommand(player.x, player.y, { radius: 1.3 });
+      notify('Reagrupar alrededor del jugador');
+    }
+    e.preventDefault();
   }
   // toggle camera follow with 'f'
   if (e.key && e.key.toLowerCase() === 'f') {
@@ -7289,8 +8053,44 @@ document.addEventListener('keydown', e => {
 document.addEventListener('keydown', e => {
   if (!e.key) return;
   if (e.key.toLowerCase() !== 'e') return;
-  // disable interactions while in edit mode
-  if (editMode) { notify('Interacciones deshabilitadas en modo edición'); e.preventDefault(); return; }
+
+  function tryPlaceEquippedItem() {
+    try {
+      if (editMode) return false;
+      const equipped = String(player.equipped || '').trim();
+      if (!equipped) return false;
+
+      const PLACEABLE_ITEMS = new Set(['campfire', 'furnace', 'brick-block', 'beacon']);
+      if (!PLACEABLE_ITEMS.has(equipped)) return false;
+      if ((inventory[equipped] || 0) <= 0) { notify('No tienes ese objeto para colocar'); return true; }
+
+      let dx = 0, dy = 1;
+      if (keyState['w'] || keyState['ArrowUp']) { dx = 0; dy = -1; }
+      else if (keyState['s'] || keyState['ArrowDown']) { dx = 0; dy = 1; }
+      else if (keyState['a'] || keyState['ArrowLeft']) { dx = -1; dy = 0; }
+      else if (keyState['d'] || keyState['ArrowRight']) { dx = 1; dy = 0; }
+
+      const col = Math.max(0, Math.min(COLS - 1, Math.floor(player.col + dx)));
+      const row = Math.max(0, Math.min(ROWS - 1, Math.floor(player.row + dy)));
+      if ((grid[row] && grid[row][col]) || isRiver(col)) { notify('No se puede colocar aquí'); return true; }
+
+      const occupied = entities.some(ent => ent && Math.floor(ent.col) === col && Math.floor(ent.row) === row);
+      if (occupied) { notify('Ya hay un objeto en esa celda'); return true; }
+
+      placeResource(col, row, equipped);
+      inventory[equipped] = Math.max(0, (inventory[equipped] || 0) - 1);
+      if (inventory[equipped] <= 0) delete inventory[equipped];
+      updateInventory();
+      try { if (window.updateEquippedUI) window.updateEquippedUI(); } catch (e) {}
+      try { saveAppStateDebounced(); } catch (e) {}
+      notify('Colocado: ' + equipped);
+      return true;
+    } catch (err) {
+      console.warn('place equipped item error', err);
+      return false;
+    }
+  }
+
   try {
     const it = window._interactionTarget;
     if (it) {
@@ -7299,6 +8099,7 @@ document.addEventListener('keydown', e => {
         e.preventDefault();
         return;
       }
+      if (editMode) { notify('Interacciones deshabilitadas en modo edición (excepto puertas)'); e.preventDefault(); return; }
       if (it.kind === 'resource' && it.ref) {
         try {
           // find and remove the exact entity instance
@@ -7329,6 +8130,10 @@ document.addEventListener('keydown', e => {
         e.preventDefault();
         return;
       }
+    }
+    if (tryPlaceEquippedItem()) {
+      e.preventDefault();
+      return;
     }
   } catch (err) { /* ignore */ }
 });
@@ -7374,15 +8179,7 @@ function init() {
   drawBrickIcon(document.getElementById('icon-brick').getContext('2d'), 18, 18);
   drawPopIcon(document.getElementById('icon-pop').getContext('2d'), 18, 18);
 
-  // Draw building icons in buttons
-  try { drawRegisteredIcon(document.getElementById('icon-house').getContext('2d'), 'house', 22, 22); } catch (e) {}
-  try { drawRegisteredIcon(document.getElementById('icon-farm').getContext('2d'), 'farm', 22, 22); } catch (e) {}
-  try { drawRegisteredIcon(document.getElementById('icon-temple').getContext('2d'), 'temple', 22, 22); } catch (e) {}
-  try { drawRegisteredIcon(document.getElementById('icon-market').getContext('2d'), 'market', 22, 22); } catch (e) {}
-  try { drawRegisteredIcon(document.getElementById('icon-granary').getContext('2d'), 'granary', 22, 22); } catch (e) {}
-  try { drawRegisteredIcon(document.getElementById('icon-ziggurat').getContext('2d'), 'ziggurat', 22, 22); } catch (e) {}
-  // draw road icon
-  try { drawRoadIcon(document.getElementById('icon-road').getContext('2d'), 22, 22); } catch (e) {}
+  try { refreshBuildButtonsFromDefinitions(); } catch (e) {}
 
   // Make the right panel behave like other floating windows (draggable/minimizable)
   try { const mainPanel = document.getElementById('panel'); if (mainPanel) { enableFloatingBehavior(mainPanel); registerPanel(mainPanel); } } catch (e) {}
@@ -7428,8 +8225,10 @@ function init() {
   // Procedural map generation with biomes, resources and animals
   // Try to restore a previously saved app state (map, player, panels)
   try {
+    const forceNewGame = localStorage.getItem('meso.forceNew') === '1';
+    const hasSavedAppState = !!localStorage.getItem(APP_STATE_KEY);
     // if forced new game, generate fresh map and open char selection
-    if (localStorage.getItem('meso.forceNew') === '1') {
+    if (forceNewGame) {
       try { localStorage.removeItem('meso.forceNew'); } catch (e) {}
       // run async preload then generate map so sprites are ready before placement
       (async () => {
@@ -7465,6 +8264,32 @@ function init() {
           try { console.log && console.log('game-engine: finalizing new-game flow, calling postMapInit'); } catch (e) {}
           try { postMapInit(); } catch (e) { console.warn('postMapInit call failed', e); }
       })();
+      if (window._externalMenu) return;
+    } else if (window._externalMenu && hasSavedAppState) {
+      (async () => {
+        try { if (window._onEngineProgress) window._onEngineProgress(10, 'Restaurando partida...'); } catch (e) {}
+        const restored = loadAppState();
+        if (!restored) throw new Error('No se pudo restaurar la partida guardada');
+        try {
+          await ensureEntityPixelsReady(1400);
+          const prog = {
+            update: function(p, msg) {
+              try { if (window._onEngineProgress) window._onEngineProgress(20 + Math.round((p || 0) * 0.6), msg || 'Procesando sprites...'); } catch (e) {}
+            }
+          };
+          await generateSpriteImages(prog);
+        } catch (e) {
+          console.warn('saved-game sprite preload failed', e);
+        }
+        try { if (window._onEngineProgress) window._onEngineProgress(88, 'Reconstruyendo mundo...'); } catch (e) {}
+        mapCacheDirty = true;
+        rebuildMapCacheDebounced(10);
+        postMapInit();
+      })().catch(err => {
+        console.error('saved-game boot error', err);
+        try { notify('Error cargando partida'); } catch (e) {}
+      });
+      return;
     }
     // If the host page is providing its own external menu, skip the built-in startup menu.
     if (!window._externalMenu) {
@@ -7501,7 +8326,7 @@ function init() {
   centerCamera();
 
   addLog('Ciudad fundada en la orilla del Éufrates.');
-  addLog('Atajos: H=Casa F=Granja T=Templo M=Mercado G=Granero Z=Zigurat D=Demoler');
+  addLog('Atajos: H=Casa V=Villa F=Granja T=Templo K=Mercado G=Granero Z=Zigurat D=Demoler');
   notify('¡Bienvenido a Mesopotamia! Construye tu ciudad.');
 }
 
@@ -7511,9 +8336,9 @@ function postMapInit() {
   try { updateBuildMenuFromGrid(); } catch (e) {}
   try { centerCamera(); } catch (e) {}
   addLog('Ciudad fundada en la orilla del Éufrates.');
-  addLog('Atajos: H=Casa F=Granja T=Templo M=Mercado G=Granero Z=Zigurat D=Demoler');
+  addLog('Atajos: H=Casa V=Villa F=Granja T=Templo K=Mercado G=Granero Z=Zigurat D=Demoler');
   notify('¡Bienvenido a Mesopotamia! Construye tu ciudad.');
-  try { render(); } catch (e) {}
+  try { startRenderLoop(); } catch (e) {}
   // signal to any external host that engine finished map initialization
   try { if (window._onEngineReady && typeof window._onEngineReady === 'function') { try { console.log && console.log('game-engine: calling _onEngineReady'); window._onEngineReady(); } catch (e) {} } } catch (e) {}
 }
@@ -7521,7 +8346,7 @@ function postMapInit() {
 // Update build menu buttons based on current map (mark as 'built' when a type exists)
 function updateBuildMenuFromGrid() {
   try {
-    const types = ['house','farm','temple','market','granary','ziggurat','road'];
+    const types = ['house','mesopotamian_villa_detailed','farm','temple','market','granary','ziggurat','road'];
     const found = {};
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
@@ -7548,7 +8373,7 @@ function updateBuildMenuFromGrid() {
 try {
   // autosave every 5 seconds and on unload/visibility change to persist full runtime state
   try {
-    setInterval(() => { try { saveAppState(); } catch (e) {} }, 5000);
+    setInterval(() => { try { saveAppStateDebounced(1200); } catch (e) {} }, 20000);
     window.addEventListener('beforeunload', () => { try { saveAppState(); } catch (e) {} });
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') try { saveAppState(); } catch (e) {} });
   } catch (e) {}
