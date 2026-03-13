@@ -152,6 +152,18 @@ async function exportEntitySpritesPNGs(names, options = {}) {
 }
 try { window.exportEntitySpritesPNGs = exportEntitySpritesPNGs; } catch (e) {}
 
+const DEFAULT_ENEMY_DEFS = {
+  raider: { name: 'Raider', hp: 12, speed: 0.9, reward: { brick: 1 }, sprite: 'raider', scale: 0.82 },
+  beast: { name: 'Beast', hp: 20, speed: 0.6, reward: { brick: 2 }, sprite: 'beast', scale: 0.96 }
+};
+
+const DEFAULT_RESOURCE_DEFS = {
+  wheat: { name: 'Trigo', sprite: 'wheat', isoScale: 0.86, orthoScale: 0.48 },
+  wood: { name: 'Madera', sprite: 'wood', isoScale: 0.82, orthoScale: 0.46 },
+  stone: { name: 'Piedra', sprite: 'stone', isoScale: 0.82, orthoScale: 0.46 },
+  mountain: { name: 'Montaña', sprite: 'mountain', isoScale: 2.1, isoHeight: 2.8 }
+};
+
 // Load entity definitions from `data/entities-defs.json` (merge into runtime)
 async function loadEntityDefinitions(progress) {
   try {
@@ -159,12 +171,18 @@ async function loadEntityDefinitions(progress) {
     const path = 'data/entities-defs.json';
     let resp = null;
     try { resp = await fetch(path, { cache: 'no-store' }); } catch (e) { resp = null; }
-    if (!resp || !resp.ok) { if (progress && progress.update) progress.update(6, 'Defs: fallback'); window._ENTITY_DEFS = window._ENTITY_DEFS || { buildings: BUILDINGS }; return; }
+    if (!resp || !resp.ok) {
+      if (progress && progress.update) progress.update(6, 'Defs: fallback');
+      window._ENTITY_DEFS = window._ENTITY_DEFS || { buildings: BUILDINGS, enemies: DEFAULT_ENEMY_DEFS, resources: DEFAULT_RESOURCE_DEFS };
+      return;
+    }
     const j = await resp.json();
     window._ENTITY_DEFS = window._ENTITY_DEFS || {};
     window._ENTITY_DEFS.buildings = Object.assign({}, BUILDINGS, j.buildings || {});
     window._ENTITY_DEFS.trees = Array.isArray(j.trees) ? j.trees.slice() : (window._ENTITY_DEFS.trees || []);
     window._ENTITY_DEFS.animals = Object.assign({}, j.animals || {});
+    window._ENTITY_DEFS.enemies = Object.assign({}, DEFAULT_ENEMY_DEFS, j.enemies || {});
+    window._ENTITY_DEFS.resources = Object.assign({}, DEFAULT_RESOURCE_DEFS, j.resources || {});
     try { for (const k in window._ENTITY_DEFS.buildings) BUILDINGS[k] = window._ENTITY_DEFS.buildings[k]; } catch (e) {}
     if (progress && progress.update) progress.update(8, 'Defs cargadas');
   } catch (e) { console.warn('loadEntityDefinitions err', e); }
@@ -178,6 +196,8 @@ function importEntityDefinitionsFromObject(obj) {
     if (obj.buildings) window._ENTITY_DEFS.buildings = Object.assign({}, window._ENTITY_DEFS.buildings || {}, obj.buildings);
     if (obj.trees) window._ENTITY_DEFS.trees = Array.isArray(obj.trees) ? obj.trees.slice() : (window._ENTITY_DEFS.trees || []);
     if (obj.animals) window._ENTITY_DEFS.animals = Object.assign({}, window._ENTITY_DEFS.animals || {}, obj.animals);
+    if (obj.enemies) window._ENTITY_DEFS.enemies = Object.assign({}, DEFAULT_ENEMY_DEFS, window._ENTITY_DEFS.enemies || {}, obj.enemies);
+    if (obj.resources) window._ENTITY_DEFS.resources = Object.assign({}, DEFAULT_RESOURCE_DEFS, window._ENTITY_DEFS.resources || {}, obj.resources);
     try { for (const k in window._ENTITY_DEFS.buildings) BUILDINGS[k] = window._ENTITY_DEFS.buildings[k]; } catch (e) {}
     return true;
   } catch (e) { console.warn('importEntityDefinitionsFromObject err', e); return false; }
@@ -561,11 +581,17 @@ async function preRenderEntities(progress) {
   } catch (e) { /* ignore */ }
 }
 
-// Export current entity definitions (buildings, tree variants, animals) as a JSON file
+// Export current entity definitions (buildings, trees, animals, enemies, resources) as a JSON file
 function exportEntityDefinitionsToJSON() {
   try {
-    const defs = window._ENTITY_DEFS || { buildings: BUILDINGS, trees: null, animals: null };
-    const data = { buildings: defs.buildings || BUILDINGS, trees: defs.trees || null, animals: defs.animals || null };
+    const defs = window._ENTITY_DEFS || { buildings: BUILDINGS, trees: null, animals: null, enemies: DEFAULT_ENEMY_DEFS, resources: DEFAULT_RESOURCE_DEFS };
+    const data = {
+      buildings: defs.buildings || BUILDINGS,
+      trees: defs.trees || null,
+      animals: defs.animals || null,
+      enemies: defs.enemies || DEFAULT_ENEMY_DEFS,
+      resources: defs.resources || DEFAULT_RESOURCE_DEFS
+    };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'entities-defs.json'; document.body.appendChild(a); a.click(); setTimeout(() => { try { document.body.removeChild(a); URL.revokeObjectURL(a.href); } catch (e) {} }, 200);
   } catch (e) { console.warn('exportEntityDefinitionsToJSON err', e); }
@@ -1103,7 +1129,7 @@ function saveAppState() {
     // Save minimal grid and biomes (sparse) to reduce size: store full arrays for simplicity
     const state = {
       panels,
-      player: { x: player.x, y: player.y, col: player.col, row: player.row, name: player.name, palette: player.palette, presetId: player.presetId },
+      player: { x: player.x, y: player.y, col: player.col, row: player.row, name: player.name, palette: player.palette, outfit: player.outfit, presetId: player.presetId },
       char: (typeof char !== 'undefined') ? char : null,
       res: (typeof res !== 'undefined') ? res : null,
       // keep turn and flags
@@ -1166,6 +1192,7 @@ function loadAppState() {
       player.x = s.player.x; player.y = s.player.y; player.col = Math.floor(s.player.x); player.row = Math.floor(s.player.y);
       try { if (s.player.name) player.name = s.player.name; } catch (e) {}
       try { if (s.player.palette) player.palette = s.player.palette; } catch (e) {}
+      try { if (s.player.outfit) player.outfit = s.player.outfit; } catch (e) {}
       try { if (s.player.presetId) player.presetId = s.player.presetId; } catch (e) {}
     }
       // restore entities and rabbits if present
@@ -1432,12 +1459,40 @@ const DEFAULT_PALETTE = {
   trim: '#DAA520'
 };
 
+const CHARACTER_OUTFITS = {
+  tunic: {
+    name: 'Túnica',
+    desc: 'Clásica y equilibrada.',
+    map: ['..hh....','.hhhh...','.hsshh..','.ssss...','..cccc..','..ctcc..','..c..c..','.cc..cc.']
+  },
+  robe: {
+    name: 'Toga',
+    desc: 'Larga y ceremonial.',
+    map: ['..hh....','.hhhh...','.hsshh..','.ssss...','..cttc..','..cccc..','..cccc..','.cc..cc.']
+  },
+  shawl: {
+    name: 'Manto',
+    desc: 'Con hombros marcados.',
+    map: ['..hh....','.hhhh...','.hsshh..','.tttt...','..cccc..','.ccttcc.','..c..c..','.cc..cc.']
+  },
+  armor: {
+    name: 'Armadura',
+    desc: 'Más robusta y ornamentada.',
+    map: ['..hh....','.hhhh...','.hsshh..','.sttts..','..ctcc..','.tcccct.','..c..c..','.tc..ct.']
+  },
+  worker: {
+    name: 'Delantal',
+    desc: 'Práctica para trabajar.',
+    map: ['..hh....','.hhhh...','.hsshh..','.ssss...','..ctcc..','.tcccc..','..ct.c..','.cc..cc.']
+  }
+};
+
 const CHARACTER_PRESETS = [
-  { id:'scribe', name:'Ninsun', title:'Escriba', classId:'scribe', palette:{ skin:'#CFA07A', hair:'#2C1A0A', cloth:'#2E6FA3', trim:'#DAA520' } },
-  { id:'scout', name:'Kishar', title:'Explorador', classId:'scout', palette:{ skin:'#C79063', hair:'#3D2510', cloth:'#4A7C3F', trim:'#C8A84B' } },
-  { id:'builder', name:'Urim', title:'Maestro de obras', classId:'builder', palette:{ skin:'#D2A178', hair:'#1A1208', cloth:'#A0522D', trim:'#E8D5A3' } },
-  { id:'priest', name:'Enhedu', title:'Sacerdote', classId:'priest', palette:{ skin:'#CFA07A', hair:'#3A2612', cloth:'#F5ECD7', trim:'#8B6914' } },
-  { id:'merchant', name:'Tamar', title:'Mercader', classId:'merchant', palette:{ skin:'#C8956C', hair:'#2B1C12', cloth:'#D2691E', trim:'#C8A84B' } }
+  { id:'scribe', name:'Ninsun', title:'Escriba', classId:'scribe', outfit:'robe', palette:{ skin:'#CFA07A', hair:'#2C1A0A', cloth:'#2E6FA3', trim:'#DAA520' } },
+  { id:'scout', name:'Kishar', title:'Explorador', classId:'scout', outfit:'shawl', palette:{ skin:'#C79063', hair:'#3D2510', cloth:'#4A7C3F', trim:'#C8A84B' } },
+  { id:'builder', name:'Urim', title:'Maestro de obras', classId:'builder', outfit:'worker', palette:{ skin:'#D2A178', hair:'#1A1208', cloth:'#A0522D', trim:'#E8D5A3' } },
+  { id:'priest', name:'Enhedu', title:'Sacerdote', classId:'priest', outfit:'robe', palette:{ skin:'#CFA07A', hair:'#3A2612', cloth:'#F5ECD7', trim:'#8B6914' } },
+  { id:'merchant', name:'Tamar', title:'Mercader', classId:'merchant', outfit:'tunic', palette:{ skin:'#C8956C', hair:'#2B1C12', cloth:'#D2691E', trim:'#C8A84B' } }
 ];
 
 const BASE_SPECIAL = { FUE:6, PER:7, RES:5, CAR:8, INT:7, AGI:5, SUE:6 };
@@ -1463,6 +1518,7 @@ const player = {
   name: 'Ur-Nammu',
   title: 'Rey de Sumer',
   palette: DEFAULT_PALETTE,
+  outfit: 'tunic',
   presetId: null
 };
 // survival stats stored on char; ensure defaults
@@ -1592,27 +1648,24 @@ window.createCanvasFromPixelDef = function(def, name, targetScale = 32) {
   } catch (e) { console.error('createCanvasFromPixelDef error', e); }
 }
 
-const CHARACTER_MAP = [
-  '..hh....',
-  '.hhhh...',
-  '.hsshh..',
-  '.ssss...',
-  '..cccc..',
-  '..ctcc..',
-  '..c..c..',
-  '.cc..cc.'
-];
+const CHARACTER_MAP = CHARACTER_OUTFITS.tunic.map;
+
+function getCharacterSpriteMap(outfitId) {
+  const outfit = CHARACTER_OUTFITS[outfitId] || CHARACTER_OUTFITS.tunic;
+  return outfit.map || CHARACTER_MAP;
+}
 
   // drawCharacterPixels supports optional direction flip and a simple two-frame walk animation
 function drawCharacterPixels(ctx, palette, x, y, scale, opts) {
   opts = opts || {};
   const dir = opts.dir || 'down'; // 'down','up','left','right'
   const frame = opts.frame || 0; // 0 or 1 (walking)
+  const spriteMap = getCharacterSpriteMap(opts.outfit || 'tunic');
   // inverted horizontal axis: flip when facing 'right' instead of 'left'
   const flip = dir === 'right';
-  const maxRow = opts.headOnly ? Math.min(CHARACTER_MAP.length, 4) : CHARACTER_MAP.length;
+  const maxRow = opts.headOnly ? Math.min(spriteMap.length, 4) : spriteMap.length;
   for (let row = 0; row < maxRow; row++) {
-    const line = CHARACTER_MAP[row];
+    const line = spriteMap[row];
     for (let col = 0; col < line.length; col++) {
       // compute source column (flipped if facing left)
       const srcCol = flip ? (line.length - 1 - col) : col;
@@ -1644,16 +1697,20 @@ function toggleInventory() {
   updateInventory();
 }
 
-function drawCharacterPortrait(ctx, w, h, palette) {
+function drawCharacterPortrait(ctx, w, h, palette, opts) {
   ctx.clearRect(0, 0, w, h);
   ctx.fillStyle = '#1A1208';
   ctx.fillRect(0, 0, w, h);
-  const scale = Math.floor(Math.min(w, h) / 10);
-  const spriteW = CHARACTER_MAP[0].length * scale;
-  const spriteH = CHARACTER_MAP.length * scale;
+  opts = opts || {};
+  const spriteMap = getCharacterSpriteMap(opts.outfit || 'tunic');
+  const scale = Math.max(1, Math.floor(Math.min(w, h) / 10));
+  const spriteW = spriteMap[0].length * scale;
+  const spriteH = spriteMap.length * scale;
   const px = Math.floor((w - spriteW) / 2);
   const py = Math.floor((h - spriteH) / 2);
-  drawCharacterPixels(ctx, palette, px, py, scale);
+  ctx.fillStyle = 'rgba(255,255,255,0.04)';
+  ctx.fillRect(4, h - 18, w - 8, 10);
+  drawCharacterPixels(ctx, palette, px, py, scale, opts);
 }
 
 // Draw an icon by name using loaded pixel-library or cached icon canvases
@@ -3040,7 +3097,7 @@ function drawPlayer() {
     const py = inWater ? Math.floor(y + h - headH) : Math.floor(y + h - spriteH);
     const walkFrame = player._walkFrame || 0;
     const dir = player.dir || 'down';
-    drawCharacterPixels(ctx, player.palette, px, py, scale, { dir, frame: walkFrame, headOnly: inWater });
+    drawCharacterPixels(ctx, player.palette, px, py, scale, { dir, frame: walkFrame, headOnly: inWater, outfit: player.outfit || 'tunic' });
     // draw player name above head
     try {
       if (player && player.name) {
@@ -3094,7 +3151,7 @@ function drawPlayer() {
     const py = inWater ? Math.floor(y + tileSize - headH) : Math.floor(y + tileSize - spriteH);
     const walkFrame = player._walkFrame || 0;
     const dir = player.dir || 'down';
-    drawCharacterPixels(ctx, player.palette, px, py, scale, { dir, frame: walkFrame, headOnly: inWater });
+    drawCharacterPixels(ctx, player.palette, px, py, scale, { dir, frame: walkFrame, headOnly: inWater, outfit: player.outfit || 'tunic' });
     // draw equipped item on player (orthographic)
     try {
       const it = player.equipped;
@@ -3765,10 +3822,10 @@ function render() {
         } else if (subtype === 'mountain') {
           try {
             const { w: iw, h: ih } = getIsoTileSize();
-            // make mountain a bit taller than a tile
-            const mw = Math.max(20, Math.floor(iw * 1.4));
-            const mh = Math.max(20, Math.floor(ih * 1.6));
-            drawEntitySpriteAt('mountain', x, y - ih*0.08, mw, mh);
+            // make mountain clearly larger than trees so horizon looks coherent
+            const mw = Math.max(24, Math.floor(iw * 2.1));
+            const mh = Math.max(24, Math.floor(ih * 2.8));
+            drawEntitySpriteAt('mountain', x, y - ih*0.28, mw, mh);
           } catch (e) { console.warn('mountain draw err', e); }
         } else {
           const sizeW = w * 0.6 * pulse;
@@ -3891,7 +3948,7 @@ function render() {
       // small grass/weed variants: draw a tiny tuft
       if (variant === 'tallgrass' || variant === 'weed') {
         const tpl = GLOBAL_TREE_TEMPLATES[6];
-        const scale = Math.max(1, Math.floor(tileSize / 6 * (ent.size || 0.6)));
+        const scale = Math.max(1, Math.floor(tileSize / 7 * (ent.size || 0.6)));
         const cx = Math.floor(x + tileSize * 0.5);
         const cy = Math.floor(y + tileSize - 2);
         const spriteW = (2 + 1) * scale;
@@ -3904,7 +3961,7 @@ function render() {
         }
       } else if (variant === 'hedge') {
         const tpl = GLOBAL_TREE_TEMPLATES[5];
-        const scale = Math.max(1, Math.floor(tileSize / 5 * (ent.size || 0.8)));
+        const scale = Math.max(1, Math.floor(tileSize / 6 * (ent.size || 0.8)));
         const cx = Math.floor(x + tileSize * 0.5);
         const cy = Math.floor(y + tileSize - 2);
         const spriteW = (4 + 1) * scale;
@@ -3923,10 +3980,9 @@ function render() {
         const tpl = GLOBAL_TREE_TEMPLATES[idx];
         // scale trees based on tile size and entity size hint
         const lodFactor = zoom >= GRAPHICS_CONFIG.smoothingThreshold ? 1 : 0.8;
-        // make trees noticeably taller by increasing base scale divisor and
-        // applying entity size multiplier (larger for 'tall' variants)
-        let baseScale = Math.floor((tileSize / 3) * lodFactor);
-        if (ent.variant === 'tall' || ent.variant === 'tallslim') baseScale = Math.floor(baseScale * 1.5);
+        // keep trees proportional to tile/building scale
+        let baseScale = Math.floor((tileSize / 4.8) * lodFactor);
+        if (ent.variant === 'tall' || ent.variant === 'tallslim') baseScale = Math.floor(baseScale * 1.2);
         const scale = Math.max(1, Math.floor(baseScale * (ent.size || 1)));
         // compute sprite dims
         let maxX = 0, maxY = 0;
@@ -5394,8 +5450,39 @@ let selectedMode = 'preset';
 const customState = {
   name: '',
   classId: 'builder',
+  outfit: 'tunic',
   palette: { ...DEFAULT_PALETTE }
 };
+const customPreviewState = { dir: 'down' };
+
+function refreshPlayerPortrait() {
+  const portrait = document.getElementById('char-portrait');
+  if (portrait) {
+    drawCharacterPortrait(portrait.getContext('2d'), portrait.width, portrait.height, player.palette, { outfit: player.outfit || 'tunic', dir: player.dir || 'down', frame: player._walkFrame || 0 });
+  }
+}
+
+function syncCustomPreviewMeta() {
+  const cls = CHARACTER_CLASSES.find(c => c.id === customState.classId) || CHARACTER_CLASSES[0];
+  const outfit = CHARACTER_OUTFITS[customState.outfit] || CHARACTER_OUTFITS.tunic;
+  const nameEl = document.getElementById('char-custom-preview-name');
+  const titleEl = document.getElementById('char-custom-preview-title');
+  const outfitEl = document.getElementById('char-custom-preview-outfit');
+  if (nameEl) nameEl.textContent = customState.name || 'Habitante';
+  if (titleEl) titleEl.textContent = cls.title;
+  if (outfitEl) outfitEl.textContent = outfit.name;
+}
+
+function applyCustomPreviewToPlayer() {
+  const cls = CHARACTER_CLASSES.find(c => c.id === customState.classId) || CHARACTER_CLASSES[0];
+  player.name = customState.name || 'Habitante';
+  player.title = cls.title;
+  player.palette = { ...customState.palette };
+  player.outfit = customState.outfit || 'tunic';
+  player.presetId = 'custom';
+  refreshPlayerPortrait();
+  updateCharCard();
+}
 
 function applyClassBonus(classId) {
   const cls = CHARACTER_CLASSES.find(c => c.id === classId) || CHARACTER_CLASSES[0];
@@ -5410,26 +5497,22 @@ function applyCharacterPreset(preset) {
   if (!preset) return;
   player.name = preset.name;
   player.title = preset.title;
-  player.palette = preset.palette;
+  player.palette = { ...preset.palette };
+  player.outfit = preset.outfit || 'tunic';
   player.presetId = preset.id;
   applyClassBonus(preset.classId);
-  const portrait = document.getElementById('char-portrait');
-  if (portrait) {
-    drawCharacterPortrait(portrait.getContext('2d'), portrait.width, portrait.height, preset.palette);
-  }
+  refreshPlayerPortrait();
   updateCharCard();
 }
 
 function applyCustomCharacter(state) {
   player.name = state.name || 'Habitante';
-  player.palette = state.palette;
+  player.palette = { ...state.palette };
+  player.outfit = state.outfit || 'tunic';
   player.presetId = 'custom';
   const cls = applyClassBonus(state.classId);
   player.title = cls.title;
-  const portrait = document.getElementById('char-portrait');
-  if (portrait) {
-    drawCharacterPortrait(portrait.getContext('2d'), portrait.width, portrait.height, state.palette);
-  }
+  refreshPlayerPortrait();
   updateCharCard();
 }
 
@@ -5464,7 +5547,7 @@ function renderCharacterOptions() {
       applyCharacterPreset(preset);
     });
     gridEl.appendChild(btn);
-    drawCharacterPortrait(canvas.getContext('2d'), canvas.width, canvas.height, preset.palette);
+    drawCharacterPortrait(canvas.getContext('2d'), canvas.width, canvas.height, preset.palette, { outfit: preset.outfit || 'tunic' });
   });
 }
 
@@ -5482,6 +5565,7 @@ function setActiveTab(tab) {
   if (panelCustom) panelCustom.classList.toggle('hidden', tab !== 'custom');
   if (panelParams) panelParams.classList.toggle('hidden', tab !== 'params');
   selectedMode = tab;
+  if (tab === 'custom') updateCustomPreview();
 }
 
 function renderPaletteButtons(containerId, key, value) {
@@ -5502,10 +5586,32 @@ function renderPaletteButtons(containerId, key, value) {
   });
 }
 
+function renderOutfitButtons(value) {
+  const container = document.getElementById('outfit-options');
+  if (!container) return;
+  container.innerHTML = '';
+  Object.entries(CHARACTER_OUTFITS).forEach(([id, outfit]) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'choice-btn';
+    btn.classList.toggle('active', id === value);
+    btn.innerHTML = `${outfit.name}<small>${outfit.desc}</small>`;
+    btn.addEventListener('click', () => {
+      customState.outfit = id;
+      renderOutfitButtons(id);
+      updateCustomPreview();
+    });
+    container.appendChild(btn);
+  });
+}
+
 function updateCustomPreview() {
   const canvas = document.getElementById('char-custom-preview');
   if (!canvas) return;
-  drawCharacterPortrait(canvas.getContext('2d'), canvas.width, canvas.height, customState.palette);
+  const frame = Math.floor(Date.now() / 240) % 2;
+  drawCharacterPortrait(canvas.getContext('2d'), canvas.width, canvas.height, customState.palette, { outfit: customState.outfit, dir: customPreviewState.dir, frame });
+  syncCustomPreviewMeta();
+  if (selectedMode === 'custom') applyCustomPreviewToPlayer();
 }
 
 function renderCustomOptions() {
@@ -5515,6 +5621,7 @@ function renderCustomOptions() {
     nameInput.value = customState.name;
     nameInput.addEventListener('input', e => {
       customState.name = e.target.value;
+      updateCustomPreview();
     });
   }
   if (classSelect) {
@@ -5528,12 +5635,23 @@ function renderCustomOptions() {
     classSelect.value = customState.classId;
     classSelect.addEventListener('change', e => {
       customState.classId = e.target.value;
+      updateCustomPreview();
     });
   }
+  const dirButtons = document.querySelectorAll('#char-preview-controls .preview-dir-btn');
+  dirButtons.forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.dir === customPreviewState.dir);
+    btn.onclick = () => {
+      customPreviewState.dir = btn.dataset.dir || 'down';
+      dirButtons.forEach(el => el.classList.toggle('active', el === btn));
+      updateCustomPreview();
+    };
+  });
   renderPaletteButtons('palette-skin', 'skin', customState.palette.skin);
   renderPaletteButtons('palette-hair', 'hair', customState.palette.hair);
   renderPaletteButtons('palette-cloth', 'cloth', customState.palette.cloth);
   renderPaletteButtons('palette-trim', 'trim', customState.palette.trim);
+  renderOutfitButtons(customState.outfit);
   updateCustomPreview();
 }
 
@@ -5590,6 +5708,7 @@ function setupCharacterSelection() {
       const data = JSON.parse(savedCustom);
       customState.name = data.name || customState.name;
       customState.classId = data.classId || customState.classId;
+      customState.outfit = data.outfit || customState.outfit;
       customState.palette = { ...customState.palette, ...data.palette };
       renderCustomOptions();
       applyCustomCharacter(customState);
@@ -5645,6 +5764,12 @@ function setupCharacterSelection() {
   if (tabPresets) tabPresets.addEventListener('click', () => setActiveTab('preset'));
   if (tabCustom) tabCustom.addEventListener('click', () => setActiveTab('custom'));
   if (tabParams) tabParams.addEventListener('click', () => setActiveTab('params'));
+  setInterval(() => {
+    const modal = document.getElementById('char-select');
+    if (!modal || modal.classList.contains('hidden')) return;
+    if (selectedMode !== 'custom') return;
+    updateCustomPreview();
+  }, 220);
 
   // initialize parameters panel UI (single selector with prev/next + slider)
   try {
@@ -6124,6 +6249,18 @@ function createMenuBar() {
     location.reload();
   });
   fileMenu.appendChild(restartBtnFile);
+  // Return to main menu (save state and reload so external/start menu shows)
+  const returnToMenuBtn = document.createElement('button');
+  returnToMenuBtn.textContent = 'Volver al menú principal';
+  returnToMenuBtn.style.display = 'block'; returnToMenuBtn.style.marginBottom = '6px';
+  returnToMenuBtn.className = 'tool-btn';
+  returnToMenuBtn.addEventListener('click', () => {
+    try { saveAppState(); } catch (e) {}
+    try { localStorage.removeItem('meso.lastStartMenu'); } catch (e) {}
+    try { clearRuntimeCaches(); } catch (e) {}
+    location.reload();
+  });
+  fileMenu.appendChild(returnToMenuBtn);
   fileBtn.addEventListener('click', (ev) => { ev.stopPropagation(); toggleMenu(fileMenu); });
   left.appendChild(fileBtn); left.appendChild(fileMenu);
 
@@ -6806,11 +6943,10 @@ function drawTreesVisible() {
       const { x, y } = worldToScreen(c, r);
       // choose a template and draw scaled pixel-art tree
       const tpl = TREE_TEMPLATES[Math.floor(tileNoise(c, r, 3, 4) * TREE_TEMPLATES.length)];
-      // scale for iso uses iso tile size; increase base scale so trees appear taller
+      // scale for iso/ortho with balanced proportions
       const iso = getIsoTileSize();
       const lodFactor = zoom >= GRAPHICS_CONFIG.smoothingThreshold ? 1 : 0.75;
-      // base scale: use /3 divisor to make trees taller than before
-      let scale = viewMode === 'iso' ? Math.max(1, Math.floor((iso.w / 3) * lodFactor)) : Math.max(1, Math.floor((tileSize / 3) * lodFactor));
+      let scale = viewMode === 'iso' ? Math.max(1, Math.floor((iso.w / 4.8) * lodFactor)) : Math.max(1, Math.floor((tileSize / 4.8) * lodFactor));
       // if template is hedge or grass (small indices near end), reduce scale
       const tplIndex = TREE_TEMPLATES.indexOf(tpl);
       if (tplIndex === 5) scale = Math.max(1, Math.floor(scale * 0.95)); // hedge slightly smaller
@@ -8205,7 +8341,7 @@ function init() {
   } catch (e) { /* ignore */ }
 
   // Draw character portrait
-  drawCharacterPortrait(document.getElementById('char-portrait').getContext('2d'), 54, 54, player.palette);
+  drawCharacterPortrait(document.getElementById('char-portrait').getContext('2d'), 54, 54, player.palette, { outfit: player.outfit || 'tunic', dir: player.dir || 'down', frame: player._walkFrame || 0 });
 
   // Create build panel controls (collapse / minimize)
   try { createBuildPanelControls(); } catch (e) {}
@@ -8262,6 +8398,17 @@ function init() {
         }
         try { if (window._onEngineProgress) window._onEngineProgress(90, 'Finalizando...'); } catch (e) {}
           try { console.log && console.log('game-engine: finalizing new-game flow, calling postMapInit'); } catch (e) {}
+          // apply character customisation data provided by the external startup menu
+          try {
+            const _mc = JSON.parse(localStorage.getItem('meso.menuChar') || 'null');
+            if (_mc) {
+              if (_mc.name) player.name = _mc.name;
+              if (_mc.title) player.title = _mc.title;
+              if (_mc.outfit) player.outfit = _mc.outfit;
+              if (_mc.palette && typeof _mc.palette === 'object') player.palette = Object.assign({}, player.palette, _mc.palette);
+              try { localStorage.removeItem('meso.menuChar'); } catch (e) {}
+            }
+          } catch (e) {}
           try { postMapInit(); } catch (e) { console.warn('postMapInit call failed', e); }
       })();
       if (window._externalMenu) return;

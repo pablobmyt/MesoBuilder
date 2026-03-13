@@ -246,11 +246,30 @@
           <div class="palette-row" id="palette-cloth"></div>
         </div>
         <div class="custom-row">
+          <label class="custom-label">Estilo de ropa</label>
+          <div class="choice-row" id="outfit-options"></div>
+        </div>
+        <div class="custom-row">
           <label class="custom-label">Detalles</label>
           <div class="palette-row" id="palette-trim"></div>
         </div>
-        <div class="custom-preview">
-          <canvas id="char-custom-preview" width="64" height="64"></canvas>
+        <div class="custom-preview-panel">
+          <div class="custom-preview-header">
+            <div>
+              <div class="custom-preview-name" id="char-custom-preview-name">Habitante</div>
+              <div class="custom-preview-title" id="char-custom-preview-title">Maestro de obras</div>
+            </div>
+            <div class="custom-preview-outfit" id="char-custom-preview-outfit">Túnica</div>
+          </div>
+          <div class="custom-preview">
+            <canvas id="char-custom-preview" width="112" height="112"></canvas>
+          </div>
+          <div class="preview-controls" id="char-preview-controls">
+            <button class="preview-dir-btn" data-dir="left" type="button">◀</button>
+            <button class="preview-dir-btn active" data-dir="down" type="button">▼</button>
+            <button class="preview-dir-btn" data-dir="up" type="button">▲</button>
+            <button class="preview-dir-btn" data-dir="right" type="button">▶</button>
+          </div>
         </div>
       </div>
       <div class="modal-panel hidden" id="panel-params">
@@ -319,33 +338,48 @@
 
   <!-- Startup params modal (hidden) -->
   <div id="menu-startup-modal" style="position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:100000">
-    <div style="background:rgba(10,10,10,0.96);padding:18px;border-radius:10px;border:1px solid rgba(255,255,255,0.04);width:640px;color:#fff">
+    <div style="background:rgba(10,10,10,0.96);padding:18px;border-radius:10px;border:1px solid rgba(255,255,255,0.04);width:700px;max-width:95vw;color:#fff">
       <h3 style="margin:0 0 8px 0">Nueva partida</h3>
       <div style="display:flex;gap:8px;margin-bottom:10px">
         <button id="menu-start-tab-character" style="padding:8px 12px;background:#2E6FA3;border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#fff;font-weight:700">Creación de personaje</button>
         <button id="menu-start-tab-options" style="padding:8px 12px;background:transparent;border:1px solid rgba(255,255,255,0.08);border-radius:8px;color:#fff">Opciones</button>
       </div>
-      <div id="menu-panel-character" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <div>
-          <label style="font-size:13px">Nombre del gobernante</label>
-          <input id="menu-char-name" type="text" maxlength="14" placeholder="Tu nombre" style="width:100%;padding:8px;border-radius:6px;background:#111;border:1px solid rgba(255,255,255,0.04);color:#fff">
+      <div id="menu-panel-character" style="display:grid;grid-template-columns:1fr auto;gap:14px;align-items:start">
+        <!-- Left: customisation fields -->
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div>
+            <label style="font-size:12px;color:#c8b87a;display:block;margin-bottom:4px">Nombre del gobernante</label>
+            <input id="menu-char-name" type="text" maxlength="14" placeholder="Tu nombre" style="width:100%;padding:8px;border-radius:6px;background:#111;border:1px solid rgba(255,255,255,0.08);color:#fff;box-sizing:border-box">
+          </div>
+          <div>
+            <label style="font-size:12px;color:#c8b87a;display:block;margin-bottom:5px">Apariencia</label>
+            <div id="menu-char-presets" style="display:flex;flex-wrap:wrap;gap:5px"></div>
+          </div>
+          <div>
+            <label style="font-size:12px;color:#c8b87a;display:block;margin-bottom:5px">Colores</label>
+            <div id="menu-color-rows" style="display:flex;flex-direction:column;gap:5px"></div>
+          </div>
+          <div>
+            <label style="font-size:12px;color:#c8b87a;display:block;margin-bottom:5px">Vestimenta</label>
+            <div id="menu-char-outfits" style="display:flex;flex-wrap:wrap;gap:5px"></div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:2px">
+            <button id="menu-char-random" style="padding:7px 12px;background:transparent;border:1px solid rgba(255,255,255,0.08);border-radius:8px;color:#c8b87a;cursor:pointer">Aleatorizar</button>
+            <button id="menu-char-reset" style="padding:7px 12px;background:transparent;border:1px solid rgba(255,255,255,0.08);border-radius:8px;color:#c8b87a;cursor:pointer">Restablecer</button>
+          </div>
         </div>
-        <div>
-          <label style="font-size:13px">Apariencia</label>
-          <select id="menu-char-preset" style="width:100%;padding:8px;border-radius:6px;background:#111;border:1px solid rgba(255,255,255,0.04);color:#fff">
-            <option value="villager">Habitante</option>
-            <option value="villager2">Habitante 2</option>
-            <option value="merchant">Mercader</option>
-            <option value="guard">Guardia</option>
-          </select>
-        </div>
-        <div>
-          <label style="font-size:13px">Color ropa</label>
-          <input id="menu-char-cloth" type="color" value="#7a3a2a" style="width:100%;height:38px;border-radius:6px;padding:4px;border:1px solid rgba(255,255,255,0.04);background:#111">
-        </div>
-        <div style="display:flex;align-items:flex-end;gap:8px">
-          <button id="menu-char-random" style="padding:8px 12px;background:transparent;border:1px solid rgba(255,255,255,0.08);border-radius:8px;color:#fff">Aleatorizar</button>
-          <button id="menu-char-reset" style="padding:8px 12px;background:transparent;border:1px solid rgba(255,255,255,0.08);border-radius:8px;color:#fff">Restablecer</button>
+        <!-- Right: live preview -->
+        <div style="display:flex;flex-direction:column;align-items:center;gap:5px;min-width:130px">
+          <div id="menu-preview-name" style="font-size:13px;color:#DAA520;font-weight:700;text-align:center">Gobernante</div>
+          <div id="menu-preview-title" style="font-size:11px;color:#c8b87a;text-align:center">Maestro de obras</div>
+          <canvas id="menu-char-canvas" width="112" height="112" style="image-rendering:pixelated;border:1px solid rgba(200,184,122,0.25);border-radius:4px;background:#0d0d08"></canvas>
+          <div style="display:flex;gap:3px">
+            <button class="mpc-dir" data-dir="left" style="padding:4px 7px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:4px;color:#c8b87a;cursor:pointer;font-size:11px">&#9664;</button>
+            <button class="mpc-dir" data-dir="up" style="padding:4px 7px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:4px;color:#c8b87a;cursor:pointer;font-size:11px">&#9650;</button>
+            <button class="mpc-dir" data-dir="down" style="padding:4px 7px;background:rgba(46,111,163,0.7);border:1px solid #5a9fd4;border-radius:4px;color:#fff;cursor:pointer;font-size:11px">&#9660;</button>
+            <button class="mpc-dir" data-dir="right" style="padding:4px 7px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:4px;color:#c8b87a;cursor:pointer;font-size:11px">&#9654;</button>
+          </div>
+          <div id="menu-preview-outfit" style="font-size:11px;color:#c8b87a;text-align:center">T&uacute;nica</div>
         </div>
       </div>
       <div id="menu-panel-options" style="display:none;grid-template-columns:1fr 1fr;gap:10px">
@@ -575,6 +609,7 @@
     optTab.style.background = active === 'options' ? '#2E6FA3' : 'transparent';
     optTab.style.border = active === 'options' ? '1px solid rgba(255,255,255,0.12)' : '1px solid rgba(255,255,255,0.08)';
     optTab.style.fontWeight = active === 'options' ? '700' : '400';
+    try { if (window._renderMenuCharEditor) window._renderMenuCharEditor(); } catch (e) {}
     modal.style.display = 'flex';
   }
   document.getElementById('menu-new').addEventListener('click', () => { showStartupModal('character'); });
@@ -589,6 +624,21 @@
     } catch (e) {}
     loadEngineAndStart({ forceNew:false });
   });
+
+  // Auto-restore: if a saved game exists and the start menu was shown recently,
+  // hide the external menu and start the engine so the player sees the previous state.
+  (function() {
+    try {
+      const last = parseInt(localStorage.getItem('meso.lastStartMenu') || '0', 10);
+      const now = Date.now(); const HOUR = 1000 * 60 * 60;
+      const hasSaved = !!localStorage.getItem('meso.appState');
+      if (hasSaved && now - last < HOUR) {
+        try { const root = document.getElementById('main-menu-root'); if (root) root.style.display = 'none'; } catch (e) {}
+        // small delay to allow DOM to settle before loading engine
+        setTimeout(() => { try { loadEngineAndStart({ forceNew: false }); } catch (e) {} }, 40);
+      }
+    } catch (e) { /* ignore */ }
+  })();
   // Import a save from a JSON file
   try {
     const impBtn = document.getElementById('menu-import');
@@ -663,6 +713,195 @@
     });
   } catch (e) {}
 
+  // ── MENU CHARACTER PREVIEW ENGINE ────────────────────────────
+  (function() {
+    const MENU_OUTFITS = {
+      tunic:  { name:'Túnica',   map:['..hh....','.hhhh...','.hsshh..','.ssss...','..cccc..','..ctcc..','..c..c..','.cc..cc.'] },
+      robe:   { name:'Toga',     map:['..hh....','.hhhh...','.hsshh..','.ssss...','..cttc..','..cccc..','..cccc..','.cc..cc.'] },
+      shawl:  { name:'Manto',    map:['..hh....','.hhhh...','.hsshh..','.tttt...','..cccc..','.ccttcc.','..c..c..','.cc..cc.'] },
+      armor:  { name:'Armadura', map:['..hh....','.hhhh...','.hsshh..','.sttts..','..ctcc..','.tcccct.','..c..c..','.tc..ct.'] },
+      worker: { name:'Delantal', map:['..hh....','.hhhh...','.hsshh..','.ssss...','..ctcc..','.tcccc..','..ct.c..','.cc..cc.'] }
+    };
+    const MENU_PALETTE_OPTIONS = {
+      skin:  ['#C8956C','#CFA07A','#D2A178','#B7835E'],
+      hair:  ['#2C1A0A','#3D2510','#1A1208','#5A3A1A'],
+      cloth: ['#8B6914','#2E6FA3','#4A7C3F','#A0522D','#D2691E'],
+      trim:  ['#DAA520','#C8A84B','#E8D5A3','#F5ECD7']
+    };
+    const MENU_PRESETS = [
+      { id:'scribe',   name:'Escriba',      title:'Custodio del saber',   outfit:'robe',   palette:{ skin:'#CFA07A', hair:'#2C1A0A', cloth:'#2E6FA3', trim:'#DAA520' } },
+      { id:'builder',  name:'Constructor',  title:'Maestro de obras',     outfit:'worker', palette:{ skin:'#D2A178', hair:'#1A1208', cloth:'#A0522D', trim:'#E8D5A3' } },
+      { id:'priest',   name:'Sacerdote',    title:'Voz del templo',       outfit:'robe',   palette:{ skin:'#CFA07A', hair:'#3A2612', cloth:'#F5ECD7', trim:'#8B6914' } },
+      { id:'scout',    name:'Explorador',   title:'Ojos del desierto',    outfit:'shawl',  palette:{ skin:'#C79063', hair:'#3D2510', cloth:'#4A7C3F', trim:'#C8A84B' } },
+      { id:'merchant', name:'Mercader',     title:'Señor de tratos',      outfit:'tunic',  palette:{ skin:'#C8956C', hair:'#2B1C12', cloth:'#D2691E', trim:'#C8A84B' } }
+    ];
+    window._menuChar = { name:'', preset:'builder', title:'Maestro de obras', outfit:'worker', dir:'down', palette:{ skin:'#D2A178', hair:'#1A1208', cloth:'#A0522D', trim:'#E8D5A3' } };
+
+    function drawMenuPixels(ctx, palette, x, y, scale, opts) {
+      opts = opts || {};
+      const outfitData = MENU_OUTFITS[opts.outfit] || MENU_OUTFITS.tunic;
+      const spriteMap = outfitData.map;
+      const dir = opts.dir || 'down';
+      const frame = opts.frame || 0;
+      const flip = dir === 'right';
+      for (let row = 0; row < spriteMap.length; row++) {
+        const line = spriteMap[row];
+        for (let col = 0; col < line.length; col++) {
+          const srcCol = flip ? (line.length - 1 - col) : col;
+          const ch = line[srcCol];
+          let color = null;
+          if (ch === 'h') color = palette.hair;
+          if (ch === 's') color = palette.skin;
+          if (ch === 'c') color = palette.cloth;
+          if (ch === 't') color = palette.trim;
+          if (!color) continue;
+          let dx = 0;
+          if (frame === 1 && (row === 6 || row === 7) && (ch === 'c' || ch === 's'))
+            dx = (dir === 'right') ? -1 : (dir === 'left' ? 1 : 0);
+          ctx.fillStyle = color;
+          ctx.fillRect(x + (col * scale) + dx * scale, y + row * scale, scale, scale);
+        }
+      }
+    }
+    function drawMenuPortrait(canvas, opts) {
+      try {
+        const ctx = canvas.getContext('2d');
+        const w = canvas.width, h = canvas.height;
+        ctx.clearRect(0, 0, w, h);
+        ctx.fillStyle = '#0d0d08'; ctx.fillRect(0, 0, w, h);
+        const spriteMap = (MENU_OUTFITS[(opts && opts.outfit)] || MENU_OUTFITS.tunic).map;
+        const scale = Math.max(1, Math.floor(Math.min(w, h) / 10));
+        const px = Math.floor((w - spriteMap[0].length * scale) / 2);
+        const py = Math.floor((h - spriteMap.length * scale) / 2);
+        ctx.fillStyle = 'rgba(255,255,255,0.04)';
+        ctx.fillRect(4, h - 18, w - 8, 10);
+        drawMenuPixels(ctx, (opts && opts.palette) || { skin:'#C8956C', hair:'#2C1A0A', cloth:'#8B6914', trim:'#DAA520' }, px, py, scale, opts);
+      } catch (e) {}
+    }
+    function updateMenuPreview() {
+      const canvas = document.getElementById('menu-char-canvas');
+      if (!canvas) return;
+      const mc = window._menuChar;
+      drawMenuPortrait(canvas, { outfit: mc.outfit, dir: mc.dir, frame: Math.floor(Date.now() / 220) % 2, palette: mc.palette });
+      const nameInput = document.getElementById('menu-char-name');
+      const displayName = (nameInput && nameInput.value.trim()) || mc.name || 'Gobernante';
+      const nameEl = document.getElementById('menu-preview-name');
+      const titleEl = document.getElementById('menu-preview-title');
+      const outfitEl = document.getElementById('menu-preview-outfit');
+      if (nameEl) nameEl.textContent = displayName;
+      if (titleEl) titleEl.textContent = mc.title;
+      if (outfitEl) outfitEl.textContent = (MENU_OUTFITS[mc.outfit] && MENU_OUTFITS[mc.outfit].name) || mc.outfit;
+    }
+    function renderMenuPresets() {
+      const cont = document.getElementById('menu-char-presets');
+      if (!cont) return;
+      cont.innerHTML = '';
+      MENU_PRESETS.forEach(p => {
+        const btn = document.createElement('button');
+        btn.textContent = p.name;
+        const isActive = window._menuChar.preset === p.id;
+        btn.style.cssText = 'padding:5px 9px;border-radius:6px;cursor:pointer;font-size:12px;' +
+          (isActive ? 'background:#2E6FA3;border:1px solid #5a9fd4;color:#fff;font-weight:700;' : 'background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);color:#c8b87a;');
+        btn.addEventListener('click', () => {
+          const ni = document.getElementById('menu-char-name');
+          window._menuChar.preset = p.id;
+          window._menuChar.title = p.title;
+          window._menuChar.outfit = p.outfit;
+          window._menuChar.palette = { ...p.palette };
+          if (ni && !ni.value.trim()) { ni.value = p.name; window._menuChar.name = p.name; }
+          renderMenuPresets(); renderMenuColorRows(); renderMenuOutfits(); updateMenuPreview();
+        });
+        cont.appendChild(btn);
+      });
+    }
+    function renderMenuColorRows() {
+      const cont = document.getElementById('menu-color-rows');
+      if (!cont) return;
+      cont.innerHTML = '';
+      const labels = { skin:'Piel', hair:'Cabello', cloth:'Ropa', trim:'Detalles' };
+      Object.keys(MENU_PALETTE_OPTIONS).forEach(key => {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:5px';
+        const lbl = document.createElement('span');
+        lbl.textContent = labels[key];
+        lbl.style.cssText = 'font-size:11px;color:#c8b87a;width:52px;flex-shrink:0';
+        row.appendChild(lbl);
+        MENU_PALETTE_OPTIONS[key].forEach(color => {
+          const sw = document.createElement('div');
+          const isActive = window._menuChar.palette[key] === color;
+          sw.style.cssText = 'width:18px;height:18px;border-radius:3px;cursor:pointer;flex-shrink:0;background:' + color + ';' +
+            (isActive ? 'outline:2px solid #DAA520;outline-offset:1px;' : 'outline:1px solid rgba(255,255,255,0.1);');
+          sw.addEventListener('click', () => {
+            window._menuChar.palette = { ...window._menuChar.palette, [key]: color };
+            window._menuChar.preset = 'custom';
+            renderMenuPresets(); renderMenuColorRows(); updateMenuPreview();
+          });
+          row.appendChild(sw);
+        });
+        cont.appendChild(row);
+      });
+    }
+    function renderMenuOutfits() {
+      const cont = document.getElementById('menu-char-outfits');
+      if (!cont) return;
+      cont.innerHTML = '';
+      Object.keys(MENU_OUTFITS).forEach(id => {
+        const btn = document.createElement('button');
+        btn.textContent = MENU_OUTFITS[id].name;
+        const isActive = window._menuChar.outfit === id;
+        btn.style.cssText = 'padding:5px 9px;border-radius:6px;cursor:pointer;font-size:12px;' +
+          (isActive ? 'background:#2E6FA3;border:1px solid #5a9fd4;color:#fff;font-weight:700;' : 'background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);color:#c8b87a;');
+        btn.addEventListener('click', () => {
+          window._menuChar.outfit = id;
+          window._menuChar.preset = 'custom';
+          renderMenuPresets(); renderMenuOutfits(); updateMenuPreview();
+        });
+        cont.appendChild(btn);
+      });
+    }
+    function initMenuCharEditor() {
+      try {
+        try {
+          const saved = JSON.parse(localStorage.getItem('meso.menuChar') || 'null');
+          if (saved) {
+            if (saved.outfit) window._menuChar.outfit = saved.outfit;
+            if (saved.palette) window._menuChar.palette = { ...saved.palette };
+            if (saved.preset) window._menuChar.preset = saved.preset;
+            if (saved.title) window._menuChar.title = saved.title;
+            const ni = document.getElementById('menu-char-name');
+            if (ni && saved.name) ni.value = saved.name;
+          }
+        } catch (e) {}
+        renderMenuPresets(); renderMenuColorRows(); renderMenuOutfits();
+        document.querySelectorAll('.mpc-dir').forEach(btn => {
+          btn.addEventListener('click', () => {
+            window._menuChar.dir = btn.dataset.dir;
+            document.querySelectorAll('.mpc-dir').forEach(b => {
+              b.style.background = b.dataset.dir === window._menuChar.dir ? 'rgba(46,111,163,0.7)' : 'rgba(255,255,255,0.04)';
+              b.style.border = b.dataset.dir === window._menuChar.dir ? '1px solid #5a9fd4' : '1px solid rgba(255,255,255,0.1)';
+              b.style.color = b.dataset.dir === window._menuChar.dir ? '#fff' : '#c8b87a';
+            });
+            updateMenuPreview();
+          });
+        });
+        const ni = document.getElementById('menu-char-name');
+        if (ni) ni.addEventListener('input', () => updateMenuPreview());
+        if (window._menuPreviewInterval) clearInterval(window._menuPreviewInterval);
+        window._menuPreviewInterval = setInterval(() => {
+          const modal = document.getElementById('menu-startup-modal');
+          if (modal && modal.style.display !== 'none') {
+            const panel = document.getElementById('menu-panel-character');
+            if (panel && panel.style.display !== 'none') updateMenuPreview();
+          }
+        }, 220);
+        updateMenuPreview();
+      } catch (e) { console.warn('initMenuCharEditor', e); }
+    }
+    window._renderMenuCharEditor = function() { renderMenuPresets(); renderMenuColorRows(); renderMenuOutfits(); updateMenuPreview(); };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initMenuCharEditor);
+    else initMenuCharEditor();
+  })();
+
   // startup modal handlers
   try {
     const dn = document.getElementById('menu-density-npcs'); const da = document.getElementById('menu-density-animals'); const dv = document.getElementById('menu-density-vegetation');
@@ -671,8 +910,6 @@
     const tabCharacter = document.getElementById('menu-start-tab-character');
     const tabOptions = document.getElementById('menu-start-tab-options');
     const charNameInput = document.getElementById('menu-char-name');
-    const charPresetInput = document.getElementById('menu-char-preset');
-    const charClothInput = document.getElementById('menu-char-cloth');
     const randomCharBtn = document.getElementById('menu-char-random');
     const resetCharBtn = document.getElementById('menu-char-reset');
 
@@ -716,26 +953,40 @@
     if (tabCharacter) tabCharacter.addEventListener('click', () => { showStartupModal('character'); });
     if (tabOptions) tabOptions.addEventListener('click', () => { showStartupModal('options'); });
 
-    try { if (charNameInput) charNameInput.value = localStorage.getItem('meso.playerName') || ''; } catch (e) {}
-    try { if (charPresetInput) charPresetInput.value = localStorage.getItem('meso.playerPreset') || 'villager'; } catch (e) {}
-    try { if (charClothInput) charClothInput.value = localStorage.getItem('meso.playerCloth') || '#7a3a2a'; } catch (e) {}
+    try {
+      const savedMC = JSON.parse(localStorage.getItem('meso.menuChar') || 'null');
+      if (savedMC && charNameInput && savedMC.name) charNameInput.value = savedMC.name;
+      else if (charNameInput) charNameInput.value = localStorage.getItem('meso.playerName') || '';
+    } catch (e) {}
 
     if (randomCharBtn) {
       randomCharBtn.addEventListener('click', () => {
-        const names = ['Iktan', 'Nahuel', 'Luma', 'Tariq', 'Aixa', 'Naira', 'Koa', 'Mara'];
-        const presets = ['villager', 'villager2', 'merchant', 'guard'];
-        const clothColors = ['#7a3a2a', '#3a5e8a', '#5d7a2a', '#6a2a7a', '#8a5a2a'];
-        if (charNameInput && !charNameInput.value.trim()) charNameInput.value = names[Math.floor(Math.random() * names.length)];
-        if (charPresetInput) charPresetInput.value = presets[Math.floor(Math.random() * presets.length)];
-        if (charClothInput) charClothInput.value = clothColors[Math.floor(Math.random() * clothColors.length)];
+        if (!window._menuChar) return;
+        const MNAMES = ['Iktan','Nahuel','Luma','Tariq','Aixa','Naira','Koa','Mara','Enbilulu','Kishar'];
+        const MSKINS = ['#C8956C','#CFA07A','#D2A178','#B7835E'];
+        const MHAIRS = ['#2C1A0A','#3D2510','#1A1208','#5A3A1A'];
+        const MCLOTHS = ['#8B6914','#2E6FA3','#4A7C3F','#A0522D','#D2691E'];
+        const MTRIMS = ['#DAA520','#C8A84B','#E8D5A3','#F5ECD7'];
+        const MOUTFITS = ['tunic','robe','shawl','armor','worker'];
+        const rnd = arr => arr[Math.floor(Math.random() * arr.length)];
+        if (charNameInput && !charNameInput.value.trim()) { charNameInput.value = rnd(MNAMES); window._menuChar.name = charNameInput.value; }
+        window._menuChar.outfit = rnd(MOUTFITS);
+        window._menuChar.palette = { skin: rnd(MSKINS), hair: rnd(MHAIRS), cloth: rnd(MCLOTHS), trim: rnd(MTRIMS) };
+        window._menuChar.preset = 'custom';
+        try { if (window._renderMenuCharEditor) window._renderMenuCharEditor(); } catch (e) {}
       });
     }
 
     if (resetCharBtn) {
       resetCharBtn.addEventListener('click', () => {
         if (charNameInput) charNameInput.value = '';
-        if (charPresetInput) charPresetInput.value = 'villager';
-        if (charClothInput) charClothInput.value = '#7a3a2a';
+        if (window._menuChar) {
+          window._menuChar.preset = 'builder';
+          window._menuChar.title = 'Maestro de obras';
+          window._menuChar.outfit = 'worker';
+          window._menuChar.palette = { skin:'#D2A178', hair:'#1A1208', cloth:'#A0522D', trim:'#E8D5A3' };
+        }
+        try { if (window._renderMenuCharEditor) window._renderMenuCharEditor(); } catch (e) {}
       });
     }
 
@@ -753,11 +1004,19 @@
       } catch (e) {}
       try { localStorage.setItem('meso.menuDensities', JSON.stringify(densities)); } catch (e) {}
       const name = (charNameInput || {}).value || '';
-      const preset = (charPresetInput || {}).value || '';
-      const cloth = (charClothInput || {}).value || '';
       try { if (name) localStorage.setItem('meso.playerName', name); } catch (e) {}
-      try { if (preset) localStorage.setItem('meso.playerPreset', preset); } catch (e) {}
-      try { if (cloth) localStorage.setItem('meso.playerCloth', cloth); } catch (e) {}
+      // save full character data for engine to read
+      try {
+        const mc = window._menuChar || {};
+        const menuCharData = {
+          name: name || mc.name || '',
+          preset: mc.preset || 'builder',
+          title: mc.title || 'Maestro de obras',
+          outfit: mc.outfit || 'tunic',
+          palette: mc.palette || { skin:'#C8956C', hair:'#2C1A0A', cloth:'#8B6914', trim:'#DAA520' }
+        };
+        localStorage.setItem('meso.menuChar', JSON.stringify(menuCharData));
+      } catch (e) {}
       // force new map then load engine
       try { localStorage.setItem('meso.forceNew','1'); } catch (e) {}
       const m = document.getElementById('menu-startup-modal'); if (m) m.style.display = 'none';

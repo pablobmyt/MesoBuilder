@@ -1119,6 +1119,12 @@ select { appearance: none; padding-right: 28px; }
   flex-wrap: wrap;
 }
 
+.choice-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 6px;
+}
+
 .palette-btn {
   width: 18px;
   height: 18px;
@@ -1129,17 +1135,105 @@ select { appearance: none; padding-right: 28px; }
 
 .palette-btn.active { border-color: var(--sand-mid); box-shadow: 0 0 0 1px var(--sand-mid); }
 
+.choice-btn {
+  background: #14100a;
+  border: 1px solid rgba(58,46,16,0.55);
+  color: var(--ui-text);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.72rem;
+  padding: 8px 10px;
+  text-align: left;
+  border-radius: 6px;
+  transition: border-color 0.15s ease, transform 0.15s ease, background 0.15s ease;
+}
+
+.choice-btn:hover {
+  border-color: var(--sand-mid);
+  transform: translateY(-1px);
+}
+
+.choice-btn.active {
+  background: rgba(200,168,75,0.14);
+  border-color: var(--sand-mid);
+  box-shadow: 0 0 0 1px rgba(200,168,75,0.35);
+}
+
+.choice-btn small {
+  display: block;
+  color: var(--ui-dim);
+  margin-top: 4px;
+}
+
 .custom-preview {
   display: flex;
   justify-content: center;
-  padding-top: 8px;
+  align-items: center;
+  padding-top: 2px;
+}
+
+.custom-preview-panel {
+  margin-top: 10px;
+  border: 1px solid rgba(200,168,75,0.22);
+  background: linear-gradient(180deg, rgba(26,18,8,0.92), rgba(12,9,4,0.98));
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.custom-preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.custom-preview-name {
+  color: var(--sand-light);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.custom-preview-title,
+.custom-preview-outfit {
+  color: var(--ui-dim);
+  font-size: 0.68rem;
+}
+
+.custom-preview-outfit {
+  text-align: right;
+  max-width: 110px;
 }
 
 #char-custom-preview {
-  width: 64px;
-  height: 64px;
+  width: 112px;
+  height: 112px;
   border: 1px solid #3a2e10;
+  background: #120d05;
   image-rendering: pixelated;
+}
+
+.preview-controls {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.preview-dir-btn {
+  min-width: 34px;
+  height: 30px;
+  border: 1px solid rgba(58,46,16,0.7);
+  background: #181107;
+  color: var(--ui-text);
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.preview-dir-btn.active {
+  border-color: var(--sand-mid);
+  background: rgba(200,168,75,0.16);
+  color: var(--sand-light);
 }
 
 /* ── FLOATING PANELS ─────────────────────────────────────── */
