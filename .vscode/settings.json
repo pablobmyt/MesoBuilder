@@ -3,6 +3,22 @@
         "/^node tools/syntax_check\\.js$/": {
             "approve": true,
             "matchCommandLine": true
+        },
+        "/^node --check \"c:\\\\Proyectos\\\\Personal\\\\MesoBuilder\\\\engine\\\\game-engine\\.js\" 2>&1 && echo \"SYNTAX OK\"$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^node --check \"c:\\\\Proyectos\\\\Personal\\\\MesoBuilder\\\\engine\\\\entities\\.js\" 2>&1 && echo \"entities OK\" && node -e \"JSON\\.parse\\(require\\('fs'\\)\\.readFileSync\\('c:/Proyectos/Personal/MesoBuilder/data/entity-pixels\\.json','utf8'\\)\\)\" && echo \"JSON OK\"$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^node --check \"c:\\\\Proyectos\\\\Personal\\\\MesoBuilder\\\\engine\\\\game-engine\\.js\" 2>&1 && echo \"OK\"$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^node --check \"c:\\\\Proyectos\\\\Personal\\\\MesoBuilder\\\\engine\\\\game-engine\\.js\" 2>&1 && echo \"ALL OK\"$/": {
+            "approve": true,
+            "matchCommandLine": true
         }
     }
 }

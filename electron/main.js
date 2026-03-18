@@ -1,4 +1,4 @@
-const { app, BrowserWindow } = require('electron')
+const { app, BrowserWindow, Menu } = require('electron')
 const path = require('path')
 const fs = require('fs')
 
@@ -26,11 +26,18 @@ function createWindow () {
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
+    autoHideMenuBar: true, // hide native Electron menu bar
     webPreferences: {
       contextIsolation: true,
       sandbox: false
     }
   })
+
+  // Remove the native menu bar entirely
+  Menu.setApplicationMenu(null)
+
+  // Start maximized so the game fills the screen
+  win.maximize()
 
   // Prefer an external index.html when available (so packaged app can reference project files)
   const external = findExternalIndex()

@@ -1,0 +1,20 @@
+{
+  "width": 10,
+  "height": 7,
+  "entryCol": 4,
+  "entryRow": 4,
+  "chestItems": ["wheat","wheat","wheat","wheat","brick"],
+  "npcs": [
+    {"col": 2, "row": 2, "name": "Jardinera"},
+    {"col": 7, "row": 1, "name": "Aldeano"}
+  ],
+  "tiles": [
+    ["wall","wall","wall","wall","wall","wall","wall","wall","wall","wall"],
+    ["wall","bed","floor","floor","pot","pot","floor","floor","bed","wall"],
+    ["wall","floor","floor","floor","table","floor","floor","floor","floor","wall"],
+    ["wall","rug","floor","chest","floor","floor","rug","floor","pot","wall"],
+    ["wall","floor","floor","floor","firepit","floor","floor","floor","rug","wall"],
+    ["wall","floor","floor","floor","door","floor","floor","floor","floor","wall"],
+    ["wall","wall","wall","wall","wall","wall","wall","wall","wall","wall"]
+  ]
+}

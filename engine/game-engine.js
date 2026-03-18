@@ -697,7 +697,7 @@ async function preloadAllBeforeStart() {
 
 // Clear caches used by preload and runtime
 function clearRuntimeCaches() {
-  try { mapCache = null; mapCacheDirty = true; } catch (e) {}
+  try { mapCache = null; mapCacheOrtho = null; mapCacheIso = null; mapCacheDirty = true; } catch (e) {}
   try { window.MAP_CHUNKS = {}; } catch (e) {}
   try { window._ICON_BITMAPS = {}; } catch (e) {}
   try {
@@ -800,21 +800,106 @@ function registerPanel(el) {
   } catch (e) { /* ignore */ }
 }
 // --- Map rendering cache (offscreen) ---
-let mapCache = null;
+let mapCache = null;         // kept for backward-compat references inside rebuildMapCache
+let mapCacheOrtho = null;    // terrain cache for orthographic view (zoom=1 base)
+let mapCacheIso = null;      // terrain cache for isometric view   (zoom=1 base)
 let mapCacheDirty = true;
 let _rebuildMapTimer = null;
+let _rebuildMapAsyncRunning = false;
+
+function getBiomeFillColor(biome) {
+  if (biome === 'water')    return '#2A72C3';
+  if (biome === 'riparian') return '#5A8C38';
+  if (biome === 'marsh')    return '#3A6B52';
+  if (biome === 'alluvial') return '#D1A86A';
+  if (biome === 'saline')   return '#E8D8B8';
+  if (biome === 'steppe')   return '#C8A055';
+  if (biome === 'hills')    return '#B09060';
+  if (biome === 'forest')   return '#4A8A3A';
+  if (biome === 'grass')    return '#7AAA60';
+  if (biome === 'road')     return '#9E8B6B';
+  return '#C4A878';
+}
+
+// Async chunked terrain cache builder – yields every BATCH rows so the main
+// thread stays responsive. Builds BOTH ortho and iso caches in one call.
+async function rebuildMapCachesAsync() {
+  if (_rebuildMapAsyncRunning) return;
+  _rebuildMapAsyncRunning = true;
+  const BATCH = 14; // rows per yield-point
+  const tileSize = TILE;
+  try {
+    // ── Orthographic pass ──
+    const oW = COLS * tileSize, oH = ROWS * tileSize;
+    if (!mapCacheOrtho || mapCacheOrtho.width !== oW || mapCacheOrtho.height !== oH) {
+      mapCacheOrtho = document.createElement('canvas');
+      mapCacheOrtho.width = Math.max(1, oW); mapCacheOrtho.height = Math.max(1, oH);
+    }
+    const oc = mapCacheOrtho.getContext('2d');
+    oc.clearRect(0, 0, oW, oH);
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const biome = tileBiome[r][c] || 'alluvial';
+        oc.fillStyle = getBiomeFillColor(biome);
+        oc.fillRect(c * tileSize, r * tileSize, tileSize, tileSize);
+      }
+      if (r % BATCH === BATCH - 1) await new Promise(res => setTimeout(res, 0));
+    }
+    delete mapCacheOrtho._isoOffset;
+    mapCacheOrtho._cacheZoom = 1;
+
+    // ── Isometric pass ──
+    const w1 = TILE, h1 = TILE * ISO_RATIO;
+    const proj = (col, row) => ({ x: (col - row) * (w1 / 2), y: (col + row) * (h1 / 2) - h1 / 2 });
+    const corners = [proj(0,0), proj(COLS-1,0), proj(0,ROWS-1), proj(COLS-1,ROWS-1)];
+    const minX1 = Math.floor(Math.min(...corners.map(p => p.x)) - w1 / 2);
+    const maxX1 = Math.ceil (Math.max(...corners.map(p => p.x)) + w1 / 2);
+    const minY1 = Math.floor(Math.min(...corners.map(p => p.y)));
+    const maxY1 = Math.ceil (Math.max(...corners.map(p => p.y)) + h1);
+    const iW = maxX1 - minX1, iH = maxY1 - minY1;
+    if (!mapCacheIso || mapCacheIso.width !== iW || mapCacheIso.height !== iH) {
+      mapCacheIso = document.createElement('canvas');
+      mapCacheIso.width = Math.max(1, iW); mapCacheIso.height = Math.max(1, iH);
+    }
+    const ic = mapCacheIso.getContext('2d');
+    ic.clearRect(0, 0, iW, iH);
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const p = proj(c, r);
+        const x = Math.floor(p.x - minX1), y = Math.floor(p.y - minY1);
+        ic.fillStyle = getBiomeFillColor(tileBiome[r][c] || 'alluvial');
+        ic.beginPath();
+        ic.moveTo(x,          y);
+        ic.lineTo(x + w1/2,   y + h1/2);
+        ic.lineTo(x,          y + h1);
+        ic.lineTo(x - w1/2,   y + h1/2);
+        ic.closePath(); ic.fill();
+      }
+      if (r % BATCH === BATCH - 1) await new Promise(res => setTimeout(res, 0));
+    }
+    mapCacheIso._isoOffset = { minX: minX1, minY: minY1 };
+    mapCacheIso._cacheZoom = 1;
+
+    mapCacheDirty = false;
+  } catch (e) { console.warn('rebuildMapCachesAsync err', e); }
+  _rebuildMapAsyncRunning = false;
+}
+
 function rebuildMapCacheDebounced(delay = GRAPHICS_CONFIG.cacheRebuildDelay) {
   if (_rebuildMapTimer) clearTimeout(_rebuildMapTimer);
-  _rebuildMapTimer = setTimeout(() => { try { rebuildMapCache(); } catch (e) { console.warn('rebuildMapCache err', e); } }, delay);
+  // Use the async chunked builder so the main thread is never blocked.
+  _rebuildMapTimer = setTimeout(() => { try { rebuildMapCachesAsync(); } catch (e) { console.warn('rebuildMapCaches err', e); } }, delay);
 }
 
 function rebuildMapCache() {
-  // create offscreen canvas sized for current viewMode at current zoom
-  const tileSize = getTileSize();
+  // PERF: always build cache at BASE tile size (TILE px, zoom=1).
+  // This keeps the canvas at a fixed ~22 MB regardless of zoom level.
+  // The render loop scales it with drawImage(scale=zoom) which the GPU handles cheaply.
+  const tileSize = TILE; // do NOT use getTileSize() — that would scale with zoom
   if (viewMode === 'iso') {
-    // compute projected iso extents at current zoom
-    const w1 = TILE * zoom;
-    const h1 = TILE * zoom * ISO_RATIO;
+    // compute projected iso extents at BASE zoom (1)
+    const w1 = TILE;
+    const h1 = TILE * ISO_RATIO;
     function proj1(col, row) { return { x: (col - row) * (w1 / 2), y: (col + row) * (h1 / 2) - h1 / 2 }; }
     const a = proj1(0,0), b = proj1(COLS-1,0), c = proj1(0,ROWS-1), d = proj1(COLS-1,ROWS-1);
     const minX1 = Math.floor(Math.min(a.x,b.x,c.x,d.x) - w1 / 2);
@@ -834,9 +919,9 @@ function rebuildMapCache() {
         const p = proj1(c, r);
         const x = Math.floor(p.x - minX1);
         const y = Math.floor(p.y - minY1);
-        const biome = tileBiome[r][c] || 'sand';
-        if (biome === 'water' || isRiver(c)) {
-          cctx.fillStyle = `hsl(205,60%,${40}%)`;
+        const biome = tileBiome[r][c] || 'alluvial';
+        if (biome === 'water') {
+          cctx.fillStyle = '#2A72C3';
           // draw diamond
           cctx.beginPath();
           cctx.moveTo(x, y);
@@ -846,7 +931,15 @@ function rebuildMapCache() {
           cctx.closePath(); cctx.fill();
         } else {
           let fill;
-          if (biome === 'forest') fill = '#2E8B2E'; else if (biome === 'hills') fill = '#B8860B'; else if (biome === 'grass') fill = '#9BC17A'; else fill = `rgb(200,165,100)`;
+          if      (biome === 'riparian') fill = '#5A8C38';
+          else if (biome === 'marsh')    fill = '#3A6B52';
+          else if (biome === 'alluvial') fill = '#D1A86A';
+          else if (biome === 'saline')   fill = '#E8D8B8';
+          else if (biome === 'steppe')   fill = '#C8A055';
+          else if (biome === 'hills')    fill = '#B09060';
+          else if (biome === 'forest')   fill = '#4A8A3A';  // legacy saves
+          else if (biome === 'grass')    fill = '#7AAA60';  // legacy saves
+          else fill = '#C4A878';
           cctx.fillStyle = fill;
           cctx.beginPath();
           cctx.moveTo(x, y);
@@ -858,9 +951,9 @@ function rebuildMapCache() {
       }
     }
     mapCache._isoOffset = { minX: minX1, minY: minY1 };
-    mapCache._cacheZoom = zoom;
+    mapCache._cacheZoom = 1; // cache is always at base zoom
   } else {
-    // orthographic cache at tileSize
+    // orthographic cache at base tileSize
     const W = COLS * tileSize; const H = ROWS * tileSize;
     if (!mapCache || mapCache.width !== W || mapCache.height !== H) {
       mapCache = document.createElement('canvas');
@@ -871,18 +964,26 @@ function rebuildMapCache() {
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
         const x = c * tileSize; const y = r * tileSize;
-        const biome = tileBiome[r][c] || 'sand';
-        if (biome === 'water' || isRiver(c)) {
-          cctx.fillStyle = `hsl(205,60%,40%)`;
+        const biome = tileBiome[r][c] || 'alluvial';
+        if (biome === 'water') {
+          cctx.fillStyle = '#2A72C3';
           cctx.fillRect(x, y, tileSize, tileSize);
         } else {
-          if (biome === 'forest') cctx.fillStyle = '#2E8B2E'; else if (biome === 'hills') cctx.fillStyle = '#B8860B'; else if (biome === 'grass') cctx.fillStyle = '#9BC17A'; else cctx.fillStyle = 'rgb(200,165,100)';
+          if      (biome === 'riparian') cctx.fillStyle = '#5A8C38';
+          else if (biome === 'marsh')    cctx.fillStyle = '#3A6B52';
+          else if (biome === 'alluvial') cctx.fillStyle = '#D1A86A';
+          else if (biome === 'saline')   cctx.fillStyle = '#E8D8B8';
+          else if (biome === 'steppe')   cctx.fillStyle = '#C8A055';
+          else if (biome === 'hills')    cctx.fillStyle = '#B09060';
+          else if (biome === 'forest')   cctx.fillStyle = '#4A8A3A';
+          else if (biome === 'grass')    cctx.fillStyle = '#7AAA60';
+          else cctx.fillStyle = '#C4A878';
           cctx.fillRect(x, y, tileSize, tileSize);
         }
       }
     }
     delete mapCache._isoOffset;
-    mapCache._cacheZoom = zoom;
+    mapCache._cacheZoom = 1; // cache is always at base zoom
   }
   mapCacheDirty = false;
 }
@@ -933,13 +1034,17 @@ window.addEventListener('unhandledrejection', function (ev) {
 // ── CONFIG ────────────────────────────────────────────────────
 const TILE    = 32;          // px per cell
 // Visual tuning: scale factor applied to building/artwork drawing (relative to tile size)
-const BUILDING_SCALE = 2.2;
+// 1.0 = sprite occupies exactly size.w × size.h tiles → collision footprint matches visual perfectly
+const BUILDING_SCALE = 1.0;
 // Make the map much larger
-const COLS    = 120;
-const ROWS    = 80;
-// River placement and width (adaptive to COLS)
-const RIVER_COL_START = Math.floor(COLS / 3);
-const RIVER_WIDTH     = 4;
+const COLS    = 180;
+const ROWS    = 120;
+// Two-river system: Tigris (A, west/left) and Euphrates (B, east/right)
+const RIVER_A_BASE      = 42;  // Tigris approximate center column
+const RIVER_B_BASE      = 132; // Euphrates approximate center column
+const RIVER_WIDTH_BASE  = 5;
+const RIVER_COL_START   = RIVER_A_BASE;  // backward-compat alias
+const RIVER_WIDTH       = RIVER_WIDTH_BASE;
 // Pan sensitivity tweaks
 const PAN_SENSITIVITY_X = 1.15; // slightly amplify horizontal pan when feeling small
 const PAN_SENSITIVITY_Y = 1.0;
@@ -956,22 +1061,28 @@ const res = { wheat: 50, brick: 40, pop: 0 };
 
 // ── BUILDINGS DEFINITION ──────────────────────────────────────
 const BUILDINGS = {
-  house:    { name:'Casa',    costBrick:8,  costWheat:3,  prodPop:5,  prodWheat:0, prodBrick:0, color:'#C8A84B', roofColor:'#8B6914', desc:'Aloja 5 habitantes.', size:{ w:2, h:2 } },
-  house_small: { name:'Casa pequeña', costBrick:4, costWheat:2, prodPop:2, prodWheat:0, prodBrick:0, color:'#D0B35A', roofColor:'#9B7A2A', desc:'Pequeña vivienda.', size:{ w:1, h:1 } },
-  house_large: { name:'Casa grande', costBrick:12, costWheat:4, prodPop:8, prodWheat:0, prodBrick:0, color:'#C8A84B', roofColor:'#7A4F12', desc:'Vivienda grande.', size:{ w:2, h:2 } },
-  hut:     { name:'Choza',   costBrick:1, costWheat:0, prodPop:1, prodWheat:0, prodBrick:0, color:'#D9C08A', roofColor:'#F2D16B', desc:'Choza de paja.', size:{ w:1, h:1 } },
-  longhouse: { name:'Casa comunal', costBrick:10, costWheat:2, prodPop:6, prodWheat:0, prodBrick:0, color:'#C9B07A', roofColor:'#8A5F2A', desc:'Vivienda larga comunal.', size:{ w:3, h:1 } },
-  stone_house: { name:'Casa de piedra', costBrick:14, costWheat:2, prodPop:6, prodWheat:0, prodBrick:0, color:'#9A9EA3', roofColor:'#6E6E6E', desc:'Construcción en piedra.', size:{ w:2, h:2 } },
+  // Sizes are the EXACT tile footprint — sprite fills exactly size.w × size.h tiles
+  house:    { name:'Casa',    costBrick:8,  costWheat:3,  prodPop:5,  prodWheat:0, prodBrick:0, color:'#C8A84B', roofColor:'#8B6914', desc:'Aloja 5 habitantes.', size:{ w:3, h:3 } },
+  house_small: { name:'Casa pequeña', costBrick:4, costWheat:2, prodPop:2, prodWheat:0, prodBrick:0, color:'#D0B35A', roofColor:'#9B7A2A', desc:'Pequeña vivienda.', size:{ w:2, h:2 } },
+  house_large: { name:'Casa grande', costBrick:12, costWheat:4, prodPop:8, prodWheat:0, prodBrick:0, color:'#C8A84B', roofColor:'#7A4F12', desc:'Vivienda grande.', size:{ w:4, h:4 } },
+  hut:     { name:'Choza',   costBrick:1, costWheat:0, prodPop:1, prodWheat:0, prodBrick:0, color:'#D9C08A', roofColor:'#F2D16B', desc:'Choza de paja.', size:{ w:2, h:2 } },
+  longhouse: { name:'Casa comunal', costBrick:10, costWheat:2, prodPop:6, prodWheat:0, prodBrick:0, color:'#C9B07A', roofColor:'#8A5F2A', desc:'Vivienda larga comunal.', size:{ w:5, h:2 } },
+  stone_house: { name:'Casa de piedra', costBrick:14, costWheat:2, prodPop:6, prodWheat:0, prodBrick:0, color:'#9A9EA3', roofColor:'#6E6E6E', desc:'Construcción en piedra.', size:{ w:3, h:3 } },
   farm:     { name:'Granja',  costBrick:1,  costWheat:3,  prodPop:0,  prodWheat:4, prodBrick:0, color:'#4A7C3F', roofColor:'#2E5028', desc:'Produce 4 trigo/turno.' },
   temple:   { name:'Templo',  costBrick:15, costWheat:5,  prodPop:5,  prodWheat:1, prodBrick:1, color:'#E8D5A3', roofColor:'#A0522D', desc:'+5 pop, +1 trigo, +1 ladrillo.' },
   market:   { name:'Mercado', costBrick:8,  costWheat:4,  prodPop:2,  prodWheat:2, prodBrick:2, color:'#D2691E', roofColor:'#8B4513', desc:'+2 trigo, +2 ladrillos.' },
   granary:  { name:'Granero', costBrick:6,  costWheat:0,  prodPop:0,  prodWheat:0, prodBrick:3, color:'#B8860B', roofColor:'#8B6914', desc:'+3 ladrillos/turno.' },
-  ziggurat: { name:'Zigurat', costBrick:30, costWheat:10, prodPop:10, prodWheat:3, prodBrick:3, color:'#F5ECD7', roofColor:'#C8A84B', desc:'Maravilla: +10 pop, +3 todo.', size:{ w:4, h:4 } },
+  ziggurat: { name:'Zigurat', costBrick:30, costWheat:10, prodPop:10, prodWheat:3, prodBrick:3, color:'#F5ECD7', roofColor:'#C8A84B', desc:'Maravilla: +10 pop, +3 todo.', size:{ w:5, h:5 } },
 };
 
 // House with garden variant
-BUILDINGS.house_garden = { name: 'Casa con jardín', costBrick: 12, costWheat: 3, prodPop: 5, prodWheat:0, prodBrick:0, color:'#C8A84B', roofColor:'#E04A3F', desc:'Casa con pequeño jardín.', size: { w:2, h:2 } };
-BUILDINGS.mesopotamian_villa_detailed = { name: 'Villa mesopotámica', costBrick: 24, costWheat: 8, prodPop: 12, prodWheat:0, prodBrick:0, color:'#C19A6B', roofColor:'#8B7355', desc:'Residencia amplia y ornamentada para familias nobles.', size: { w:3, h:3 } };
+BUILDINGS.house_garden = { name: 'Casa con jardín', costBrick: 12, costWheat: 3, prodPop: 5, prodWheat:0, prodBrick:0, color:'#C8A84B', roofColor:'#E04A3F', desc:'Casa con pequeño jardín.', size: { w:3, h:3 } };
+BUILDINGS.mesopotamian_villa_detailed = { name: 'Villa mesopotámica', costBrick: 24, costWheat: 8, prodPop: 12, prodWheat:0, prodBrick:0, color:'#C19A6B', roofColor:'#8B7355', desc:'Residencia amplia y ornamentada para familias nobles.', size: { w:5, h:5 } };
+
+// Mesopotamian buildings with pixel-art sprites
+BUILDINGS.mesopotamian_house = { name: 'Casa mesopotámica', costBrick: 10, costWheat: 2, prodPop: 6, prodWheat:0, prodBrick:0, color:'#C9A058', roofColor:'#8B5A28', desc:'Vivienda tradicional de ladrillo cocido.', size: { w:3, h:3 } };
+BUILDINGS.mesopotamian_arch  = { name: 'Arco monumental', costBrick: 8, costWheat: 0, prodPop: 0, prodWheat:0, prodBrick:0, color:'#C8A84B', roofColor:'#8B6914', desc:'Arco de entrada a la ciudad.', size: { w:2, h:1 } };
+BUILDINGS.mesopotamian_baths = { name: 'Baños públicos', costBrick: 16, costWheat: 4, prodPop: 3, prodWheat:0, prodBrick:0, color:'#6B9EC8', roofColor:'#3A6B8A', desc:'Instalación de baños para la comunidad.', size: { w:3, h:2 } };
 
 // Road definition: small footprint, player-can-build
 BUILDINGS.road = { name: 'Camino', costBrick:0, costWheat:0, prodPop:0, prodWheat:0, prodBrick:0, color:'#8B7B5B', roofColor:'#8B7B5B', desc:'Conecta edificios.', size: { w:1, h:1 } };
@@ -989,6 +1100,7 @@ let hoverCell = null;
 // utility globals for effects and NPC villages
 window.floatingTexts = window.floatingTexts || [];
 window.effectParticles = window.effectParticles || [];
+window.smokeParticles = window.smokeParticles || [];
 window._VILLAGES = window._VILLAGES || [];
 window._LAST_VILLAGE_ID = window._LAST_VILLAGE_ID || null;
 
@@ -1141,9 +1253,16 @@ function saveAppState() {
       tileBiome,
       grid,
       // persist entities and runtime lists so world persists exactly
-      entities: (typeof entities !== 'undefined' && Array.isArray(entities)) ? entities.map(e => ({ ...e })) : [],
-      rabbits: (typeof rabbits !== 'undefined' && Array.isArray(rabbits)) ? rabbits.map(r => ({ ...r })) : [],
-      foxes: (typeof foxes !== 'undefined' && Array.isArray(foxes)) ? foxes.map(f => ({ ...f })) : [],
+      // If player is inside a building, exterior entities live in _savedExterior — save those instead
+      entities: (window._savedExterior && Array.isArray(window._savedExterior.entities))
+        ? window._savedExterior.entities.map(e => ({ ...e }))
+        : (Array.isArray(entities) ? entities.map(e => ({ ...e })) : []),
+      rabbits: (window._savedExterior && Array.isArray(window._savedExterior.rabbits))
+        ? window._savedExterior.rabbits.map(r => ({ ...r }))
+        : (Array.isArray(rabbits) ? rabbits.map(r => ({ ...r })) : []),
+      foxes: (window._savedExterior && Array.isArray(window._savedExterior.foxes))
+        ? window._savedExterior.foxes.map(f => ({ ...f }))
+        : (Array.isArray(foxes) ? foxes.map(f => ({ ...f })) : []),
       enemies: (typeof enemies !== 'undefined' && Array.isArray(enemies)) ? enemies.map(en => ({ ...en })) : [],
       effectParticles: (typeof effectParticles !== 'undefined' && Array.isArray(effectParticles)) ? effectParticles.map(p => ({ ...p })) : [],
       floatingTexts: (typeof window.floatingTexts !== 'undefined' && Array.isArray(window.floatingTexts)) ? window.floatingTexts.map(t => ({ ...t })) : [],
@@ -1534,7 +1653,11 @@ try {
 } catch (e) {}
 player.weapon = null; // equipped weapon id (optional)
 
-// Initialize continuous position and movement fields
+// Initialize stamina
+player.stamina = 100;
+player._maxStamina = 100;
+player._isSprinting = false;
+
 player.x = player.col;
 player.y = player.row;
 player.vx = 0;
@@ -1586,6 +1709,8 @@ let fitTransition = null; // { startZoom, targetZoom, startTime, duration }
 let zoom = 1;
 const ZOOM_MIN = 0.08;
 const ZOOM_MAX = 2.5;
+// Time scale: 0 = paused, 0.5 = half speed, 1 = normal, 2/4 = fast forward
+window._timeScale = window._timeScale !== undefined ? window._timeScale : 1.0;
 let viewMode = 'ortho';
 let panMode = false;
 const ISO_RATIO = 0.6;
@@ -2189,7 +2314,7 @@ function getBuildingSize(type) {
 function isShelterBuildingType(type) {
   try {
     const t = String(type || '').toLowerCase();
-    return t.includes('house') || t.includes('villa') || t === 'longhouse' || t === 'hut';
+    return t.includes('house') || t.includes('villa') || t === 'longhouse' || t === 'hut' || t === 'mesopotamian_baths';
   } catch (e) {
     return false;
   }
@@ -2225,7 +2350,18 @@ function rebuildInteriorDoorsFromGrid() {
         const key = `${doorCol},${doorRow}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        doors.push({ col: doorCol, row: doorRow, interiorId: 'house-small', buildingType: type });
+        // choose interior JSON by building type
+        let intId = 'house-small';
+        if (type === 'house') intId = 'house';
+        else if (type === 'house_large') intId = 'house_large';
+        else if (type === 'house_garden') intId = 'house_garden';
+        else if (type === 'longhouse') intId = 'house_large';
+        else if (type === 'mesopotamian_villa_detailed') intId = 'house_large';
+        else if (type === 'mesopotamian_house') intId = 'house';
+        else if (type === 'mesopotamian_baths') intId = 'house_large';
+        else if (type === 'stone_house') intId = 'house';
+        else if (type === 'hut') intId = 'house-small';
+        doors.push({ col: doorCol, row: doorRow, interiorId: intId, buildingType: type, buildingBase: { col: info.baseCol, row: info.baseRow } });
       }
     }
     window.INTERIOR_DOORS = doors;
@@ -2262,131 +2398,370 @@ function carveRoadPath(c1, r1, c2, r2) {
 }
 
 // Spawn a small organized village near a base col/row
+function generateVillageName() {
+  const pre = ['Ki','Ur','Eri','La','Um','Dur','Bad','En','Ish','Lagash','Umma','Kish'];
+  const suf = ['du','inna','lam','nun','gal','zal','ana','kug','idu','luga','dara','nu'];
+  return pre[Math.floor(Math.random()*pre.length)] + suf[Math.floor(Math.random()*suf.length)];
+}
+
 function spawnVillage(baseCol, baseRow, opts) {
   opts = opts || {};
-  // try to find a non-water, non-forest, non-river center nearby
-  let bc = baseCol, br = baseRow, t=0;
-  while ((isRiver(bc) || isNearRiver(bc) || (tileBiome[br] && tileBiome[br][bc] === 'forest') || (tileBiome[br] && tileBiome[br][bc] === 'water') || grid[br][bc]) && t < 300) {
+  const villageType = opts.villageType || 'village'; // 'origin' | 'capital' | 'trading_post' | 'village'
+
+  // find a valid non-water, non-river center nearby
+  let bc = baseCol, br = baseRow, t = 0;
+  while ((isRiver(bc) || isNearRiver(bc) || (tileBiome[br] && tileBiome[br][bc] === 'forest') ||
+          (tileBiome[br] && tileBiome[br][bc] === 'water') || grid[br][bc]) && t < 300) {
     bc = Math.max(2, Math.min(COLS-3, baseCol + Math.floor(Math.random()*7)-3));
     br = Math.max(2, Math.min(ROWS-3, baseRow + Math.floor(Math.random()*7)-3));
     t++;
   }
   if (t >= 300) return;
 
-  // layout: rows x cols grid of house plots (wider spacing for clearer visualization)
-  const cols = 2 + Math.floor(Math.random()*3); // 2..4
-  const rows = 1 + Math.floor(Math.random()*2); // 1..2
-  const spacing = 3 + Math.floor(Math.random()*2); // 3..4 for more space between houses
-  const houses = [];
-  const startC = Math.max(2, Math.min(COLS-3, bc - Math.floor((cols-1)/2) * (spacing+1)));
-  const startR = Math.max(2, Math.min(ROWS-3, br - Math.floor((rows-1)/2) * (spacing+1)));
+  // Layout dimensions by village type
+  let layoutCols, layoutRows, spacing;
+  if (villageType === 'capital') {
+    layoutCols = 4 + Math.floor(Math.random()*2); // 4-5
+    layoutRows = 3 + Math.floor(Math.random()*2); // 3-4
+    spacing = 7;
+  } else if (villageType === 'origin') {
+    layoutCols = 2; layoutRows = 1; spacing = 5;
+  } else if (villageType === 'trading_post') {
+    layoutCols = 3; layoutRows = 1; spacing = 5;
+  } else {
+    layoutCols = 2 + Math.floor(Math.random()*3);
+    layoutRows = 1 + Math.floor(Math.random()*2);
+    spacing = 5 + Math.floor(Math.random()*2);
+  }
 
-  for (let rr = 0; rr < rows; rr++) {
-    for (let cc = 0; cc < cols; cc++) {
-      const hc = startC + cc * (spacing+1);
-      const hr = startR + rr * (spacing+1);
+  const houses = [];
+  const startC = Math.max(2, Math.min(COLS-6, bc - Math.floor((layoutCols-1)/2) * spacing));
+  const startR = Math.max(2, Math.min(ROWS-6, br - Math.floor((layoutRows-1)/2) * spacing));
+
+  // ── CAPITAL: structured city layout ──────────────────────────
+  // Districts: [ziggurat center] [temple N] [market S] [villas NE/NW]
+  //            [baths E/W] [meso_house residential ring] [granary edge]
+  //            [arch gates at N/S entrances] [ring road]
+  if (villageType === 'capital') {
+    // compute city center
+    const cx = bc, cy = br;
+    // helper to try placing a building at a position
+    const tryPlace = (col, row, btype) => {
+      const c = Math.max(2, Math.min(COLS - 6, col));
+      const r = Math.max(2, Math.min(ROWS - 6, row));
+      if (c < 1 || r < 1 || c >= COLS-3 || r >= ROWS-3) return false;
+      if (isRiver(c) || (tileBiome[r] && (tileBiome[r][c] === 'water' || tileBiome[r][c] === 'forest'))) return false;
+      const sz = getBuildingSize(btype);
+      // check if footprint is clear
+      for (let dr = 0; dr < sz.h; dr++) {
+        for (let dc = 0; dc < sz.w; dc++) {
+          if (grid[r+dr] && grid[r+dr][c+dc]) return false;
+        }
+      }
+      try { setBuildingCells(c, r, btype); houses.push({ c, r, variant: btype }); return true; } catch(e) { return false; }
+    };
+
+    // 1. CORE: Ziggurat at center (5×5)
+    tryPlace(cx - 2, cy - 2, 'ziggurat');
+    // 2. TEMPLE: north of ziggurat, slightly offset
+    tryPlace(cx - 1, cy - 9, 'temple');
+    // 3. MONUMENT ARCH: north city gate (entrance)
+    tryPlace(cx - 1, cy - 12, 'mesopotamian_arch');
+    // 4. MONUMENT ARCH: south city gate
+    tryPlace(cx - 1, cy + 8, 'mesopotamian_arch');
+    // 5. VILLA NOBLE: NW quadrant
+    tryPlace(cx - 9, cy - 7, 'mesopotamian_villa_detailed');
+    // 6. VILLA NOBLE: NE quadrant
+    tryPlace(cx + 6, cy - 7, 'mesopotamian_villa_detailed');
+    // 7. PUBLIC BATHS: west district
+    tryPlace(cx - 9, cy - 1, 'mesopotamian_baths');
+    // 8. PUBLIC BATHS: east district
+    tryPlace(cx + 7, cy - 1, 'mesopotamian_baths');
+    // 9. MARKET: SW corner (commercial hub)
+    tryPlace(cx - 9, cy + 5, 'market');
+    // 10. GRANARY: SE corner
+    tryPlace(cx + 7, cy + 5, 'granary');
+    // 11. GRANARY: NE far edge
+    tryPlace(cx + 11, cy - 4, 'granary');
+    // 12-19. RESIDENTIAL RING — mesopotamian_houses radiating from center
+    const resRing = [
+      [cx - 7, cy + 1], [cx + 5, cy + 1],       // E/W mid
+      [cx - 5, cy + 6], [cx + 4, cy + 6],        // S near
+      [cx - 3, cy - 8], [cx + 3, cy - 8],        // N near
+      [cx - 8, cy - 4], [cx + 7, cy - 4],        // NW/NE
+      [cx - 6, cy + 9], [cx + 5, cy + 9],        // S far
+    ];
+    const resBuildingPool = ['mesopotamian_house', 'mesopotamian_house', 'mesopotamian_house',
+                             'house', 'house_garden', 'house_large', 'house_small', 'longhouse',
+                             'mesopotamian_house', 'stone_house'];
+    resRing.forEach(([rc, rr], i) => tryPlace(rc, rr, resBuildingPool[i % resBuildingPool.length]));
+    // 20. Additional houses filling gaps
+    const extraSlots = [
+      [cx - 3, cy + 7, 'mesopotamian_house'],
+      [cx + 2, cy + 7, 'mesopotamian_house'],
+      [cx - 3, cy - 10, 'house_small'],
+      [cx + 2, cy - 10, 'house_small'],
+      [cx + 10, cy + 2, 'mesopotamian_house'],
+      [cx - 11, cy + 2, 'house'],
+      [cx + 10, cy - 7, 'hut'],
+      [cx - 11, cy - 7, 'hut'],
+    ];
+    extraSlots.forEach(([ec, er, et]) => tryPlace(ec, er, et));
+
+    // Carve main N-S road through city
+    for (let r = cy - 13; r <= cy + 10; r++) {
+      const c = Math.max(0, Math.min(COLS-1, cx));
+      if (r >= 0 && r < ROWS && !grid[r][c]) { try { tileBiome[r][c] = 'road'; } catch(e){} }
+    }
+    // Carve main E-W road through city
+    for (let c = cx - 12; c <= cx + 13; c++) {
+      const r = Math.max(0, Math.min(ROWS-1, cy));
+      if (c >= 0 && c < COLS && !grid[cy][c]) { try { tileBiome[cy][c] = 'road'; } catch(e){} }
+    }
+    // Inner ring road (square perimeter)
+    const ringR = 11;
+    for (let i = -ringR; i <= ringR; i++) {
+      const rc = cx + i, rr1 = cy - ringR, rr2 = cy + ringR;
+      if (rc >= 0 && rc < COLS) {
+        if (rr1 >= 0 && rr1 < ROWS && !grid[rr1][rc]) { try { tileBiome[rr1][rc] = 'road'; } catch(e){} }
+        if (rr2 >= 0 && rr2 < ROWS && !grid[rr2][rc]) { try { tileBiome[rr2][rc] = 'road'; } catch(e){} }
+      }
+      const rr = cy + i, cc1 = cx - ringR, cc2 = cx + ringR;
+      if (rr >= 0 && rr < ROWS) {
+        if (cc1 >= 0 && cc1 < COLS && !grid[rr][cc1]) { try { tileBiome[rr][cc1] = 'road'; } catch(e){} }
+        if (cc2 >= 0 && cc2 < COLS && !grid[rr][cc2]) { try { tileBiome[rr][cc2] = 'road'; } catch(e){} }
+      }
+    }
+
+    // Roads between all houses to nearest hub (ziggurat)
+    if (houses.length > 0) {
+      const hub = houses[0];
+      for (let i = 1; i < houses.length; i++) carveRoadPath(hub.c, hub.r, houses[i].c, houses[i].r);
+    }
+
+  } else {
+
+  // ── NON-CAPITAL: original grid layout ────────────────────────
+  let si = 0;
+  for (let rr = 0; rr < layoutRows; rr++) {
+    for (let cc = 0; cc < layoutCols; cc++, si++) {
+      const hc = startC + cc * spacing;
+      const hr = startR + rr * spacing;
       if (hc < 1 || hr < 1 || hc >= COLS-1 || hr >= ROWS-1) continue;
       if (isRiver(hc) || grid[hr][hc]) continue;
       const biome = tileBiome[hr] && tileBiome[hr][hc];
       if (biome === 'forest' || biome === 'water') continue;
-      // choose variant (include huts and occasionally a market/temple)
-      let variant = 'house';
-      const r = Math.random();
-      if (r < 0.12) variant = 'hut';
-      else if (r < 0.45) variant = 'house_small';
-      else if (r < 0.78) variant = 'house';
-      else variant = 'house_large';
-      try { setBuildingCells(hc, hr, variant); houses.push({c:hc, r:hr}); } catch (e) {}
+
+      let variant;
+      const totalSlots = layoutCols * layoutRows;
+      if (villageType === 'origin') {
+        // small founding settlement: simple huts + one granary
+        variant = si === 0 ? 'house_small' : (si === 1 ? 'granary' : 'hut');
+      } else if (villageType === 'trading_post') {
+        // trade hub: market + granary + longhouses for merchants
+        if (si === 0) variant = 'market';
+        else if (si === 1) variant = 'granary';
+        else { const r = Math.random(); variant = r < 0.45 ? 'longhouse' : r < 0.70 ? 'house_small' : 'hut'; }
+      } else {
+        // regular village: full variety of residential buildings
+        const r = Math.random();
+        variant = r < 0.08 ? 'hut' : r < 0.20 ? 'house_small' : r < 0.34 ? 'mesopotamian_house' :
+                  r < 0.46 ? 'house' : r < 0.57 ? 'house_large' : r < 0.66 ? 'longhouse' :
+                  r < 0.74 ? 'stone_house' : r < 0.83 ? 'house_garden' : 'granary';
+      }
+      try { setBuildingCells(hc, hr, variant); houses.push({ c: hc, r: hr, variant }); } catch (e) {}
     }
   }
 
-  // place a small farm near the cluster
-  try {
-    const fc = Math.min(COLS-2, bc + cols + 1);
-    const fr = Math.min(ROWS-2, br + 1);
-    if (!grid[fr][fc] && tileBiome[fr][fc] !== 'forest' && !isRiver(fc)) setBuildingCells(fc, fr, 'farm');
-  } catch (e) {}
+  } // end else (non-capital)
 
-  // connect houses with roads (connect to first house)
-  if (houses.length > 0) {
+  // Small farm/granary near non-origin, non-capital villages
+  if (villageType !== 'origin' && villageType !== 'capital') {
+    try {
+      const fc = Math.min(COLS-2, bc + layoutCols + 1);
+      const fr = Math.min(ROWS-2, br + 1);
+      if (!grid[fr][fc] && tileBiome[fr] && tileBiome[fr][fc] !== 'forest' && !isRiver(fc))
+        setBuildingCells(fc, fr, 'farm');
+    } catch (e) {}
+  }
+
+  if (houses.length === 0) return;
+
+  // Roads connecting all houses to the first (hub-and-spoke) — only for non-capital (capital has own road layout)
+  if (villageType !== 'capital') {
     const hub = houses[0];
     for (let i = 1; i < houses.length; i++) {
       carveRoadPath(hub.c, hub.r, houses[i].c, houses[i].r);
     }
-    // compute village bounds (padding 2 tiles)
-    let minC = Infinity, maxC = -Infinity, minR = Infinity, maxR = -Infinity;
-    houses.forEach(h => { minC = Math.min(minC, h.c); maxC = Math.max(maxC, h.c); minR = Math.min(minR, h.r); maxR = Math.max(maxR, h.r); });
-    minC = Math.max(0, minC - 2); minR = Math.max(0, minR - 2); maxC = Math.min(COLS-1, maxC + 2); maxR = Math.min(ROWS-1, maxR + 2);
-    const vid = 'village-' + Date.now() + '-' + Math.random().toString(36).slice(2,4);
-    const villageObj = { id: vid, houses: houses.slice(), minC, maxC, minR, maxR };
-    window._VILLAGES = window._VILLAGES || [];
-    window._VILLAGES.push(villageObj);
-    // spawn a couple of NPCs inside the village bounds
-      try {
-      window._LAST_VILLAGE_ID = vid;
-      const baseNpc = 1 + Math.floor(Math.random()*3);
-      const npcDensity = (window._DEFAULT_DENSITIES && window._DEFAULT_DENSITIES.npc) ? window._DEFAULT_DENSITIES.npc : 1.0;
-      const npcCount = Math.max(0, Math.round(baseNpc * npcDensity));
-      for (let ni = 0; ni < npcCount; ni++) {
-        const nc = Math.floor((minC + maxC) / 2) + Math.floor(Math.random() * (maxC - minC + 1)) - Math.floor((maxC - minC)/2);
-        const nr = Math.floor((minR + maxR) / 2) + Math.floor(Math.random() * (maxR - minR + 1)) - Math.floor((maxR - minR)/2);
-        try { const p = spawnNPC('Aldeano' + (ni+1), Math.max(0, Math.min(COLS-1, nc)), Math.max(0, Math.min(ROWS-1, nr))); if (p) p.npcType = 'villager'; } catch (e) {}
-      }
-      window._LAST_VILLAGE_ID = null;
-    } catch (e) {}
   }
 
-  // Remove trees/resources and rabbits/entities close to houses (within 2 tiles)
+  // Village bounding box
+  let minC = Infinity, maxC = -Infinity, minR = Infinity, maxR = -Infinity;
+  houses.forEach(h => {
+    minC = Math.min(minC, h.c); maxC = Math.max(maxC, h.c);
+    minR = Math.min(minR, h.r); maxR = Math.max(maxR, h.r);
+  });
+  minC = Math.max(0, minC - 2); minR = Math.max(0, minR - 2);
+  maxC = Math.min(COLS-1, maxC + 4); maxR = Math.min(ROWS-1, maxR + 4);
+
+  const vName = (villageType === 'capital') ? 'Nínagara' : generateVillageName();
+  const vid = 'village-' + Date.now() + '-' + Math.random().toString(36).slice(2,4);
+  const villageObj = { id: vid, name: vName, type: villageType, houses: houses.slice(), minC, maxC, minR, maxR };
+  window._VILLAGES = window._VILLAGES || [];
+  window._VILLAGES.push(villageObj);
+
+  // Clear natural entities and flatten biome near buildings
   try {
     for (const h of houses) {
-      for (let rr = -2; rr <= 2; rr++) {
-        for (let cc = -2; cc <= 2; cc++) {
+      for (let rr = -3; rr <= 4; rr++) {
+        for (let cc = -3; cc <= 4; cc++) {
           const tc = h.c + cc, tr = h.r + rr;
           if (tc < 0 || tr < 0 || tc >= COLS || tr >= ROWS) continue;
-          // flatten nearby biome so village doesn't mix with forest
-          try { tileBiome[tr][tc] = 'grass'; } catch (e) {}
+          try { tileBiome[tr][tc] = 'alluvial'; } catch (e) {}
         }
       }
     }
-    // remove environmental entities (trees/resources) near houses
     for (let i = entities.length - 1; i >= 0; i--) {
       const ent = entities[i];
-      if (!ent) continue;
-      if (ent.kind === 'tree' || ent.kind === 'resource') {
-        let tooClose = false;
-        for (const h of houses) {
-          const d = Math.hypot(ent.col - h.c, ent.row - h.r);
-          if (d < 2) { tooClose = true; break; }
-        }
-        if (tooClose) entities.splice(i, 1);
-      }
+      if (!ent || (ent.kind !== 'tree' && ent.kind !== 'resource')) continue;
+      let tooClose = false;
+      for (const h of houses) { if (Math.hypot(ent.col - h.c, ent.row - h.r) < 5) { tooClose = true; break; } }
+      if (tooClose) entities.splice(i, 1);
     }
-    // remove rabbits near houses
     for (let i = rabbits.length - 1; i >= 0; i--) {
       const rb = rabbits[i];
       if (!rb) continue;
       let tooClose = false;
-      for (const h of houses) {
-        const d = Math.hypot(rb.col - h.c, rb.row - h.r);
-        if (d < 2) { tooClose = true; break; }
-      }
+      for (const h of houses) { if (Math.hypot(rb.col - h.c, rb.row - h.r) < 2) { tooClose = true; break; } }
       if (tooClose) rabbits.splice(i, 1);
     }
   } catch (e) {}
 
-  // spawn villagers near houses
-  const baseNpcCount = Math.max(2, Math.min(8, Math.floor(houses.length * (1.2 + Math.random()))));
-  const npcDensity2 = (window._DEFAULT_DENSITIES && window._DEFAULT_DENSITIES.npc) ? window._DEFAULT_DENSITIES.npc : 1.0;
-  const npcCount = Math.max(0, Math.round(baseNpcCount * npcDensity2));
-  for (let i = 0; i < npcCount; i++) {
-    const h = houses[Math.floor(Math.random()*houses.length)];
-    if (!h) continue;
-    const nc = Math.max(0, Math.min(COLS-1, h.c + (Math.floor(Math.random()*3)-1)));
-    const nr = Math.max(0, Math.min(ROWS-1, h.r + (Math.floor(Math.random()*3)-1)));
-    if (!isRiver(nc) && !grid[nr][nc]) {
-      try { spawnNPC('Aldeano' + (i+1), nc, nr); } catch (err) {}
+  // Place contextual flora: barley patches near villages, reeds near rivers
+  try {
+    if (villageType === 'capital' || villageType === 'village') {
+      for (let i = 0; i < 4; i++) {
+        const fc = Math.max(1, Math.min(COLS-2, bc + Math.floor(Math.random()*6) - 1));
+        const fr = Math.max(1, Math.min(ROWS-2, br + Math.floor(Math.random()*6) - 1));
+        if (!grid[fr][fc] && !isRiver(fc)) placeTree(fc, fr, 'barley');
+      }
     }
-  }
+    if (villageType === 'capital') {
+      // Date palms lining the approach to the city
+      for (let i = 0; i < 5; i++) {
+        const pc = Math.max(1, Math.min(COLS-2, bc - spacing + i));
+        const pr = Math.max(1, Math.min(ROWS-2, br + 1));
+        if (!grid[pr][pc] && !isRiver(pc)) placeTree(pc, pr, 'date_palm');
+      }
+    }
+  } catch (e) {}
+
+  // Spawn role-appropriate NPCs
+  try {
+    window._LAST_VILLAGE_ID = vid;
+    const npcDensity = (window._DEFAULT_DENSITIES && window._DEFAULT_DENSITIES.npc) ? window._DEFAULT_DENSITIES.npc : 1.0;
+
+    if (villageType === 'origin') {
+      // The Elder — primary story NPC
+      const elderH = houses[0] || { c: bc, r: br };
+      const elder = spawnNPC('Kishdu el Anciano', elderH.c + 1, elderH.r + 1);
+      if (elder) {
+        elder.npcType = 'elder';
+        elder.isStoryNPC = true;
+        elder._storyLines = [
+          'Adapa... menos mal que sigues vivo.',
+          'Los raiders de Gutium quemaron los graneros anoche. Casi no quedan provisiones.',
+          'Pero hay algo más urgente. He leído los presagios en las estrellas y en el cauce del río.',
+          'En cuarenta días, el Éufrates desbordará. Vendrá el gran diluvio, como en los tiempos de los dioses.',
+          'Debes viajar al norte, a Nínagara, la ciudad del rey Ur-Nammu.',
+          'Busca a la sacerdotisa del templo. Entrégale este mensaje: "Los ríos hablan. El tiempo llega."',
+          'No pierdas tiempo. El futuro de nuestra gente está en tus manos, Adapa.',
+          '[ Misión: Viaja a Nínagara y habla con la Sacerdotisa del Templo ]'
+        ];
+      }
+      // 1-2 survivors lingering nearby
+      const survivorCount = 1 + Math.floor(Math.random() * 2);
+      for (let i = 0; i < survivorCount; i++) {
+        const sv = spawnNPC('Superviviente', bc + Math.floor(Math.random()*4)-1, br + Math.floor(Math.random()*4)-1);
+        if (sv) sv.npcType = 'survivor';
+      }
+
+    } else if (villageType === 'capital') {
+      // Guards flanking the first building (city gate)
+      for (let g = 0; g < 2; g++) {
+        const gn = spawnNPC('Guardia de Nínagara', houses[0].c + g * 2, houses[0].r - 1);
+        if (gn) gn.npcType = 'guard';
+      }
+      // Priestess at the temple — story NPC
+      const templeH = houses.find(h => h.variant === 'temple') || houses[0];
+      const priestess = spawnNPC('Sacerdotisa Enlil-Ama', templeH.c + 1, templeH.r + 1);
+      if (priestess) {
+        priestess.npcType = 'priestess';
+        priestess.isStoryNPC = true;
+        priestess._storyLines = [
+          'Forastero, este es el templo sagrado de Enlil. Habla con respeto.',
+          '¿Un mensaje de Kidanu? Dame un momento...',
+          '"Los ríos hablan. El tiempo llega." Por los dioses...',
+          'Los presagios eran ciertos. El gran diluvio se aproxima.',
+          'El rey Ur-Nammu debe preparar los diques y los graneros elevados.',
+          'Pero primero necesitamos el ritual de protección. Las ofrendas al dios son esenciales.',
+          'Trae al templo cinco haces de cebada y tres piedras del río para el altar.',
+          '[ Misión: Reúne 5 cebada + 3 piedra para el ritual del templo ]'
+        ];
+      }
+      // Scribe in the administrative district — story NPC
+      const scribeH = houses.length > 2 ? houses[2] : houses[houses.length - 1];
+      const scribe = spawnNPC('Escriba Imitti', scribeH.c, scribeH.r + 2);
+      if (scribe) {
+        scribe.npcType = 'scribe';
+        scribe.isStoryNPC = true;
+        scribe._storyLines = [
+          'Las tablillas de arcilla guardan la memoria de Nínagara desde hace trescientos años.',
+          'Se dice que cada gran diluvio es precedido por señales: peces muertos, estorninos volando al sur.',
+          '¿Has visto tales señales en tu camino aquí desde el sur?',
+          'El conocimiento es el escudo más potente contra el caos. No lo olvides.',
+          'Ve al templo. La sacerdotisa sabe cómo interpretar estos presagios mejor que nadie.'
+        ];
+      }
+      // Merchants near the market
+      const marketH = houses.find(h => h.variant === 'market') || houses[houses.length - 1];
+      for (let m = 0; m < 2; m++) {
+        const mer = spawnNPC('Mercader', marketH.c + m * 2, marketH.r + 1);
+        if (mer) mer.npcType = 'merchant';
+      }
+      // Regular citizens
+      const citizenCount = Math.round(3 * npcDensity);
+      const rolesCapital = ['villager', 'farmer', 'shepherd'];
+      for (let i = 0; i < citizenCount; i++) {
+        const h = houses[Math.floor(Math.random() * houses.length)];
+        const np = spawnNPC('Ciudadano', h.c + Math.floor(Math.random()*3)-1, h.r + Math.floor(Math.random()*3)-1);
+        if (np) np.npcType = rolesCapital[i % rolesCapital.length];
+      }
+
+    } else if (villageType === 'trading_post') {
+      const traderCount = Math.round(3 * npcDensity);
+      for (let m = 0; m < traderCount; m++) {
+        const h = houses[Math.floor(Math.random() * houses.length)];
+        const np = spawnNPC('Mercader', h.c + Math.floor(Math.random()*3)-1, h.r + Math.floor(Math.random()*3)-1);
+        if (np) np.npcType = 'merchant';
+      }
+
+    } else {
+      // Common village: mix of farmers, shepherds, villagers, maybe one guard
+      const npcBase = Math.max(2, Math.min(6, Math.floor(houses.length * (1.2 + Math.random()))));
+      const rolesVillage = ['villager', 'villager', 'farmer', 'shepherd', 'guard'];
+      for (let i = 0; i < Math.round(npcBase * npcDensity); i++) {
+        const h = houses[Math.floor(Math.random() * houses.length)];
+        const nc = Math.max(0, Math.min(COLS-1, h.c + (Math.floor(Math.random()*3)-1)));
+        const nr = Math.max(0, Math.min(ROWS-1, h.r + (Math.floor(Math.random()*3)-1)));
+        if (!isRiver(nc) && !grid[nr][nc]) {
+          const np = spawnNPC('Aldeano', nc, nr);
+          if (np) np.npcType = rolesVillage[i % rolesVillage.length];
+        }
+      }
+    }
+    window._LAST_VILLAGE_ID = null;
+  } catch (e) {}
 }
 
 function clearBuildingCells(baseCol, baseRow, type) {
@@ -2432,20 +2807,39 @@ function forEachFootprint(baseCol, baseRow, type, fn) {
   }
 }
 
-function isRiver(col) {
-  return col >= RIVER_COL_START && col < RIVER_COL_START + RIVER_WIDTH;
+// Precise river cell check – uses meander map when available, falls back to column ranges
+function isRiver(col, row) {
+  try {
+    if (typeof row === 'number' && row >= 0 && row < ROWS && window._RIVER_FULL_MAP && window._RIVER_FULL_MAP[row]) {
+      return !!window._RIVER_FULL_MAP[row][col];
+    }
+    // Broad column-range fallback (used by placement helpers that lack row)
+    return (col >= RIVER_A_BASE - 1 && col < RIVER_A_BASE + RIVER_WIDTH_BASE + 3) ||
+           (col >= RIVER_B_BASE - 1 && col < RIVER_B_BASE + RIVER_WIDTH_BASE + 3);
+  } catch (e) { return false; }
 }
 
-function isNearRiver(col) {
-  return col >= RIVER_COL_START - 2 && col < RIVER_COL_START + RIVER_WIDTH + 2;
+function isNearRiver(col, row) {
+  try {
+    if (typeof row === 'number' && row >= 0 && row < ROWS) {
+      for (let dc = -4; dc <= 4; dc++) {
+        const cc = col + dc;
+        if (cc >= 0 && cc < COLS && isRiver(cc, row)) return true;
+      }
+      return false;
+    }
+    return (col >= RIVER_A_BASE - 4 && col < RIVER_A_BASE + RIVER_WIDTH_BASE + 7) ||
+           (col >= RIVER_B_BASE - 4 && col < RIVER_B_BASE + RIVER_WIDTH_BASE + 7);
+  } catch (e) { return false; }
 }
 
-// Movement speed multiplier depending on terrain (water slows you down)
+// Movement speed multiplier depending on terrain
 function movementMultiplier(col, row) {
   try {
     if (col < 0 || row < 0 || row >= ROWS || col >= COLS) return 1;
-    if (isRiver(col)) return 0.45;
-    if (tileBiome[row] && tileBiome[row][col] === 'water') return 0.45;
+    const b = tileBiome[row] && tileBiome[row][col];
+    if (b === 'water' || isRiver(col, row)) return 0.35;
+    if (b === 'marsh') return 0.70;
     return 1;
   } catch (e) { return 1; }
 }
@@ -2466,7 +2860,9 @@ function canWalkTo(col, row) {
     const rows = interior.height || interior.rows || (interior.tiles ? interior.tiles.length : 6);
     if (col < 0 || col >= cols || row < 0 || row >= rows) return false;
     const tile = (interior.tiles && interior.tiles[row] && interior.tiles[row][col]) ? interior.tiles[row][col] : 'floor';
-    return tile !== 'wall';
+    // wall, furniture blocking, door is passable (triggers exit)
+    const blocked = new Set(['wall','bed','table','chest','pot','firepit']);
+    return !blocked.has(tile);
   }
   if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return false;
   if (grid[row][col]) return false;
@@ -2476,211 +2872,175 @@ function canWalkTo(col, row) {
 // placeResource/placeRabbit moved to engine/entities.js
 
 function generateMap(mapType) {
-  // Fill base biomes
+  // ── 1. Generate two meandering rivers (Tigris A/left, Euphrates B/right) ──
+  const meandA = [], meandB = [];
+  let dA = 0, dB = 0;
   for (let r = 0; r < ROWS; r++) {
-    for (let c = 0; c < COLS; c++) {
-      // default sand
-      let p = Math.random();
-      if (isRiver(c)) {
-        tileBiome[r][c] = 'water';
-      } else if (p < 0.06) {
-        tileBiome[r][c] = 'forest';
-      } else if (p < 0.12) {
-        tileBiome[r][c] = 'hills';
-      } else if (p < 0.25) {
-        tileBiome[r][c] = 'grass';
-      } else {
-        tileBiome[r][c] = 'sand';
-      }
+    dA += (Math.random() - 0.5) * 1.4; dA = Math.max(-8, Math.min(8, dA));
+    dB += (Math.random() - 0.5) * 1.4; dB = Math.max(-8, Math.min(8, dB));
+    const wA = RIVER_WIDTH_BASE + (Math.random() < 0.3 ? 1 : 0);
+    const wB = RIVER_WIDTH_BASE + (Math.random() < 0.3 ? 1 : 0);
+    meandA.push({ center: Math.round(RIVER_A_BASE + dA), width: wA });
+    meandB.push({ center: Math.round(RIVER_B_BASE + dB), width: wB });
+  }
+  window._MEANDER_A = meandA;
+  window._MEANDER_B = meandB;
+  // Build 2D river cell lookup
+  const rFullMap = window._RIVER_FULL_MAP = Array.from({ length: ROWS }, () => new Uint8Array(COLS));
+  for (let r = 0; r < ROWS; r++) {
+    const mA = meandA[r], mB = meandB[r];
+    for (let c = Math.max(0, mA.center - Math.floor(mA.width/2)); c < Math.min(COLS, mA.center + Math.ceil(mA.width/2)); c++) rFullMap[r][c] = 1;
+    for (let c = Math.max(0, mB.center - Math.floor(mB.width/2)); c < Math.min(COLS, mB.center + Math.ceil(mB.width/2)); c++) rFullMap[r][c] = 1;
+  }
+  // ── 2. Canal system connecting the two rivers ──
+  const CANAL_ROWS = [Math.floor(ROWS*0.27), Math.floor(ROWS*0.54), Math.floor(ROWS*0.80)];
+  const canalMap = window._CANAL_MAP = Array.from({ length: ROWS }, () => new Uint8Array(COLS));
+  for (const cr of CANAL_ROWS) {
+    for (const r of [cr, Math.min(ROWS-1, cr+1)]) {
+      const sC = meandA[r].center + Math.ceil(meandA[r].width/2);
+      const eC = meandB[r].center - Math.floor(meandB[r].width/2);
+      for (let c = Math.max(0,sC); c <= Math.min(COLS-1,eC); c++) canalMap[r][c] = 1;
     }
   }
-
-  // Smooth biomes to create coherent patches
-  for (let pass = 0; pass < 3; pass++) {
+  // ── 3. Fill biomes ──
+  for (let r = 0; r < ROWS; r++) {
+    const mA = meandA[r], mB = meandB[r];
+    const southFactor = r / ROWS;
+    for (let c = 0; c < COLS; c++) {
+      if (rFullMap[r][c] || canalMap[r][c]) { tileBiome[r][c] = 'water'; continue; }
+      const distA = Math.max(0, Math.abs(c - mA.center) - Math.floor(mA.width/2));
+      const distB = Math.max(0, Math.abs(c - mB.center) - Math.floor(mB.width/2));
+      const minDist = Math.min(distA, distB);
+      // Riparian fringe (dense vegetation belt adjacent to water)
+      if (minDist <= 6) { tileBiome[r][c] = 'riparian'; continue; }
+      // Western steppe (beyond Euphrates)
+      if (c < mA.center - mA.width - 6) { tileBiome[r][c] = Math.random() < 0.08 ? 'hills' : 'steppe'; continue; }
+      // Eastern steppe (beyond Euphrates)
+      if (c > mB.center + mB.width + 6) { tileBiome[r][c] = Math.random() < 0.08 ? 'hills' : 'steppe'; continue; }
+      // Alluvial plain between rivers; south develops marshes and saline soils
+      const marshy = southFactor > 0.45 && minDist > 10 && Math.random() < (southFactor - 0.45) * 0.55;
+      const saline = southFactor > 0.62 && minDist > 18 && Math.random() < (southFactor - 0.62) * 0.38;
+      if (saline) { tileBiome[r][c] = 'saline'; continue; }
+      if (marshy) { tileBiome[r][c] = 'marsh'; continue; }
+      tileBiome[r][c] = 'alluvial';
+    }
+  }
+  // ── 4. Smooth biomes (preserve water cells) ──
+  for (let pass = 0; pass < 2; pass++) {
     const copy = tileBiome.map(row => row.slice());
     for (let r = 1; r < ROWS-1; r++) {
       for (let c = 1; c < COLS-1; c++) {
-        if (isRiver(c)) { copy[r][c] = 'water'; continue; }
+        if (tileBiome[r][c] === 'water') continue;
         const counts = {};
-        for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
-          if (ox === 0 && oy === 0) continue;
-          const b = tileBiome[r+oy][c+ox];
-          counts[b] = (counts[b] || 0) + 1;
+        for (let oy=-1; oy<=1; oy++) for (let ox=-1; ox<=1; ox++) {
+          if (ox===0 && oy===0) continue;
+          const b = tileBiome[r+oy][c+ox]; if (b!=='water') counts[b]=(counts[b]||0)+1;
         }
-        // pick neighbor majority if any exceeds 3
-        let best = tileBiome[r][c]; let bestCount = 0;
-        for (const k in counts) {
-          if (counts[k] > bestCount) { best = k; bestCount = counts[k]; }
-        }
-        if (bestCount >= 4) copy[r][c] = best;
+        let best=tileBiome[r][c], bestC=0;
+        for (const k in counts) if (counts[k]>bestC){best=k;bestC=counts[k];}
+        if (bestC>=5) copy[r][c]=best;
       }
     }
-    for (let r = 0; r < ROWS; r++) tileBiome[r] = copy[r].slice();
+    for (let r=0;r<ROWS;r++) tileBiome[r]=copy[r].slice();
   }
-
-  // further refine into larger patches for visual coherence
-  try { refineBiomes(); } catch (err) { /* ignore */ }
-
-  // Generate a heightmap to create gentle undulations and mountains
+  // Skipping old refineBiomes call – biome zones are geographically determined now
+  // ── 5. Heightmap (flat alluvial, elevated steppe/hills) ──
   try {
-    // layered sine/cos waves + noise for pleasing hills
-    const nx = COLS, ny = ROWS;
-    for (let r = 0; r < ny; r++) {
-      for (let c = 0; c < nx; c++) {
-        let h = 0;
-        h += 0.45 * (0.5 + 0.5 * Math.sin(c * 0.12 + r * 0.07));
-        h += 0.25 * (0.5 + 0.5 * Math.cos(c * 0.05 - r * 0.09));
-        h += 0.15 * (Math.random() * 0.8);
-        // local bump around river banks for variety
-        const riverDist = Math.abs(c - RIVER_COL_START);
-        if (riverDist < 6) h -= (6 - riverDist) * 0.02;
-        // normalize roughly to 0..1
-        h = Math.max(0, Math.min(1, h));
-        heightMap[r][c] = h;
+    for (let r=0;r<ROWS;r++) {
+      for (let c=0;c<COLS;c++) {
+        let h = 0.3+0.3*(0.5+0.5*Math.sin(c*0.09+r*0.07))+0.18*(0.5+0.5*Math.cos(c*0.05-r*0.1))+0.1*Math.random();
+        // Flatten alluvial (Mesopotamia is very flat near rivers)
+        if (tileBiome[r][c]==='alluvial'||tileBiome[r][c]==='marsh'||tileBiome[r][c]==='riparian') h*=0.2;
+        heightMap[r][c]=Math.max(0,Math.min(1,h));
       }
     }
-    // Simple smoothing pass
-    for (let pass = 0; pass < 2; pass++) {
-      const tmp = heightMap.map(row => row.slice());
-      for (let r = 1; r < ny-1; r++) {
-        for (let c = 1; c < nx-1; c++) {
-          let s = 0; let n = 0;
-          for (let oy=-1; oy<=1; oy++) for (let ox=-1; ox<=1; ox++) { s += heightMap[r+oy][c+ox]; n++; }
-          tmp[r][c] = s / n;
-        }
-      }
-      for (let r = 0; r < ny; r++) heightMap[r] = tmp[r].slice();
+    for (let pass=0;pass<2;pass++) {
+      const tmp=heightMap.map(row=>row.slice());
+      for (let r=1;r<ROWS-1;r++) for (let c=1;c<COLS-1;c++) { let s=0,n=0; for (let oy=-1;oy<=1;oy++) for (let ox=-1;ox<=1;ox++){s+=heightMap[r+oy][c+ox];n++;} tmp[r][c]=s/n; }
+      for (let r=0;r<ROWS;r++) heightMap[r]=tmp[r].slice();
     }
-
-    // Promote high areas to hills/mountains for better isometric visuals
-    for (let r = 0; r < ROWS; r++) {
-      for (let c = 0; c < COLS; c++) {
-        const h = heightMap[r][c];
-        if (h > 0.78 && tileBiome[r][c] !== 'water') tileBiome[r][c] = 'hills';
-        else if (h > 0.9 && tileBiome[r][c] !== 'water') tileBiome[r][c] = 'hills';
-      }
-    }
-      // Place mountain resources along the upper border rows for a mountain range
-      try {
-        const topRows = Math.max(3, Math.floor(ROWS * 0.12));
-        for (let r = 0; r < topRows; r++) {
-          for (let c = 0; c < COLS; c++) {
-            if (!grid[r][c] && !isRiver(c) && Math.random() < 0.16) {
-              try { placeResource(c, r, 'mountain'); } catch (e) {}
-            }
-          }
-        }
-      } catch (e) {}
-  } catch (e) { /* ignore heightmap errors */ }
-
-  // place tree entities for forest tiles (not every forest tile to avoid overpopulation)
+    for (let r=0;r<ROWS;r++) for (let c=0;c<COLS;c++) if (tileBiome[r][c]==='steppe'&&heightMap[r][c]>0.72) tileBiome[r][c]='hills';
+    // Stone resources in rocky steppe/hills border (northern edge)
+    const topRows=Math.max(4,Math.floor(ROWS*0.10));
+    for (let r=0;r<topRows;r++) for (let c=0;c<COLS;c++) if (!rFullMap[r][c]&&!grid[r][c]&&Math.random()<0.14) try{placeResource(c,r,'stone');}catch(e){}
+  } catch(e){}
+  // ── 6. Mesopotamian vegetation ──
+  // Vegetation is STRICTLY confined to riparian zones (next to rivers) and marshes.
+  // Alluvial plains, steppe, saline flats and hills are bare desert — true Mesopotamia.
   try {
-    for (let r = 0; r < ROWS; r++) {
-      for (let c = 0; c < COLS; c++) {
-        // respect vegetation density multiplier
-        const vegDensity = (window._DEFAULT_DENSITIES && window._DEFAULT_DENSITIES.vegetation) ? window._DEFAULT_DENSITIES.vegetation : 1.0;
-        if (tileBiome[r][c] === 'forest' && !grid[r][c]) {
-          if (Math.random() < 0.28 * vegDensity) {
-            try { placeTree(c, r); } catch (e) {}
+    const vegDensity=(window._DEFAULT_DENSITIES&&window._DEFAULT_DENSITIES.vegetation)||1.0;
+    for (let r=0;r<ROWS;r++) {
+      for (let c=0;c<COLS;c++) {
+        if (grid[r][c]||rFullMap[r][c]) continue;
+        const b=tileBiome[r][c];
+        const roll=Math.random();
+        if (b==='riparian') {
+          // Dense riparian belt: date palms, euphrates poplars, tamarisk, reeds, typha
+          if (roll<0.42*vegDensity) {
+            let v;
+            if (roll<0.13) v='date_palm';
+            else if (roll<0.22) v='euphrates_poplar';
+            else if (roll<0.28) v='tamarisk';
+            else if (roll<0.35) v='reed_cluster';
+            else v='typha';
+            placeTree(c,r,v);
           }
-        } else if (tileBiome[r][c] === 'grass' && !grid[r][c]) {
-          if (Math.random() < 0.04 * vegDensity) {
-            try {
-              const r2 = Math.random();
-              if (r2 < 0.6) placeTree(c, r, 'tallgrass');
-              else if (r2 < 0.85) placeTree(c, r, 'shrub');
-              else placeTree(c, r, 'bush');
-            } catch (e) {}
-          }
-        } else if (tileBiome[r][c] === 'sand' && !grid[r][c]) {
-          if (Math.random() < 0.08 * vegDensity) {
-            try { placeTree(c, r, 'scrub'); } catch (e) {}
-          }
+        } else if (b==='marsh') {
+          // Wetland: phragmites reeds and typha dominate
+          if (roll<0.44*vegDensity) placeTree(c,r,roll<0.28?'reed_cluster':'typha');
         }
+        // alluvial, steppe, saline, hills → bare desert, no vegetation
       }
     }
-  } catch (e) {}
-
-  // Ensure a few houses near river and some resources
-  // Create an initial small village away from the Euphrates river
-  const centerCol = Math.floor(COLS/2);
-  const centerRow = Math.floor(ROWS/2);
-  // find a base location that is not river and not near river
-  let baseCol = Math.floor(4 + Math.random() * (COLS - 12));
-  let baseRow = Math.floor(4 + Math.random() * (ROWS - 8));
-  let tries = 0;
-  while ((isRiver(baseCol) || isNearRiver(baseCol) || grid[baseRow][baseCol]) && tries < 200) {
-    baseCol = Math.floor(4 + Math.random() * (COLS - 12));
-    baseRow = Math.floor(4 + Math.random() * (ROWS - 8));
-    tries++;
+  } catch(e){}
+  // ── 7. Villages (placed on dry alluvial land) ──
+  window._VILLAGES=[];
+  const villagesToSpawn=1+Math.floor(Math.random()*3);
+  for (let vi=0;vi<villagesToSpawn;vi++) {
+    let vCol=0,vRow=0,tries=0;
+    do {
+      vCol=Math.floor(8+Math.random()*(COLS-16)); vRow=Math.floor(8+Math.random()*(ROWS-16)); tries++;
+    } while (tries<400&&(rFullMap[vRow]&&rFullMap[vRow][vCol])||grid[vRow]&&grid[vRow][vCol]||
+             tileBiome[vRow][vCol]==='water'||tileBiome[vRow][vCol]==='marsh');
+    try{spawnVillage(vCol,vRow);}catch(e){try{setBuildingCells(vCol,vRow,'house');}catch(ee){}}
   }
-  // place one or more villages: prefer multiple small villages for a livelier map
-  const villagesToSpawn = 1 + Math.floor(Math.random() * 3); // 1..3
-  window._VILLAGES = [];
-  for (let vi = 0; vi < villagesToSpawn; vi++) {
-    let vBaseCol = Math.floor(4 + Math.random() * (COLS - 12));
-    let vBaseRow = Math.floor(4 + Math.random() * (ROWS - 8));
-    let triesV = 0;
-    while ((isRiver(vBaseCol) || isNearRiver(vBaseCol) || grid[vBaseRow][vBaseCol]) && triesV < 300) {
-      vBaseCol = Math.floor(4 + Math.random() * (COLS - 12));
-      vBaseRow = Math.floor(4 + Math.random() * (ROWS - 8));
-      triesV++;
-    }
-    try { spawnVillage(vBaseCol, vBaseRow); } catch (e) { try { setBuildingCells(vBaseCol, vBaseRow, 'house'); } catch (ee) {} }
-  }
-
-  // Place player near the first village center if available
+  // ── 8. Player spawn near first village ──
   try {
-    if (window._VILLAGES && window._VILLAGES.length > 0) {
-      const v = window._VILLAGES[0];
-      const vc = Math.floor((v.minC + v.maxC) / 2);
-      const vr = Math.floor((v.minR + v.maxR) / 2);
-      player.col = Math.max(0, Math.min(COLS-1, vc));
-      player.row = Math.max(0, Math.min(ROWS-1, vr));
-    } else {
-      player.col = Math.max(0, Math.min(COLS-1, baseCol + 1));
-      player.row = Math.max(0, Math.min(ROWS-1, baseRow - 1));
-    }
-  } catch (e) {
-    player.col = Math.max(0, Math.min(COLS-1, baseCol + 1));
-    player.row = Math.max(0, Math.min(ROWS-1, baseRow - 1));
+    if (window._VILLAGES&&window._VILLAGES.length>0) {
+      const v=window._VILLAGES[0];
+      player.col=Math.max(0,Math.min(COLS-1,Math.floor((v.minC+v.maxC)/2)));
+      player.row=Math.max(0,Math.min(ROWS-1,Math.floor((v.minR+v.maxR)/2)));
+    } else { player.col=Math.floor(COLS/2); player.row=Math.floor(ROWS/2); }
+    player.x=player.col; player.y=player.row;
+  } catch(e){}
+  // ── 9. Resource nodes ──
+  for (let i=0;i<70;i++) {
+    const c=Math.floor(Math.random()*COLS),r=Math.floor(Math.random()*ROWS);
+    if (grid[r][c]||rFullMap[r][c]) continue;
+    const b=tileBiome[r][c];
+    let type='wheat';
+    if (b==='steppe'||b==='hills') type='stone';
+    else if (b==='alluvial'||b==='riparian') { const rnd=Math.random(); type=rnd<0.55?'wheat':rnd<0.80?'brick':'stone'; }
+    placeResource(c,r,type);
   }
-  player.x = player.col; player.y = player.row;
-
-  // Spawn random resource nodes
-  for (let i = 0; i < 40; i++) {
-    const c = Math.floor(Math.random()*COLS);
-    const r = Math.floor(Math.random()*ROWS);
-    if (!grid[r][c] && !isRiver(c)) {
-      // include stones as a rarer resource
-      const rnd = Math.random();
-      const type = rnd < 0.55 ? 'wheat' : (rnd < 0.85 ? 'brick' : 'stone');
-      placeResource(c, r, type);
-    }
-  }
-
-  // Spawn some rabbits (scaled by animals density)
+  // ── 10. Animals ──
   try {
-    const animalDensity = (window._DEFAULT_DENSITIES && window._DEFAULT_DENSITIES.animals) ? window._DEFAULT_DENSITIES.animals : 1.0;
-    const rabbitCount = Math.max(0, Math.round(20 * animalDensity));
-    for (let i = 0; i < rabbitCount; i++) {
-      const c = Math.floor(Math.random()*COLS);
-      const r = Math.floor(Math.random()*ROWS);
-      if (!grid[r][c] && !isRiver(c)) placeRabbit(c, r);
-    }
-    // Spawn a few foxes (wildlife)
-    const foxCount = Math.max(0, Math.round(10 * animalDensity));
-    for (let i = 0; i < foxCount; i++) {
-      const c = Math.floor(Math.random()*COLS);
-      const r = Math.floor(Math.random()*ROWS);
-      if (!grid[r][c] && !isRiver(c)) try { placeFox(c, r); } catch (e) {}
-    }
-  } catch (e) {}
-
+    const animalDensity=(window._DEFAULT_DENSITIES&&window._DEFAULT_DENSITIES.animals)||1.0;
+    const rabbitCount=Math.max(0,Math.round(28*animalDensity));
+    for (let i=0;i<rabbitCount;i++){const c=Math.floor(Math.random()*COLS),r=Math.floor(Math.random()*ROWS);if(!grid[r][c]&&!rFullMap[r][c])placeRabbit(c,r);}
+    const foxCount=Math.max(0,Math.round(14*animalDensity));
+    for (let i=0;i<foxCount;i++){const c=Math.floor(Math.random()*COLS),r=Math.floor(Math.random()*ROWS);if(!grid[r][c]&&!rFullMap[r][c])try{placeFox(c,r);}catch(e){}}
+  } catch(e){}
+  // ----- finalize
   try { rebuildInteriorDoorsFromGrid(); } catch (e) {}
-  // mark cache dirty after regenerating map
-  try { mapCacheDirty = true; rebuildMapCacheDebounced(10); } catch (e) {}
+  // Kick off an async chunked rebuild of BOTH terrain caches (ortho + iso).
+  // This never blocks the main thread; the render loop falls back to per-tile
+  // drawing until the caches are ready.
+  try { mapCacheDirty = true; rebuildMapCachesAsync(); } catch (e) { console.warn('terrain cache err', e); }
 }
+
+
+
 
 // Draw a single building on the canvas
 function drawBuilding(col, row, type, alpha) {
@@ -2697,11 +3057,97 @@ function drawBuilding(col, row, type, alpha) {
   ctx.save();
   ctx.globalAlpha = alpha !== undefined ? alpha : 1;
 
-  const houseTypes = new Set(['house', 'house_small', 'house_large', 'house_garden', 'longhouse', 'stone_house', 'mesopotamian_villa_detailed']);
+  const houseTypes = new Set(['house', 'house_small', 'house_large', 'house_garden', 'longhouse', 'stone_house', 'mesopotamian_villa_detailed', 'mesopotamian_house', 'mesopotamian_arch', 'mesopotamian_baths']);
   const spriteKey = resolveBuildingSpriteKey(type);
 
   if (houseTypes.has(type)) {
-    if (spriteKey) drawEntitySpriteAt(spriteKey, x + W * 0.5, y + H, W, H);
+    if (spriteKey) {
+      drawEntitySpriteAt(spriteKey, x + W * 0.5, y + H, W, H);
+      ctx.restore();
+      return;
+    }
+    // Fallback pixel-art drawing for mesopotamian buildings without registered sprite
+    if (type === 'mesopotamian_arch') {
+      // Monumental arch: two towers with an arch bridge — city gate
+      const tw = W * 0.28; // tower width
+      const th = H * 0.82;
+      const archH = H * 0.45;
+      // Left tower
+      ctx.fillStyle = '#D4A84B'; ctx.fillRect(x + pad, y + H - th, tw, th);
+      // Right tower
+      ctx.fillStyle = '#D4A84B'; ctx.fillRect(x + W - tw - pad, y + H - th, tw, th);
+      // Arch top (connecting bridge)
+      ctx.fillStyle = '#C8A84B'; ctx.fillRect(x + tw + pad, y + H - archH, W - tw*2 - pad*2, H * 0.12);
+      // Arch opening
+      ctx.fillStyle = '#1A0E04'; ctx.fillRect(x + tw + pad, y + H - archH + H*0.12, W - tw*2 - pad*2, archH - H*0.12);
+      // Archway curve hint
+      ctx.fillStyle = '#C8A84B';
+      ctx.beginPath(); ctx.arc(x + W/2, y + H - archH + H*0.12, (W - tw*2 - pad*3)*0.5, Math.PI, 0); ctx.fill();
+      // Tower battlements
+      ctx.fillStyle = '#E8C85A';
+      for (let b2 = 0; b2 < 3; b2++) {
+        ctx.fillRect(x + pad + b2*(tw/3), y + H - th, tw/4, H*0.08);
+        ctx.fillRect(x + W - tw - pad + b2*(tw/3), y + H - th, tw/4, H*0.08);
+      }
+      // Torch slots
+      ctx.fillStyle = '#FF8800'; ctx.fillRect(x + tw*1.2, y + H - th*0.4, 3, 6);
+      ctx.fillStyle = '#FF8800'; ctx.fillRect(x + W - tw*1.5, y + H - th*0.4, 3, 6);
+      ctx.restore();
+      return;
+    }
+    if (type === 'mesopotamian_baths') {
+      // Public baths: long low building with domed roof and water channel
+      // Main structure
+      ctx.fillStyle = '#5A96C3'; ctx.fillRect(x + pad, y + H*0.36, W - pad*2, H*0.58);
+      // Arched roof domes (3 domes)
+      ctx.fillStyle = '#4A86B3';
+      const domeCount = Math.max(2, Math.floor(size.w));
+      const domeW = (W - pad*2) / domeCount;
+      for (let d = 0; d < domeCount; d++) {
+        ctx.beginPath();
+        ctx.ellipse(x + pad + d*domeW + domeW/2, y + H*0.36, domeW*0.45, H*0.22, 0, Math.PI, 0);
+        ctx.fill();
+      }
+      // Water channel inside (visible front)
+      ctx.fillStyle = '#2A6FA3'; ctx.fillRect(x + W*0.15, y + H*0.5, W*0.7, H*0.28);
+      // Water shimmer
+      ctx.fillStyle = 'rgba(100,180,255,0.35)';
+      for (let w2 = 0; w2 < 3; w2++) ctx.fillRect(x + W*0.2 + w2*W*0.2, y + H*0.54, W*0.12, H*0.06);
+      // Entry door/arched opening
+      ctx.fillStyle = '#1A3A55'; ctx.fillRect(x + W*0.44, y + H*0.52, W*0.12, H*0.22);
+      ctx.restore();
+      return;
+    }
+    if (type === 'mesopotamian_house') {
+      // Traditional mesopotamian house: flat roof, mud-brick walls, courtyard
+      const roofH = H * 0.14;
+      // Walls (mud brick orange-tan)
+      ctx.fillStyle = '#C9A058'; ctx.fillRect(x + pad, y + H*0.28, W - pad*2, H*0.68);
+      // Flat roof with slight parapet
+      ctx.fillStyle = '#A07838'; ctx.fillRect(x + pad, y + H*0.16, W - pad*2, roofH + 2);
+      // Parapet ornament
+      ctx.fillStyle = '#B8883A';
+      for (let p = 0; p < 5; p++) ctx.fillRect(x + pad + p*(W/5), y + H*0.14, W*0.12, H*0.08);
+      // Brick courses on walls
+      ctx.fillStyle = '#B08040';
+      for (let row2 = 0; row2 < 3; row2++) {
+        for (let col2 = 0; col2 < 4; col2++) {
+          ctx.fillRect(x + pad + col2*((W-pad*2)/4) + (row2%2 ? (W-pad*2)/8 : 0),
+                       y + H*0.30 + row2*H*0.18, (W-pad*2)/4 - 2, H*0.14);
+        }
+      }
+      // Central courtyard opening (dark recess)
+      ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.fillRect(x + W*0.3, y + H*0.46, W*0.4, H*0.28);
+      // Door
+      ctx.fillStyle = '#5C3A1A'; ctx.fillRect(x + W*0.42, y + H*0.64, W*0.16, H*0.22);
+      ctx.restore();
+      return;
+    }
+    // generic house fallback for any other 'house' type
+    ctx.fillStyle = b.color || '#C8A84B';
+    ctx.fillRect(x + pad, y + H*0.32, W - pad*2, H*0.62);
+    ctx.fillStyle = b.roofColor || '#8B6914';
+    ctx.fillRect(x + pad, y + H*0.2, W - pad*2, H*0.14);
     ctx.restore();
     return;
   }
@@ -2973,11 +3419,16 @@ function getWorldMapBiomeColor(col, row) {
     const biome = tileBiome[row][col] || 'sand';
     if (biome === 'road') return '#B9A37A';
     if (biome === 'forest') return '#507B48';
-    if (biome === 'hills') return '#8F7A45';
+    if (biome === 'riparian') return '#5A8C38';
+    if (biome === 'marsh') return '#3A6B52';
+    if (biome === 'alluvial') return '#D1A86A';
+    if (biome === 'saline') return '#E8D8B8';
+    if (biome === 'steppe') return '#C8A055';
+    if (biome === 'hills') return '#B09060';
     if (biome === 'grass') return '#88AA63';
-    return '#C8A86A';
+    return '#C8A055';
   } catch (e) {
-    return '#C8A86A';
+    return '#C8A055';
   }
 }
 
@@ -3085,7 +3536,7 @@ function drawPlayer() {
   const { x, y } = worldToScreen(player.x, player.y);
   if (viewMode === 'iso') {
     const { w, h } = getIsoTileSize();
-    const scale = Math.max(1, Math.floor(Math.min(w, getTileSize()) / 10));
+    const scale = Math.max(1, Math.round(getTileSize() / 10));
     const spriteW = CHARACTER_MAP[0].length * scale;
     const spriteH = CHARACTER_MAP.length * scale;
     const px = Math.floor(x - spriteW / 2);
@@ -3140,7 +3591,7 @@ function drawPlayer() {
     } catch (e) {}
   } else {
     const tileSize = getTileSize();
-    const scale = Math.max(1, Math.floor(Math.min(tileSize, 32) / 10));
+    const scale = Math.max(1, Math.round(tileSize / 10));
     const spriteW = CHARACTER_MAP[0].length * scale;
     const spriteH = CHARACTER_MAP.length * scale;
     const px = Math.floor(x + tileSize * 0.5 - spriteW / 2);
@@ -3192,19 +3643,37 @@ function drawPlayer() {
 }
 
 function drawPlayerHealth() {
-  // draw a small health bar above the player
+  // draw a small health bar and stamina bar above the player
   const pct = Math.max(0, Math.min(1, char.hp / char.maxHp));
   const { x, y } = worldToScreen(player.x, player.y);
-  const barW = Math.max(32, getTileSize() * 0.6);
-  const barH = 6;
-  const px = x + getTileSize()*0.2 - barW/2;
-  const py = y - 10 - barH;
+  const tileSize = getTileSize();
+  const barW = Math.max(32, tileSize * 0.6);
+  const barH = 5;
+  const px = x + tileSize*0.2 - barW/2;
+  const py = y - 12 - barH * 2 - 3;
+  // HP bar
   ctx.fillStyle = 'rgba(0,0,0,0.6)';
   ctx.fillRect(px-1, py-1, barW+2, barH+2);
   ctx.fillStyle = 'rgba(180,50,50,0.9)';
   ctx.fillRect(px, py, barW, barH);
   ctx.fillStyle = 'rgba(60,200,80,0.95)';
   ctx.fillRect(px, py, barW * pct, barH);
+  // Stamina bar (yellow, below HP)
+  const spct = Math.max(0, Math.min(1, (player.stamina || 0) / (player._maxStamina || 100)));
+  const spy = py + barH + 3;
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(px-1, spy-1, barW+2, barH+2);
+  ctx.fillStyle = 'rgba(60,40,0,0.8)';
+  ctx.fillRect(px, spy, barW, barH);
+  const sColor = spct < 0.2 ? 'rgba(220,80,30,0.95)' : 'rgba(220,190,20,0.95)';
+  ctx.fillStyle = sColor;
+  ctx.fillRect(px, spy, barW * spct, barH);
+  // Screen-edge hit flash when recently damaged
+  if (char._flashUntil && now < char._flashUntil) {
+    const ft = 1 - (now - (char._flashUntil - 280)) / 280;
+    ctx.fillStyle = `rgba(220,20,20,${(ft * 0.35).toFixed(3)})`;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
 }
 
 // ── MAIN RENDER ─────────────────────────────────────────────--
@@ -3213,6 +3682,8 @@ function render() {
   const now = Date.now();
   const dt = Math.min(0.05, (now - lastFrameTime) / 1000);
   lastFrameTime = now;
+  // gdt = game delta-time; 0 when paused, scaled otherwise
+  const gdt = dt * (window._timeScale || 1.0);
   // If the game hasn't been started from the main menu, don't run the simulation loop.
   if (!window._gameStarted) {
     stopRenderLoop();
@@ -3244,10 +3715,8 @@ function render() {
       zoomAnimating = true;
     } else {
       if (zoomAnimating) {
-        // final snap and one immediate cache rebuild
+        // final snap – cache is at base TILE size so zoom never invalidates it
         zoom = targetZoom;
-        mapCacheDirty = true;
-        rebuildMapCacheDebounced(0);
         zoomAnimating = false;
       }
     }
@@ -3351,9 +3820,10 @@ function render() {
         }
       } else {
       // apply movement speed factor when crossing water
-      const sprintPath = keyState['Shift'] ? 1.6 : 1.0;
-      const baseNx = (dx / dist) * player.speed * dt * TILE * sprintPath;
-      const baseNy = (dy / dist) * player.speed * dt * TILE * sprintPath;
+      const sprintPath = (keyState['Shift'] && player.stamina > 0 && !player._staminaCooldown) ? 1.6 : 1.0;
+      if (sprintPath > 1) player._isSprinting = true;
+      const baseNx = (dx / dist) * player.speed * gdt * TILE * sprintPath;
+      const baseNy = (dy / dist) * player.speed * gdt * TILE * sprintPath;
       const curFactor = movementMultiplier(Math.floor(player.x), Math.floor(player.y));
       const targetFactor = movementMultiplier(nextNode.col, nextNode.row);
       const factor = Math.min(curFactor, targetFactor);
@@ -3363,7 +3833,7 @@ function render() {
       const moved = applyPlayerMoveTiles(nx, ny);
       if (moved) {
         try { if (Math.abs(nx) > Math.abs(ny)) player.dir = nx > 0 ? 'right' : 'left'; else player.dir = ny > 0 ? 'down' : 'up'; } catch (e) {}
-        player._walkTime = (player._walkTime || 0) + dt;
+        player._walkTime = (player._walkTime || 0) + gdt;
         player._walkFrame = Math.floor(player._walkTime * 3) % 2;
       } else {
         // collision on path; cancel path and fallback
@@ -3378,9 +3848,10 @@ function render() {
         // reached
         moveTarget = null;
       } else {
-        const sprintTarget = keyState['Shift'] ? 1.6 : 1.0;
-        const baseNx = (dx / dist) * player.speed * dt * TILE * sprintTarget;
-        const baseNy = (dy / dist) * player.speed * dt * TILE * sprintTarget;
+        const sprintTarget = (keyState['Shift'] && player.stamina > 0 && !player._staminaCooldown) ? 1.6 : 1.0;
+        if (sprintTarget > 1) player._isSprinting = true;
+        const baseNx = (dx / dist) * player.speed * gdt * TILE * sprintTarget;
+        const baseNy = (dy / dist) * player.speed * gdt * TILE * sprintTarget;
         const curFactor = movementMultiplier(Math.floor(player.x), Math.floor(player.y));
         const tcol = Math.floor(moveTarget.x), trow = Math.floor(moveTarget.y);
         const targetFactor = movementMultiplier(tcol, trow);
@@ -3390,7 +3861,7 @@ function render() {
         const moved = applyPlayerMoveTiles(nx, ny);
         if (moved) {
           try { if (Math.abs(nx) > Math.abs(ny)) player.dir = nx > 0 ? 'right' : 'left'; else player.dir = ny > 0 ? 'down' : 'up'; } catch (e) {}
-          player._walkTime = (player._walkTime || 0) + dt;
+          player._walkTime = (player._walkTime || 0) + gdt;
           player._walkFrame = Math.floor(player._walkTime * 3) % 2;
         } else {
           moveTarget = null;
@@ -3407,9 +3878,11 @@ function render() {
         moveTarget = null; movePath = null;
         const len = Math.hypot(mvx, mvy) || 1;
         mvx /= len; mvy /= len;
-        const sprintDirect = keyState['Shift'] ? 1.6 : 1.0;
-        const baseDX = mvx * player.speed * dt * TILE * sprintDirect;
-        const baseDY = mvy * player.speed * dt * TILE * sprintDirect;
+        const sprintDirect = (keyState['Shift'] && player.stamina > 0 && !player._staminaCooldown) ? 1.6 : 1.0;
+        // track sprint state for stamina drain
+        player._isSprinting = (keyState['Shift'] && player.stamina > 0 && !player._staminaCooldown);
+        const baseDX = mvx * player.speed * gdt * TILE * sprintDirect;
+        const baseDY = mvy * player.speed * gdt * TILE * sprintDirect;
         const curFactor = movementMultiplier(Math.floor(player.x), Math.floor(player.y));
         const targetColGuess = Math.floor(player.x + baseDX);
         const targetRowGuess = Math.floor(player.y + baseDY);
@@ -3420,7 +3893,7 @@ function render() {
         const moved = applyPlayerMoveTiles(dxTiles, dyTiles);
         if (moved) {
           try { if (Math.abs(mvx) > Math.abs(mvy)) player.dir = mvx > 0 ? 'right' : 'left'; else player.dir = mvy > 0 ? 'down' : 'up'; } catch (e) {}
-          player._walkTime = (player._walkTime || 0) + dt;
+          player._walkTime = (player._walkTime || 0) + gdt;
           player._walkFrame = Math.floor(player._walkTime * 3) % 2;
         }
       }
@@ -3439,8 +3912,8 @@ function render() {
   try {
     const nowSurv = now;
     const last = char._lastSurvivalTick || nowSurv;
-    const elapsed = (nowSurv - last) / 1000;
-    if (elapsed >= 0.5) {
+    const elapsed = ((nowSurv - last) / 1000) * (window._timeScale || 1.0);
+    if (elapsed >= 0.5 * Math.max(0.01, window._timeScale || 1.0)) {
       const hr = window.SURVIVAL_HUNGER_RATE || 0.05;
       const tr = window.SURVIVAL_THIRST_RATE || 0.08;
       char.hunger = Math.max(0, (char.hunger || char.maxHunger || 100) - hr * elapsed);
@@ -3453,11 +3926,36 @@ function render() {
           // take slow damage when starving/very thirsty
           const dmg = (elapsed / 60) * 3; // ~3 HP per minute
           char.hp = Math.max(0, (char.hp || 0) - dmg);
+          char._lastHitTime = nowSurv;
         }
         if ((char.hunger || 0) < lowThresh || (char.thirst || 0) < lowThresh) {
           player.speed = Math.max(1 / TILE, (player._baseSpeed || (6 / TILE)) * 0.7);
         } else {
           player.speed = player._baseSpeed || (6 / TILE);
+        }
+      } catch (e) {}
+
+      // Stamina drain/regen
+      try {
+        const staminaDrain = 22; // per second while sprinting
+        const staminaRegen = 12; // per second while resting
+        if (player._isSprinting) {
+          player.stamina = Math.max(0, player.stamina - staminaDrain * elapsed);
+          if (player.stamina <= 0) player._staminaCooldown = true; // prevent re-sprint until 20%
+        } else {
+          player.stamina = Math.min(player._maxStamina, player.stamina + staminaRegen * elapsed);
+          if (player.stamina >= player._maxStamina * 0.2) player._staminaCooldown = false;
+        }
+        player._isSprinting = false; // reset each frame
+      } catch (e) {}
+
+      // Passive HP regen: ~1 HP every 4s when not hit recently
+      try {
+        const regenDelay = 5000; // ms since last hit before regen starts
+        const notHitRecently = !char._lastHitTime || (nowSurv - char._lastHitTime) > regenDelay;
+        if (notHitRecently && char.hp > 0 && char.hp < char.maxHp) {
+          const regenRate = char.maxHp / 240; // full regen in 4 minutes
+          char.hp = Math.min(char.maxHp, char.hp + regenRate * elapsed);
         }
       } catch (e) {}
     }
@@ -3466,49 +3964,164 @@ function render() {
   // Sky gradient
   // Day-night progression
   prevDayHour = dayHour;
-  dayHour += dt * 24 / DAY_SECONDS;
+  dayHour += gdt * 24 / DAY_SECONDS;
   if (dayHour >= 24) dayHour -= 24;
   // if day wrapped, apply daily production
   if (prevDayHour > dayHour) {
     applyDailyProduction();
   }
-  // sky colors: simple day/night bands
-  const isDay = dayHour >= 6 && dayHour <= 18;
-  const sky = ctx.createLinearGradient(0,0,0,H);
-  if (isDay) {
-    sky.addColorStop(0, '#87CEEB');
-    sky.addColorStop(0.5, '#E8D5A3');
-    sky.addColorStop(1, '#C8A84B');
-  } else {
-    sky.addColorStop(0, '#061428');
-    sky.addColorStop(0.6, '#041733');
-    sky.addColorStop(1, '#021017');
+  // Dawn trigger (crossing 7:00) — NPCs greet the morning
+  if (prevDayHour < 7 && dayHour >= 7) {
+    try {
+      const dawnPhrases = ['¡Un nuevo día amanece!', 'Buenos días, viajero.', '¡El sol está saliendo!', 'Hora de trabajar...', 'Que los dioses nos protejan hoy.'];
+      const npcs = entities.filter(en => en && en.id && en.id.indexOf('npc-') === 0 && en.col !== -999);
+      if (npcs.length > 0) {
+        const en = npcs[Math.floor(Math.random() * npcs.length)];
+        const ph = dawnPhrases[Math.floor(Math.random() * dawnPhrases.length)];
+        if (window.spawnFloatingText) window.spawnFloatingText(en.col + 0.5, en.row - 0.3, ph, { color: '#FFE8A0', force: true });
+      }
+    } catch(e) {}
   }
+  // Dusk trigger (crossing 20:00) — NPCs head inside
+  if (prevDayHour < 20 && dayHour >= 20) {
+    try {
+      const duskPhrases = ['El sol se pone. A descansar.', 'Ya es de noche, hay que entrar.', 'Los peligros acechan en la oscuridad.'];
+      const npcs = entities.filter(en => en && en.id && en.id.indexOf('npc-') === 0 && en.col !== -999);
+      if (npcs.length > 0) {
+        const en = npcs[Math.floor(Math.random() * npcs.length)];
+        const ph = duskPhrases[Math.floor(Math.random() * duskPhrases.length)];
+        if (window.spawnFloatingText) window.spawnFloatingText(en.col + 0.5, en.row - 0.3, ph, { color: '#FFB060', force: true });
+      }
+    } catch(e) {}
+  }
+  // Sky gradient — smooth 4-phase day cycle
+  // Colour stops: [night, dawn, day, dusk, night]
+  const _skyPhases = [
+    { h:  0.0, top:'#020A1A', mid:'#041030', bot:'#030813' },
+    { h:  5.5, top:'#1A1040', mid:'#603020', bot:'#C07040' }, // pre-dawn
+    { h:  7.0, top:'#5080C8', mid:'#E8985A', bot:'#E8C070' }, // sunrise
+    { h: 10.0, top:'#5BA3D8', mid:'#A8C8E8', bot:'#E8D090' }, // morning
+    { h: 14.0, top:'#87CEEB', mid:'#D0E8F8', bot:'#E8D5A3' }, // noon
+    { h: 17.5, top:'#4870C0', mid:'#D06030', bot:'#E09050' }, // late afternoon
+    { h: 19.0, top:'#200830', mid:'#7A2818', bot:'#401008' }, // sunset
+    { h: 21.0, top:'#070418', mid:'#060A1A', bot:'#020510' }, // twilight
+    { h: 24.0, top:'#020A1A', mid:'#041030', bot:'#030813' }, // wrap
+  ];
+  function _lerpSkyColor(cA, cB, t) {
+    const pr = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i;
+    const [,ar,ag,ab] = pr.exec(cA) || ['','00','00','00'];
+    const [,br,bg,bb] = pr.exec(cB) || ['','00','00','00'];
+    const r = Math.round(parseInt(ar,16) + (parseInt(br,16)-parseInt(ar,16))*t);
+    const g = Math.round(parseInt(ag,16) + (parseInt(bg,16)-parseInt(ag,16))*t);
+    const b = Math.round(parseInt(ab,16) + (parseInt(bb,16)-parseInt(ab,16))*t);
+    return `rgb(${r},${g},${b})`;
+  }
+  let _skyA = _skyPhases[0], _skyB = _skyPhases[1], _skyT = 0;
+  for (let i = 0; i < _skyPhases.length - 1; i++) {
+    if (dayHour >= _skyPhases[i].h && dayHour < _skyPhases[i+1].h) {
+      _skyA = _skyPhases[i]; _skyB = _skyPhases[i+1];
+      _skyT = (dayHour - _skyA.h) / (_skyB.h - _skyA.h);
+      break;
+    }
+  }
+  const sky = ctx.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0,   _lerpSkyColor(_skyA.top, _skyB.top, _skyT));
+  sky.addColorStop(0.5, _lerpSkyColor(_skyA.mid, _skyB.mid, _skyT));
+  sky.addColorStop(1,   _lerpSkyColor(_skyA.bot, _skyB.bot, _skyT));
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, W, H);
-  // subtle night overlay based on hour distance from noon
-  const nightFactor = (dayHour < 6 ? 1 : (dayHour > 18 ? 1 : 0)) * 0.55;
-  if (nightFactor > 0) {
-    ctx.fillStyle = `rgba(2,8,20,${nightFactor})`;
-    ctx.fillRect(0,0,W,H);
+  // night overlay: smooth twilight using sin-based curve
+  // Normalized hour-to-"darkness" + hue tint for dusk/dawn
+  let nightAlpha = 0;
+  let nightR = 2, nightG = 8, nightB = 20; // default night tint (blue)
+  const h24 = dayHour;
+  if (h24 >= 0 && h24 < 5) {           // deep night
+    nightAlpha = 0.60;
+  } else if (h24 >= 5 && h24 < 7) {    // dawn: fade out + warm glow
+    const t = (h24 - 5) / 2;
+    nightAlpha = 0.60 - t * 0.60;
+    nightR = Math.round(2 + t * 180); nightG = Math.round(8 + t * 60); nightB = Math.round(20 + t * 10);
+  } else if (h24 >= 7 && h24 < 17) {   // full day – no overlay
+    nightAlpha = 0;
+  } else if (h24 >= 17 && h24 < 19) {  // dusk: warm amber fades in
+    const t = (h24 - 17) / 2;
+    nightAlpha = t * 0.30;
+    nightR = Math.round(200 - t * 198); nightG = Math.round(80 - t * 72); nightB = Math.round(20 - t * 18);
+  } else if (h24 >= 19 && h24 < 21) {  // dusk→night transition
+    const t = (h24 - 19) / 2;
+    nightAlpha = 0.30 + t * 0.30;
+    nightR = Math.round(2); nightG = Math.round(8); nightB = Math.round(20);
+  } else {                              // night (21-24)
+    nightAlpha = 0.60;
+  }
+  if (nightAlpha > 0) {
+    ctx.fillStyle = `rgba(${nightR},${nightG},${nightB},${nightAlpha.toFixed(3)})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // Stars during night
+  if (nightAlpha > 0.3) {
+    const starAlpha = Math.min(1, (nightAlpha - 0.3) / 0.3);
+    ctx.save();
+    ctx.globalAlpha = starAlpha * 0.85;
+    ctx.fillStyle = '#FFFFFF';
+    // deterministic star field
+    for (let si = 0; si < 80; si++) {
+      const sx = ((si * 137.508 + 41) % 1) * W || ((si * 307 % 997) / 997) * W;
+      const sy = ((si * 0.618 + 0.1) % 1) * H * 0.6 || ((si * 503 % 997) / 997) * H * 0.6;
+      const sr = (si % 3 === 0) ? 1.5 : 0.8;
+      const twinkle = 0.5 + 0.5 * Math.sin(now / 800 + si * 1.7);
+      ctx.globalAlpha = starAlpha * twinkle * 0.9;
+      ctx.beginPath();
+      ctx.arc(((si * 197.3 + si*37) % W + W) % W, ((si * 83.7 + si*53) % (H*0.55) + 2), sr, 0, Math.PI*2);
+      ctx.fill();
+    }
+    ctx.restore();
   }
 
   // (Cloud overlay moved) - now rendered as a soft difuminado overlay
 
   // --- Survival HUD (top-right) ---
   try {
-    const hudW = 180; const hudH = 48; const pad = 8;
-    const px = W - hudW - pad; const py = pad + 6;
-    // background
-    ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(px, py, hudW, hudH);
+    const hudW = 170; const hudH = 70; const pad = 10;
+    const hx = W - hudW - pad; const hy = pad + 4;
+    // panel background with border
+    ctx.fillStyle   = 'rgba(8,5,2,0.70)'; ctx.fillRect(hx, hy, hudW, hudH);
+    ctx.strokeStyle = '#8B6914'; ctx.lineWidth = 1;
+    ctx.strokeRect(hx, hy, hudW, hudH);
+    // ── Time of day icon + label ──
+    const hh2 = Math.floor(dayHour);
+    const mm2 = Math.floor((dayHour - hh2) * 60);
+    const timeStr = `${String(hh2).padStart(2,'0')}:${String(mm2).padStart(2,'0')}`;
+    const isDaytime = dayHour >= 6 && dayHour < 20;
+    ctx.save();
+    ctx.font = 'bold 11px sans-serif'; ctx.textBaseline = 'top';
+    ctx.fillStyle = isDaytime ? '#FFE090' : '#A0C8FF';
+    ctx.textAlign = 'left';
+    ctx.fillText((isDaytime ? '☀ ' : '☾ ') + timeStr, hx + 8, hy + 6);
+    ctx.restore();
+    // ── Bars ──
+    const bw = hudW - 20; const bh = 7;
+    // HP bar
+    const hpPct = Math.max(0, Math.min(1, (char.hp || 0) / (char.maxHp || 100)));
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(hx+10, hy+22, bw, bh);
+    ctx.fillStyle = '#C43030'; ctx.fillRect(hx+10, hy+22, bw, bh);
+    const hpColor = hpPct > 0.5 ? '#40C860' : (hpPct > 0.25 ? '#C8C030' : '#E03030');
+    ctx.fillStyle = hpColor; ctx.fillRect(hx+10, hy+22, bw*hpPct, bh);
+    ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.font = '9px sans-serif'; ctx.textBaseline = 'top';
+    ctx.fillText('♥ Vida', hx+10, hy+21);
     // Hunger bar
     const hungerPct = Math.max(0, Math.min(1, (char.hunger || 0) / (char.maxHunger || 100)));
-    ctx.fillStyle = '#8B5A2B'; ctx.fillRect(px + 10, py + 8, (hudW - 20) * hungerPct, 10);
-    ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.font = '12px sans-serif'; ctx.fillText('Hambre', px + 10, py + 7);
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(hx+10, hy+38, bw, bh);
+    ctx.fillStyle = hungerPct < 0.25 ? '#C84010' : '#8B5A2B';
+    ctx.fillRect(hx+10, hy+38, bw*hungerPct, bh);
+    ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.fillText('✦ Hambre', hx+10, hy+37);
     // Thirst bar
     const thirstPct = Math.max(0, Math.min(1, (char.thirst || 0) / (char.maxThirst || 100)));
-    ctx.fillStyle = '#2E8BFF'; ctx.fillRect(px + 10, py + 26, (hudW - 20) * thirstPct, 10);
-    ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.font = '12px sans-serif'; ctx.fillText('Sed', px + 10, py + 25);
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(hx+10, hy+54, bw, bh);
+    ctx.fillStyle = thirstPct < 0.25 ? '#3050C8' : '#2E8BFF';
+    ctx.fillRect(hx+10, hy+54, bw*thirstPct, bh);
+    ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.fillText('≋ Sed', hx+10, hy+53);
   } catch (e) {}
 
   // ── TILES ─────────────────────────────────────────────────-
@@ -3519,25 +4132,107 @@ function render() {
   if (window.currentInterior) {
     try {
       const interior = window.currentInterior;
-      const cols = interior.width || interior.cols || (interior.tiles && interior.tiles[0] ? interior.tiles[0].length : 8);
-      const rows = interior.height || interior.rows || (interior.tiles ? interior.tiles.length : 6);
-      // simple interior tile rendering: use provided tile chars or colors
-      for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
+      const iCols = interior.width || (interior.tiles && interior.tiles[0] ? interior.tiles[0].length : 8);
+      const iRows = interior.height || (interior.tiles ? interior.tiles.length : 6);
+      const ts = getTileSize();
+      const nowInt = Date.now();
+
+      // ── handle fade-out completion ──
+      if (window._interiorFadeOut) {
+        const fo = window._interiorFadeOut;
+        const pct = Math.min(1, (nowInt - fo.start) / fo.dur);
+        if (pct >= 1) { const cb = fo.onDone; window._interiorFadeOut = null; try { cb(); } catch(e) {} }
+      }
+
+      // Draw floor and walls
+      for (let r = 0; r < iRows; r++) {
+        for (let c = 0; c < iCols; c++) {
           const { x, y } = worldToScreen(c, r);
-          const t = (interior.tiles && interior.tiles[r] && interior.tiles[r][c]) ? interior.tiles[r][c] : 'floor';
-          let color = '#BDA27D';
-          if (t === 'wall') color = '#6B4C3B'; else if (t === 'door') color = '#8B5A2B'; else if (t === 'floor') color = '#C8B48A';
-          ctx.fillStyle = color; ctx.fillRect(x, y, getTileSize(), getTileSize());
+          const t = (interior.tiles && interior.tiles[r] && interior.tiles[r][c]) || 'floor';
+          // Base tile
+          if (t === 'wall') {
+            ctx.fillStyle = '#5C3A2A'; ctx.fillRect(x, y, ts, ts);
+            // brick texture lines
+            ctx.strokeStyle = 'rgba(0,0,0,0.2)'; ctx.lineWidth = 1;
+            ctx.strokeRect(x+1, y+1, ts-2, ts-2);
+            ctx.fillStyle = '#7A4D38'; ctx.fillRect(x+2, y+2, ts-4, ts*0.42);
+            ctx.fillStyle = '#6B4030'; ctx.fillRect(x+2, y+ts*0.5, ts-4, ts*0.4);
+          } else if (t === 'door') {
+            ctx.fillStyle = '#C8A87A'; ctx.fillRect(x, y, ts, ts);
+            // door frame
+            ctx.fillStyle = '#7A4E22'; ctx.fillRect(x+ts*0.25, y+ts*0.15, ts*0.5, ts*0.75);
+            ctx.fillStyle = '#5A3810'; ctx.fillRect(x+ts*0.45, y+ts*0.45, ts*0.1, ts*0.08);
+          } else {
+            // floor base
+            ctx.fillStyle = '#C8A87A'; ctx.fillRect(x, y, ts, ts);
+            if (t === 'rug') {
+              drawEntitySpriteAt('interior_rug', x + ts*0.5, y + ts, ts*0.92, ts*0.92);
+            } else if (t === 'bed') {
+              drawEntitySpriteAt('interior_bed', x + ts*0.5, y + ts, ts*0.88, ts*0.88);
+            } else if (t === 'table') {
+              drawEntitySpriteAt('interior_table', x + ts*0.5, y + ts, ts*0.85, ts*0.80);
+            } else if (t === 'pot') {
+              drawEntitySpriteAt('interior_pot', x + ts*0.5, y + ts, ts*0.60, ts*0.72);
+            } else if (t === 'chest') {
+              drawEntitySpriteAt('interior_chest', x + ts*0.5, y + ts, ts*0.78, ts*0.68);
+            } else if (t === 'firepit') {
+              drawEntitySpriteAt('interior_firepit', x + ts*0.5, y + ts, ts*0.80, ts*0.85);
+            }
+          }
+          // floor tile groove lines
+          if (t !== 'wall') {
+            ctx.strokeStyle = 'rgba(0,0,0,0.08)'; ctx.lineWidth = 0.5;
+            ctx.strokeRect(x+0.5, y+0.5, ts-1, ts-1);
+          }
         }
       }
-      // auto-exit if standing on interior exit tile
-      if (typeof interior.exitCol === 'number' && typeof interior.exitRow === 'number') {
-        if (Math.floor(player.x) === interior.exitCol && Math.floor(player.y) === interior.exitRow) {
-          try { if (window.exitInterior) window.exitInterior(); } catch (e) {}
+
+      // Draw interior NPCs (entities loop handles them since they were spawnNPC'd)
+
+      // Exit prompt: show near door tile
+      try {
+        const ec = interior.entryCol || 1;
+        const er = (interior.height || iRows) - 2;
+        const px2 = Math.floor(player.x), py2 = Math.floor(player.y);
+        const nearDoor = Math.abs(px2 - ec) <= 1 && Math.abs(py2 - er) <= 1;
+        if (nearDoor) {
+          const sp = worldToScreen(player.x + 0.5, player.y - 0.5);
+          ctx.save();
+          ctx.font = Math.max(10, Math.floor(12 * (ts/32))) + 'px sans-serif';
+          ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.strokeStyle = 'rgba(0,0,0,0.7)'; ctx.lineWidth = 3;
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.strokeText('Salir', sp.x, sp.y - 30); ctx.fillText('Salir', sp.x, sp.y - 30);
+          ctx.font = Math.max(12, Math.floor(14*(ts/32))) + 'px sans-serif';
+          ctx.strokeText('E', sp.x, sp.y - 10); ctx.fillText('E', sp.x, sp.y - 10);
+          ctx.restore();
         }
-      }
-      // skip world tile loop by making visible bounds empty
+      } catch(e){}
+
+      // Check if player is standing on the door tile (auto-exit)
+      try {
+        const doorR2 = (interior.height || iRows) - 2;
+        const doorC2 = interior.entryCol || 1;
+        if (Math.floor(player.y) >= doorR2 && (Math.abs(Math.floor(player.x)-doorC2)<=1)) {
+          // Don't auto-exit — only on E press. But clamp to edge row instead
+        }
+      } catch(e){}
+
+      // Draw fade overlay
+      try {
+        if (window._interiorFadeIn) {
+          const fi = window._interiorFadeIn;
+          const pct = Math.min(1, (nowInt - fi.start) / fi.dur);
+          ctx.fillStyle = `rgba(0,0,0,${1 - pct})`; ctx.fillRect(0, 0, W, H);
+          if (pct >= 1) window._interiorFadeIn = null;
+        }
+        if (window._interiorFadeOut) {
+          const fo = window._interiorFadeOut;
+          const pct = Math.min(1, (nowInt - fo.start) / fo.dur);
+          ctx.fillStyle = `rgba(0,0,0,${pct})`; ctx.fillRect(0, 0, W, H);
+        }
+      } catch(e){}
+
+      // Skip world tile loop
       minC = 1; maxC = 0; minR = 1; maxR = 0;
     } catch (e) { console.warn('Error rendering interior', e); }
   }
@@ -3601,32 +4296,39 @@ function render() {
   for (let r = minR; r <= maxR; r++) {
     for (let c = minC; c <= maxC; c++) {
       const { x, y } = worldToScreen(c, r);
-      // If we have a map cache and it's fresh, use it during edit mode or camera-heavy interactions.
-      if (mapCache && !mapCacheDirty && (editMode || cameraBusy || zoom < 0.9)) {
-        const cacheZoom = mapCache._cacheZoom || zoom;
-        const scale = zoom / cacheZoom;
-        if (viewMode === 'iso' && mapCache._isoOffset) {
+      // PERF: always use cached terrain map when available – avoids per-tile fillRect calls every frame.
+      // The cache is built at base TILE resolution and scaled by drawImage(zoom) cheaply on the GPU.
+      const _mc = viewMode === 'iso' ? mapCacheIso : mapCacheOrtho;
+      if (_mc && !mapCacheDirty) {
+        const scale = zoom; // cache is always at cacheZoom=1
+        if (viewMode === 'iso' && _mc._isoOffset) {
           // draw iso cache aligned with cam, scaled to current zoom
-          const destX = Math.round(mapCache._isoOffset.minX * scale + camX);
-          const destY = Math.round(mapCache._isoOffset.minY * scale + camY);
-          const destW = Math.round(mapCache.width * scale);
-          const destH = Math.round(mapCache.height * scale);
-          // adjust image smoothing for quality LOD: higher zoom => smooth, lower zoom => disable (crisper/cheaper)
+          const destX = Math.round(_mc._isoOffset.minX * scale + camX);
+          const destY = Math.round(_mc._isoOffset.minY * scale + camY);
+          const destW = Math.round(_mc.width * scale);
+          const destH = Math.round(_mc.height * scale);
+          // always use high-quality smoothing when scaling the terrain cache
           const prevSmoothing = ctx.imageSmoothingEnabled;
-          ctx.imageSmoothingEnabled = zoom >= GRAPHICS_CONFIG.smoothingThreshold;
-          ctx.drawImage(mapCache, 0, 0, mapCache.width, mapCache.height, destX, destY, destW, destH);
+          const prevQuality = ctx.imageSmoothingQuality;
+          ctx.imageSmoothingEnabled = true;
+          try { ctx.imageSmoothingQuality = 'high'; } catch(e){}
+          ctx.drawImage(_mc, 0, 0, _mc.width, _mc.height, destX, destY, destW, destH);
           ctx.imageSmoothingEnabled = prevSmoothing;
+          try { ctx.imageSmoothingQuality = prevQuality; } catch(e){}
           // skip the tile loop entirely
           r = maxR; // break outer loop
           break;
         } else if (viewMode !== 'iso') {
           // orthographic: draw cached map positioned at camX/camY, scaled to current zoom
-          const destW = Math.round(mapCache.width * scale);
-          const destH = Math.round(mapCache.height * scale);
+          const destW = Math.round(_mc.width * scale);
+          const destH = Math.round(_mc.height * scale);
           const prevSmoothing = ctx.imageSmoothingEnabled;
-          ctx.imageSmoothingEnabled = zoom >= GRAPHICS_CONFIG.smoothingThreshold;
-          ctx.drawImage(mapCache, 0, 0, mapCache.width, mapCache.height, Math.round(camX), Math.round(camY), destW, destH);
+          const prevQuality = ctx.imageSmoothingQuality;
+          ctx.imageSmoothingEnabled = true;
+          try { ctx.imageSmoothingQuality = 'high'; } catch(e){}
+          ctx.drawImage(_mc, 0, 0, _mc.width, _mc.height, Math.round(camX), Math.round(camY), destW, destH);
           ctx.imageSmoothingEnabled = prevSmoothing;
+          try { ctx.imageSmoothingQuality = prevQuality; } catch(e){}
           r = maxR; break;
         }
       }
@@ -3758,16 +4460,32 @@ function render() {
   }
 
   // ── BUILDINGS ─────────────────────────────────────────────
-  // Trees are now entities (each tree is an entity) — entity rendering handles them
+  // Depth-sorted: buildings "behind" the player draw first; buildings "in front"
+  // are deferred and drawn after the player to correctly occlude them.
   const bMinC = Math.max(0, minC - 4);
   const bMaxC = Math.min(COLS - 1, maxC + 4);
   const bMinR = Math.max(0, minR - 4);
   const bMaxR = Math.min(ROWS - 1, maxR + 4);
+
+  // Depth key: in iso, col+row (higher = closer to camera); in top-down, row
+  const _playerDepthKey = (viewMode === 'iso')
+    ? Math.floor(player.x) + Math.floor(player.y)
+    : Math.floor(player.y);
+
+  window._deferredBuildings = [];
   for (let r = bMinR; r <= bMaxR; r++) {
     for (let c = bMinC; c <= bMaxC; c++) {
       const info = getCellInfo(c, r);
       if (!info || !info.isBase) continue;
-      drawBuilding(info.baseCol, info.baseRow, info.type);
+      const sz = getBuildingSize(info.type);
+      const bDepthKey = (viewMode === 'iso')
+        ? info.baseCol + info.baseRow + sz.w + sz.h - 2
+        : info.baseRow + sz.h - 1;
+      if (bDepthKey < _playerDepthKey) {
+        drawBuilding(info.baseCol, info.baseRow, info.type);
+      } else {
+        window._deferredBuildings.push({ col: info.baseCol, row: info.baseRow, type: info.type });
+      }
     }
   }
 
@@ -3827,6 +4545,25 @@ function render() {
             const mh = Math.max(24, Math.floor(ih * 2.8));
             drawEntitySpriteAt('mountain', x, y - ih*0.28, mw, mh);
           } catch (e) { console.warn('mountain draw err', e); }
+        } else if (subtype === 'campfire' || subtype === 'furnace') {
+          // isometric campfire / furnace with animated fire
+          const { w: iw2, h: ih2 } = getIsoTileSize();
+          const fcx = x, fcy = y;
+          // stone base
+          ctx.fillStyle = '#4a4a4a';
+          drawDiamond(fcx, fcy + ih2*0.08, iw2*0.42, ih2*0.22, '#4a4a4a', null, null);
+          // animated fire
+          const fa = Math.sin(now / 130 + (ent.col||0) * 5 + (ent.row||0) * 3);
+          ctx.save();
+          ctx.fillStyle = 'rgba(220,55,8,0.92)';
+          ctx.beginPath(); ctx.ellipse(fcx, fcy - ih2*0.05, iw2*0.16, ih2*(0.22 + fa*0.03), 0, 0, Math.PI*2); ctx.fill();
+          ctx.fillStyle = 'rgba(255,185,8,0.88)';
+          ctx.beginPath(); ctx.ellipse(fcx, fcy - ih2*0.12, iw2*0.09, ih2*(0.12 + fa*0.02), 0, 0, Math.PI*2); ctx.fill();
+          ctx.restore();
+          // smoke emission
+          if (window.smokeParticles.length < 350 && Math.random() < 0.18) {
+            window.smokeParticles.push({ x: fcx + (Math.random()-0.5)*iw2*0.12, y: fcy - ih2*0.22, vx: (Math.random()-0.5)*0.22, vy: -(0.32+Math.random()*0.42), r: Math.max(2, iw2*0.06), life: 1400+Math.random()*900, born: now });
+          }
         } else {
           const sizeW = w * 0.6 * pulse;
           const sizeH = h * 0.6 * pulse;
@@ -3849,6 +4586,31 @@ function render() {
           // small rock block
           ctx.fillStyle = '#808080'; ctx.fillRect(cx, cy + sz*0.1, sz, sz*0.8);
           ctx.fillStyle = '#6b6b6b'; ctx.fillRect(cx + 2, cy + sz*0.25, sz*0.25, sz*0.5);
+        } else if (subtype === 'campfire' || subtype === 'furnace') {
+          // campfire: stone ring + animated fire glow
+          const fcx2 = x + tileSize*0.5;
+          const fcy2 = y + tileSize*0.52;
+          // stone ring shadow
+          ctx.fillStyle = 'rgba(0,0,0,0.18)';
+          ctx.beginPath(); ctx.ellipse(fcx2, fcy2 + tileSize*0.12, tileSize*0.28, tileSize*0.1, 0, 0, Math.PI*2); ctx.fill();
+          // stones
+          ctx.fillStyle = '#5a5a5a';
+          ctx.beginPath(); ctx.ellipse(fcx2, fcy2 + tileSize*0.08, tileSize*0.26, tileSize*0.14, 0, 0, Math.PI*2); ctx.fill();
+          // logs
+          ctx.fillStyle = '#7a4a2a';
+          ctx.fillRect(fcx2 - tileSize*0.18, fcy2 - tileSize*0.02, tileSize*0.36, tileSize*0.09);
+          // animated fire
+          const fa2 = Math.sin(now / 130 + (ent.col||0)*5 + (ent.row||0)*3);
+          ctx.save();
+          ctx.fillStyle = 'rgba(210,50,8,0.93)';
+          ctx.beginPath(); ctx.ellipse(fcx2, fcy2 - tileSize*0.08, tileSize*0.11, tileSize*(0.14+fa2*0.025), 0, 0, Math.PI*2); ctx.fill();
+          ctx.fillStyle = 'rgba(255,190,10,0.88)';
+          ctx.beginPath(); ctx.ellipse(fcx2, fcy2 - tileSize*0.13, tileSize*0.065, tileSize*(0.08+fa2*0.015), 0, 0, Math.PI*2); ctx.fill();
+          ctx.restore();
+          // smoke emission
+          if (window.smokeParticles.length < 350 && Math.random() < 0.18) {
+            window.smokeParticles.push({ x: fcx2+(Math.random()-0.5)*tileSize*0.12, y: fcy2-tileSize*0.2, vx: (Math.random()-0.5)*0.22, vy: -(0.32+Math.random()*0.42), r: Math.max(2, tileSize*0.07), life: 1400+Math.random()*900, born: now });
+          }
         } else {
           ctx.fillStyle = '#A0522D'; ctx.fillRect(cx, cy, sz, sz);
         }
@@ -3973,6 +4735,13 @@ function render() {
           ctx.fillRect(sx + px * scale, sy + py * scale, scale, scale);
         }
       } else {
+        // If the variant has a registered pixel-art sprite, use it directly
+        if (hasRegisteredSprite(variant)) {
+          const lodFactor = zoom >= GRAPHICS_CONFIG.smoothingThreshold ? 1 : 0.8;
+          const sz = Math.max(tileSize * 0.6, Math.round(tileSize * (ent.size || 1) * 1.3 * lodFactor));
+          const jitterX = Math.floor((tileNoise(ent.col||0, ent.row||0, 7, 8) - 0.5) * tileSize * 0.18);
+          drawEntitySpriteAt(variant, x + tileSize * 0.5 + jitterX, y + tileSize, sz, sz * 1.15);
+        } else {
         // map variants to templates
         const map = { pine:0, tallslim:4, oak:1, broad:1, round:1, scrub:2, bush:2, shrub:2, multi:3 };
         let idx = (map[variant] !== undefined) ? map[variant] : Math.floor(tileNoise(ent.col || 0, ent.row || 0, 5, 6) * GLOBAL_TREE_TEMPLATES.length);
@@ -3998,6 +4767,7 @@ function render() {
           ctx.fillStyle = color;
           ctx.fillRect(sx + px * scale, sy + py * scale, scale, scale);
         }
+        } // end sprite-fallback else
       }
 
       // interaction hint: comic bubble with 'E' when player is near
@@ -4238,6 +5008,24 @@ function render() {
     }
   } catch (e) {}
 
+  // draw smoke particles (ambient campfire smoke)
+  try {
+    const nowSm = now;
+    for (let i = window.smokeParticles.length - 1; i >= 0; i--) {
+      const sp = window.smokeParticles[i];
+      const age = nowSm - sp.born;
+      const t = age / sp.life;
+      if (t >= 1) { window.smokeParticles.splice(i, 1); continue; }
+      sp.x += sp.vx;
+      sp.y += sp.vy;
+      sp.vx += (Math.random() - 0.5) * 0.035; // gentle horizontal drift
+      const radius = sp.r * (1 + t * 2.8);
+      const alpha = Math.max(0, 0.36 * (1 - t));
+      ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = '#a8aabf';
+      ctx.beginPath(); ctx.arc(sp.x, sp.y, radius, 0, Math.PI*2); ctx.fill(); ctx.restore();
+    }
+  } catch (e) {}
+
   // draw effect particles
   try {
     const nowEff = now;
@@ -4262,48 +5050,58 @@ function render() {
       if (typeof ft.worldX === 'number' && typeof ft.worldY === 'number') {
         const p = worldToScreen(ft.worldX, ft.worldY);
         ft.x = p.x;
-        ft.y = p.y - 6; // slight offset above entity
+        // Position bubble clearly above the entity head (scales with tile/zoom size)
+        ft.y = p.y - Math.max(18, Math.round(tileSize * 0.55));
       }
       ft.y += ft.yv * 1.6;
       const alpha = Math.max(0, 1 - t);
-      ctx.font = 'bold 14px sans-serif';
+      // Enable smoothing for crisp text (NPC speech bubbles)
+      const prevSmoothing = ctx.imageSmoothingEnabled;
+      ctx.imageSmoothingEnabled = true;
+      try { ctx.imageSmoothingQuality = 'high'; } catch(e){}
+      ctx.font = 'bold 13px sans-serif';
+      ctx.textBaseline = 'alphabetic';
       const text = ft.text || '';
       const textWidth = ctx.measureText(text).width;
-      const padX = 8;
+      const padX = 10;
       const padY = 6;
+      const bubbleH = padY * 2 + 13; // 13px font + padding
       const cx = (typeof ft.x === 'number') ? ft.x : 0;
       const cy = (typeof ft.y === 'number') ? ft.y : 0;
-      const bx = cx - textWidth / 2 - padX;
-      const by = cy - padY - 14;
-      // pick bubble/background color opposite to text when text is white
-      const textColor = ft.color || '#000';
-      const useDarkBg = (String(textColor).toLowerCase() === '#fff' || String(textColor).toLowerCase() === '#ffffff');
-      const bgColor = useDarkBg ? 'rgba(0,0,0,0.75)' : 'rgba(255,255,255,0.95)';
-      const strokeColor = 'rgba(0,0,0,0.6)';
+      const bx = Math.round(cx - textWidth / 2 - padX);
+      const by = Math.round(cy - bubbleH - 8); // bubble above entity, gap of 8px
+      // Speech bubble: always white background with dark text for readability
+      const bgColor = 'rgba(255,255,255,0.97)';
+      const strokeColor = 'rgba(60,40,10,0.55)';
+      const textDrawColor = '#1a1200';
       ctx.globalAlpha = alpha;
       // draw bubble background (rounded rect when available)
       try {
-        ctx.fillStyle = bgColor; ctx.strokeStyle = strokeColor;
+        ctx.fillStyle = bgColor; ctx.strokeStyle = strokeColor; ctx.lineWidth = 1.2;
         ctx.beginPath();
-        if (ctx.roundRect) ctx.roundRect(bx, by, textWidth + padX * 2, padY * 2 + 10, 6);
-        else ctx.rect(bx, by, textWidth + padX * 2, padY * 2 + 10);
+        if (ctx.roundRect) ctx.roundRect(bx, by, textWidth + padX * 2, bubbleH, 6);
+        else ctx.rect(bx, by, textWidth + padX * 2, bubbleH);
         ctx.fill(); ctx.stroke();
         // tail pointing down towards the entity
-        const tx = cx;
-        const ty = by + padY * 2 + 10;
+        const tx = Math.round(cx);
+        const ty = by + bubbleH;
         ctx.beginPath();
-        ctx.moveTo(tx - 6, ty);
-        ctx.lineTo(tx + 6, ty);
-        ctx.lineTo(tx, ty + 8);
+        ctx.moveTo(tx - 5, ty);
+        ctx.lineTo(tx + 5, ty);
+        ctx.lineTo(tx, ty + 7);
         ctx.closePath();
         ctx.fill(); ctx.stroke();
       } catch (e) { /* ignore drawing issues */ }
-      // draw text centered
+      // draw text centered vertically and horizontally in bubble using middle baseline
       try {
-        ctx.fillStyle = textColor;
-        ctx.fillText(text, cx - textWidth / 2, cy);
+        ctx.fillStyle = textDrawColor;
+        ctx.textBaseline = 'middle';
+        const textCenterY = by + bubbleH / 2; // vertically centered in bubble
+        ctx.fillText(text, Math.round(cx - textWidth / 2), Math.round(textCenterY));
+        ctx.textBaseline = 'alphabetic'; // restore default
       } catch (e) {}
       ctx.globalAlpha = 1;
+      ctx.imageSmoothingEnabled = prevSmoothing;
     }
   } catch (errFx) { /* ignore effect rendering errors */ }
 
@@ -4431,9 +5229,75 @@ function render() {
   drawPlayer();
   drawPlayerHealth();
 
-  // --- INTERACTION PROMPT: show single 'E' with action text for nearest object ---
+  // ── BUILDINGS IN FRONT OF PLAYER (depth-sorted deferred pass) ──────────────
+  // These buildings have a depth key >= player's, so they appear "in front" and
+  // should be drawn on top of the player to create proper occlusion.
+  try {
+    if (Array.isArray(window._deferredBuildings)) {
+      for (const b of window._deferredBuildings) {
+        drawBuilding(b.col, b.row, b.type);
+      }
+      window._deferredBuildings = [];
+    }
+  } catch(e) {}
+
+  // ── NIGHT TORCH VIGNETTE ─────────────────────────────────
+  // Radial gradient: transparent at player centre → dark at edges.
+  // No compositing tricks needed – one fillRect does it all.
+  try {
+    if (nightAlpha > 0.12 && !window.currentInterior) {
+      const { x: pvx, y: pvy } = worldToScreen(player.x + 0.5, player.y + 0.5);
+      const tileSize = getTileSize();
+      const flicker = 1 + 0.04 * Math.sin(now / 180) + 0.02 * Math.sin(now / 87);
+      const glowR = Math.max(90, tileSize * 5.5 * flicker * (1 - nightAlpha * 0.25));
+      const darkAlpha = Math.min(0.88, nightAlpha * 1.4);
+      const maxDim = Math.max(W, H) * 1.2;
+      // Outer darkness mask
+      const gVig = ctx.createRadialGradient(pvx, pvy, glowR * 0.35, pvx, pvy, maxDim);
+      gVig.addColorStop(0,   'rgba(1,3,10,0)');
+      gVig.addColorStop(0.15, `rgba(1,3,10,${(darkAlpha * 0.5).toFixed(3)})`);
+      gVig.addColorStop(1,   `rgba(1,3,10,${darkAlpha.toFixed(3)})`);
+      ctx.fillStyle = gVig; ctx.fillRect(0, 0, W, H);
+      // Warm amber tint right around the player
+      const gwarm = ctx.createRadialGradient(pvx, pvy, 0, pvx, pvy, glowR * 0.75);
+      gwarm.addColorStop(0,   `rgba(220,130,20,${(nightAlpha * 0.12).toFixed(3)})`);
+      gwarm.addColorStop(0.6, `rgba(180,80,10,${(nightAlpha * 0.05).toFixed(3)})`);
+      gwarm.addColorStop(1,   'rgba(0,0,0,0)');
+      ctx.fillStyle = gwarm; ctx.fillRect(0, 0, W, H);
+    }
+  } catch(e) {}
+
   try {
     window._interactionTarget = null;
+    // ── interior interaction scan ──
+    if (window.currentInterior) {
+      const interior = window.currentInterior;
+      const iRows = interior.height || (interior.tiles ? interior.tiles.length : 6);
+      const doorRow2 = iRows - 2;
+      const doorCol2 = interior.entryCol || 1;
+      const px2 = Math.floor(player.x), py2 = Math.floor(player.y);
+      if (py2 >= doorRow2 && Math.abs(px2 - doorCol2) <= 1) {
+        _interactionScanCache = { kind: 'interior-exit', actionText: 'Salir', showPrompt: true };
+        window._interactionTarget = _interactionScanCache;
+      } else if (interior._furniture) {
+        const f = interior._furniture.find(f => f.kind === 'chest' &&
+          Math.abs(f.col - px2) <= 1 && Math.abs(f.row - py2) <= 1);
+        if (f) {
+          _interactionScanCache = { kind: 'interior-chest', ref: f, actionText: f._looted ? 'Cofre vacío' : 'Abrir cofre', showPrompt: true };
+          window._interactionTarget = _interactionScanCache;
+        } else {
+          const nearNpc2 = entities.find(en => en && en._interiorNpc &&
+            Math.abs((en.x||en.col) - (player.x||0)) <= 1.2 &&
+            Math.abs((en.y||en.row) - (player.y||0)) <= 1.2);
+          if (nearNpc2) {
+            _interactionScanCache = { kind: 'interior-npc', ref: nearNpc2, actionText: 'Hablar', showPrompt: true };
+            window._interactionTarget = _interactionScanCache;
+          } else {
+            _interactionScanCache = null;
+          }
+        }
+      }
+    }
     if (!window.currentInterior) {
       let chosen = null;
       const scanInterval = cameraBusy ? 220 : 120;
@@ -4452,19 +5316,25 @@ function render() {
         }
         let bestRes = null, bestResDist = 9e9;
         let bestTree = null, bestTreeDist = 9e9;
+        let bestNpc = null, bestNpcDist = 9e9;
         for (let i = 0; i < entities.length; i++) {
           const ent = entities[i];
           if (!ent) continue;
           const ex = (ent.x !== undefined ? ent.x : ent.col) + 0.5;
           const ey = (ent.y !== undefined ? ent.y : ent.row) + 0.5;
           const dist = Math.hypot(ex - (player.x || 0), ey - (player.y || 0));
-          if (ent.kind === 'resource') {
+          if (ent.kind === 'player' && ent.id && ent.id.indexOf('npc-') === 0) {
+            // NPC (villager, story, etc.)
+            if (dist < bestNpcDist && dist <= 1.5) { bestNpc = ent; bestNpcDist = dist; }
+          } else if (ent.kind === 'resource') {
             if (dist < bestResDist && dist <= 1.6) { bestRes = ent; bestResDist = dist; }
           } else if (ent.kind === 'tree') {
             if (dist < bestTreeDist && dist <= 1.6) { bestTree = ent; bestTreeDist = dist; }
           }
         }
         if (bestDoor) _interactionScanCache = { kind: 'door', ref: bestDoor, actionText: 'Entrar', showPrompt: true };
+        else if (bestNpc && bestNpc.isStoryNPC) _interactionScanCache = { kind: 'player', ref: bestNpc, actionText: `Hablar con ${bestNpc.name || 'NPC'}`, showPrompt: true };
+        else if (bestNpc) _interactionScanCache = { kind: 'player', ref: bestNpc, actionText: 'Hablar', showPrompt: true };
         else if (bestRes) _interactionScanCache = { kind: 'resource', ref: bestRes, actionText: bestRes.subtype ? ('Recoger ' + bestRes.subtype) : 'Recoger', showPrompt: true };
         else if (bestTree) _interactionScanCache = { kind: 'tree', ref: bestTree, actionText: 'Talar', showPrompt: false };
         else _interactionScanCache = null;
@@ -4476,21 +5346,47 @@ function render() {
         if (chosen.showPrompt !== false) {
           try {
             const tileSize = getTileSize();
-            const screen = worldToScreen((player.x || 0) + 0.5, (player.y || 0) - 0.3);
+            const screen = worldToScreen((player.x || 0) + 0.5, (player.y || 0));
+            const label = chosen.actionText || '';
             ctx.save();
-            ctx.font = Math.max(10, Math.floor(12 * (tileSize / 32))) + 'px sans-serif';
-            ctx.fillStyle = 'rgba(255,255,255,0.95)';
-            ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-            ctx.lineWidth = 3;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            // action text above
-            ctx.strokeText(chosen.actionText, screen.x, screen.y - 30);
-            ctx.fillText(chosen.actionText, screen.x, screen.y - 30);
-            // big E below
-            ctx.font = Math.max(12, Math.floor(14 * (tileSize / 32))) + 'px sans-serif';
-            ctx.strokeText('E', screen.x, screen.y - 10);
-            ctx.fillText('E', screen.x, screen.y - 10);
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            const fontSize = Math.max(11, Math.floor(12 * (tileSize / 32)));
+            ctx.font = `bold ${fontSize}px sans-serif`;
+            const textW = ctx.measureText(label).width;
+            const padH = 5, padV = 4;
+            const bw = textW + padH * 2 + 24; // + room for [E] key badge
+            const bh = fontSize + padV * 2;
+            const bx = screen.x - bw / 2;
+            const by = screen.y - tileSize * 0.9 - bh;
+            const r = bh / 2;
+            // pill background
+            ctx.fillStyle = 'rgba(12,8,2,0.82)';
+            ctx.beginPath();
+            ctx.moveTo(bx + r, by); ctx.lineTo(bx + bw - r, by);
+            ctx.arcTo(bx + bw, by, bx + bw, by + bh, r);
+            ctx.lineTo(bx + bw, by + bh - r);
+            ctx.arcTo(bx + bw, by + bh, bx + bw - r, by + bh, r);
+            ctx.lineTo(bx + r, by + bh);
+            ctx.arcTo(bx, by + bh, bx, by + bh - r, r);
+            ctx.lineTo(bx, by + r);
+            ctx.arcTo(bx, by, bx + r, by, r);
+            ctx.closePath(); ctx.fill();
+            // gold border
+            ctx.strokeStyle = '#C8A840'; ctx.lineWidth = 1;
+            ctx.stroke();
+            // [E] key badge on left side
+            const badgeR = bh * 0.38;
+            const badgeCx = bx + r + 2;
+            const badgeCy = by + bh / 2;
+            ctx.fillStyle = '#C8A840';
+            ctx.beginPath(); ctx.arc(badgeCx, badgeCy, badgeR, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = '#1a1000';
+            ctx.font = `bold ${Math.round(fontSize * 0.82)}px sans-serif`;
+            ctx.fillText('E', badgeCx, badgeCy);
+            // action text
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = `bold ${fontSize}px sans-serif`;
+            ctx.fillText(label, bx + bw / 2 + badgeR + 1, by + bh / 2);
             ctx.restore();
           } catch (e) {}
         }
@@ -4536,10 +5432,22 @@ function render() {
   }
 
   // ── RIVER LABEL ─────────────────────────────────────────--
+  // Left river: Tigris
   const { x: rx } = worldToScreen(RIVER_COL_START, 0);
   const labelOffset = viewMode === 'iso' ? isoSize.w : tileSize;
   ctx.save();
   ctx.translate(rx + labelOffset, H/2);
+  ctx.rotate(-Math.PI/2);
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.font = 'bold 11px Courier New';
+  ctx.letterSpacing = '3px';
+  ctx.textAlign = 'center';
+  ctx.fillText('RÍO TIGRIS', 0, 0);
+  ctx.restore();
+  // Right river: Éufrates
+  const { x: rxB } = worldToScreen(RIVER_B_BASE, 0);
+  ctx.save();
+  ctx.translate(rxB + labelOffset, H/2);
   ctx.rotate(-Math.PI/2);
   ctx.fillStyle = 'rgba(255,255,255,0.5)';
   ctx.font = 'bold 11px Courier New';
@@ -4584,16 +5492,57 @@ function render() {
     for (let i = entities.length - 1; i >= 0; i--) {
       const en = entities[i];
       if (!en || !en.id || en.id.indexOf('npc-') !== 0) continue;
+      // NPCs sleep at night (22:00 - 05:00): they stay hidden inside their house
+      const isNightNpc = (dayHour >= 22 || dayHour < 5);
+      if (isNightNpc && !en._interiorNpc) {
+        if (en.col !== -999) {
+          en._prevCol = en.col; en._prevRow = en.row;
+          en.col = -999; en.row = -999;
+          if (en.moveTarget) delete en.moveTarget;
+        }
+        continue;
+      } else if (!isNightNpc && en.col === -999 && en._prevCol !== undefined && !en._holdUntil) {
+        // restore position at dawn
+        en.col = en._prevCol || 0; en.row = en._prevRow || 0;
+        en.x = en.col; en.y = en.row;
+        delete en._prevCol; delete en._prevRow;
+      }
       if (en._holdUntil && nowNpc < en._holdUntil) continue;
       if (en._holdUntil && nowNpc >= en._holdUntil) delete en._holdUntil;
       if (!en.nextMove) en.nextMove = nowNpc + 1000 + Math.floor(Math.random() * 3000);
       if (nowNpc >= en.nextMove) {
         en.nextMove = nowNpc + 1200 + Math.floor(Math.random() * 5000);
+        // interior NPC ─ roam only within interior cell bounds
+        if (en._interiorNpc && en._interiorBounds) {
+          const ib = en._interiorBounds;
+          for (let t = 0; t < 8; t++) {
+            const dcol = Math.floor(Math.random() * 3) - 1;
+            const drow = Math.floor(Math.random() * 3) - 1;
+            const nc = en.col + dcol; const nr = en.row + drow;
+            if (nc >= ib.minC && nc <= ib.maxC && nr >= ib.minR && nr <= ib.maxR) {
+              try { en.moveTarget = { x: nc + 0.5, y: nr + 0.5 }; } catch (ee) { en.col = nc; en.row = nr; }
+              break;
+            }
+          }
+          // slower re-check for interior
+          en.nextMove = nowNpc + 2500 + Math.floor(Math.random() * 6000);
+          continue;
+        }
         // village-bounded roaming if assigned
         let minC = 0, maxC = COLS - 1, minR = 0, maxR = ROWS - 1;
         if (en.villageId && window._VILLAGES) {
           const v = window._VILLAGES.find(x => x.id === en.villageId);
           if (v) { minC = v.minC; maxC = v.maxC; minR = v.minR; maxR = v.maxR; }
+        }
+        // NPC house-enter behavior: occasionally enter a nearby house
+        if (!window.currentInterior && Math.random() < 0.03 && en.villageId && window.INTERIOR_DOORS) {
+          const nearDoor = window.INTERIOR_DOORS.find(d => Math.abs(d.col - en.col) + Math.abs(d.row - en.row) <= 2);
+          if (nearDoor) {
+            en._holdUntil = nowNpc + 12000 + Math.floor(Math.random() * 20000);
+            en.col = -999; en.row = -999; // hide off-map temporarily
+            if (en.moveTarget) delete en.moveTarget;
+            continue;
+          }
         }
         for (let t = 0; t < 8; t++) {
           const dcol = Math.floor(Math.random() * 3) - 1;
@@ -4657,6 +5606,35 @@ function render() {
   if (worldMapOverlayVisible) {
     try { drawWorldMapOverlay(W, H); } catch (e) {}
   }
+  // Mini-map overlay (bottom-right corner)
+  try { if (!editMode && !worldMapOverlayVisible && window._gameStarted) drawMiniMap(ctx, W, H); } catch (e) {}
+  // Time speed indicator on canvas (top-center, only when not ×1 or paused)
+  try {
+    if (window._gameStarted && !editMode) {
+      const ts = window._timeScale || 1;
+      if (ts === 0) {
+        ctx.save();
+        ctx.font = 'bold 13px monospace';
+        ctx.textAlign = 'center';
+        // blinking pause indicator
+        ctx.globalAlpha = now % 1000 < 600 ? 0.9 : 0.3;
+        ctx.fillStyle = '#FFD27A';
+        ctx.fillText('⏸ PAUSA', W / 2, 22);
+        ctx.restore();
+      } else if (ts !== 1) {
+        ctx.save();
+        ctx.font = 'bold 12px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = 'rgba(255,210,122,0.75)';
+        ctx.fillText(`${ts}×`, W / 2, 20);
+        ctx.restore();
+      }
+    }
+  } catch (e) {}
+  // Story overlays: cinematic intro and NPC dialogue panel (drawn on top of everything)
+  try { if (window._introSeq && !window._introSeq.done) drawIntroSequence(ctx, W, H); } catch (e) {}
+  try { if (window._activeDialogue) drawDialoguePanel(ctx, W, H); } catch (e) {}
+
   if (window._gameStarted && _renderLoopActive) requestAnimationFrame(render);
   else stopRenderLoop();
   } catch (err) {
@@ -4743,6 +5721,21 @@ function tickEnemies(now) {
       const dx = targetX + 0.5 - en.x; const dy = targetY + 0.5 - en.y; const dist = Math.hypot(dx, dy) || 0.0001;
       const step = (en.speed || 0.6) * dt;
       en.x += (dx / dist) * step; en.y += (dy / dist) * step; en.col = Math.floor(en.x); en.row = Math.floor(en.y);
+      // enemy attacks player when close enough
+      try {
+        const pdx = targetX - en.x, pdy = targetY - en.y;
+        if (Math.hypot(pdx, pdy) < 0.9) {
+          const eAtkCd = en._atkCd || 1200;
+          if (!en._lastAtk || now - en._lastAtk >= eAtkCd) {
+            en._lastAtk = now;
+            const dmg = en.dmg || 4;
+            char.hp = Math.max(0, (char.hp || 0) - dmg);
+            char._lastHitTime = now;
+            char._flashUntil = now + 280;
+            if (window.spawnFloatingText) window.spawnFloatingText(player.x + 0.5, player.y - 0.5, `-${dmg}`, { color: '#FF4040', force: true });
+          }
+        }
+      } catch(e) {}
       // towers attack
       for (const t of towers) {
         const tx = t.col + 0.5, ty = t.row + 0.5;
@@ -5667,6 +6660,11 @@ function closeCharacterSelect() {
   if (!modal) return;
   modal.classList.add('hidden');
   startLocked = false;
+  // Start cinematic intro now that the DOM modal is gone and the canvas is fully visible
+  if (window._pendingIntro) {
+    window._pendingIntro = false;
+    try { startIntroSequence(); } catch (e) {}
+  }
 }
 
 function setupCharacterSelection() {
@@ -5843,7 +6841,7 @@ function showTooltip(col, row, mx, my) {
   if (!tip) return;
   if (col < 0 || col >= COLS || row < 0 || row >= ROWS) { tip.style.display='none'; return; }
   if (isRiver(col)) {
-    tip.innerHTML = '<b>Río Éufrates</b><br>Fuente de vida.<br>Construir cerca da +25% producción.';
+    tip.innerHTML = '<b>Río Tigris</b><br>Fuente de vida.<br>Construir cerca da +25% producción.';
     tip.style.display = 'block';
   } else if (grid[row][col]) {
     const info = getCellInfo(col, row);
@@ -5922,8 +6920,6 @@ function createOverlayUI() {
         zoom = z;
         markCameraInput();
         clampCamera();
-        mapCacheDirty = true;
-        rebuildMapCacheDebounced(140);
       }
     });
   }
@@ -6422,55 +7418,81 @@ function createMenuBar() {
   // Dev helpers: inventory and interior doors
   try {
     window.INTERIOR_DOORS = window.INTERIOR_DOORS || [];
-    window.enterInterior = function(id) {
+    window.enterInterior = function(id, doorRef) {
       try {
         fetch('data/interiors/' + id + '.json').then(r => { if (!r.ok) throw new Error('missing'); return r.json(); }).then(data => {
-          // Save exterior state: position and all entities
-          window._savedExterior = { 
-            col: Math.floor(player.x), 
+          // Save exterior state
+          window._savedExterior = {
+            col: Math.floor(player.x),
             row: Math.floor(player.y),
-            entities: entities.slice(), // make a copy of entities array
-            rabbits: rabbits.slice(),   // make a copy of rabbits array
-            foxes: foxes.slice()        // make a copy of foxes array
+            entities: entities.map(e => Object.assign({}, e)),
+            rabbits: rabbits.map(r => Object.assign({}, r)),
+            foxes: foxes.map(f => Object.assign({}, f)),
+            doorRef: doorRef || null
           };
-          // Clear all entities from the board
+          // Hide exterior entities (don't clear — keep in memory so they restore)
           entities.length = 0;
           rabbits.length = 0;
           foxes.length = 0;
-          // Load interior
+          // Spawn interior NPCs from JSON definition
+          if (Array.isArray(data.npcs)) {
+            data.npcs.forEach((nd, ni) => {
+              try {
+                const names = ['Gilmesh','Enlila','Dumuzi','Ninsun','Uttu','Ninmah','Anu','Enki','Nanna','Utu'];
+                const nm = nd.name || names[ni % names.length];
+                const npc = spawnNPC(nm, nd.col || 1, nd.row || 1);
+                if (npc) {
+                  npc._interiorNpc = true;
+                  npc.npcType = 'villager';
+                  npc._interiorBounds = { minC: 1, maxC: (data.width||8)-2, minR: 1, maxR: (data.height||6)-2 };
+                }
+              } catch (e) {}
+            });
+          }
+          // Store interior furniture entities list for rendering
+          data._furniture = [];
+          if (Array.isArray(data.tiles)) {
+            for (let r = 0; r < data.tiles.length; r++) {
+              for (let c = 0; c < data.tiles[r].length; c++) {
+                const t = data.tiles[r][c];
+                if (t === 'chest') data._furniture.push({ kind:'chest', col:c, row:r });
+                if (t === 'firepit') data._furniture.push({ kind:'firepit', col:c, row:r, born: Date.now() });
+              }
+            }
+          }
+          data._chestItems = Array.isArray(data.chestItems) ? data.chestItems.slice() : ['wheat'];
+          data._interiorId = id;
           window.currentInterior = data;
-          player.col = data.entryCol || 1; player.row = data.entryRow || 1; player.x = player.col; player.y = player.row;
+          player.col = data.entryCol || 1; player.row = data.entryRow || 1;
+          player.x = player.col; player.y = player.row;
+          // fade in
+          window._interiorFadeIn = { start: Date.now(), dur: 500 };
           try { targetCam = null; centerCameraOnPlayer(); } catch (e) {}
-          notify && notify('Entrando en ' + id);
-        }).catch(err => { notify && notify('No se pudo cargar interior: ' + id); });
+          notify && notify('Entras en la casa');
+        }).catch(() => { notify && notify('Interior no encontrado: ' + id); });
       } catch (e) {}
     };
     window.exitInterior = function() {
       try {
-        if (window._savedExterior) {
-          // Restore player position
-          player.col = window._savedExterior.col; 
-          player.row = window._savedExterior.row; 
-          player.x = player.col; 
-          player.y = player.row;
-          // Restore all entities from exterior
-          if (Array.isArray(window._savedExterior.entities)) {
-            entities.length = 0;
-            entities.push(...window._savedExterior.entities);
+        if (!window.currentInterior) return;
+        // fade out, then restore
+        window._interiorFadeOut = { start: Date.now(), dur: 400, onDone: function() {
+          entities.length = 0;
+          rabbits.length = 0;
+          foxes.length = 0;
+          if (window._savedExterior) {
+            player.col = window._savedExterior.col;
+            player.row = window._savedExterior.row;
+            player.x = player.col; player.y = player.row;
+            if (Array.isArray(window._savedExterior.entities)) entities.push(...window._savedExterior.entities);
+            if (Array.isArray(window._savedExterior.rabbits)) rabbits.push(...window._savedExterior.rabbits);
+            if (Array.isArray(window._savedExterior.foxes)) foxes.push(...window._savedExterior.foxes);
+            window._savedExterior = null;
           }
-          if (Array.isArray(window._savedExterior.rabbits)) {
-            rabbits.length = 0;
-            rabbits.push(...window._savedExterior.rabbits);
-          }
-          if (Array.isArray(window._savedExterior.foxes)) {
-            foxes.length = 0;
-            foxes.push(...window._savedExterior.foxes);
-          }
-          window._savedExterior = null;
-        }
-        window.currentInterior = null;
-        try { targetCam = null; centerCameraOnPlayer(); } catch (e) {}
-        notify && notify('Saliendo del interior');
+          window.currentInterior = null;
+          try { targetCam = null; centerCameraOnPlayer(); } catch (e) {}
+          notify && notify('Sales de la casa');
+        }};
       } catch (e) {}
     };
   } catch (e) {}
@@ -6973,39 +7995,19 @@ function drawTreesVisible() {
 
 // Create larger coherent patches by seeded expansion to improve biome patterns
 function refineBiomes() {
-  const types = ['forest','hills','grass','sand'];
-  const seeds = [];
-  const seedCount = Math.max(12, Math.floor((COLS * ROWS) / 1200));
-  for (let i = 0; i < seedCount; i++) {
-    const c = Math.floor(Math.random() * COLS);
-    const r = Math.floor(Math.random() * ROWS);
-    if (isRiver(c)) continue;
-    seeds.push({ c, r, type: types[Math.floor(Math.random() * types.length)], strength: 1 + Math.random() * 2 });
-  }
-  // expand seeds
-  const work = [];
-  seeds.forEach(s => work.push({ c: s.c, r: s.r, type: s.type, strength: s.strength }));
-  const visited = new Set();
-  while (work.length > 0) {
-    const node = work.shift();
-    const key = node.c + ',' + node.r;
-    if (visited.has(key)) continue;
-    visited.add(key);
-    if (node.c < 0 || node.c >= COLS || node.r < 0 || node.r >= ROWS) continue;
-    if (isRiver(node.c)) continue;
-    // probabilistic overwrite to allow blending
-    if (Math.random() < Math.min(0.9, 0.5 + node.strength * 0.15)) {
-      tileBiome[node.r][node.c] = node.type;
-    }
-    // push neighbors with decayed strength
-    const neigh = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
-    for (const [dx,dy] of neigh) {
-      const nc = node.c + dx, nr = node.r + dy;
-      const nk = nc + ',' + nr;
-      if (nc < 0 || nc >= COLS || nr < 0 || nr >= ROWS) continue;
-      if (visited.has(nk)) continue;
-      const nextStr = node.strength - (0.18 + Math.random() * 0.18);
-      if (nextStr > 0) work.push({ c: nc, r: nr, type: node.type, strength: nextStr });
+  // Mesopotamian variant: subtle local variation within zones (water/riparian/marsh preserved)
+  const FIXED = new Set(['water', 'riparian', 'marsh']);
+  for (let r = 1; r < ROWS - 1; r++) {
+    for (let c = 1; c < COLS - 1; c++) {
+      const b = tileBiome[r][c];
+      if (FIXED.has(b)) continue;
+      // Small fertile pockets inside alluvial
+      if (b === 'alluvial' && Math.random() < 0.012) tileBiome[r][c] = 'riparian';
+      // Saline creep
+      if (b === 'saline' && Math.random() < 0.10) {
+        const nb = tileBiome[r+1] && tileBiome[r+1][c];
+        if (nb === 'alluvial' && Math.random() < 0.25) tileBiome[r+1][c] = 'saline';
+      }
     }
   }
 }
@@ -7217,9 +8219,10 @@ function showStartMenu(force) {
         // when loading a saved game, we want the full UI panels visible
         try { window._showPanels = true; } catch (e) {}
         try { if (window._showPanels) { const top = document.getElementById('topbar'); if (top) top.style.display = ''; const toolbar = document.getElementById('toolbar'); if (toolbar) toolbar.style.display = ''; const mainEl = document.getElementById('main'); if (mainEl) mainEl.style.display = ''; } } catch (e) {}
-        mapCacheDirty = true; rebuildMapCacheDebounced(10);
+        mapCacheDirty = true; rebuildMapCachesAsync();
         updateUI();
         try { window._gameStarted = true; startRenderLoop(); } catch (e) {}
+        try { createTimeControlWidget(); } catch (e) {}
       } catch (e) { console.error(e); try { prog && prog.hide(); } catch (er) {} notify('Error cargando partida'); }
     });
 
@@ -7343,13 +8346,20 @@ function showStartupParams() {
         hideLoadingOverlay();
         await preloadAllBeforeStart();
         postMapInit();
+        // Mark that the cinematic intro is pending — MUST be set before setupCharacterSelection
+        // so closeCharacterSelect() can trigger it even when the modal auto-closes with a saved preset
+        window._pendingIntro = true;
         // after map is ready, open character selection so player can choose design and name
-        try { setupCharacterSelection(); openCharacterSelect(); } catch (e) { console.warn('character select open failed', e); }
+        // NOTE: setupCharacterSelection() handles open/close internally based on saved preset.
+        // Do NOT call openCharacterSelect() afterwards — it would re-open the modal and bury the canvas intro.
+        try { setupCharacterSelection(); } catch (e) { console.warn('character select open failed', e); }
         // when creating a new game, show full UI panels
         try { window._showPanels = true; } catch (e) {}
         try { if (window._showPanels) { const top = document.getElementById('topbar'); if (top) top.style.display = ''; const toolbar = document.getElementById('toolbar'); if (toolbar) toolbar.style.display = ''; const mainEl = document.getElementById('main'); if (mainEl) mainEl.style.display = ''; } } catch (e) {}
         // start the main game loop now that generation and UI restore are complete
         try { window._gameStarted = true; startRenderLoop(); } catch (e) {}
+        // Set a closer default zoom so the player is clearly visible at start
+        try { zoom = 2.0; centerCamera(); } catch (e) {}
       } catch (err) { try { prog && prog.hide(); } catch (e) {} hideLoadingOverlay(); console.error('start new err', err); }
     });
   } catch (e) { console.error('showStartupParams err', e); }
@@ -7536,6 +8546,271 @@ function createBuildPanelControls() {
       const rb = document.getElementById('panel-restore-btn'); if (rb) rb.style.display = 'block';
     });
   } catch (e) { /* ignore */ }
+}
+
+// ══════════════════════════════════════════════════════════════
+//  CINEMATIC STORY SYSTEM
+//  Intro title sequence + in-world NPC dialogue panel
+// ══════════════════════════════════════════════════════════════
+window._introSeq = window._introSeq || null;
+window._activeDialogue = window._activeDialogue || null;
+
+function startIntroSequence() {
+  window._introSeq = { phase: 0, phaseStart: performance.now(), done: false };
+}
+function skipIntro() {
+  if (window._introSeq && !window._introSeq.done) window._introSeq.done = true;
+}
+
+function drawIntroSequence(ctx, W, H) {
+  const seq = window._introSeq;
+  if (!seq || seq.done) return;
+  const now = performance.now();
+  const t = now - seq.phaseStart;
+  // Duration each phase stays on screen (ms)
+  const DURATIONS = [3400, 5200, 3200, 900];
+  if (t > DURATIONS[seq.phase]) {
+    seq.phase++;
+    seq.phaseStart = now;
+    if (seq.phase >= DURATIONS.length) { seq.done = true; return; }
+  }
+  const dur = DURATIONS[seq.phase];
+  const tN = t / dur;
+  // fade in / fade out within each phase
+  let alpha = tN < 0.16 ? tN / 0.16 : tN > 0.80 ? (1 - tN) / 0.20 : 1;
+  alpha = Math.max(0, Math.min(1, alpha));
+  ctx.save();
+  // Black backdrop — fades out on last phase
+  const bgA = seq.phase === 3 ? ((1 - tN) * 0.96) : 0.96;
+  ctx.fillStyle = `rgba(0,0,0,${bgA.toFixed(3)})`;
+  ctx.fillRect(0, 0, W, H);
+  ctx.globalAlpha = alpha;
+  const cx = W / 2, cy = H / 2;
+  if (seq.phase === 0) {
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#c8a96e';
+    ctx.font = 'italic 18px serif';
+    ctx.fillText('Mesopotamia, 2350 a.C.', cx, cy - 18);
+    ctx.font = '13px serif';
+    ctx.fillStyle = 'rgba(255,235,200,0.82)';
+    ctx.fillText('Entre el Éufrates y el Tigris, toda vida depende del capricho de los ríos.', cx, cy + 10);
+  } else if (seq.phase === 1) {
+    ctx.textAlign = 'center';
+    ctx.font = '14px serif';
+    ctx.fillStyle = 'rgba(255,240,210,0.92)';
+    const lore = [
+      'Tu aldea, Kidu-Lam, fue arrasada por raiders del norte al amanecer.',
+      'Eres Adapa — cazador, superviviente, el único con la mente despejada.',
+      '',
+      'El anciano del templo ha leído los presagios en los astros:',
+      'en cuarenta días, el gran diluvio llegará y lo borrará todo.',
+      '',
+      'Tu misión: llevar el aviso a las ciudades del norte',
+      'antes de que las aguas lo sepulten todo.'
+    ];
+    const lh = 22;
+    const startY = cy - ((lore.length - 1) * lh) / 2;
+    lore.forEach((line, i) => ctx.fillText(line, cx, startY + i * lh));
+  } else if (seq.phase === 2) {
+    ctx.textAlign = 'center';
+    ctx.shadowColor = 'rgba(200,150,50,0.8)';
+    ctx.shadowBlur = 20;
+    ctx.fillStyle = '#FFD27A';
+    ctx.font = 'bold 34px serif';
+    ctx.fillText('ADAPA Y EL DILUVIO', cx, cy - 10);
+    ctx.shadowBlur = 0;
+    ctx.font = 'italic 15px serif';
+    ctx.fillStyle = 'rgba(255,240,210,0.75)';
+    ctx.fillText('Una historia de Mesopotamia', cx, cy + 26);
+    ctx.font = '11px monospace';
+    ctx.fillStyle = 'rgba(200,200,200,0.45)';
+    ctx.fillText('[ cualquier tecla para continuar ]', cx, cy + 62);
+  }
+  ctx.restore();
+}
+
+// ── NPC story/dialogue helpers ────────────────────────────────
+function openNpcDialogue(npc) {
+  if (!npc) return;
+  if (npc._storyLines && npc._storyLines.length > 0) {
+    const idx = (npc._dialogueLine !== undefined && npc._dialogueLine < npc._storyLines.length)
+      ? npc._dialogueLine : 0;
+    window._activeDialogue = {
+      lines: npc._storyLines, idx,
+      npcName: npc.name || 'NPC',
+      npcType: npc.npcType || 'villager',
+      npcRef: npc
+    };
+  } else {
+    try {
+      const cfg = window.NPC_DIALOGUES[npc.npcType || 'villager'] || window.NPC_DIALOGUES['villager'] || null;
+      const phrases = (cfg && cfg.phrases) || [];
+      if (phrases.length > 0) {
+        const ph = phrases[Math.floor(Math.random() * phrases.length)];
+        window._activeDialogue = {
+          lines: [ph], idx: 0,
+          npcName: npc.name || 'Aldeano',
+          npcType: npc.npcType || 'villager',
+          npcRef: npc
+        };
+      }
+    } catch (e) {}
+  }
+  // Hide DOM panels so the canvas dialogue is visible on top
+  if (window._activeDialogue) document.body.classList.add('dialogue-active');
+}
+
+function advanceDialogue() {
+  const dlg = window._activeDialogue;
+  if (!dlg) return;
+  dlg.idx++;
+  if (dlg.npcRef) dlg.npcRef._dialogueLine = dlg.idx;
+  if (dlg.idx >= dlg.lines.length) {
+    window._activeDialogue = null;
+    document.body.classList.remove('dialogue-active');
+  }
+}
+
+function drawDialoguePanel(ctx, W, H) {
+  const dlg = window._activeDialogue;
+  if (!dlg) return;
+  const line = dlg.lines[dlg.idx] || '';
+  const panH = 130;
+  const panW = Math.min(W - 40, 680);
+  const px = (W - panW) / 2;
+  const py = H - panH - 16;
+  ctx.save();
+  // Enable high-quality text rendering
+  ctx.imageSmoothingEnabled = true;
+  try { ctx.imageSmoothingQuality = 'high'; } catch(e){}
+  // Rounded panel background
+  ctx.fillStyle = 'rgba(8,6,3,0.93)';
+  ctx.strokeStyle = '#9B7520';
+  ctx.lineWidth = 1.8;
+  const r = 8;
+  ctx.beginPath();
+  ctx.moveTo(px + r, py); ctx.lineTo(px + panW - r, py);
+  ctx.arcTo(px + panW, py, px + panW, py + r, r);
+  ctx.lineTo(px + panW, py + panH - r);
+  ctx.arcTo(px + panW, py + panH, px + panW - r, py + panH, r);
+  ctx.lineTo(px + r, py + panH);
+  ctx.arcTo(px, py + panH, px, py + panH - r, r);
+  ctx.lineTo(px, py + r);
+  ctx.arcTo(px, py, px + r, py, r);
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+  // NPC name header
+  ctx.fillStyle = '#FFD27A';
+  ctx.font = 'bold 14px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillText(dlg.npcName, px + 14, py + 24);
+  // Thin gold divider
+  ctx.strokeStyle = 'rgba(200,160,60,0.35)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(px + 14, py + 32); ctx.lineTo(px + panW - 14, py + 32); ctx.stroke();
+  // Dialogue text with word-wrap
+  ctx.fillStyle = '#f0ead8';
+  ctx.font = '15px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  const maxW = panW - 28;
+  const words = line.split(' ');
+  let cur = '', ty = py + 56;
+  const lineH = 22;
+  const maxY = py + panH - 26; // leave room for footer
+  for (const w of words) {
+    const test = cur ? cur + ' ' + w : w;
+    if (ctx.measureText(test).width > maxW && cur) {
+      if (ty <= maxY) ctx.fillText(cur, px + 14, ty);
+      ty += lineH; cur = w;
+    } else { cur = test; }
+  }
+  if (cur && ty <= maxY) ctx.fillText(cur, px + 14, ty);
+  // Footer prompt
+  const isLast = dlg.idx >= dlg.lines.length - 1;
+  ctx.font = '11px monospace';
+  ctx.fillStyle = isLast ? 'rgba(220,100,100,0.80)' : 'rgba(255,210,122,0.75)';
+  ctx.textAlign = 'right';
+  ctx.fillText(`[${dlg.idx + 1}/${dlg.lines.length}]  [E] ${isLast ? 'Cerrar' : 'Continuar'}`,
+    px + panW - 12, py + panH - 10);
+  ctx.restore();
+}
+
+// ── MINI-MAP ──────────────────────────────────────────────────
+// Renders a small overview map in the bottom-right corner.
+// Shows terrain, buildings, and player position.
+function drawMiniMap(ctx, W, H) {
+  const mapW = 140, mapH = 90;
+  const padR = 12, padB = 48; // offset from bottom-right edge
+  const ox = W - mapW - padR;
+  const oy = H - mapH - padB;
+  const scaleX = mapW / COLS;
+  const scaleY = mapH / ROWS;
+
+  // Background
+  ctx.save();
+  ctx.globalAlpha = 0.82;
+  ctx.fillStyle = 'rgba(10,8,4,0.88)';
+  ctx.strokeStyle = '#8B6914';
+  ctx.lineWidth = 1.5;
+  ctx.fillRect(ox - 2, oy - 2, mapW + 4, mapH + 4);
+  ctx.strokeRect(ox - 2, oy - 2, mapW + 4, mapH + 4);
+
+  ctx.globalAlpha = 1;
+  // Terrain columns (sampled every 3 tiles for performance)
+  const step = 3;
+  for (let r = 0; r < ROWS; r += step) {
+    for (let c = 0; c < COLS; c += step) {
+      let color = '#C8A87A'; // sand default
+      const biome = tileBiome && tileBiome[r] && tileBiome[r][c];
+      if (biome === 'grass')  color = '#6A9B4A';
+      else if (biome === 'forest') color = '#2E5E2A';
+      else if (biome === 'road')   color = '#8B7B5B';
+      else if (biome === 'hills')  color = '#A57A30';
+      // River
+      try { if (window._RIVER_FULL_MAP && window._RIVER_FULL_MAP[r] && window._RIVER_FULL_MAP[r][c]) color = '#2060A0'; } catch(e){}
+      try { if (window._CANAL_MAP && window._CANAL_MAP[r] && window._CANAL_MAP[r][c]) color = '#3070B0'; } catch(e){}
+      ctx.fillStyle = color;
+      ctx.fillRect(ox + c * scaleX, oy + r * scaleY, step * scaleX + 0.5, step * scaleY + 0.5);
+    }
+  }
+
+  // Buildings
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const cell = grid[r][c];
+      if (!cell) continue;
+      let bColor = '#D4A030'; // default building tan
+      const bt = typeof cell === 'object' ? cell.type : cell;
+      if (bt === 'temple' || bt === 'ziggurat') bColor = '#F0E0A0';
+      else if (bt === 'farm') bColor = '#50AA40';
+      else if (bt === 'market' || bt === 'granary') bColor = '#C07820';
+      else if (bt === 'tower') bColor = '#808080';
+      ctx.fillStyle = bColor;
+      ctx.fillRect(ox + c * scaleX, oy + r * scaleY, Math.max(2, scaleX), Math.max(2, scaleY));
+    }
+  }
+
+  // Player dot (white with black outline)
+  const px = ox + player.x * scaleX;
+  const py = oy + player.y * scaleY;
+  ctx.fillStyle = '#000000';
+  ctx.beginPath(); ctx.arc(px, py, 3.2, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#FFFFFF';
+  ctx.beginPath(); ctx.arc(px, py, 2.0, 0, Math.PI * 2); ctx.fill();
+
+  // Time-of-day label (top-left of mini-map)
+  try {
+    const hh = Math.floor(dayHour);
+    const mm = Math.floor((dayHour - hh) * 60);
+    const timeStr = `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
+    ctx.font = '9px sans-serif';
+    ctx.fillStyle = 'rgba(255,240,180,0.9)';
+    ctx.textAlign = 'left';
+    ctx.fillText(timeStr, ox + 3, oy + 10);
+  } catch(e){}
+
+  ctx.restore();
 }
 
 // Draw a soft difuminado overlay when zoomed out (over the board, not the UI)
@@ -7817,8 +9092,8 @@ canvas.addEventListener('wheel', (ev) => {
   targetZoom = newTarget;
   markCameraInput();
   clampCamera();
-  // mark cache dirty and debounce heavy rebuild until animation settles
-  mapCacheDirty = true; rebuildMapCacheDebounced(220);
+  // NOTE: cache is always at base TILE size — zoom does NOT invalidate it.
+  // Removing the dirty flag here eliminates the per-tile fallback flicker during zoom animation.
   try { const s = document.getElementById('zoom-slider'); if (s) s.value = String(targetZoom); } catch (e) {}
 }, { passive: false });
 
@@ -8113,6 +9388,13 @@ document.addEventListener('keydown', e => {
     e.preventDefault();
     return;
   }
+  // Space: pause / resume
+  if (e.code === 'Space' && !editMode && window._gameStarted) {
+    window._timeScale = (window._timeScale === 0) ? 1 : 0;
+    try { if (window._refreshTimeWidget) window._refreshTimeWidget(); } catch (_) {}
+    e.preventDefault();
+    return;
+  }
   if (!editMode && e.key === 'Escape') {
     _setSelectedEntities([], false);
     notify('Selección limpiada');
@@ -8190,6 +9472,55 @@ document.addEventListener('keydown', e => {
   if (!e.key) return;
   if (e.key.toLowerCase() !== 'e') return;
 
+  // ── interior interactions ──
+  if (window.currentInterior) {
+    const interior = window.currentInterior;
+    const iRows = interior.height || (interior.tiles ? interior.tiles.length : 6);
+    const doorRow = iRows - 2;
+    const doorCol = interior.entryCol || 1;
+    const px2 = Math.floor(player.x), py2 = Math.floor(player.y);
+    // Exit if near door row
+    if (py2 >= doorRow && Math.abs(px2 - doorCol) <= 1) {
+      try { if (window.exitInterior) window.exitInterior(); } catch(e) {}
+      e.preventDefault(); return;
+    }
+    // Chest interaction
+    const chestEnt = entities.find(en => en && en._interiorChest &&
+      Math.abs(Math.floor(en.x || en.col) - px2) <= 1 &&
+      Math.abs(Math.floor(en.y || en.row) - py2) <= 1);
+    if (interior._furniture) {
+      const f = interior._furniture.find(f => f.kind === 'chest' &&
+        Math.abs(f.col - px2) <= 1 && Math.abs(f.row - py2) <= 1);
+      if (f && !f._looted) {
+        const items = Array.isArray(interior._chestItems) ? interior._chestItems : ['wheat'];
+        const item = items[Math.floor(Math.random() * items.length)] || 'wheat';
+        addToInventory(item, 1);
+        updateInventory();
+        f._looted = true;
+        notify(`Encontraste: ${item} en el cofre`);
+        e.preventDefault(); return;
+      } else if (f && f._looted) {
+        notify('El cofre está vacío');
+        e.preventDefault(); return;
+      }
+    }
+    // Talk to interior NPC — use dialogue panel when available
+    const nearNpc = entities.find(en => en && en._interiorNpc &&
+      Math.abs((en.x||en.col) - (player.x||0)) <= 1.2 &&
+      Math.abs((en.y||en.row) - (player.y||0)) <= 1.2);
+    if (nearNpc) {
+      try { openNpcDialogue(nearNpc); } catch (_) {
+        const cfg = window.NPC_DIALOGUES && window.NPC_DIALOGUES['villager'];
+        const ph = cfg && Array.isArray(cfg.phrases) && cfg.phrases.length > 0
+          ? cfg.phrases[Math.floor(Math.random() * cfg.phrases.length)]
+          : '¡Bienvenido a mi hogar!';
+        notify(`${nearNpc.name||'Aldeano'}: "${ph}"`);
+      }
+      e.preventDefault(); return;
+    }
+    e.preventDefault(); return;
+  }
+
   function tryPlaceEquippedItem() {
     try {
       if (editMode) return false;
@@ -8228,10 +9559,19 @@ document.addEventListener('keydown', e => {
   }
 
   try {
+    // If dialogue panel is open, E-key advances it and does nothing else
+    if (window._activeDialogue) { try { advanceDialogue(); } catch (_) {} e.preventDefault(); return; }
+    // Skip intro title card on any key press
+    if (window._introSeq && !window._introSeq.done) { try { skipIntro(); } catch (_) {} e.preventDefault(); return; }
     const it = window._interactionTarget;
     if (it) {
+      // NPC interaction — opens cinematic dialogue panel (story or generic)
+      if (it.kind === 'player' && it.ref && it.ref.id && it.ref.id.indexOf('npc-') === 0) {
+        try { openNpcDialogue(it.ref); } catch (_) {}
+        e.preventDefault(); return;
+      }
       if (it.kind === 'door' && it.ref && it.ref.interiorId) {
-        try { if (window.enterInterior) window.enterInterior(it.ref.interiorId); } catch (ee) {}
+        try { if (window.enterInterior) window.enterInterior(it.ref.interiorId, it.ref); } catch (ee) {}
         e.preventDefault();
         return;
       }
@@ -8478,10 +9818,59 @@ function init() {
 }
 
 // Post-map initialization tasks used after generate/import/load flows
+// ── TIME CONTROL WIDGET ──────────────────────────────────────
+function createTimeControlWidget() {
+  try {
+    const old = document.getElementById('time-control-widget');
+    if (old) old.remove();
+    const widget = document.createElement('div');
+    widget.id = 'time-control-widget';
+    Object.assign(widget.style, {
+      position: 'fixed', bottom: '54px', right: '14px',
+      display: 'flex', gap: '4px', zIndex: '50000',
+      background: 'rgba(8,6,3,0.82)', border: '1px solid rgba(200,160,60,0.5)',
+      borderRadius: '20px', padding: '4px 8px', alignItems: 'center',
+      userSelect: 'none', pointerEvents: 'auto'
+    });
+    const speeds = [
+      { label: '⏸', value: 0 },
+      { label: '½×', value: 0.5 },
+      { label: '1×', value: 1 },
+      { label: '2×', value: 2 },
+      { label: '4×', value: 4 }
+    ];
+    function refresh() {
+      widget.querySelectorAll('.tc-btn').forEach(b => {
+        const v = parseFloat(b.dataset.v);
+        const active = Math.abs(v - (window._timeScale || 1)) < 0.01;
+        b.style.background = active ? 'rgba(200,160,60,0.8)' : 'rgba(255,255,255,0.07)';
+        b.style.color = active ? '#1a1000' : '#e8d8b0';
+        b.style.fontWeight = active ? 'bold' : 'normal';
+      });
+    }
+    speeds.forEach(s => {
+      const btn = document.createElement('button');
+      btn.className = 'tc-btn';
+      btn.dataset.v = String(s.value);
+      btn.textContent = s.label;
+      Object.assign(btn.style, {
+        border: 'none', borderRadius: '14px', padding: '2px 8px',
+        fontSize: '12px', cursor: 'pointer', transition: 'background 0.15s'
+      });
+      btn.addEventListener('click', () => { window._timeScale = s.value; refresh(); });
+      widget.appendChild(btn);
+    });
+    document.body.appendChild(widget);
+    refresh();
+    window._refreshTimeWidget = refresh;
+  } catch (e) {}
+}
+
 function postMapInit() {
   try { updateUI(); updateCharCard(); renderActionList(); updateInventory(); setupCharacterSelection(); } catch (e) {}
   try { updateBuildMenuFromGrid(); } catch (e) {}
   try { centerCamera(); } catch (e) {}
+  try { createTimeControlWidget(); } catch (e) {}
   addLog('Ciudad fundada en la orilla del Éufrates.');
   addLog('Atajos: H=Casa V=Villa F=Granja T=Templo K=Mercado G=Granero Z=Zigurat D=Demoler');
   notify('¡Bienvenido a Mesopotamia! Construye tu ciudad.');

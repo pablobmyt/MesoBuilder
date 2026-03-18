@@ -1,26 +1,100 @@
 {
   "villager": {
     "phrases": [
-      "Buen día, forastero.",
-      "¿Has visto la cosecha?",
-      "Hace buen tiempo para sembrar.",
-      "Cuidado con los zorros por la noche."
+      "Los canales necesitan mantenimiento antes de la crecida.",
+      "Mi familia cultiva cebada desde hace cinco generaciones.",
+      "¿Has visto pasar comerciantes por el camino del sur?",
+      "Este año la cosecha promete ser abundante.",
+      "Dicen que en Nínagara el rey acumula trigo para diez años.",
+      "Cuidado con los zorros; anoche robaron dos gallinas.",
+      "Los niños juegan cerca del río... les advierto que es peligroso."
+    ]
+  },
+  "farmer": {
+    "phrases": [
+      "La tierra aluvial es bendición de los dioses. Rica y oscura.",
+      "Sembramos cebada cuando las Pléyades aparecen al amanecer.",
+      "El canal principal está casi colmatado. Necesita limpieza urgente.",
+      "Una buena cosecha requiere paciencia y trabajo, no oraciones.",
+      "Ayer vi peces muertos flotando en el canal... mal presagio.",
+      "El arado de madera no dura mucho. Necesitamos bronce."
+    ]
+  },
+  "shepherd": {
+    "phrases": [
+      "Mis cabras conocen el camino a los pastos mejor que yo.",
+      "Esta mañana vi lobos en las colinas del este. Atención.",
+      "La lana de este año está siendo de buena calidad.",
+      "El río ha estado más alto que de costumbre. Me preocupa.",
+      "En la estepa no hay muchos lugares donde esconderse de la tormenta."
     ]
   },
   "merchant": {
     "phrases": [
-      "Ofertas especiales hoy.",
-      "¡Puro lino de calidad!",
-      "Intercambio justo, trato honesto.",
-      "Ven, mira mis mercaderías."
+      "¡Lino fino de Nippur, dátiles del sur, plata del norte!",
+      "El precio del cobre ha subido desde que los nómadas bloquearon el paso.",
+      "Comercio justo, trato honesto. Así se construye una reputación.",
+      "He recorrido las rutas desde el Golfo hasta las montañas de Zagros.",
+      "Los de Nínagara pagan bien por herramientas de bronce.",
+      "Un mercader sin contactos es como un barco sin timón.",
+      "¿Tienes algo para intercambiar? Las plumas de avestruz están de moda."
     ]
   },
   "guard": {
     "phrases": [
-      "Todo en orden por aquí.",
-      "Mantén la distancia, por favor.",
-      "Turno de vigilancia activo.",
-      "Quién anda ahí?"
+      "Alto. ¿Tienes permiso del consejo para entrar a la ciudad?",
+      "Vigilo estas murallas desde el amanecer hasta la puesta del sol.",
+      "Los últimos meses han sido tranquilos. Demasiado, quizás.",
+      "Los guti no se han visto cerca desde la última luna llena.",
+      "El rey Ur-Nammu exige disciplina. Nada se cuela por estas puertas.",
+      "Mantén tus armas enfundadas dentro de las murallas."
+    ]
+  },
+  "elder": {
+    "phrases": [
+      "Llevo setenta inviernos observando los ciclos de las aguas.",
+      "Los jóvenes ya no escuchan a los ríos. Nosotros sí lo hacíamos.",
+      "Cuando era niño, el Éufrates era más ancho y más generoso.",
+      "Los presagios no mienten, aunque los hombres sí.",
+      "Recuerda: el agua que da vida también puede arrebatarla."
+    ]
+  },
+  "scribe": {
+    "phrases": [
+      "La escritura cuneiforme preserva el saber para las generaciones futuras.",
+      "Llevo el registro de cada carga de grano que entra en la ciudad.",
+      "Las tablillas de arcilla son más duraderas que la memoria.",
+      "El rey necesita cuentas exactas. Un error puede costar la cabeza.",
+      "He copiado el Poema de Gilgamesh doscientas veces. Cada vez aprendo algo nuevo.",
+      "Los impuestos se pagan en trigo, lana o trabajo. No hay otra manera."
+    ]
+  },
+  "priestess": {
+    "phrases": [
+      "Enlil guía nuestros destinos, pero somos nosotros quienes caminamos.",
+      "El templo recibe ofrendas para sostener los rituales de protección.",
+      "Los astros anuncian cambios. La conjunción de esta luna es inusual.",
+      "El zigurat conecta la tierra con los cielos. Es el eje del mundo.",
+      "Las aguas sagradas del templo reflejan la voluntad de los dioses.",
+      "Sin ritual, sin orden. Sin orden, sin ciudad. Sin ciudad, nada."
+    ]
+  },
+  "storyteller": {
+    "phrases": [
+      "¿Conoces la historia del diluvio de Utnapishtim? Sobrevivió gracias a su obediencia.",
+      "Gilgamesh buscó la inmortalidad y encontró... algo distinto, pero igualmente valioso.",
+      "Los mitos son memorias disfrazadas. Escúchalos bien.",
+      "Dicen que antes de las ciudades, los hombres vivían como animales salvajes.",
+      "La historia de Enkidu y el hombre civilizado... ¿cuál era el salvaje, en realidad?"
+    ]
+  },
+  "survivor": {
+    "phrases": [
+      "Los raiders llegaron antes del alba. No dimos ni un grito.",
+      "Escapé al río y me oculté entre las cañas toda la noche.",
+      "Todo lo que teníamos... se fue en una hora.",
+      "¿Volverán? No lo sé. Pero no pienso quedarme a averiguarlo.",
+      "El Anciano Kishdu sigue en el pueblo. Es demasiado viejo para correr."
     ]
   }
 }

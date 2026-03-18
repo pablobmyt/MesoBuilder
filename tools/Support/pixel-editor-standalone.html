@@ -147,10 +147,19 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: center;
             background-color: #1a1a1a;
-            padding: 32px;
+            padding: 16px;
             gap: 16px;
+            overflow: hidden;
+        }
+        .canvas-scroll {
+            flex: 1;
+            overflow: auto;
+            width: 100%;
+            display: flex;
+            align-items: flex-start;
+            justify-content: flex-start;
+            padding: 8px;
         }
 
         .canvas-header {
@@ -458,20 +467,36 @@
                     <button class="tool-button" id="reloadLibraryBtn">🔄 Reload</button>
                     <button class="tool-button" id="saveToLibraryBtn">💾 Save</button>
                 </div>
+                <div style="font-size:9px;color:#888;margin-top:4px;line-height:1.4;">
+                    💾 guarda en <b>entity-pixels.json</b><br>
+                    Requiere: <code style="color:#00D9FF">node tools/Support/save-sprite-server.js</code>
+                </div>
             </div>
 
             <div class="divider"></div>
 
-            <div class="sidebar-title">SIZE</div>
+            <div class="sidebar-title">SIZE (celdas)</div>
             <div class="slider-group">
-                <input type="range" id="gridSize" min="8" max="32" value="16">
+                <input type="number" id="gridSize" min="4" max="128" value="16" step="1" style="width:100%;padding:5px;background:#1f1f1f;color:#e0e0e0;border:1px solid #3a3a3a;border-radius:3px;">
                 <div class="slider-value"><span id="gridSizeValue">16</span>x<span id="gridSizeValue2">16</span></div>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:4px;">
+                <button class="tool-button size-preset" data-size="6"  style="flex:1;min-width:24px;padding:3px 1px;font-size:10px;">6</button>
+                <button class="tool-button size-preset" data-size="8"  style="flex:1;min-width:24px;padding:3px 1px;font-size:10px;">8</button>
+                <button class="tool-button size-preset" data-size="9"  style="flex:1;min-width:24px;padding:3px 1px;font-size:10px;">9</button>
+                <button class="tool-button size-preset" data-size="10" style="flex:1;min-width:24px;padding:3px 1px;font-size:10px;">10</button>
+                <button class="tool-button size-preset" data-size="12" style="flex:1;min-width:24px;padding:3px 1px;font-size:10px;">12</button>
+                <button class="tool-button size-preset" data-size="16" style="flex:1;min-width:24px;padding:3px 1px;font-size:10px;">16</button>
+                <button class="tool-button size-preset" data-size="24" style="flex:1;min-width:24px;padding:3px 1px;font-size:10px;">24</button>
+                <button class="tool-button size-preset" data-size="32" style="flex:1;min-width:24px;padding:3px 1px;font-size:10px;">32</button>
+                <button class="tool-button size-preset" data-size="48" style="flex:1;min-width:24px;padding:3px 1px;font-size:10px;">48</button>
+                <button class="tool-button size-preset" data-size="64" style="flex:1;min-width:24px;padding:3px 1px;font-size:10px;">64</button>
             </div>
 
             <div class="sidebar-title">ZOOM</div>
             <div class="slider-group">
-                <input type="range" id="zoom" min="1" max="4" value="2">
-                <div class="slider-value"><span id="zoomValue">2</span>x</div>
+                <input type="range" id="zoom" min="1" max="20" value="4" step="1">
+                <div class="slider-value"><span id="zoomValue">4</span>x</div>
             </div>
 
             <div class="divider"></div>
@@ -516,9 +541,11 @@
         <div class="canvas-area">
             <div class="canvas-header">
                 <h1>VSoftware Pixel Editor</h1>
-                <p>Create pixel art and export as JavaScript</p>
+                <p id="canvasSizeInfo">Selecciona un sprite o elige un tamaño</p>
             </div>
-            <canvas id="canvas"></canvas>
+            <div class="canvas-scroll" id="canvasScroll">
+                <canvas id="canvas"></canvas>
+            </div>
         </div>
 
         <!-- Right Sidebar -->
@@ -595,7 +622,7 @@
             currentColor: '#00d9ff',
             tool: 'brush',
             gridSize: 16,
-            zoom: 2,
+            zoom: 4,
             showGrid: true,
             history: [[]],
             historyIndex: 0
@@ -649,16 +676,38 @@
         });
 
         gridSizeInput.addEventListener('change', (e) => {
-            state.gridSize = parseInt(e.target.value);
-            document.getElementById('gridSizeValue').textContent = state.gridSize;
-            document.getElementById('gridSizeValue2').textContent = state.gridSize;
-            gridInfoSpan.textContent = `${state.gridSize}x${state.gridSize}`;
+            const n = Math.max(4, Math.min(128, parseInt(e.target.value) || 16));
+            state.gridSize = n;
+            gridSizeInput.value = n;
+            document.getElementById('gridSizeValue').textContent = n;
+            document.getElementById('gridSizeValue2').textContent = n;
+            gridInfoSpan.textContent = `${n}x${n}`;
+            resizeCanvas();
             draw();
         });
 
-        zoomInput.addEventListener('change', (e) => {
+        // Size preset buttons
+        document.addEventListener('click', (e) => {
+            if (e.target.classList.contains('size-preset')) {
+                const n = parseInt(e.target.dataset.size);
+                if (!n) return;
+                state.gridSize = n;
+                gridSizeInput.value = n;
+                document.getElementById('gridSizeValue').textContent = n;
+                document.getElementById('gridSizeValue2').textContent = n;
+                gridInfoSpan.textContent = `${n}x${n}`;
+                // clear out-of-bounds pixels
+                state.pixels = state.pixels.filter(p => p.x < n && p.y < n);
+                resizeCanvas();
+                addToHistory(); updateCodeOutput(); draw();
+                showToast(`Grid ${n}×${n}`);
+            }
+        });
+
+        zoomInput.addEventListener('input', (e) => {
             state.zoom = parseInt(e.target.value);
             document.getElementById('zoomValue').textContent = state.zoom;
+            resizeCanvas();
             draw();
         });
 
@@ -795,7 +844,11 @@
             // def.pixels is expected as array [x,y,color]
             state.pixels = (def.pixels || []).map(p => ({ x: p[0], y: p[1], color: p[2] }));
             state.gridSize = def.grid || def.gridSize || state.gridSize;
-            gridSizeInput.value = state.gridSize; document.getElementById('gridSizeValue').textContent = state.gridSize; document.getElementById('gridSizeValue2').textContent = state.gridSize; gridInfoSpan.textContent = `${state.gridSize}x${state.gridSize}`;
+            gridSizeInput.value = state.gridSize;
+            document.getElementById('gridSizeValue').textContent = state.gridSize;
+            document.getElementById('gridSizeValue2').textContent = state.gridSize;
+            gridInfoSpan.textContent = `${state.gridSize}x${state.gridSize}`;
+            resizeCanvas();
             addToHistory(); updateCodeOutput(); draw();
             showToast(`Loaded ${k}`);
         });
@@ -855,40 +908,41 @@
             el.style.display = 'none'; document.body.appendChild(el); el.click(); document.body.removeChild(el);
         }
 
-        // Save current edited sprite back to game/editor; supports post, overwrite (download full library) and patch (download single entry)
-        saveToLibraryBtn.addEventListener('click', () => {
+        // Save current edited sprite back to entity-pixels.json via save server + optional game post
+        saveToLibraryBtn.addEventListener('click', async () => {
             const key = entityLibrarySelect.value || 'editor_custom';
             const grid = state.gridSize;
             const pixels = state.pixels.map(p => [p.x, p.y, p.color]);
+            // Update in-memory library
+            ENTITY_PIXEL_LIBRARY[key] = { grid, pixels };
             const newLib = Object.assign({}, ENTITY_PIXEL_LIBRARY);
-            newLib[key] = { grid: grid, pixels: pixels };
-            const payload = { icons: newLib, meta: { exportMultiplier } };
-            const saveMode = (document.querySelector('input[name="saveMode"]:checked') || {}).value || 'post';
+            const payload = { icons: newLib };
+
+            // 1. Write to disk via save server (primary)
+            let savedToDisk = false;
             try {
-                if (saveMode === 'post') {
-                    if (window.opener && window.opener !== window) { window.opener.postMessage({ type: 'saveEntityPixels', data: payload }, '*'); showToast('Saved to game (posted)'); return; }
-                    if (window.parent && window.parent !== window) { window.parent.postMessage({ type: 'saveEntityPixels', data: payload }, '*'); showToast('Saved to parent (posted)'); return; }
-                    showToast('No game window found to post save', true);
-                    return;
-                }
-                if (saveMode === 'overwrite') {
-                    downloadJSON('entity-pixels.json', { icons: newLib });
-                    if (window.opener && window.opener !== window) { window.opener.postMessage({ type: 'saveEntityPixels', data: payload }, '*'); showToast('Downloaded overwrite and posted to game'); return; }
-                    if (window.parent && window.parent !== window) { window.parent.postMessage({ type: 'saveEntityPixels', data: payload }, '*'); showToast('Downloaded overwrite and posted to parent'); return; }
-                    showToast('Downloaded overwrite (no game window)', false);
-                    return;
-                }
-                if (saveMode === 'patch') {
-                    const patch = { icons: {} };
-                    patch.icons[key] = newLib[key];
-                    const name = `entity-pixels.patch.${key}.json`;
-                    downloadJSON(name, patch);
-                    if (window.opener && window.opener !== window) { window.opener.postMessage({ type: 'saveEntityPixelsPatch', data: patch, meta: { key, exportMultiplier } }, '*'); showToast('Downloaded patch and posted to game'); return; }
-                    if (window.parent && window.parent !== window) { window.parent.postMessage({ type: 'saveEntityPixelsPatch', data: patch, meta: { key, exportMultiplier } }, '*'); showToast('Downloaded patch and posted to parent'); return; }
-                    showToast('Downloaded patch (no game window)', false);
-                    return;
-                }
-            } catch (e) { showToast('Save failed', true); }
+                const r = await fetch('http://localhost:3001/save-entity-pixels', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (r.ok) { savedToDisk = true; showToast(`✓ ${key} guardado en entity-pixels.json`); }
+                else throw new Error('server error ' + r.status);
+            } catch (e) {
+                // Server not running — fall back to download
+                showToast('⚠ Servidor no activo. Descargando entity-pixels.json…', true);
+                const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+                const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+                a.download = 'entity-pixels.json'; document.body.appendChild(a); a.click();
+                setTimeout(() => { try { document.body.removeChild(a); URL.revokeObjectURL(a.href); } catch(e){} }, 300);
+            }
+
+            // 2. Also notify live game window if open
+            const patch = { icons: {} };
+            patch.icons[key] = { grid, pixels };
+            const msg = { type: 'saveEntityPixelsPatch', data: patch, meta: { key } };
+            try { if (window.opener && window.opener !== window) window.opener.postMessage(msg, '*'); } catch (e) {}
+            try { if (window.parent && window.parent !== window) window.parent.postMessage(msg, '*'); } catch (e) {}
         });
 
         // Load library at start
@@ -936,53 +990,50 @@
         });
 
         // Functions
+        // BASE_CELL: screen pixels per cell at zoom=1. cellSize = BASE_CELL * zoom.
+        // This keeps cell size independent of gridSize — changing gridSize only adds/removes cells.
+        const BASE_CELL = 6;
+        function getCellSize() { return Math.max(2, BASE_CELL * state.zoom); }
+
         function resizeCanvas() {
-            const pixelSize = state.gridSize * state.zoom;
-            canvas.width = pixelSize * state.gridSize;
-            canvas.height = pixelSize * state.gridSize;
-            draw();
+            const cs = getCellSize();
+            canvas.width  = cs * state.gridSize;
+            canvas.height = cs * state.gridSize;
+            const info = document.getElementById('canvasSizeInfo');
+            if (info) info.textContent = `${state.gridSize}×${state.gridSize} celdas · ${cs}px/celda · ${canvas.width}×${canvas.height}px`;
         }
 
         function draw() {
-            const pixelSize = state.gridSize * state.zoom;
+            const cs = getCellSize();
             ctx.fillStyle = '#0a0a0a';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            // Draw grid
-            if (state.showGrid) {
-                ctx.strokeStyle = '#2a2a2a';
-                ctx.lineWidth = 0.5;
-                for (let i = 0; i <= canvas.width; i += pixelSize) {
-                    ctx.beginPath();
-                    ctx.moveTo(i, 0);
-                    ctx.lineTo(i, canvas.height);
-                    ctx.stroke();
-                }
-                for (let i = 0; i <= canvas.height; i += pixelSize) {
-                    ctx.beginPath();
-                    ctx.moveTo(0, i);
-                    ctx.lineTo(canvas.width, i);
-                    ctx.stroke();
-                }
-            }
 
             // Draw pixels
             state.pixels.forEach(pixel => {
                 ctx.fillStyle = pixel.color;
-                ctx.fillRect(
-                    pixel.x * pixelSize,
-                    pixel.y * pixelSize,
-                    pixelSize,
-                    pixelSize
-                );
+                ctx.fillRect(pixel.x * cs, pixel.y * cs, cs, cs);
             });
+
+            // Draw grid lines on top
+            if (state.showGrid) {
+                ctx.strokeStyle = cs >= 6 ? 'rgba(255,255,255,0.13)' : 'rgba(255,255,255,0.07)';
+                ctx.lineWidth = 1;
+                for (let i = 0; i <= state.gridSize; i++) {
+                    const pos = i * cs + 0.5;
+                    ctx.beginPath(); ctx.moveTo(pos, 0); ctx.lineTo(pos, canvas.height); ctx.stroke();
+                    ctx.beginPath(); ctx.moveTo(0, pos); ctx.lineTo(canvas.width, pos); ctx.stroke();
+                }
+            }
         }
 
         function handleCanvasClick(e) {
             const rect = canvas.getBoundingClientRect();
-            const pixelSize = state.gridSize * state.zoom;
-            const x = Math.floor((e.clientX - rect.left) / pixelSize);
-            const y = Math.floor((e.clientY - rect.top) / pixelSize);
+            const cs = getCellSize();
+            // getBoundingClientRect reflects CSS display size; scale back to canvas logical coords
+            const scaleX = canvas.width  / (rect.width  || canvas.width);
+            const scaleY = canvas.height / (rect.height || canvas.height);
+            const x = Math.floor((e.clientX - rect.left) * scaleX / cs);
+            const y = Math.floor((e.clientY - rect.top)  * scaleY / cs);
 
             if (x < 0 || x >= state.gridSize || y < 0 || y >= state.gridSize) return;
 
@@ -1175,11 +1226,33 @@
                     }
                 });
 
+                // Detect grid size: prefer explicit `grid` property in JSON, else compute from pixel bounds
+                let newGridSize = null;
+                try {
+                    const obj = JSON.parse(code);
+                    if (obj && typeof obj.grid === 'number' && obj.grid > 0) {
+                        newGridSize = obj.grid;
+                    }
+                } catch (e) { /* not JSON, compute from bounds */ }
+                if (!newGridSize && newPixels.length > 0) {
+                    const maxX = Math.max(...newPixels.map(p => p.x));
+                    const maxY = Math.max(...newPixels.map(p => p.y));
+                    newGridSize = Math.max(maxX, maxY) + 1;
+                }
+                if (newGridSize && newGridSize !== state.gridSize) {
+                    state.gridSize = newGridSize;
+                    gridSizeInput.value = newGridSize;
+                    document.getElementById('gridSizeValue').textContent = newGridSize;
+                    document.getElementById('gridSizeValue2').textContent = newGridSize;
+                    gridInfoSpan.textContent = `${newGridSize}x${newGridSize}`;
+                }
+
                 state.pixels = newPixels;
                 addToHistory();
                 updateCodeOutput();
                 importModal.classList.remove('active');
                 importCode.value = '';
+                resizeCanvas();
                 draw();
                 showToast('Pixels imported successfully!');
             } catch (error) {
@@ -1329,6 +1402,7 @@
 
         // Initialize
         resizeCanvas();
+        draw();
         updateHistoryButtons();
         updateCodeOutput();
     </script>

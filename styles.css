@@ -1,4 +1,4 @@
-/* ── RESET & BASE ─────────────────────────────────────────── */
+﻿/* â”€â”€ RESET & BASE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
@@ -28,7 +28,7 @@ html, body {
   user-select: none;
 }
 
-/* ── LAYOUT ───────────────────────────────────────────────── */
+/* â”€â”€ LAYOUT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #app {
   display: flex;
   flex-direction: column;
@@ -36,7 +36,7 @@ html, body {
   height: 100vh;
 }
 
-/* ── EXTERNAL MAIN MENU ───────────────────────────────────── */
+/* â”€â”€ EXTERNAL MAIN MENU â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #main-menu-root {
   background:
     radial-gradient(circle at top, rgba(200,168,75,0.12), transparent 34%),
@@ -182,7 +182,7 @@ html, body {
   color: var(--sand-light) !important;
 }
 
-/* ── TOP BAR ──────────────────────────────────────────────── */
+/* â”€â”€ TOP BAR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #topbar {
   display: flex;
   align-items: center;
@@ -221,7 +221,7 @@ html, body {
 .res-icon {
   width: 18px; height: 18px;
   display: inline-block;
-  image-rendering: pixelated;
+  image-rendering: auto;
 }
 
 .res-val { color: var(--sand-mid); font-weight: bold; font-size: 0.9rem; }
@@ -247,7 +247,7 @@ html, body {
 }
 #btn-endturn:hover { background: var(--sand-mid); color: var(--ui-bg); }
 
-/* ── TOOLBAR ─────────────────────────────────────────────── */
+/* â”€â”€ TOOLBAR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #toolbar {
   display: flex;
   align-items: center;
@@ -289,7 +289,7 @@ html, body {
 .tool-btn:hover { border-color: var(--sand-mid); background: #1e1608; }
 .tool-btn.active { border-color: var(--sand-mid); background: #2a1e08; color: var(--sand-mid); }
 
-/* ── MAIN AREA ────────────────────────────────────────────── */
+/* â”€â”€ MAIN AREA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #main {
   display: flex;
   flex: 1;
@@ -297,15 +297,15 @@ html, body {
   position: relative;
 }
 
-/* ── CANVAS ───────────────────────────────────────────────── */
+/* â”€â”€ CANVAS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #gameCanvas {
   flex: 1;
   display: block;
   cursor: crosshair;
-  image-rendering: pixelated;
+  image-rendering: auto;
 }
 
-/* ── RIGHT PANEL ──────────────────────────────────────────── */
+/* â”€â”€ RIGHT PANEL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #panel {
   width: 200px;
   min-width: 200px;
@@ -355,7 +355,7 @@ html, body {
 .build-btn .bicon {
   width: 22px; height: 22px;
   flex-shrink: 0;
-  image-rendering: pixelated;
+  image-rendering: auto;
 }
 
 .build-btn .bname { font-weight: bold; display: block; }
@@ -393,7 +393,7 @@ html, body {
 #log p { margin-bottom: 2px; }
 #log p.new { color: var(--sand-light); }
 
-/* ── FALLOUT CHARACTER CARD ───────────────────────────────── */
+/* â”€â”€ FALLOUT CHARACTER CARD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #char-card {
   position: absolute;
   bottom: 14px;
@@ -428,7 +428,7 @@ html, body {
 #char-portrait {
   width: 54px; height: 54px;
   flex-shrink: 0;
-  image-rendering: pixelated;
+  image-rendering: auto;
   border: 1px solid var(--sand-dark);
 }
 
@@ -524,7 +524,7 @@ html, body {
   font-weight: bold;
 }
 
-/* ── TOOLTIP ──────────────────────────────────────────────── */
+/* â”€â”€ TOOLTIP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #tooltip {
   position: absolute;
   background: rgba(10,8,2,0.95);
@@ -540,7 +540,7 @@ html, body {
   line-height: 1.5;
 }
 
-/* ── NOTIFICATION ─────────────────────────────────────────── */
+/* â”€â”€ NOTIFICATION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #notif {
   position: absolute;
   top: 60px;
@@ -564,7 +564,7 @@ html, body {
   width: 28px;
   height: 28px;
   flex-shrink: 0;
-  image-rendering: pixelated;
+  image-rendering: auto;
   border-radius: 4px;
   background: transparent;
 }
@@ -580,17 +580,17 @@ canvas.inv-icon { width:18px; height:18px; flex:0 0 18px; border-radius:2px; bac
 body.free-mode #gameCanvas { cursor: default; }
 body.free-mode .build-btn, body.free-mode #btn-demolish { opacity: 0.6; pointer-events: none; }
 
-/* ── SCROLLBAR ────────────────────────────────────────────── */
+/* â”€â”€ SCROLLBAR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 ::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-track { background: #0d0a04; }
 ::-webkit-scrollbar-thumb { background: #3a2e10; border-radius: 2px; }
 
-/* ── RESPONSIVE ───────────────────────────────────────────── */
+/* â”€â”€ RESPONSIVE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 @media (max-width: 640px) {
   #panel { width: 150px; min-width: 150px; }
   #char-card { width: 170px; font-size: 0.7em; }
   #topbar h1 { font-size: 0.75rem; }
-}/* ── RESET & BASE ─────────────────────────────────────────── */
+}/* â”€â”€ RESET & BASE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
@@ -620,7 +620,7 @@ html, body {
   user-select: none;
 }
 
-/* ── LAYOUT ───────────────────────────────────────────────── */
+/* â”€â”€ LAYOUT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #app {
   display: flex;
   flex-direction: column;
@@ -628,7 +628,7 @@ html, body {
   height: 100vh;
 }
 
-/* ── TOP BAR ──────────────────────────────────────────────── */
+/* â”€â”€ TOP BAR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #topbar {
   display: flex;
   align-items: center;
@@ -667,7 +667,7 @@ html, body {
 .res-icon {
   width: 18px; height: 18px;
   display: inline-block;
-  image-rendering: pixelated;
+  image-rendering: auto;
 }
 
 .res-val { color: var(--sand-mid); font-weight: bold; font-size: 0.9rem; }
@@ -693,7 +693,7 @@ html, body {
 }
 #btn-endturn:hover { background: var(--sand-mid); color: var(--ui-bg); }
 
-/* ── MAIN AREA ────────────────────────────────────────────── */
+/* â”€â”€ MAIN AREA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #main {
   display: flex;
   flex: 1;
@@ -701,15 +701,15 @@ html, body {
   position: relative;
 }
 
-/* ── CANVAS ───────────────────────────────────────────────── */
+/* â”€â”€ CANVAS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #gameCanvas {
   flex: 1;
   display: block;
   cursor: crosshair;
-  image-rendering: pixelated;
+  image-rendering: auto;
 }
 
-/* ── RIGHT PANEL ──────────────────────────────────────────── */
+/* â”€â”€ RIGHT PANEL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #panel {
   width: 200px;
   min-width: 200px;
@@ -770,7 +770,7 @@ html, body {
 .build-btn .bicon {
   width: 22px; height: 22px;
   flex-shrink: 0;
-  image-rendering: pixelated;
+  image-rendering: auto;
 }
 
 .build-btn .bname { font-weight: bold; display: block; }
@@ -808,7 +808,7 @@ html, body {
 #log p { margin-bottom: 2px; }
 #log p.new { color: var(--sand-light); }
 
-/* ── FALLOUT CHARACTER CARD ───────────────────────────────── */
+/* â”€â”€ FALLOUT CHARACTER CARD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #char-card {
   position: absolute;
   bottom: 14px;
@@ -839,7 +839,7 @@ html, body {
 #char-portrait {
   width: 54px; height: 54px;
   flex-shrink: 0;
-  image-rendering: pixelated;
+  image-rendering: auto;
   border: 1px solid var(--sand-dark);
 }
 
@@ -935,7 +935,7 @@ html, body {
   font-weight: bold;
 }
 
-/* ── TOOLTIP ──────────────────────────────────────────────── */
+/* â”€â”€ TOOLTIP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #tooltip {
   position: absolute;
   background: rgba(10,8,2,0.95);
@@ -951,7 +951,7 @@ html, body {
   line-height: 1.5;
 }
 
-/* ── NOTIFICATION ─────────────────────────────────────────── */
+/* â”€â”€ NOTIFICATION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #notif {
   position: absolute;
   top: 60px;
@@ -970,19 +970,19 @@ html, body {
   white-space: nowrap;
 }
 
-/* ── SCROLLBAR ────────────────────────────────────────────── */
+/* â”€â”€ SCROLLBAR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 ::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-track { background: #0d0a04; }
 ::-webkit-scrollbar-thumb { background: #3a2e10; border-radius: 2px; }
 
-/* ── RESPONSIVE ───────────────────────────────────────────── */
+/* â”€â”€ RESPONSIVE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 @media (max-width: 640px) {
   #panel { width: 150px; min-width: 150px; }
   #char-card { width: 170px; font-size: 0.7em; }
   #topbar h1 { font-size: 0.75rem; }
 }
 
-/* ── ACTIONS LIST ─────────────────────────────────────────── */
+/* â”€â”€ ACTIONS LIST â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .actions-list {
   list-style: none;
   display: flex;
@@ -1025,7 +1025,7 @@ html, body {
   white-space: nowrap;
 }
 
-/* ── CHARACTER SELECT MODAL ───────────────────────────────── */
+/* â”€â”€ CHARACTER SELECT MODAL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .modal {
   position: absolute;
   inset: 0;
@@ -1210,7 +1210,7 @@ select { appearance: none; padding-right: 28px; }
   height: 112px;
   border: 1px solid #3a2e10;
   background: #120d05;
-  image-rendering: pixelated;
+  image-rendering: auto;
 }
 
 .preview-controls {
@@ -1236,7 +1236,7 @@ select { appearance: none; padding-right: 28px; }
   color: var(--sand-light);
 }
 
-/* ── FLOATING PANELS ─────────────────────────────────────── */
+/* â”€â”€ FLOATING PANELS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 body.floating-panels #panel {
   position: absolute;
   right: 12px;
@@ -1283,7 +1283,7 @@ body.free-mode #btn-demolish {
 .char-preview {
   width: 28px;
   height: 28px;
-  image-rendering: pixelated;
+  image-rendering: auto;
   border: 1px solid #3a2e10;
   background: #0b0803;
   flex-shrink: 0;
@@ -1314,3 +1314,11 @@ body.free-mode #btn-demolish {
   justify-content: flex-end;
   margin-top: 10px;
 }
+
+/* â”€â”€ DIALOGUE ACTIVE â€” hide DOM panels over the canvas dialogue â”€â”€ */
+body.dialogue-active #inventory-panel,
+body.dialogue-active #crafting-panel {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+

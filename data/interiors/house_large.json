@@ -1,0 +1,22 @@
+{
+  "width": 12,
+  "height": 8,
+  "entryCol": 5,
+  "entryRow": 5,
+  "chestItems": ["wheat","wheat","wheat","stone","stone","brick","brick","brick"],
+  "npcs": [
+    {"col": 1, "row": 1, "name": "Patriarca"},
+    {"col": 8, "row": 2, "name": "Esposa"},
+    {"col": 3, "row": 4, "name": "Hijo"}
+  ],
+  "tiles": [
+    ["wall","wall","wall","wall","wall","wall","wall","wall","wall","wall","wall","wall"],
+    ["wall","bed","bed","floor","floor","pot","floor","pot","floor","bed","bed","wall"],
+    ["wall","floor","floor","floor","table","table","table","floor","floor","floor","floor","wall"],
+    ["wall","rug","rug","floor","floor","floor","floor","floor","rug","rug","pot","wall"],
+    ["wall","floor","floor","chest","floor","firepit","floor","floor","floor","floor","floor","wall"],
+    ["wall","rug","floor","floor","floor","floor","floor","floor","floor","floor","rug","wall"],
+    ["wall","floor","floor","floor","floor","door","floor","floor","floor","floor","floor","wall"],
+    ["wall","wall","wall","wall","wall","wall","wall","wall","wall","wall","wall","wall"]
+  ]
+}

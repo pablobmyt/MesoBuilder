@@ -18,17 +18,26 @@ export function placeStone(col, row) {
   } catch (err) { /* ignore */ }
 }
 export function placeTree(col, row, variant) {
-  const types = ['oak','pine','broad','scrub','bush','hedge','tall','tallslim','shrub','tallgrass','weed'];
+  // Mesopotamian flora types (primary) + legacy types for backward compat
+  const types = [
+    'date_palm','reed_cluster','gallery_tree','tamarisk','euphrates_poplar',
+    'steppe_shrub','barley','typha','scrub','bush','shrub','tallgrass'
+  ];
   const chosen = variant || types[Math.floor(Math.random() * types.length)];
   const id = 'tree-' + Date.now() + '-' + Math.random().toString(36).slice(2,6);
-  // size is used for rendering scale hints. Make bushes/shrubs larger by default,
-  // and tiny for grasses.
+  // Render size hints (tile-relative)
   let size = 1.0;
-  if (chosen === 'tallgrass' || chosen === 'weed') size = 0.6;
-  else if (chosen === 'shrub') size = 1.6;
-  else if (chosen === 'bush') size = 1.8;
-  else if (chosen === 'hedge') size = 1.2;
-  else if (chosen === 'tall' || chosen === 'tallslim') size = 1.6;
+  if (chosen === 'date_palm') size = 2.2;
+  else if (chosen === 'reed_cluster') size = 1.6;
+  else if (chosen === 'gallery_tree') size = 1.9;
+  else if (chosen === 'tamarisk') size = 1.8;
+  else if (chosen === 'euphrates_poplar') size = 2.4;
+  else if (chosen === 'steppe_shrub') size = 1.1;
+  else if (chosen === 'barley') size = 0.9;
+  else if (chosen === 'typha') size = 1.3;
+  else if (chosen === 'tallgrass' || chosen === 'weed') size = 0.6;
+  else if (chosen === 'shrub') size = 1.4;
+  else if (chosen === 'bush') size = 1.6;
   entities.push({ id, kind: 'tree', col, row, variant: chosen, hp: 10, size });
 }
 
