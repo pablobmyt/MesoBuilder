@@ -1072,7 +1072,7 @@ const BUILDINGS = {
   temple:   { name:'Templo',  costBrick:15, costWheat:5,  prodPop:5,  prodWheat:1, prodBrick:1, color:'#E8D5A3', roofColor:'#A0522D', desc:'+5 pop, +1 trigo, +1 ladrillo.' },
   market:   { name:'Mercado', costBrick:8,  costWheat:4,  prodPop:2,  prodWheat:2, prodBrick:2, color:'#D2691E', roofColor:'#8B4513', desc:'+2 trigo, +2 ladrillos.' },
   granary:  { name:'Granero', costBrick:6,  costWheat:0,  prodPop:0,  prodWheat:0, prodBrick:3, color:'#B8860B', roofColor:'#8B6914', desc:'+3 ladrillos/turno.' },
-  ziggurat: { name:'Zigurat', costBrick:30, costWheat:10, prodPop:10, prodWheat:3, prodBrick:3, color:'#F5ECD7', roofColor:'#C8A84B', desc:'Maravilla: +10 pop, +3 todo.', size:{ w:5, h:5 } },
+  ziggurat: { name:'Zigurat', costBrick:30, costWheat:10, prodPop:10, prodWheat:3, prodBrick:3, color:'#F5ECD7', roofColor:'#C8A84B', desc:'Maravilla: +10 pop, +3 todo.', size:{ w:11, h:11 } },
 };
 
 // House with garden variant
@@ -1877,11 +1877,14 @@ function drawEntitySpriteAt(name, x, y, w, h) {
   try {
     // prefer pre-generated images
     const img = (window._SPRITE_IMAGES && window._SPRITE_IMAGES[name]) || (window._ICON_BITMAPS && window._ICON_BITMAPS[name]) || (window._ENTITY_BITMAPS && window._ENTITY_BITMAPS[name]);
+    // Ensure we don't inherit stray transforms from callers: isolate drawing
+    ctx.save();
+    try { ctx.imageSmoothingEnabled = false; } catch (e) {}
     if (img) {
       const px = Math.round(x - w/2);
       const py = Math.round(y - h + (h*0.08));
-      ctx.imageSmoothingEnabled = false;
       ctx.drawImage(img, px, py, w, h);
+      ctx.restore();
       return;
     }
     // fallback to pixel library rendering into an offscreen canvas
@@ -1890,11 +1893,12 @@ function drawEntitySpriteAt(name, x, y, w, h) {
       if (c) {
         const px = Math.round(x - w/2);
         const py = Math.round(y - h + (h*0.08));
-        ctx.imageSmoothingEnabled = false;
         ctx.drawImage(c, px, py, w, h);
+        ctx.restore();
         return;
       }
     }
+    ctx.restore();
   } catch (e) { console.warn('drawEntitySpriteAt err', name, e); }
 }
 
@@ -1918,6 +1922,7 @@ function resolveBuildingSpriteKey(type) {
     house_garden: 'house_garden',
     longhouse: 'longhouse',
     stone_house: 'stone_house'
+    ,ziggurat: 'zigurat_isometrico_escaleras_detalladas_64x64'
   };
   if (hasRegisteredSprite(type)) return type;
   const alias = aliases[type];
@@ -2461,8 +2466,13 @@ function spawnVillage(baseCol, baseRow, opts) {
       try { setBuildingCells(c, r, btype); houses.push({ c, r, variant: btype }); return true; } catch(e) { return false; }
     };
 
-    // 1. CORE: Ziggurat at center (5×5)
-    tryPlace(cx - 2, cy - 2, 'ziggurat');
+    // 1. CORE: Ziggurat at center (size-driven)
+    try {
+      const zsize = getBuildingSize('ziggurat');
+      const zx = cx - Math.floor(zsize.w / 2);
+      const zy = cy - Math.floor(zsize.h / 2);
+      tryPlace(zx, zy, 'ziggurat');
+    } catch (e) { tryPlace(cx - 2, cy - 2, 'ziggurat'); }
     // 2. TEMPLE: north of ziggurat, slightly offset
     tryPlace(cx - 1, cy - 9, 'temple');
     // 3. MONUMENT ARCH: north city gate (entrance)
@@ -2852,7 +2862,7 @@ function tryMovePlayer(dx, dy) {
   player.row = nextRow;
 }
 
-// New canWalkTo: disallow stepping into buildings or river
+// New canWalkTo: disallow stepping into buildings (sides/front); allow back row to simulate depth
 function canWalkTo(col, row) {
   if (window.currentInterior) {
     const interior = window.currentInterior;
@@ -2865,7 +2875,14 @@ function canWalkTo(col, row) {
     return !blocked.has(tile);
   }
   if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return false;
-  if (grid[row][col]) return false;
+  const cell = grid[row][col];
+  if (cell) {
+    // Allow passage through the topmost row of a building (its "back" face):
+    // visually the player appears to walk behind the structure.
+    // Sides, front rows, and multi-cell-tall buildings' lower rows all remain solid.
+    if (row === cell.baseRow) return true;
+    return false;
+  }
   return true;
 }
 
@@ -3004,6 +3021,22 @@ function generateMap(mapType) {
              tileBiome[vRow][vCol]==='water'||tileBiome[vRow][vCol]==='marsh');
     try{spawnVillage(vCol,vRow);}catch(e){try{setBuildingCells(vCol,vRow,'house');}catch(ee){}}
   }
+  // Ensure at least one capital (which places a ziggurat) exists per map
+  try {
+    const hasCapital = (window._VILLAGES || []).some(v => v.type === 'capital');
+    if (!hasCapital) {
+      // try to spawn a capital at several random locations
+      for (let attempt = 0; attempt < 200; attempt++) {
+        const c = Math.floor(8 + Math.random() * (COLS - 16));
+        const r = Math.floor(8 + Math.random() * (ROWS - 16));
+        try {
+          spawnVillage(c, r, { villageType: 'capital' });
+          // stop if a capital was successfully created
+          if ((window._VILLAGES || []).some(v => v.type === 'capital')) break;
+        } catch (e) { /* ignore and retry */ }
+      }
+    }
+  } catch (e) {}
   // ── 8. Player spawn near first village ──
   try {
     if (window._VILLAGES&&window._VILLAGES.length>0) {
@@ -3057,12 +3090,18 @@ function drawBuilding(col, row, type, alpha) {
   ctx.save();
   ctx.globalAlpha = alpha !== undefined ? alpha : 1;
 
+  // (Previously inserted isometric face rendering removed — depth should be
+  // represented by sprite artwork in data/entity-pixels.json instead.)
+
   const houseTypes = new Set(['house', 'house_small', 'house_large', 'house_garden', 'longhouse', 'stone_house', 'mesopotamian_villa_detailed', 'mesopotamian_house', 'mesopotamian_arch', 'mesopotamian_baths']);
   const spriteKey = resolveBuildingSpriteKey(type);
 
   if (houseTypes.has(type)) {
-    if (spriteKey) {
-      drawEntitySpriteAt(spriteKey, x + W * 0.5, y + H, W, H);
+    // Prefer shaded variants when available
+    const shadedAlias = type === 'mesopotamian_house' ? 'mesopotamian_house_shaded' : type;
+    const useKey = hasRegisteredSprite(shadedAlias) ? shadedAlias : spriteKey;
+    if (useKey) {
+      drawEntitySpriteAt(useKey, x + W * 0.5, y + H, W, H);
       ctx.restore();
       return;
     }
@@ -4298,8 +4337,10 @@ function render() {
       const { x, y } = worldToScreen(c, r);
       // PERF: always use cached terrain map when available – avoids per-tile fillRect calls every frame.
       // The cache is built at base TILE resolution and scaled by drawImage(zoom) cheaply on the GPU.
+      // Exception: in free mode at higher zoom, bypass cache so subdiv micro-detail renders live.
       const _mc = viewMode === 'iso' ? mapCacheIso : mapCacheOrtho;
-      if (_mc && !mapCacheDirty) {
+      const _useCache = _mc && !mapCacheDirty && (editMode || zoom < 1.2);
+      if (_useCache) {
         const scale = zoom; // cache is always at cacheZoom=1
         if (viewMode === 'iso' && _mc._isoOffset) {
           // draw iso cache aligned with cam, scaled to current zoom
@@ -4355,6 +4396,8 @@ function render() {
           const biome = tileBiome[r][c] || 'sand';
           if (biome === 'road') {
             drawDiamond(x, y, w, h, '#D7C59A', null, null);
+            // slight border for cobblestone separation
+            drawDiamond(x, y, w, h, null, 'rgba(160,130,70,0.30)', 0.7);
           } else if (biome === 'forest') {
             drawDiamond(x, y, w, h, '#2E6FA3', null, null);
           } else if (biome === 'hills') {
@@ -4399,7 +4442,12 @@ function render() {
                 const nx = x + sx * sw;
                 const ny = y + sy * sw;
                 const v = tileNoise(c, r, sx, sy);
-                if (biome === 'forest') {
+                if (biome === 'road') {
+                  // compressed-earth cobblestone path at high detail
+                  const stoneIdx = (sx + sy * 3 + c + r) % 5;
+                  const lum = 190 + stoneIdx * 5;
+                  ctx.fillStyle = `rgb(${lum},${lum - 28},${lum - 78})`;
+                } else if (biome === 'forest') {
                   // darker/lighter greens
                   const g = Math.floor(100 + v * 80);
                   ctx.fillStyle = `rgb(${30+Math.floor(v*10)},${g},${50})`;
@@ -5608,6 +5656,8 @@ function render() {
   }
   // Mini-map overlay (bottom-right corner)
   try { if (!editMode && !worldMapOverlayVisible && window._gameStarted) drawMiniMap(ctx, W, H); } catch (e) {}
+  // Story objective HUD (top-left, free mode)
+  try { if (window._gameStarted && !worldMapOverlayVisible) drawStoryObjectiveHUD(ctx, W, H); } catch (e) {}
   // Time speed indicator on canvas (top-center, only when not ×1 or paused)
   try {
     if (window._gameStarted && !editMode) {
@@ -5982,6 +6032,8 @@ function addToInventory(item, qty) {
       if (changed && window.renderMissions) window.renderMissions();
     }
   } catch (err) { }
+  // Check if chapter 2 offering is now complete
+  try { checkChapter2Completion(); } catch (e) {}
 }
 
 function drawItemIcon(ctx, itemId, w = 28, h = 28) {
@@ -7144,9 +7196,17 @@ function createAbilityBarAndMissions() {
   window.addMission = function(m) { m.id = m.id || ('m'+Math.random().toString(36).slice(2,8)); window._missions.push(m); renderMissions(); };
 
   // sample missions to start with
-  if (window._missions.length === 0) {
-    window.addMission({ title: 'Recolecta trigo', desc: 'Reúne 3 unidades de trigo.', target: 3, progress: inventory['wheat']||0, reward: { wheat:2, brick:1 }, watch: 'wheat' });
-    window.addMission({ title: 'Construye una casa', desc: 'Coloca 1 casa en el mapa.', target: 1, progress: 0, reward: { brick:3 }, watch: 'build.house' });
+  if (window._missions.length === 0 && window._storyChapter === 0) {
+    // Default sandbox missions when not yet engaged in the story arc
+    window.addMission({ title: 'Recolecta trigo', desc: 'Reúne 3 unidades de trigo.', target: 3, progress: inventory['food']||0, reward: { food:2, stone:1 }, watch: 'food' });
+    window.addMission({ title: 'Construye una casa', desc: 'Coloca 1 casa en el mapa.', target: 1, progress: 0, reward: { stone:3 }, watch: 'build.house' });
+  } else if (window._storyChapter > 0) {
+    // Re-inject active story quest on reload
+    const existing = window._missions.find(m => m.isStory);
+    if (!existing) {
+      const q = _STORY_QUESTS[window._storyChapter];
+      if (q) { window._missions.unshift(JSON.parse(JSON.stringify(q))); }
+    }
   }
   renderMissions();
 
@@ -8549,6 +8609,156 @@ function createBuildPanelControls() {
 }
 
 // ══════════════════════════════════════════════════════════════
+//  STORY QUEST SYSTEM
+//  Tracks narrative chapters and auto-injects quests into the
+//  mission panel as the player progresses through the arc.
+//
+//  Chapters:
+//    0  Kidu-Lam — antes de hablar con Kishdu
+//    1  En camino — misión: llegar a Nínagara y hablar con Sacerdotisa
+//    2  El Ritual  — misión: reunir 5 comida + 3 piedra
+//    3  Completado — epílogo, diluvio contenido
+// ══════════════════════════════════════════════════════════════
+window._storyChapter = window._storyChapter || 0;
+
+const _STORY_QUESTS = [
+  null, // chapter 0 — no quest yet
+  { id: 'story_ch1', title: 'El aviso del Anciano',
+    desc: 'Viaja a Nínagara y habla con la Sacerdotisa del Templo.',
+    target: 1, progress: 0, reward: { food: 2, stone: 1 },
+    watch: null, isStory: true },
+  { id: 'story_ch2', title: 'El Ritual de Protección',
+    desc: 'Lleva al templo 5 comida y 3 piedra. Habla con la Sacerdotisa.',
+    target: 8, progress: 0, reward: { food: 5, stone: 2 },
+    watch: null, isStory: true },
+  { id: 'story_ch3', title: '¡Nínagara ha sido salvada!',
+    desc: 'El ritual de Enlil se ha completado. El diluvio ha sido contenido.',
+    target: 1, progress: 1, reward: {},
+    watch: null, isStory: true, done: true }
+];
+
+function advanceStoryChapter(chapter) {
+  if (window._storyChapter >= chapter) return; // never regress
+  window._storyChapter = chapter;
+  // Remove any existing story quests and inject the new one at the top
+  try {
+    if (window._missions) window._missions = window._missions.filter(m => !m.isStory);
+    else window._missions = [];
+    const q = _STORY_QUESTS[chapter];
+    if (q) {
+      window._missions.unshift(JSON.parse(JSON.stringify(q)));
+      if (window.renderMissions) window.renderMissions();
+    }
+  } catch (e) {}
+  // Chapter title notification
+  const titles = ['', 'Acto I — La Advertencia', 'Acto II — El Ritual', 'Epílogo — El Diluvio Se Aleja'];
+  try { notify(titles[chapter] || 'Nueva misión de historia'); } catch (e) {}
+}
+
+function checkChapter2Completion() {
+  if (window._storyChapter !== 2) return;
+  const food  = inventory['food']  || 0;
+  const stone = inventory['stone'] || 0;
+  if (food >= 5 && stone >= 3) {
+    // Consume the offering
+    inventory['food']  = food  - 5;
+    inventory['stone'] = stone - 3;
+    try { updateInventory(); } catch (e) {}
+    advanceStoryChapter(3);
+    // Cinematic completion — reuse the intro backdrop briefly
+    try {
+      window._storyComplete = { start: Date.now() };
+    } catch (e) {}
+    try { notify('¡El ritual de Enlil está completo! Nínagara ha sido salvada.'); } catch (e) {}
+  }
+}
+
+function drawStoryObjectiveHUD(ctx, W, H) {
+  // Only show in free mode when there is an active story chapter
+  if (editMode) return;
+  const ch = window._storyChapter || 0;
+  if (ch === 0 || !window._missions) return;
+  const q = window._missions.find(m => m.isStory);
+  if (!q) return;
+
+  // Story completion flash (3 s)
+  if (window._storyComplete) {
+    const elapsed = Date.now() - window._storyComplete.start;
+    const dur = 3200;
+    if (elapsed < dur) {
+      const alpha = elapsed < 400 ? elapsed / 400 : elapsed > dur - 400 ? (dur - elapsed) / 400 : 1;
+      ctx.save();
+      ctx.globalAlpha = alpha * 0.88;
+      ctx.fillStyle = 'rgba(0,0,0,0.72)';
+      ctx.fillRect(0, 0, W, H);
+      ctx.globalAlpha = alpha;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#FFD27A';
+      ctx.font = 'bold 26px serif';
+      ctx.shadowColor = 'rgba(200,150,40,0.9)'; ctx.shadowBlur = 24;
+      ctx.fillText('ADAPA Y EL DILUVIO', W / 2, H / 2 - 18);
+      ctx.shadowBlur = 0;
+      ctx.font = 'italic 15px serif';
+      ctx.fillStyle = 'rgba(255,240,200,0.85)';
+      ctx.fillText('El aviso llegó a tiempo. Nínagara se prepara.', W / 2, H / 2 + 16);
+      ctx.font = '11px serif';
+      ctx.fillStyle = 'rgba(200,200,200,0.55)';
+      ctx.fillText('Historia completada', W / 2, H / 2 + 44);
+      ctx.restore();
+      return;
+    } else {
+      window._storyComplete = null;
+    }
+  }
+
+  // Small objective banner — top-left below any potential toolbar
+  const panW = Math.min(W - 20, 340);
+  const panH = 44;
+  const px = 10, py = 42;
+  ctx.save();
+  ctx.globalAlpha = 0.88;
+  ctx.fillStyle = 'rgba(6,4,2,0.82)';
+  ctx.strokeStyle = ch === 3 ? '#5DB85D' : '#9B7520';
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.roundRect(px, py, panW, panH, 6);
+  ctx.fill(); ctx.stroke();
+  ctx.globalAlpha = 1;
+  // Chapter badge
+  const badgeW = 56;
+  ctx.fillStyle = ch === 3 ? 'rgba(60,140,60,0.7)' : 'rgba(100,70,10,0.7)';
+  ctx.beginPath(); ctx.roundRect(px + 6, py + 7, badgeW, 30, 4); ctx.fill();
+  ctx.font = 'bold 9px monospace';
+  ctx.fillStyle = ch === 3 ? '#8FE88F' : '#FFD27A';
+  ctx.textAlign = 'center';
+  ctx.fillText(ch === 3 ? 'FIN' : `ACTO ${ch}`, px + 6 + badgeW / 2, py + 20);
+  ctx.font = 'bold 10px sans-serif';
+  ctx.fillStyle = ch === 3 ? '#8FE88F' : '#FFD27A';
+  ctx.fillText(q.title.toUpperCase(), px + 6 + badgeW / 2, py + 31);
+  // Objective text
+  ctx.textAlign = 'left';
+  ctx.font = '11px sans-serif';
+  ctx.fillStyle = 'rgba(240,235,215,0.90)';
+  const maxTW = panW - badgeW - 22;
+  let desc = q.desc;
+  if (ctx.measureText(desc).width > maxTW) {
+    // truncate with ellipsis
+    while (desc.length > 10 && ctx.measureText(desc + '…').width > maxTW) desc = desc.slice(0, -1);
+    desc += '…';
+  }
+  ctx.fillText(desc, px + badgeW + 16, py + 20);
+  // Progress for chapter 2 offering
+  if (ch === 2) {
+    const food = Math.min(5, inventory['food'] || 0);
+    const stone = Math.min(3, inventory['stone'] || 0);
+    ctx.font = '10px monospace';
+    ctx.fillStyle = 'rgba(200,220,255,0.75)';
+    ctx.fillText(`Comida: ${food}/5   Piedra: ${stone}/3`, px + badgeW + 16, py + 34);
+  }
+  ctx.restore();
+}
+
+// ══════════════════════════════════════════════════════════════
 //  CINEMATIC STORY SYSTEM
 //  Intro title sequence + in-world NPC dialogue panel
 // ══════════════════════════════════════════════════════════════
@@ -8632,6 +8842,68 @@ function drawIntroSequence(ctx, W, H) {
 // ── NPC story/dialogue helpers ────────────────────────────────
 function openNpcDialogue(npc) {
   if (!npc) return;
+
+  // Story NPCs: context-aware lines based on current chapter
+  if (npc.isStoryNPC) {
+    let lines = null;
+    const ch = window._storyChapter || 0;
+
+    if (npc.npcType === 'elder') {
+      if (ch === 0 && npc._storyLines) {
+        // First meeting: deliver the main quest
+        lines = npc._storyLines;
+      } else if (ch === 1) {
+        lines = ['¡Que los dioses te guíen, Adapa! Tu camino te lleva al norte.',
+                 'Busca a la Sacerdotisa Enlil-Ama en el templo de Nínagara.',
+                 'No te demores. Los presagios no mienten.'];
+      } else if (ch >= 2) {
+        lines = ['Siento el cambio en el viento... algo ha cambiado en el norte.',
+                 'Confío en ti, Adapa. Sigue adelante.'];
+      }
+    } else if (npc.npcType === 'priestess') {
+      if (ch <= 1 && npc._storyLines) {
+        // First meeting: receive the ritual mission
+        lines = npc._storyLines;
+      } else if (ch === 2) {
+        const food = inventory['food'] || 0;
+        const stone = inventory['stone'] || 0;
+        if (food >= 5 && stone >= 3) {
+          lines = ['¡Adapa! Veo que traes las ofrendas.',
+                   'Cinco haces de cebada y tres piedras del río... es suficiente.',
+                   'El ritual de Enlil comenzará ahora. Silencio y reverencia.',
+                   '...', '...los dioses escuchan.',
+                   'El ritual ha concluido. Los diques aguantarán el diluvio.',
+                   'Ur-Nammu ya ha dado las órdenes. Nínagara se prepara.',
+                   'Tu aldea, Kidu-Lam, también recibirá ayuda. Lo juro ante Enlil.',
+                   '[ Las ofrendas han sido aceptadas. Historia completada. ]'];
+        } else {
+          lines = [`Aún no tienes todo lo necesario, ${(window.char && window.char.name) || 'Adapa'}.`,
+                   `Necesito 5 comida y 3 piedra. Llevas: ${food}/5 comida, ${stone}/3 piedra.`,
+                   'Regresa cuando tengas las ofrendas completas.'];
+        }
+      } else if (ch >= 3) {
+        lines = ['Los dioses están satisfechos. Nínagara resistirá el diluvio.',
+                 'Tu nombre quedará grabado en las tablillas de arcilla para siempre.'];
+      }
+    } else if (npc.npcType === 'scribe' && npc._storyLines) {
+      // Scribe always cycles through lore lines
+      const idx2 = ((npc._dialogueLine || 0) < npc._storyLines.length) ? (npc._dialogueLine || 0) : 0;
+      lines = npc._storyLines;
+      window._activeDialogue = { lines, idx: idx2, npcName: npc.name || 'NPC', npcType: npc.npcType, npcRef: npc };
+      if (window._activeDialogue) document.body.classList.add('dialogue-active');
+      return;
+    }
+
+    if (lines) {
+      // Always start from line 0 for context-injected lines
+      const idx = (npc._storyLines && lines === npc._storyLines && npc._dialogueLine !== undefined && npc._dialogueLine < lines.length)
+        ? npc._dialogueLine : 0;
+      window._activeDialogue = { lines, idx, npcName: npc.name || 'NPC', npcType: npc.npcType || 'villager', npcRef: npc };
+      if (window._activeDialogue) document.body.classList.add('dialogue-active');
+      return;
+    }
+  }
+
   if (npc._storyLines && npc._storyLines.length > 0) {
     const idx = (npc._dialogueLine !== undefined && npc._dialogueLine < npc._storyLines.length)
       ? npc._dialogueLine : 0;
@@ -8666,6 +8938,20 @@ function advanceDialogue() {
   dlg.idx++;
   if (dlg.npcRef) dlg.npcRef._dialogueLine = dlg.idx;
   if (dlg.idx >= dlg.lines.length) {
+    // Trigger story chapter advance when story NPC's last line is finished
+    try {
+      const npc = dlg.npcRef;
+      if (npc && npc.isStoryNPC) {
+        if (npc.npcType === 'elder' && window._storyChapter === 0) {
+          advanceStoryChapter(1);
+        } else if (npc.npcType === 'priestess' && window._storyChapter === 1) {
+          advanceStoryChapter(2);
+        } else if (npc.npcType === 'priestess' && window._storyChapter === 2) {
+          // Player returns to priestess with offerings — check completion
+          checkChapter2Completion();
+        }
+      }
+    } catch (e) {}
     window._activeDialogue = null;
     document.body.classList.remove('dialogue-active');
   }
@@ -9215,6 +9501,16 @@ function setEditMode(enabled) {
   if (!editMode) {
     selectedTool = null;
     document.querySelectorAll('.build-btn, #btn-demolish').forEach(b => b.classList.remove('selected'));
+    // In free mode the camera automatically follows the player
+    followPlayer = true;
+    notify('Modo libre: cámara sigue al jugador');
+    // Zoom in to show terrain detail (if currently zoomed out)
+    if (zoom < 1.0) {
+      targetZoom = 1.2;
+    }
+  } else {
+    // Returning to edit mode — release camera follow so user can pan freely
+    followPlayer = false;
   }
   if (!panMode) {
     canvas.style.cursor = editMode ? 'crosshair' : 'default';
