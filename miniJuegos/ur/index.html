@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>MiniJuego — Royal Game of Ur</title>
+  <link rel="stylesheet" href="ur.css">
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h2>Juego Real de Ur — MiniJuego</h2>
+      <div class="controls">
+        <button id="btn-new">Nueva partida</button>
+        <button id="btn-undo" disabled>Deshacer</button>
+        <button id="btn-rules">Reglas</button>
+        <span id="status"></span>
+      </div>
+    </header>
+
+    <main>
+      <section id="board-wrap">
+        <canvas id="board" width="760" height="220"></canvas>
+        <div id="info">
+          <div><b>Turno:</b> <span id="turnName">—</span></div>
+          <div><b>Bote:</b> <span id="pot">0</span></div>
+          <div class="dice">
+            <div>Dados:</div>
+            <div id="diceArea"><button id="btn-roll">Tirar dados</button></div>
+          </div>
+          <div id="moves"></div>
+        </div>
+      </section>
+
+      <section id="players">
+        <div class="player" id="player0"><h3>Jugador 1 (Blanco)</h3><div id="p0-info"></div></div>
+        <div class="player" id="player1"><h3>Jugador 2 (Negro)</h3><div id="p1-info"></div></div>
+      </section>
+    </main>
+
+    <footer>
+      <small>Implementación mínima — reglas integradas dentro del juego (botón Reglas).</small>
+    </footer>
+
+    <div id="rulesModal" class="modal hidden">
+      <div class="modal-card">
+        <h3>Reglas (versión incluida)</h3>
+        <div class="rules-content">
+          <p>A — Ruta: se usa la ruta representativa clásica (fila central y flancos), con 14 casillas en la pista principal y rosetas en las posiciones 4, 8 y 14.</p>
+          <p>B — Equipo: cada jugador tiene 5 piezas diferentes (Golondrina, Ave de la Tormenta, Cuervo, Gallo, Águila) y 25 fichas para apuestas/ganancias.</p>
+          <p>C — Objetivo: introducir y hacer salir las 5 piezas por la pista. Las piezas del oponente se pueden eliminar al aterrizar sobre ellas (salvo en rosetas).</p>
+          <p>D — Mecánica resumida:</p>
+          <ol>
+            <li>Ambos jugadores ponen diez fichas en el bote (pot). Se tira para ver quién empieza.</li>
+            <li>Cada turno se tiran: un dado numerado (1–4) y un dado "sí/no" (2 caras "sí", 2 caras "no"). El resultado combinado puede convertirse a 5/6/7/10 si sale "sí" y la cara primaria fue 1/2/3/4.</li>
+            <li>Golondrina entra con lanzamiento 2; las demás piezas requieren la conversión a 5/6/7/10 para entrar desde sus casillas de inicio (4,5,6,10 según la regla clásica).
+            </li>
+            <li>Las rosetas protegen y otorgan fichas del bote cuando se aterriza sobre ellas (3/4/5 según la pieza).</li>
+            <li>Se necesita tirada exacta para salir por el final. Captura en casillas no-roseta devuelve la pieza a reinicio.</li>
+          </ol>
+          <p>Nota: esta es una implementación didáctica y aproximada pensada para jugar localmente. Puedes revisar la transcripción original de Irving Finkel para variaciones históricas.</p>
+        </div>
+        <div style="text-align:right"><button id="closeRules">Cerrar</button></div>
+      </div>
+    </div>
+
+  </div>
+  <script src="ur.js"></script>
+</body>
+</html>

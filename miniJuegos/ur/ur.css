@@ -1,0 +1,18 @@
+:root{--bg:#0d1418;--card:#111217;--accent:#DAA520;--white:#fff}
+*{box-sizing:border-box;font-family:Inter, Arial, sans-serif}
+body{margin:0;background:linear-gradient(180deg,#081019,#0d1418);color:var(--white);}
+header{display:flex;justify-content:space-between;align-items:center;padding:12px 18px;background:rgba(0,0,0,0.2);}
+header h2{margin:0;font-size:16px;color:var(--accent)}
+.controls button{margin-right:8px;padding:6px 10px;border-radius:6px;border:0;background:#222;color:var(--white)}
+main{padding:12px}
+#board-wrap{display:flex;gap:12px;align-items:flex-start}
+#board{background:#fff;border-radius:6px;image-rendering:pixelated}
+#info{min-width:220px}
+.player{display:inline-block;width:48%;vertical-align:top;padding:8px;background:rgba(255,255,255,0.02);margin:8px;border-radius:6px}
+.modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);}
+.hidden{display:none}
+.modal-card{background:var(--card);padding:12px;border-radius:8px;width:640px;color:#ddd}
+.rules-content{max-height:360px;overflow:auto;padding:6px}
+footer{padding:8px 12px;color:#9aa}
+.dice button{padding:8px 12px;background:#155;}
+.square{stroke:#222}

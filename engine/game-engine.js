@@ -1,4 +1,7 @@
-// Progress overlay with percentage bar
+import './scene-manager.js';
+import EventManager from './event-manager.js';
+import { buildTreeAtlas } from './atlas-builder.js';
+try { window.EventManager = EventManager; } catch (e) {}
 function showProgressOverlay(title) {
   let el = document.getElementById('progress-overlay');
   if (!el) {
@@ -209,8 +212,27 @@ try { window.importEntityDefinitionsFromObject = importEntityDefinitionsFromObje
 window._ICON_BITMAPS = window._ICON_BITMAPS || {};
 window.MAP_CHUNKS = window.MAP_CHUNKS || {};
 window._ENTITY_BITMAPS = window._ENTITY_BITMAPS || {}; // cached entity sprites
+// Restore sprite images from localStorage cache if present (best-effort)
+try {
+  window._SPRITE_IMAGES = window._SPRITE_IMAGES || {};
+  const _raw = localStorage.getItem('meso.spriteCache');
+  if (_raw) {
+    try {
+      const _cache = JSON.parse(_raw || '{}');
+      const sprites = _cache.sprites || {};
+      for (const k of Object.keys(sprites)) {
+        try {
+          const dataURI = sprites[k];
+          if (!dataURI) continue;
+          const img = new Image(); img.src = dataURI; img.dataset.spriteName = k;
+          window._SPRITE_IMAGES[k] = img;
+        } catch (e) { /* ignore bad entries */ }
+      }
+    } catch (e) { /* ignore parse errors */ }
+  }
+} catch (e) {}
 // default densities (modifiable from new-game UI)
-window._DEFAULT_DENSITIES = window._DEFAULT_DENSITIES || { npc: 1.0, animals: 1.0, vegetation: 1.0 };
+window._DEFAULT_DENSITIES = window._DEFAULT_DENSITIES || { npc: 1.0, animals: 1.0, vegetation: 0.6 };
 // whether the main game loop is running (menu pauses the loop until user starts)
 window._gameStarted = window._gameStarted || false;
 // whether the UI panels (topbar/toolbar/main) should be shown — only set true when loading/creating
@@ -373,6 +395,15 @@ async function generateSpriteImages(progress) {
     const cache = window._ENTITY_BITMAPS || {};
     window._SPRITE_URLS = window._SPRITE_URLS || {};
     window._SPRITE_IMAGES = window._SPRITE_IMAGES || {};
+    // persistent sprite cache in localStorage to avoid regenerating/saving repeatedly
+    const SPRITE_CACHE_KEY = 'meso.spriteCache';
+    const SPRITE_CACHE_LIMIT_BYTES = 3 * 1024 * 1024; // ~3MB
+    let spriteCache = { ts: Date.now(), sprites: {}, size: 0 };
+    try {
+      const raw = localStorage.getItem(SPRITE_CACHE_KEY);
+      if (raw) spriteCache = Object.assign(spriteCache, JSON.parse(raw));
+    } catch (e) { spriteCache = { ts: Date.now(), sprites: {}, size: 0 }; }
+    window._spriteServerAvailable = (window._spriteServerAvailable === undefined) ? true : window._spriteServerAvailable;
     const keys = Object.keys(cache);
     if (keys.length === 0) { if (progress && progress.update) progress.update(60, 'Sprites: none'); return; }
     for (let i = 0; i < keys.length; i++) {
@@ -409,23 +440,48 @@ async function generateSpriteImages(progress) {
         // Optional: non-blocking upload/save of dataURI (do not await)
         (async () => {
           try {
-            const server = (window.SPRITE_SERVER_URL || 'http://localhost:3001/save-sprite');
-            if (server && server.indexOf('http') === 0) {
-              try {
+            // Persist into localStorage cache (size-limited)
+            try {
+              if (!spriteCache.sprites[k]) {
                 const dataURI = tmp.toDataURL('image/png');
-                fetch(server, {
+                const approxSize = dataURI.length * 2; // rough bytes
+                if ((spriteCache.size + approxSize) <= SPRITE_CACHE_LIMIT_BYTES) {
+                  spriteCache.sprites[k] = dataURI;
+                  spriteCache.size += approxSize;
+                  spriteCache.ts = Date.now();
+                }
+              }
+            } catch (e) { /* ignore storage errors */ }
+            // Try to send to external sprite server only if previously available
+            const server = (window.SPRITE_SERVER_URL || 'http://localhost:3001/save-sprite');
+            if (window._spriteServerAvailable && server && server.indexOf('http') === 0) {
+              try {
+                const dataURI = spriteCache.sprites[k] || tmp.toDataURL('image/png');
+                const res = await fetch(server, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ name: k + '.png', dataURI })
-                }).then(r => { if (!r.ok) console.warn('sprite save failed', k, r.status); }).catch(()=>{});
-              } catch(e){}
+                });
+                if (!res.ok) {
+                  console.warn('sprite save failed', k, res.status);
+                  // if server responds non-OK, mark unavailable to avoid further tries
+                  window._spriteServerAvailable = false;
+                }
+              } catch (e) {
+                // network error -> disable further attempts this session
+                window._spriteServerAvailable = false;
+              }
             }
+            // flush cache back to localStorage (best-effort)
+            try { localStorage.setItem(SPRITE_CACHE_KEY, JSON.stringify(spriteCache)); } catch (e) {}
           } catch (e) {}
         })();
 
       } catch (e) { console.warn('generateSpriteImages error', k, e); }
     }
     if (progress && progress.update) progress.update(95, 'Sprites generados');
+    // Save sprite cache at end (best-effort)
+    try { localStorage.setItem(SPRITE_CACHE_KEY, JSON.stringify(spriteCache)); } catch (e) {}
   } catch (e) { console.warn('generateSpriteImages err', e); }
 }
 function hideLoadingOverlay() { try { const el = document.getElementById('loading-overlay'); if (el) el.style.display = 'none'; } catch (e) {} }
@@ -728,6 +784,25 @@ import { entities, rabbits, foxes, placeResource, placeRabbit, placeFox, spawnNP
 
 const canvas  = document.getElementById('gameCanvas');
 const ctx     = canvas.getContext('2d');
+// Instrumentation: wrap common Canvas rendering methods to count calls
+try {
+  (function(){
+    const proto = (typeof CanvasRenderingContext2D !== 'undefined') ? CanvasRenderingContext2D.prototype : null;
+    if (proto && !proto.__meso_instrumented) {
+      const _orig_drawImage = proto.drawImage;
+      proto.drawImage = function(...args) {
+        try { window._drawImageCalls = (window._drawImageCalls || 0) + 1; } catch (e) {}
+        return _orig_drawImage.apply(this, args);
+      };
+      const _orig_fillRect = proto.fillRect;
+      proto.fillRect = function(...args) {
+        try { window._fillRectCalls = (window._fillRectCalls || 0) + 1; } catch (e) {}
+        return _orig_fillRect.apply(this, args);
+      };
+      proto.__meso_instrumented = true;
+    }
+  })();
+} catch (e) {}
 
 // create a top-layer DOM overlay for selection marquee so it is visible above panels
 try {
@@ -1053,7 +1128,8 @@ const GRAPHICS_CONFIG = {
   quality: 'balanced', // 'high' | 'balanced' | 'performance'
   smoothingThreshold: 0.95, // zoom >= -> enable imageSmoothing
   treeSkip: { near: 0.45, mid: 0.75, far: 0.95 }, // skip cutoffs (higher => sparser)
-  cacheRebuildDelay: 120
+  cacheRebuildDelay: 120,
+  dialogZoomThreshold: 0.7 // minimum zoom to show NPC speech bubbles / floating text
 };
 
 // ── RESOURCES ─────────────────────────────────────────────────
@@ -1103,6 +1179,7 @@ window.effectParticles = window.effectParticles || [];
 window.smokeParticles = window.smokeParticles || [];
 window._VILLAGES = window._VILLAGES || [];
 window._LAST_VILLAGE_ID = window._LAST_VILLAGE_ID || null;
+window._missions = window._missions || [];
 
 window.spawnFloatingText = function(worldX, worldY, text, colorOrOpts) {
   try {
@@ -1199,7 +1276,7 @@ const STORAGE_CHAR_KEY = 'meso.characterId';
 const STORAGE_CHAR_MODE = 'meso.characterMode';
 const STORAGE_CHAR_CUSTOM = 'meso.characterCustom';
 let startLocked = true;
-let editMode = true;
+let editMode = false;
 
 // App-wide state persistence key
 const APP_STATE_KEY = 'meso.appState';
@@ -1666,6 +1743,10 @@ player.speed = 6 / TILE; // tiles per second
 player._baseSpeed = player.speed;
 // animation / facing defaults
 player.dir = 'down';
+player.equipped = null;
+player._attackStartedAt = 0;
+player._attackAnimUntil = 0;
+player._attackHit = false;
 player._walkTime = 0;
 player._walkFrame = 0;
 
@@ -1802,23 +1883,113 @@ function drawCharacterPixels(ctx, palette, x, y, scale, opts) {
       if (ch === 't') color = palette.trim;
       if (!color) continue;
 
-      // Simple walk frame: shift lower body pixels horizontally by 1 pixel when frame=1
+      // Walk frame support for all directions.
       let dx = 0;
-      if (frame === 1 && (row === 6 || row === 7) && (ch === 'c' || ch === 's')) {
-        // invert horizontal axis: reverse sign so stepping matches flipped sprite
-        dx = (dir === 'right') ? -1 : (dir === 'left' ? 1 : 0);
+      let dy = 0;
+      if ((row === 6 || row === 7) && (ch === 'c' || ch === 's')) {
+        if (dir === 'right' || dir === 'left') {
+          if (frame === 1) {
+            // invert horizontal axis: reverse sign so stepping matches flipped sprite
+            dx = (dir === 'right') ? -1 : 1;
+          }
+        } else if (dir === 'up' || dir === 'down') {
+          const side = col < Math.floor(line.length / 2) ? -1 : 1;
+          dx = frame === 1 ? side : 0;
+          dy = frame === 1 ? (dir === 'up' ? -1 : 1) : 0;
+        }
+      }
+      if ((dir === 'up' || dir === 'down') && frame === 1 && row >= 4 && row <= 5 && (ch === 'c' || ch === 's' || ch === 't')) {
+        dy = dir === 'up' ? -1 : 1;
       }
 
       ctx.fillStyle = color;
-      ctx.fillRect(x + (col * scale) + dx * scale, y + row * scale, scale, scale);
+      ctx.fillRect(x + (col * scale) + dx * scale, y + row * scale + dy * scale, scale, scale);
     }
   }
+}
+
+function getPlayerFacingVector() {
+  switch (player.dir) {
+    case 'up': return { x: 0, y: -1 };
+    case 'left': return { x: -1, y: 0 };
+    case 'right': return { x: 1, y: 0 };
+    default: return { x: 0, y: 1 };
+  }
+}
+
+function getPlayerAttackOrigin(distance = 0.9) {
+  const facing = getPlayerFacingVector();
+  return {
+    x: (player.x || 0) + 0.5 + facing.x * distance,
+    y: (player.y || 0) + 0.5 + facing.y * distance
+  };
+}
+
+function triggerPlayerAttackSwing(hit = false, target = null) {
+  try {
+    const now = Date.now();
+    player._attackStartedAt = now;
+    player._attackAnimUntil = now + 220;
+    player._attackHit = !!hit;
+
+    const fxPoint = target
+      ? {
+          x: ((typeof target.x === 'number' ? target.x : target.col) || 0) + 0.5,
+          y: ((typeof target.y === 'number' ? target.y : target.row) || 0) + 0.5
+        }
+      : getPlayerAttackOrigin(0.9);
+    const screen = worldToScreen(fxPoint.x, fxPoint.y);
+    const tSize = getTileSize();
+    if (hit) spawnHitParticles(screen.x + tSize * 0.3, screen.y + tSize * 0.2, 'rgba(220,40,40,0.95)', 10);
+    else spawnHitParticles(screen.x + tSize * 0.2, screen.y + tSize * 0.15, 'rgba(255,210,122,0.85)', 4);
+  } catch (e) {}
+}
+
+function drawPlayerAttackSwing(px, py, spriteW, spriteH, tileSize) {
+  try {
+    const now = Date.now();
+    if (!player._attackAnimUntil || now >= player._attackAnimUntil) return;
+    const start = player._attackStartedAt || (player._attackAnimUntil - 220);
+    const dur = Math.max(1, player._attackAnimUntil - start);
+    const t = Math.max(0, Math.min(1, (now - start) / dur));
+    const arcRadius = Math.max(10, tileSize * 0.45);
+    const centerX = px + spriteW * 0.5;
+    const centerY = py + spriteH * 0.58;
+    const baseAngles = {
+      right: 0,
+      down: Math.PI / 2,
+      left: Math.PI,
+      up: -Math.PI / 2
+    };
+    const base = baseAngles[player.dir || 'down'] || 0;
+    const spread = 1.35;
+    const color = player._attackHit ? 'rgba(255,90,90,0.9)' : 'rgba(255,210,122,0.85)';
+
+    ctx.save();
+    ctx.translate(centerX, centerY);
+    ctx.rotate(base + (t - 0.5) * 1.2);
+    ctx.globalAlpha = 0.25 + Math.sin(t * Math.PI) * 0.55;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(2, tileSize * 0.08);
+    ctx.beginPath();
+    ctx.arc(0, 0, arcRadius, -spread / 2, spread / 2);
+    ctx.stroke();
+    ctx.restore();
+  } catch (e) {}
 }
 
 function toggleInventory() {
   const p = document.getElementById('inventory-panel');
   if (!p) return;
-  p.style.display = p.style.display === 'none' ? 'block' : 'none';
+  const opening = p.style.display === 'none';
+  p.style.display = opening ? 'block' : 'none';
+  if (opening && !p.dataset.dragMoved) {
+    p.style.left = '50%';
+    p.style.top = '50%';
+    p.style.right = 'auto';
+    p.style.bottom = 'auto';
+    p.style.transform = 'translate(-50%, -50%)';
+  }
   updateInventory();
 }
 
@@ -1881,19 +2052,32 @@ function drawEntitySpriteAt(name, x, y, w, h) {
     ctx.save();
     try { ctx.imageSmoothingEnabled = false; } catch (e) {}
     if (img) {
+      // draw a subtle shadow so sprites feel grounded
+      try {
+        const sx = Math.round(x);
+        const sy = Math.round(y - Math.max(6, h * 0.06));
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,0,0,0.28)';
+        ctx.beginPath();
+        ctx.ellipse(sx, sy, Math.round(w * 0.45), Math.max(4, Math.round(h * 0.08)), 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      } catch (e) {}
       const px = Math.round(x - w/2);
       const py = Math.round(y - h + (h*0.08));
       ctx.drawImage(img, px, py, w, h);
+      try { window._entitiesDrawn = (window._entitiesDrawn || 0) + 1; } catch (e) {}
       ctx.restore();
       return;
     }
     // fallback to pixel library rendering into an offscreen canvas
     if (window.ENTITY_PIXEL_LIBRARY && window.ENTITY_PIXEL_LIBRARY[name]) {
       const c = window.createCanvasFromPixelDef(window.ENTITY_PIXEL_LIBRARY[name], name, Math.min(w,h));
-      if (c) {
+        if (c) {
         const px = Math.round(x - w/2);
         const py = Math.round(y - h + (h*0.08));
         ctx.drawImage(c, px, py, w, h);
+          try { window._entitiesDrawn = (window._entitiesDrawn || 0) + 1; } catch (e) {}
         ctx.restore();
         return;
       }
@@ -1913,6 +2097,42 @@ function hasRegisteredSprite(name) {
   } catch (e) {
     return false;
   }
+}
+
+// Debug HUD overlay: shows FPS, ms/frame, draw counts and particle/entity counts
+function createDebugHUD() {
+  try {
+    if (document.getElementById('debug-hud')) return;
+    const el = document.createElement('div'); el.id = 'debug-hud';
+    el.style.position = 'fixed'; el.style.right = '8px'; el.style.top = '8px'; el.style.zIndex = 2147483647;
+    el.style.background = 'rgba(0,0,0,0.6)'; el.style.color = '#E8E8D8'; el.style.fontFamily = 'monospace'; el.style.fontSize = '12px';
+    el.style.padding = '6px 8px'; el.style.borderRadius = '6px'; el.style.lineHeight = '1.28'; el.style.pointerEvents = 'none';
+    el.style.whiteSpace = 'pre'; el.textContent = 'Debug HUD: initializing...';
+    document.body.appendChild(el);
+
+    // updater uses frameCounter global
+    let prevFrame = typeof frameCounter === 'number' ? frameCounter : 0;
+    let prevTime = Date.now();
+    setInterval(() => {
+      try {
+        const now = Date.now();
+        const df = (typeof frameCounter === 'number' ? frameCounter : 0) - prevFrame;
+        const dt = Math.max(1, now - prevTime);
+        const fps = (df > 0) ? (df / (dt / 1000)).toFixed(1) : '0.0';
+        const ms = (df > 0) ? (dt / df).toFixed(1) : (Math.max(0, (now - lastFrameTime))).toFixed(1);
+        const drawImgs = window._drawImageCalls || 0;
+        const drawCalls = window._drawCalls || 0;
+        const entsDrawn = window._entitiesDrawn || 0;
+        const totalEntities = Array.isArray(window.entities) ? window.entities.length : 0;
+        const smoke = Array.isArray(window.smokeParticles) ? window.smokeParticles.length : (window.smokeParticles ? 1 : 0);
+        const effects = Array.isArray(window.effectParticles) ? window.effectParticles.length : (window.effectParticles ? 1 : 0);
+        const floats = Array.isArray(window.floatingTexts) ? window.floatingTexts.length : (window.floatingTexts ? 1 : 0);
+        el.textContent = `FPS: ${fps}  ms/frame: ${ms}\nframes: ${frameCounter}  drawImg: ${drawImgs}  drawCalls: ${drawCalls}\nentitiesDrawn: ${entsDrawn}  totalEntities: ${totalEntities}\nsmoke: ${smoke}  effects: ${effects}  floatingText: ${floats}`;
+        prevFrame = (typeof frameCounter === 'number' ? frameCounter : 0);
+        prevTime = now;
+      } catch (e) { /* ignore */ }
+    }, 300);
+  } catch (e) { /* ignore */ }
 }
 
 function resolveBuildingSpriteKey(type) {
@@ -2052,6 +2272,7 @@ function drawWheatIcon(ctx, w, h) {
 function createCraftingPanel() {
   if (document.getElementById('crafting-panel')) return;
   const panel = document.createElement('div'); panel.id = 'crafting-panel';
+  panel.setAttribute('data-title', 'Crafteo');
   panel.style.position = 'fixed'; panel.style.left = '12px'; panel.style.bottom = '80px'; panel.style.zIndex = 4000;
   panel.style.width = '420px'; panel.style.maxHeight = '420px'; panel.style.overflow = 'auto'; panel.style.padding = '10px';
   stylePanel(panel);
@@ -2070,11 +2291,19 @@ function createCraftingPanel() {
   const title = document.createElement('div'); title.textContent='Recetas'; title.style.fontWeight='700'; title.style.marginBottom='8px'; title.style.color='var(--sand-mid)';
   right.appendChild(title);
 
+  const filterInfo = document.createElement('div'); filterInfo.id='craft-filter-info'; filterInfo.textContent = 'Filtro: ninguno'; filterInfo.style.fontSize='12px'; filterInfo.style.color='#ccc'; filterInfo.style.marginBottom='6px';
+  right.appendChild(filterInfo);
+  const clearFilterBtn = document.createElement('button'); clearFilterBtn.textContent = 'Mostrar todo'; clearFilterBtn.style.marginBottom='8px'; clearFilterBtn.style.padding='4px 6px'; clearFilterBtn.style.borderRadius='6px'; clearFilterBtn.style.background='#222'; clearFilterBtn.style.color='#FFD27A'; clearFilterBtn.style.border='1px solid #333';
+  clearFilterBtn.addEventListener('click', () => applyCraftRecipeFilter(null));
+  right.appendChild(clearFilterBtn);
+
   const list = document.createElement('div'); list.id='craft-recipe-list'; list.style.display='flex'; list.style.flexDirection='column'; list.style.gap='8px';
   // populate recipe list from RECIPES
   Object.keys(RECIPES).forEach(rid => {
     const r = RECIPES[rid];
     const row = document.createElement('div'); row.style.display='flex'; row.style.justifyContent='space-between'; row.style.alignItems='center'; row.style.padding='6px'; row.style.background='rgba(255,255,255,0.02)'; row.style.borderRadius='6px';
+    row.dataset.recipeId = rid;
+    row.dataset.requires = Object.keys(r.requires).join(',');
     const info = document.createElement('div'); info.style.fontSize='13px'; info.style.color='#fff'; info.innerHTML = `<div style='font-weight:700'>${rid}</div>`;
     const reqs = document.createElement('div'); reqs.style.fontSize='12px'; reqs.style.color='#ccc'; reqs.textContent = Object.entries(r.requires).map(([k,v]) => `${v} ${k}`).join(', ');
     info.appendChild(reqs);
@@ -2082,6 +2311,21 @@ function createCraftingPanel() {
     const craftBtn = document.createElement('button'); craftBtn.textContent = 'Craftear'; craftBtn.style.padding='6px 8px'; craftBtn.style.borderRadius='6px'; craftBtn.style.background='#222'; craftBtn.style.color='#FFD27A'; craftBtn.style.border='1px solid #333';
     craftBtn.addEventListener('click', () => { if (canCraft(rid)) { craftItem(rid); } else { notify('Te faltan materiales para ' + rid); } });
     rightSide.appendChild(craftBtn);
+    row.addEventListener('dragover', ev => {
+      const itemId = getDraggedInventoryItem(ev);
+      if (!itemId || !(r.requires && r.requires[itemId])) return;
+      ev.preventDefault();
+      row.style.outline = '2px solid rgba(255,210,122,0.95)';
+    });
+    row.addEventListener('dragleave', () => { row.style.outline = 'none'; });
+    row.addEventListener('drop', ev => {
+      const itemId = getDraggedInventoryItem(ev);
+      row.style.outline = 'none';
+      if (!itemId || !(r.requires && r.requires[itemId])) return;
+      ev.preventDefault();
+      if (canCraft(rid)) craftItem(rid);
+      else notify('Te faltan materiales para ' + rid);
+    });
     row.appendChild(info); row.appendChild(rightSide);
     list.appendChild(row);
   });
@@ -2101,6 +2345,7 @@ function createCraftingPanel() {
   panel.appendChild(left); panel.appendChild(right);
   document.body.appendChild(panel);
   try { enableFloatingBehavior(panel); registerPanel(panel); } catch (e) {}
+  try { refreshInventoryDropTargets(); } catch (e) {}
   panel.style.display='none';
 }
 
@@ -3083,8 +3328,14 @@ function drawBuilding(col, row, type, alpha) {
   const baseT = getTileSize();
   const DT = baseT * BUILDING_SCALE; // draw tile size (scaled up)
   const size = getBuildingSize(type);
-  const W = DT * size.w;
-  const H = DT * size.h;
+  // For isometric view, build width/height in pixels must use iso tile dims
+  let W = DT * size.w;
+  let H = DT * size.h;
+  if (viewMode === 'iso') {
+    const iso = getIsoTileSize();
+    W = iso.w * BUILDING_SCALE * size.w;
+    H = iso.h * BUILDING_SCALE * size.h;
+  }
   const pad = Math.max(1, Math.round(Math.min(W, H) * 0.05));
 
   ctx.save();
@@ -3101,7 +3352,17 @@ function drawBuilding(col, row, type, alpha) {
     const shadedAlias = type === 'mesopotamian_house' ? 'mesopotamian_house_shaded' : type;
     const useKey = hasRegisteredSprite(shadedAlias) ? shadedAlias : spriteKey;
     if (useKey) {
-      drawEntitySpriteAt(useKey, x + W * 0.5, y + H, W, H);
+      // If zoomed out, draw a simplified block for performance and to avoid floating look
+      if (viewMode === 'iso' && zoom < 0.6) {
+        try {
+          ctx.save();
+          ctx.fillStyle = b.color || '#C8A84B';
+          ctx.fillRect(Math.round(x - W * 0.5), Math.round(y + (getIsoTileSize().h * 0.2)), Math.round(W), Math.round(H * 0.6));
+          ctx.restore();
+        } catch (e) {}
+      } else {
+        drawEntitySpriteAt(useKey, x + W * 0.5, y + H, W, H);
+      }
       ctx.restore();
       return;
     }
@@ -3192,7 +3453,11 @@ function drawBuilding(col, row, type, alpha) {
   }
 
   if (spriteKey && type !== 'road') {
-    drawEntitySpriteAt(spriteKey, x + W * 0.5, y + H, W, H);
+    if (viewMode === 'iso' && zoom < 0.6) {
+      try { ctx.save(); ctx.fillStyle = b.color || '#C8A84B'; ctx.fillRect(Math.round(x - W * 0.5), Math.round(y + (getIsoTileSize().h * 0.2)), Math.round(W), Math.round(H * 0.6)); ctx.restore(); } catch(e) {}
+    } else {
+      drawEntitySpriteAt(spriteKey, x + W * 0.5, y + H, W, H);
+    }
     ctx.restore();
     return;
   }
@@ -3628,6 +3893,7 @@ function drawPlayer() {
         ctx.restore();
       }
     } catch (e) {}
+    drawPlayerAttackSwing(px, py, spriteW, spriteH, getTileSize());
   } else {
     const tileSize = getTileSize();
     const scale = Math.max(1, Math.round(tileSize / 10));
@@ -3667,6 +3933,7 @@ function drawPlayer() {
         ctx.restore();
       }
     } catch (e) {}
+    drawPlayerAttackSwing(px, py, spriteW, spriteH, tileSize);
     // draw player name (orthographic)
     try {
       if (player && player.name) {
@@ -3723,6 +3990,8 @@ function render() {
   lastFrameTime = now;
   // gdt = game delta-time; 0 when paused, scaled otherwise
   const gdt = dt * (window._timeScale || 1.0);
+  // tick EventManager (schedules hybrid events)
+  try { if (window.EventManager && typeof window.EventManager.tick === 'function') { try { window.EventManager.tick(gdt); } catch (e) {} } } catch (e) {}
   // If the game hasn't been started from the main menu, don't run the simulation loop.
   if (!window._gameStarted) {
     stopRenderLoop();
@@ -3761,8 +4030,22 @@ function render() {
     }
   }
   const tileSize = getTileSize();
+  // instrumentation: reset draw calls counter each frame
+  try { window._drawCalls = 0; } catch (e) {}
+  try { window._drawImageCalls = 0; } catch (e) {}
+  try { window._entitiesDrawn = 0; } catch (e) {}
   const isoSize = getIsoTileSize();
   const cameraBusy = isPanning || isZooming || zoomAnimating || (now - lastCameraInputAt) < 220;
+  // low-detail mode when zoomed out, or when camera is moving AND we're not close to the world
+  // keep full detail when camera is near (avoid disappearing entities while panning/zooming close)
+  const lowDetail = (zoom < 0.5) || (cameraBusy && zoom < 0.85);
+  // ensure spatial index is up-to-date (rebuild only when necessary)
+  try {
+    if (window.SceneManager) {
+      try { if (typeof window.SceneManager.ensureInit === 'function') window.SceneManager.ensureInit(tileSize); } catch (e) {}
+      try { if (typeof window.SceneManager.ensureBuilt === 'function') window.SceneManager.ensureBuilt(window.entities || []); } catch (e) {}
+    }
+  } catch (e) {}
   frameCounter++;
   try {
     // optional console debug logging controlled by Dev menu
@@ -3907,35 +4190,50 @@ function render() {
         }
       }
     } else {
-      let mvx = 0, mvy = 0;
-      if (keyState['ArrowUp'] || keyState['w']) mvy -= 1;
-      if (keyState['ArrowDown'] || keyState['s']) mvy += 1;
-      if (keyState['ArrowLeft'] || keyState['a']) mvx -= 1;
-      if (keyState['ArrowRight'] || keyState['d']) mvx += 1;
-      if (mvx !== 0 || mvy !== 0) {
+      // screen movement axes (user input)
+      let screenMvx = 0, screenMvy = 0;
+      if (keyState['ArrowUp'] || keyState['w']) screenMvy -= 1;
+      if (keyState['ArrowDown'] || keyState['s']) screenMvy += 1;
+      if (keyState['ArrowLeft'] || keyState['a']) screenMvx -= 1;
+      if (keyState['ArrowRight'] || keyState['d']) screenMvx += 1;
+      if (screenMvx !== 0 || screenMvy !== 0) {
         // cancel auto path/target when player takes direct control
         moveTarget = null; movePath = null;
-        const len = Math.hypot(mvx, mvy) || 1;
-        mvx /= len; mvy /= len;
-        const sprintDirect = (keyState['Shift'] && player.stamina > 0 && !player._staminaCooldown) ? 1.6 : 1.0;
-        // track sprint state for stamina drain
-        player._isSprinting = (keyState['Shift'] && player.stamina > 0 && !player._staminaCooldown);
-        const baseDX = mvx * player.speed * gdt * TILE * sprintDirect;
-        const baseDY = mvy * player.speed * gdt * TILE * sprintDirect;
-        const curFactor = movementMultiplier(Math.floor(player.x), Math.floor(player.y));
-        const targetColGuess = Math.floor(player.x + baseDX);
-        const targetRowGuess = Math.floor(player.y + baseDY);
-        const targetFactor = movementMultiplier(targetColGuess, targetRowGuess);
-        const factor = Math.min(curFactor, targetFactor);
-        const dxTiles = baseDX * factor;
-        const dyTiles = baseDY * factor;
-        const moved = applyPlayerMoveTiles(dxTiles, dyTiles);
-        if (moved) {
-          try { if (Math.abs(mvx) > Math.abs(mvy)) player.dir = mvx > 0 ? 'right' : 'left'; else player.dir = mvy > 0 ? 'down' : 'up'; } catch (e) {}
-          player._walkTime = (player._walkTime || 0) + gdt;
-          player._walkFrame = Math.floor(player._walkTime * 3) % 2;
+        // map screen axes to world axes depending on view mode
+        let mvx = screenMvx, mvy = screenMvy;
+        if (viewMode === 'iso') {
+          // For isometric projection we map screen-right/down to changes in (col,row):
+          // world_dx = screenX + screenY
+          // world_dy = -screenX + screenY
+          const worldMvx = (screenMvx + screenMvy);
+          const worldMvy = (-screenMvx + screenMvy);
+          mvx = worldMvx; mvy = worldMvy;
         }
-      }
+          const len = Math.hypot(mvx, mvy) || 1;
+          mvx /= len; mvy /= len;
+          const sprintDirect = (keyState['Shift'] && player.stamina > 0 && !player._staminaCooldown) ? 1.6 : 1.0;
+          // track sprint state for stamina drain
+          player._isSprinting = (keyState['Shift'] && player.stamina > 0 && !player._staminaCooldown);
+          const baseDX = mvx * player.speed * gdt * TILE * sprintDirect;
+          const baseDY = mvy * player.speed * gdt * TILE * sprintDirect;
+          const curFactor = movementMultiplier(Math.floor(player.x), Math.floor(player.y));
+          const targetColGuess = Math.floor(player.x + baseDX);
+          const targetRowGuess = Math.floor(player.y + baseDY);
+          const targetFactor = movementMultiplier(targetColGuess, targetRowGuess);
+          const factor = Math.min(curFactor, targetFactor);
+          const dxTiles = baseDX * factor;
+          const dyTiles = baseDY * factor;
+          const moved = applyPlayerMoveTiles(dxTiles, dyTiles);
+          if (moved) {
+            try {
+              // determine facing from screen input so facing matches what player sees
+              if (Math.abs(screenMvx) > Math.abs(screenMvy)) player.dir = screenMvx > 0 ? 'right' : 'left';
+              else player.dir = screenMvy > 0 ? 'down' : 'up';
+            } catch (e) {}
+            player._walkTime = (player._walkTime || 0) + gdt;
+            player._walkFrame = Math.floor(player._walkTime * 3) % 2;
+          }
+        }
     }
   } else if (editMode) {
     // snap float position to grid when in edit mode
@@ -4538,14 +4836,27 @@ function render() {
   }
 
   // ── ENTITIES (resources) ─────────────────────────────────
-  entities.forEach(ent => {
+  const _entityList = (entities || []).slice().sort((A, B) => {
+    const ax = (typeof A.x === 'number') ? A.x : (A.col || 0);
+    const ay = (typeof A.y === 'number') ? A.y : (A.row || 0);
+    const bx = (typeof B.x === 'number') ? B.x : (B.col || 0);
+    const by = (typeof B.y === 'number') ? B.y : (B.row || 0);
+    return (ax + ay) - (bx + by);
+  });
+  _entityList.forEach(ent => {
     if (!ent) return;
     // ensure continuous position fields for smooth movement
     if (typeof ent.x !== 'number') ent.x = ent.col;
     if (typeof ent.y !== 'number') ent.y = ent.row;
+    // compute a conservative center-based visibility test to avoid drawing
+    // entities whose visual bounds do not intersect the canvas.
+    const center = worldToScreen((ent.x || 0) + 0.5, (ent.y || 0) + 0.5);
+    const tileSize = getTileSize();
+    // estimate visual radius (px) for the entity — scale with entity.size when present
+    const estRadius = Math.max(24, Math.round(tileSize * (ent.size || 1) * 1.4));
+    const isOffscreen = (center.x + estRadius < -24 || center.x - estRadius > W + 24 || center.y + estRadius < -24 || center.y - estRadius > H + 24);
+    // provide a fallback top-left coords for existing drawing code that expects x,y
     const { x, y } = worldToScreen(ent.x, ent.y);
-    const offPad = viewMode === 'iso' ? Math.max(24, isoSize.w) : Math.max(24, tileSize);
-    const isOffscreen = (x < -offPad || x > W + offPad || y < -offPad || y > H + offPad);
     const nowEnt = Date.now();
     if (ent.kind === 'resource') {
       if (isOffscreen) return;
@@ -4608,10 +4919,10 @@ function render() {
           ctx.fillStyle = 'rgba(255,185,8,0.88)';
           ctx.beginPath(); ctx.ellipse(fcx, fcy - ih2*0.12, iw2*0.09, ih2*(0.12 + fa*0.02), 0, 0, Math.PI*2); ctx.fill();
           ctx.restore();
-          // smoke emission
-          if (window.smokeParticles.length < 350 && Math.random() < 0.18) {
-            window.smokeParticles.push({ x: fcx + (Math.random()-0.5)*iw2*0.12, y: fcy - ih2*0.22, vx: (Math.random()-0.5)*0.22, vy: -(0.32+Math.random()*0.42), r: Math.max(2, iw2*0.06), life: 1400+Math.random()*900, born: now });
-          }
+          // smoke emission (soft cap to reduce particle overhead)
+            if (window.smokeParticles.length < 220 && Math.random() < 0.18) {
+              window.smokeParticles.push({ x: fcx + (Math.random()-0.5)*iw2*0.12, y: fcy - ih2*0.22, vx: (Math.random()-0.5)*0.22, vy: -(0.32+Math.random()*0.42), r: Math.max(2, iw2*0.06), life: 1400+Math.random()*900, born: now });
+            }
         } else {
           const sizeW = w * 0.6 * pulse;
           const sizeH = h * 0.6 * pulse;
@@ -4656,7 +4967,7 @@ function render() {
           ctx.beginPath(); ctx.ellipse(fcx2, fcy2 - tileSize*0.13, tileSize*0.065, tileSize*(0.08+fa2*0.015), 0, 0, Math.PI*2); ctx.fill();
           ctx.restore();
           // smoke emission
-          if (window.smokeParticles.length < 350 && Math.random() < 0.18) {
+          if (window.smokeParticles.length < 220 && Math.random() < 0.18) {
             window.smokeParticles.push({ x: fcx2+(Math.random()-0.5)*tileSize*0.12, y: fcy2-tileSize*0.2, vx: (Math.random()-0.5)*0.22, vy: -(0.32+Math.random()*0.42), r: Math.max(2, tileSize*0.07), life: 1400+Math.random()*900, born: now });
           }
         } else {
@@ -4752,9 +5063,30 @@ function render() {
       } catch (e) {}
     } else if (ent.kind === 'tree') {
       if (isOffscreen) return;
+      // Tree LOD / density reduction: deterministic skip based on per-entity seed
+      try {
+        if (ent._dropSeed === undefined) ent._dropSeed = Math.random();
+        const seed = ent._dropSeed;
+        // when zoomed out, skip many trees for performance and lower apparent density
+        if (zoom < GRAPHICS_CONFIG.treeSkip.near && seed > 0.5) return;
+        if (zoom < GRAPHICS_CONFIG.treeSkip.mid && seed > 0.75) return;
+        if (zoom < GRAPHICS_CONFIG.treeSkip.far && seed > 0.92) return;
+      } catch (e) {}
       // variant-aware pixel-art tree/vegetation drawing
       const tileSize = getTileSize();
       const variant = (ent.variant || 'oak');
+      // very low-detail fallback when zoomed far out
+      if (zoom < 0.5) {
+        try {
+          const cx = Math.floor(x + tileSize * 0.5);
+          const cy = Math.floor(y + tileSize - 2);
+          ctx.save();
+          ctx.fillStyle = '#327a2a';
+          ctx.beginPath(); ctx.ellipse(cx, cy - 4, Math.max(2, tileSize * 0.18), Math.max(2, tileSize * 0.08), 0, 0, Math.PI*2); ctx.fill();
+          ctx.restore();
+        } catch (e) {}
+        return;
+      }
       // small grass/weed variants: draw a tiny tuft
       if (variant === 'tallgrass' || variant === 'weed') {
         const tpl = GLOBAL_TREE_TEMPLATES[6];
@@ -4768,6 +5100,7 @@ function render() {
         for (const [px, py, color] of tpl) {
           ctx.fillStyle = color;
           ctx.fillRect(sx + px * scale, sy + py * scale, scale, scale);
+          try { window._drawCalls = (window._drawCalls || 0) + 1; } catch (e) {}
         }
       } else if (variant === 'hedge') {
         const tpl = GLOBAL_TREE_TEMPLATES[5];
@@ -4781,6 +5114,7 @@ function render() {
         for (const [px, py, color] of tpl) {
           ctx.fillStyle = color;
           ctx.fillRect(sx + px * scale, sy + py * scale, scale, scale);
+          try { window._drawCalls = (window._drawCalls || 0) + 1; } catch (e) {}
         }
       } else {
         // If the variant has a registered pixel-art sprite, use it directly
@@ -4790,8 +5124,25 @@ function render() {
           const jitterX = Math.floor((tileNoise(ent.col||0, ent.row||0, 7, 8) - 0.5) * tileSize * 0.18);
           drawEntitySpriteAt(variant, x + tileSize * 0.5 + jitterX, y + tileSize, sz, sz * 1.15);
         } else {
-        // map variants to templates
-        const map = { pine:0, tallslim:4, oak:1, broad:1, round:1, scrub:2, bush:2, shrub:2, multi:3 };
+        // try atlas draw first (use atlasDrawn flag to skip fallback)
+        let atlasDrawn = false;
+        try {
+          const atlas = window._TREE_ATLAS;
+          if (atlas && atlas.map) {
+            const map = { pine:0, tallslim:4, oak:1, broad:1, round:1, scrub:2, bush:2, shrub:2, multi:3 };
+            let idx = (map[variant] !== undefined) ? map[variant] : Math.floor(tileNoise(ent.col || 0, ent.row || 0, 5, 6) * GLOBAL_TREE_TEMPLATES.length);
+            idx = Math.max(0, Math.min(GLOBAL_TREE_TEMPLATES.length - 1, idx));
+            const meta = atlas.map[idx];
+            if (meta) {
+              const destW = Math.max(4, Math.round(spriteW));
+              const destH = Math.max(4, Math.round(spriteH));
+              try { ctx.drawImage(atlas.canvas, meta.x, meta.y, meta.w, meta.h, sx, sy, destW, destH); window._drawCalls = (window._drawCalls || 0) + 1; atlasDrawn = true; } catch (e) { /* fallback below */ }
+            }
+          }
+        } catch (e) {}
+        // map variants to templates (only if atlas didn't draw)
+        if (!atlasDrawn) {
+          const map = { pine:0, tallslim:4, oak:1, broad:1, round:1, scrub:2, bush:2, shrub:2, multi:3 };
         let idx = (map[variant] !== undefined) ? map[variant] : Math.floor(tileNoise(ent.col || 0, ent.row || 0, 5, 6) * GLOBAL_TREE_TEMPLATES.length);
         idx = Math.max(0, Math.min(GLOBAL_TREE_TEMPLATES.length - 1, idx));
         const tpl = GLOBAL_TREE_TEMPLATES[idx];
@@ -4814,9 +5165,11 @@ function render() {
         for (const [px, py, color] of tpl) {
           ctx.fillStyle = color;
           ctx.fillRect(sx + px * scale, sy + py * scale, scale, scale);
+          try { window._drawCalls = (window._drawCalls || 0) + 1; } catch (e) {}
         }
         } // end sprite-fallback else
-      }
+        } // end else !hasRegisteredSprite
+      } // end else !tallgrass/hedge
 
       // interaction hint: comic bubble with 'E' when player is near
       const dist = Math.hypot(ent.col - player.x, ent.row - player.y);
@@ -4861,6 +5214,7 @@ function render() {
       }
     }
   });
+  // end of entity render loop
 
   // ── RABBITS ──────────────────────────────────────────────
   rabbits.forEach(rab => {
@@ -4871,6 +5225,13 @@ function render() {
     const tileSize = getTileSize();
     const offPad = viewMode === 'iso' ? Math.max(24, isoSize.w) : Math.max(24, tileSize);
     if (x < -offPad || x > W + offPad || y < -offPad || y > H + offPad) return;
+    // low-detail marker when camera busy/zoomed out
+    if (lowDetail) {
+      try {
+        ctx.save(); ctx.fillStyle = '#FFFFFF'; ctx.beginPath(); ctx.ellipse(x + tileSize*0.5, y + tileSize*0.6, Math.max(3, tileSize*0.08), Math.max(2, tileSize*0.05), 0, 0, Math.PI*2); ctx.fill(); ctx.restore();
+      } catch (e) {}
+      return;
+    }
     // rabbit: prefer pixel-art bitmap if available, else fallback to simple vector art
     const bmpRabbit = (window._ENTITY_BITMAPS && (window._ENTITY_BITMAPS['detailed_rabbit'] || window._ENTITY_BITMAPS['rabbit'] || window._ENTITY_BITMAPS['animal.rabbit'] || window._ENTITY_BITMAPS['rabbit-0'])) ? (window._ENTITY_BITMAPS['detailed_rabbit'] || window._ENTITY_BITMAPS['rabbit'] || window._ENTITY_BITMAPS['animal.rabbit'] || window._ENTITY_BITMAPS['rabbit-0']) : null;
     const rsz = Math.max(6, tileSize * (size || 0.45));
@@ -4890,6 +5251,15 @@ function render() {
         const h = w;
         const cx = x + tileSize*0.5;
         const cy = y + tileSize*0.5;
+        // subtle ground shadow under the sprite
+        try {
+          ctx.save();
+          ctx.fillStyle = 'rgba(0,0,0,0.22)';
+          ctx.beginPath();
+          ctx.ellipse(cx, cy + Math.max(4, h * 0.28), w * 0.45, Math.max(3, h * 0.12), 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        } catch (e) {}
         if (flip) {
           ctx.translate(cx, cy);
           ctx.scale(-1, 1);
@@ -4989,6 +5359,15 @@ function render() {
           const h = w;
           const cx = x + tileSize*0.5;
           const cy = y + tileSize*0.5;
+          // subtle ground shadow under the sprite
+          try {
+            ctx.save();
+            ctx.fillStyle = 'rgba(0,0,0,0.22)';
+            ctx.beginPath();
+            ctx.ellipse(cx, cy + Math.max(4, h * 0.28), w * 0.45, Math.max(3, h * 0.12), 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          } catch (e) {}
           if (flip) {
             ctx.translate(cx, cy);
             ctx.scale(-1,1);
@@ -5061,6 +5440,8 @@ function render() {
     const nowSm = now;
     for (let i = window.smokeParticles.length - 1; i >= 0; i--) {
       const sp = window.smokeParticles[i];
+      // cull smoke particles far offscreen
+      try { const psc = worldToScreen(sp.x, sp.y); if (psc.x < -64 || psc.x > W + 64 || psc.y < -64 || psc.y > H + 64) { continue; } } catch (e) {}
       const age = nowSm - sp.born;
       const t = age / sp.life;
       if (t >= 1) { window.smokeParticles.splice(i, 1); continue; }
@@ -5079,6 +5460,8 @@ function render() {
     const nowEff = now;
     for (let i = effectParticles.length - 1; i >= 0; i--) {
       const p = effectParticles[i];
+      // cull effect particles that are offscreen to avoid extra work
+      try { if (p.x < -128 || p.x > W + 128 || p.y < -128 || p.y > H + 128) { continue; } } catch (e) {}
       const age = nowEff - p.born;
       const t = age / p.life;
       if (t >= 1) { effectParticles.splice(i,1); continue; }
@@ -5091,6 +5474,15 @@ function render() {
     }
     for (let i = floatingTexts.length - 1; i >= 0; i--) {
       const ft = floatingTexts[i];
+      // cheap cull for floating texts not near viewport
+      try {
+        // respect global zoom threshold for dialogue/floating texts unless forced
+        if (!ft.force && typeof zoom === 'number' && zoom < (GRAPHICS_CONFIG.dialogZoomThreshold || 0.7)) continue;
+        if (typeof ft.worldX === 'number' && typeof ft.worldY === 'number') {
+          const p = worldToScreen(ft.worldX, ft.worldY);
+          if (p.x < -80 || p.x > W + 80 || p.y < -80 || p.y > H + 80) { continue; }
+        }
+      } catch (e) {}
       const age = nowEff - ft.born;
       const t = age / ft.life;
       if (t >= 1) { floatingTexts.splice(i,1); continue; }
@@ -5288,6 +5680,7 @@ function render() {
       window._deferredBuildings = [];
     }
   } catch(e) {}
+  try { drawTreesInFrontOfPlayer(); } catch (e) {}
 
   // ── NIGHT TORCH VIGNETTE ─────────────────────────────────
   // Radial gradient: transparent at player centre → dark at edges.
@@ -5314,6 +5707,7 @@ function render() {
       ctx.fillStyle = gwarm; ctx.fillRect(0, 0, W, H);
     }
   } catch(e) {}
+  try { drawPlayerOcclusionIndicators(); } catch (e) {}
 
   try {
     window._interactionTarget = null;
@@ -5510,6 +5904,8 @@ function render() {
     const nowTick = now;
     for (const en of entities) {
       if (!en || !en.id || en.id.indexOf('npc-') !== 0) continue;
+      // skip processing tasks for very distant NPCs (throttled)
+      try { if (!shouldUpdateEntity(en, { near: 4, far: 40, baseIntervalMs: 800 })) continue; } catch (e) {}
       if (!en.task) continue;
       const t = en.task;
       // define durations per action (ms)
@@ -5540,6 +5936,8 @@ function render() {
     for (let i = entities.length - 1; i >= 0; i--) {
       const en = entities[i];
       if (!en || !en.id || en.id.indexOf('npc-') !== 0) continue;
+      // throttle AI updates for distant NPCs
+      try { if (!shouldUpdateEntity(en, { near: 3, far: 36, baseIntervalMs: 1000 })) continue; } catch (e) {}
       // NPCs sleep at night (22:00 - 05:00): they stay hidden inside their house
       const isNightNpc = (dayHour >= 22 || dayHour < 5);
       if (isNightNpc && !en._interiorNpc) {
@@ -5683,8 +6081,25 @@ function render() {
   } catch (e) {}
   // Story overlays: cinematic intro and NPC dialogue panel (drawn on top of everything)
   try { if (window._introSeq && !window._introSeq.done) drawIntroSequence(ctx, W, H); } catch (e) {}
-  try { if (window._activeDialogue) drawDialoguePanel(ctx, W, H); } catch (e) {}
+  try {
+    if (window._activeDialogue && shouldRenderDetailsForEntity((window._activeDialogue && window._activeDialogue.npcRef) || null)) {
+      drawDialoguePanel(ctx, W, H);
+    }
+  } catch (e) {}
 
+  // update diagnostic overlay with simple performance counters
+  try {
+    const diag = document.getElementById('engine-status');
+    if (diag) {
+      const fps = (dt > 0) ? Math.round(1 / dt) : 0;
+      const ms = Math.round(dt * 1000);
+      const draw = (window._drawCalls || 0);
+      const imgs = (window._drawImageCalls || 0);
+      const fills = (window._fillRectCalls || 0);
+      const ents = (window.entities && window.entities.length) || 0;
+      diag.textContent = `Engine: ${fps} FPS | ${ms} ms | draw:${draw} imgs:${imgs} fills:${fills} ents:${ents}`;
+    }
+  } catch (e) {}
   if (window._gameStarted && _renderLoopActive) requestAnimationFrame(render);
   else stopRenderLoop();
   } catch (err) {
@@ -5767,6 +6182,8 @@ function tickEnemies(now) {
 
     for (let i = enemies.length - 1; i >= 0; i--) {
       const en = enemies[i]; if (!en) continue;
+      // skip enemy logic if far from player to save CPU
+      try { const ex = (en.x || en.col); const ey = (en.y || en.row); const pd = Math.hypot((player.x||0) - ex, (player.y||0) - ey); if (pd > 48) continue; } catch (e) {}
       // simple move toward target
       const dx = targetX + 0.5 - en.x; const dy = targetY + 0.5 - en.y; const dist = Math.hypot(dx, dy) || 0.0001;
       const step = (en.speed || 0.6) * dt;
@@ -6179,48 +6596,186 @@ function craftItem(recipeId, qty = 1) {
   return true;
 }
 
+const EQUIPPABLE_ITEMS = new Set(['stone-axe','stone-pick','stone-sword','plank','stick','campfire','furnace','brick-block','beacon','axe','sword','spear','club']);
+
+function isEquippableItem(itemId) {
+  return EQUIPPABLE_ITEMS.has(String(itemId || '').toLowerCase());
+}
+
+function getDraggedInventoryItem(ev) {
+  try {
+    return (ev.dataTransfer && (ev.dataTransfer.getData('application/x-meso-item') || ev.dataTransfer.getData('text/plain'))) || '';
+  } catch (e) {
+    return '';
+  }
+}
+
+function applyCraftRecipeFilter(itemId) {
+  const list = document.getElementById('craft-recipe-list');
+  const badge = document.getElementById('craft-filter-info');
+  if (!list) return;
+  const filter = String(itemId || '').trim().toLowerCase();
+  list.querySelectorAll('[data-recipe-id]').forEach(row => {
+    const requires = String(row.dataset.requires || '').toLowerCase().split(',').filter(Boolean);
+    row.style.display = (!filter || requires.includes(filter)) ? 'flex' : 'none';
+  });
+  if (badge) badge.textContent = filter ? `Filtro: ${filter}` : 'Filtro: ninguno';
+}
+
+function refreshInventoryDropTargets() {
+  const equipTargets = [document.getElementById('equipped-slot'), document.getElementById('inventory-equip-slot')].filter(Boolean);
+  equipTargets.forEach(target => {
+    if (target.dataset.dndBound === '1') return;
+    target.dataset.dndBound = '1';
+    target.addEventListener('dragover', ev => {
+      const itemId = getDraggedInventoryItem(ev);
+      if (!itemId || !isEquippableItem(itemId)) return;
+      ev.preventDefault();
+      target.style.outline = '2px solid rgba(255,210,122,0.95)';
+      target.style.outlineOffset = '2px';
+    });
+    target.addEventListener('dragleave', () => {
+      target.style.outline = 'none';
+      target.style.outlineOffset = '0';
+    });
+    target.addEventListener('drop', ev => {
+      const itemId = getDraggedInventoryItem(ev);
+      target.style.outline = 'none';
+      target.style.outlineOffset = '0';
+      if (!itemId || !isEquippableItem(itemId)) return;
+      ev.preventDefault();
+      try { window.equipItem(itemId); } catch (e) {}
+      try { updateInventory(); } catch (e) {}
+    });
+  });
+
+  const craftList = document.getElementById('craft-recipe-list');
+  if (craftList && craftList.dataset.dndBound !== '1') {
+    craftList.dataset.dndBound = '1';
+    craftList.addEventListener('dragover', ev => {
+      if (!getDraggedInventoryItem(ev)) return;
+      ev.preventDefault();
+    });
+    craftList.addEventListener('drop', ev => {
+      const itemId = getDraggedInventoryItem(ev);
+      if (!itemId) return;
+      ev.preventDefault();
+      applyCraftRecipeFilter(itemId);
+      notify(`Recetas filtradas por ${itemId}`);
+    });
+  }
+}
+
 // expose recipes and craft functions
 window.RECIPES = RECIPES;
 window.canCraft = canCraft;
 window.craftItem = craftItem;
 
 function updateInventory() {
-  const list = document.getElementById('inventory-panel-list') || document.getElementById('inventory-list');
-  if (!list) return;
-  // Render a compact grid-style inventory similar to Minecraft aesthetic
-  list.innerHTML = '';
-  const container = document.createElement('div');
-  container.style.display = 'flex';
-  container.style.flexWrap = 'wrap';
-  container.style.gap = '8px';
-  Object.entries(inventory).forEach(([k,v]) => {
-    const slot = document.createElement('div');
-    slot.style.width = '44px'; slot.style.height = '44px'; slot.style.background = 'rgba(30,30,30,0.95)'; slot.style.border = '2px solid rgba(0,0,0,0.6)'; slot.style.borderRadius = '4px';
-    slot.style.display = 'flex'; slot.style.alignItems = 'center'; slot.style.justifyContent = 'center'; slot.style.position = 'relative';
-    // small canvas icon
-    const cv = document.createElement('canvas'); cv.width = 28; cv.height = 28; cv.style.width = '28px'; cv.style.height = '28px';
-    const cctx = cv.getContext('2d');
-    drawItemIcon(cctx, k, 28, 28);
-    slot.appendChild(cv);
-    // allow clicking to equip tools/weapons
-    try {
-      const EQUIPPABLE = new Set(['stone-axe','stone-pick','stone-sword','plank','stick','campfire','furnace','brick-block','beacon']);
-      slot.style.cursor = 'pointer';
+  const panelList = document.getElementById('inventory-panel-list');
+  const sidebarList = document.getElementById('inventory-list');
+  const entries = Object.entries(inventory).sort((a, b) => a[0].localeCompare(b[0]));
+
+  function buildGrid(target, compact = false) {
+    if (!target) return;
+    target.innerHTML = '';
+    if (entries.length === 0) {
+      target.innerHTML = `<div style="color:#bbb;font-size:${compact ? '12px' : '14px'}">Inventario vacío.</div>`;
+      return;
+    }
+    const grid = document.createElement('div');
+    grid.style.display = 'grid';
+    grid.style.gridTemplateColumns = compact ? 'repeat(auto-fill, minmax(54px, 1fr))' : 'repeat(auto-fill, minmax(88px, 1fr))';
+    grid.style.gap = compact ? '8px' : '12px';
+    grid.style.alignItems = 'start';
+
+    entries.forEach(([itemId, qty]) => {
+      const slot = document.createElement('div');
+      slot.className = 'inventory-slot';
+      slot.dataset.itemId = itemId;
+      slot.draggable = true;
+      slot.style.position = 'relative';
+      slot.style.minHeight = compact ? '58px' : '96px';
+      slot.style.padding = compact ? '6px' : '10px';
+      slot.style.background = 'linear-gradient(180deg, rgba(40,30,18,0.96), rgba(20,14,8,0.98))';
+      slot.style.border = '1px solid rgba(255,210,122,0.18)';
+      slot.style.borderRadius = '8px';
+      slot.style.display = 'flex';
+      slot.style.flexDirection = 'column';
+      slot.style.alignItems = 'center';
+      slot.style.justifyContent = 'center';
+      slot.style.cursor = 'grab';
+      slot.title = isEquippableItem(itemId) ? `${itemId} · arrastra para equipar` : itemId;
+
+      const iconSize = compact ? 28 : 42;
+      const cv = document.createElement('canvas');
+      cv.width = iconSize; cv.height = iconSize;
+      cv.style.width = iconSize + 'px'; cv.style.height = iconSize + 'px';
+      drawItemIcon(cv.getContext('2d'), itemId, iconSize, iconSize);
+      slot.appendChild(cv);
+
+      const label = document.createElement('div');
+      label.textContent = itemId;
+      label.style.marginTop = compact ? '4px' : '8px';
+      label.style.fontSize = compact ? '10px' : '12px';
+      label.style.textAlign = 'center';
+      label.style.color = '#E8D5A3';
+      label.style.wordBreak = 'break-word';
+      slot.appendChild(label);
+
+      const count = document.createElement('div');
+      count.textContent = `x${qty}`;
+      count.style.position = 'absolute';
+      count.style.right = compact ? '5px' : '8px';
+      count.style.bottom = compact ? '4px' : '6px';
+      count.style.padding = '1px 6px';
+      count.style.borderRadius = '999px';
+      count.style.background = 'rgba(0,0,0,0.55)';
+      count.style.fontSize = compact ? '10px' : '11px';
+      count.style.color = '#FFF';
+      slot.appendChild(count);
+
       slot.addEventListener('click', () => {
-        if (EQUIPPABLE.has(k)) {
-          try { window.equipItem(k); } catch (e) {}
+        if (isEquippableItem(itemId)) {
+          try { window.equipItem(itemId); } catch (e) {}
         } else {
-          notify(k + ' seleccionado');
+          notify(itemId + ' seleccionado');
         }
       });
-    } catch (e) {}
-    const qty = document.createElement('div'); qty.textContent = v; qty.style.position = 'absolute'; qty.style.right = '4px'; qty.style.bottom = '2px'; qty.style.fontSize = '11px'; qty.style.color = '#fff'; qty.style.textShadow = '0 1px 0 rgba(0,0,0,0.8)';
-    slot.appendChild(qty);
-    const label = document.createElement('div'); label.textContent = k; label.style.position='absolute'; label.style.top='46px'; label.style.left='0'; label.style.width='100%'; label.style.fontSize='11px'; label.style.textAlign='center'; label.style.color='#DDD';
-    slot.appendChild(label);
-    container.appendChild(slot);
-  });
-  list.appendChild(container);
+      slot.addEventListener('dragstart', ev => {
+        try {
+          ev.dataTransfer.effectAllowed = 'move';
+          ev.dataTransfer.setData('application/x-meso-item', itemId);
+          ev.dataTransfer.setData('text/plain', itemId);
+        } catch (e) {}
+        slot.style.opacity = '0.45';
+      });
+      slot.addEventListener('dragend', () => { slot.style.opacity = '1'; });
+
+      grid.appendChild(slot);
+    });
+
+    target.appendChild(grid);
+  }
+
+  buildGrid(panelList, false);
+  buildGrid(sidebarList, true);
+
+  const equippedLabel = document.getElementById('inventory-equip-label');
+  const equippedHint = document.getElementById('inventory-equip-hint');
+  const equippedIcon = document.getElementById('inventory-equip-icon');
+  if (equippedLabel && equippedHint && equippedIcon) {
+    const equipped = player.equipped;
+    equippedLabel.textContent = equipped || 'Nada equipado';
+    equippedHint.textContent = equipped ? 'Arrastra otro ítem aquí para cambiarlo' : 'Arrastra aquí un arma u objeto equipable';
+    equippedIcon.innerHTML = '';
+    if (equipped) {
+      const cv = document.createElement('canvas'); cv.width = 48; cv.height = 48; cv.style.width = '48px'; cv.style.height = '48px';
+      drawItemIcon(cv.getContext('2d'), equipped, 48, 48);
+      equippedIcon.appendChild(cv);
+    }
+  }
+  refreshInventoryDropTargets();
 }
 
 function updateProduction() {
@@ -6300,6 +6855,95 @@ function spendAp(cost) {
     return false;
   }
   char.ap -= cost;
+  return true;
+}
+
+function findPlayerAttackTarget(range = 1.35) {
+  try {
+    const facing = getPlayerFacingVector();
+    const attackOrigin = getPlayerAttackOrigin(0.85);
+    const playerCenterX = (player.x || 0) + 0.5;
+    const playerCenterY = (player.y || 0) + 0.5;
+    const candidates = [];
+
+    function consider(ref, bucket, label) {
+      if (!ref) return;
+      const tx = ((typeof ref.x === 'number' ? ref.x : ref.col) || 0) + 0.5;
+      const ty = ((typeof ref.y === 'number' ? ref.y : ref.row) || 0) + 0.5;
+      const fromPlayerX = tx - playerCenterX;
+      const fromPlayerY = ty - playerCenterY;
+      const dirLen = Math.hypot(fromPlayerX, fromPlayerY) || 1;
+      const dot = (fromPlayerX * facing.x + fromPlayerY * facing.y) / dirLen;
+      const distFromSwing = Math.hypot(tx - attackOrigin.x, ty - attackOrigin.y);
+      const distFromPlayer = Math.hypot(tx - playerCenterX, ty - playerCenterY);
+      candidates.push({ ref, bucket, label, dot, distFromSwing, distFromPlayer });
+    }
+
+    for (const ent of entities) {
+      if (!ent || ent === player) continue;
+      if (ent.kind === 'player' && ent.id) consider(ent, 'entities', ent.name || 'NPC');
+    }
+    for (const rab of rabbits) consider(rab, 'rabbits', rab.name || 'conejo');
+    for (const fox of foxes) consider(fox, 'foxes', fox.name || 'zorro');
+    for (const en of enemies) consider(en, 'enemies', en.name || en.type || 'enemigo');
+
+    const frontal = candidates
+      .filter(c => c.distFromSwing <= range && c.dot >= 0.15)
+      .sort((a, b) => (a.distFromSwing - b.distFromSwing) || (b.dot - a.dot));
+    if (frontal.length) return frontal[0];
+
+    const adjacent = candidates
+      .filter(c => c.distFromPlayer <= 0.95)
+      .sort((a, b) => a.distFromPlayer - b.distFromPlayer);
+    return adjacent[0] || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function applyPlayerAttackDamage(targetInfo, damage, weaponName) {
+  if (!targetInfo || !targetInfo.ref) return false;
+  const target = targetInfo.ref;
+  target.maxHp = target.maxHp || target.hp || damage || 1;
+  target.hp = Math.max(0, (target.hp || target.maxHp) - damage);
+  target._flashUntil = Date.now() + 420;
+
+  try {
+    const { x: sx, y: sy } = worldToScreen((typeof target.x === 'number' ? target.x : target.col) || 0, (typeof target.y === 'number' ? target.y : target.row) || 0);
+    spawnDamageText(sx + getTileSize() * 0.5, sy - 4, `-${damage}`, '#ff4444');
+  } catch (e) {}
+
+  if (targetInfo.bucket === 'entities') {
+    addLog(`Golpeas a ${targetInfo.label} por ${damage} daño.`);
+    if (target.hp <= 0) {
+      const idx = entities.indexOf(target);
+      if (idx >= 0) entities.splice(idx, 1);
+      addLog(`${targetInfo.label} ha sido derrotado.`);
+    }
+  } else if (targetInfo.bucket === 'rabbits') {
+    addLog(`Golpeas a un conejo por ${damage} daño.`);
+    if (target.hp <= 0) {
+      const idx = rabbits.indexOf(target);
+      if (idx >= 0) rabbits.splice(idx, 1);
+      addToInventory('meat', 1);
+    }
+  } else if (targetInfo.bucket === 'foxes') {
+    addLog(`Golpeas a un zorro por ${damage} daño.`);
+    if (target.hp <= 0) {
+      const idx = foxes.indexOf(target);
+      if (idx >= 0) foxes.splice(idx, 1);
+      addToInventory('meat', 2);
+    }
+  } else if (targetInfo.bucket === 'enemies') {
+    addLog(`Golpeas a ${targetInfo.label} por ${damage} daño.`);
+    if (target.hp <= 0) {
+      const idx = enemies.indexOf(target);
+      if (idx >= 0) enemies.splice(idx, 1);
+      addToInventory('brick', 1);
+    }
+  }
+
+  if (weaponName) notify(`Atacas con ${weaponName}`);
   return true;
 }
 
@@ -6386,62 +7030,26 @@ function performAction(actionId) {
   }
 
   if (actionId === 'attack') {
-    // try attack nearest player NPC first, then rabbit
-    // melee range 1 tile
-    const range = 1;
-    // find NPC
-    let target = null;
-    for (let i = 0; i < entities.length; i++) {
-      const ent = entities[i];
-      if (ent && ent.kind === 'player' && Math.abs(ent.col - player.col) <= range && Math.abs(ent.row - player.row) <= range) { target = ent; break; }
-    }
-    if (!target) {
-      for (let i = 0; i < rabbits.length; i++) {
-        const rab = rabbits[i];
-        if (rab && Math.abs(rab.col - player.col) <= range && Math.abs(rab.row - player.row) <= range) { target = rab; break; }
-      }
-    }
-    if (!target) { notify('No hay objetivos cercanos para atacar.'); char.ap += action.cost; return; }
+    const targetInfo = findPlayerAttackTarget(1.35);
     // compute damage from strength + weapon
     const baseDmg = 2 + Math.floor((char.special.FUE || 0) / 2);
-    // detect equipped weapon or inventory weapon
-    const WEAPON_BONUS = { sword: 6, spear: 5, club: 4, axe: 5 };
-    let weaponName = player.weapon || null;
+    const WEAPON_BONUS = { sword: 6, spear: 5, club: 4, axe: 5, 'stone-sword': 6, 'stone-axe': 5, 'stone-pick': 3, stick: 2, plank: 1 };
+    let weaponName = player.equipped || player.weapon || null;
     if (!weaponName) {
-      // search inventory for a known weapon
       for (const w of Object.keys(inventory)) {
         if ((WEAPON_BONUS[w] || 0) > 0 && inventory[w] > 0) { weaponName = w; break; }
       }
     }
     const weaponBonus = weaponName ? (WEAPON_BONUS[weaponName] || 0) : 0;
     const dmg = baseDmg + weaponBonus;
-    // apply building defense if near shelter
-    const defMult = isNearPlayerShelter(target) ? 0.75 : 1;
+    const defMult = (targetInfo && targetInfo.ref && isNearPlayerShelter(targetInfo.ref)) ? 0.75 : 1;
     const realDmg = Math.max(1, Math.floor(dmg * defMult));
-    if (target.kind === 'player') {
-      target.hp = Math.max(0, target.hp - realDmg);
-      addLog(`Atacaste a ${target.name} por ${realDmg} daño.`);
-      // visual feedback
-      try {
-        const { x: sx, y: sy } = worldToScreen(target.col, target.row);
-        target._flashUntil = Date.now() + 420;
-        spawnHitParticles(sx + getTileSize()*0.5, sy + getTileSize()*0.3, 'rgba(220,40,40,0.95)', 10);
-        spawnDamageText(sx + getTileSize()*0.5, sy - 4, `-${realDmg}`, '#ff4444');
-      } catch (err) { }
-      if (target.hp <= 0) { addLog(`${target.name} ha sido derrotado.`); const idx = entities.indexOf(target); if (idx>=0) entities.splice(idx,1); }
-      if (weaponName) notify(`Atacas con ${weaponName}`);
+    if (!targetInfo) {
+      triggerPlayerAttackSwing(false);
+      notify('Golpeas al aire.');
     } else {
-      // rabbit
-      target.hp = Math.max(0, target.hp - realDmg);
-      addLog(`Atacaste a un animal por ${realDmg} daño.`);
-      try {
-        const { x: sx, y: sy } = worldToScreen(target.col, target.row);
-        target._flashUntil = Date.now() + 420;
-        spawnHitParticles(sx + getTileSize()*0.5, sy + getTileSize()*0.3, 'rgba(220,40,40,0.95)', 10);
-        spawnDamageText(sx + getTileSize()*0.5, sy - 4, `-${realDmg}`, '#ff4444');
-      } catch (err) {}
-      if (target.hp <= 0) { const idx = rabbits.indexOf(target); if (idx>=0) rabbits.splice(idx,1); addToInventory('meat',1); }
-      if (weaponName) notify(`Atacas con ${weaponName}`);
+      triggerPlayerAttackSwing(true, targetInfo.ref);
+      applyPlayerAttackDamage(targetInfo, realDmg, weaponName);
     }
     updateUI(); updateInventory();
   }
@@ -6781,7 +7389,7 @@ function setupCharacterSelection() {
   if (startBtn) {
     startBtn.addEventListener('click', () => {
       // ensure runtime defaults exist (values are updated live when user changes the selector)
-      try { window._DEFAULT_DENSITIES = window._DEFAULT_DENSITIES || { npc:1.0, animals:1.0, vegetation:1.0 }; } catch (e) {}
+      try { window._DEFAULT_DENSITIES = window._DEFAULT_DENSITIES || { npc:1.0, animals:1.0, vegetation:0.6 }; } catch (e) {}
 
       if (selectedMode === 'custom') {
         applyCustomCharacter(customState);
@@ -6835,7 +7443,7 @@ function setupCharacterSelection() {
     const next = document.getElementById('param-next');
     const indicator = document.getElementById('param-indicator');
     const iconCanvas = document.getElementById('param-icon');
-    window._DEFAULT_DENSITIES = window._DEFAULT_DENSITIES || { npc:1.0, animals:1.0, vegetation:1.0 };
+    window._DEFAULT_DENSITIES = window._DEFAULT_DENSITIES || { npc:1.0, animals:1.0, vegetation:0.6 };
 
     function drawIconFor(key) {
       try {
@@ -6983,13 +7591,37 @@ function createOverlayUI() {
   if (!document.getElementById('inventory-panel')) {
     const p = document.createElement('div');
     p.id = 'inventory-panel';
-    p.style.position = 'fixed'; p.style.right = '12px'; p.style.bottom = '12px'; p.style.zIndex = 2000;
+    p.setAttribute('data-title', 'Inventario');
+    p.style.position = 'fixed'; p.style.left = '50%'; p.style.top = '50%'; p.style.transform = 'translate(-50%, -50%)'; p.style.zIndex = 2000;
     p.style.display = 'none';
     stylePanel(p);
-    p.style.minWidth = '180px';
-    p.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><strong>Inventario</strong><button id="btn-inv-close" style="background:#222;color:#FFD27A;border:none;padding:6px 8px;border-radius:6px">X</button></div><div id="inventory-panel-list" style="max-height:220px;overflow:auto"></div>`;
+    p.style.width = '760px';
+    p.style.maxWidth = '92vw';
+    p.style.minWidth = '560px';
+    p.style.maxHeight = '78vh';
+    p.innerHTML = `
+      <div id="inventory-panel-body" style="display:grid;grid-template-columns:minmax(0,1fr) 250px;gap:16px;max-height:70vh;overflow:hidden;">
+        <div style="display:flex;flex-direction:column;min-height:0;">
+          <div style="font-size:12px;color:#bbb;margin-bottom:8px;">Haz clic para usar o arrastra un ítem al equipo o al panel de crafteo.</div>
+          <div id="inventory-panel-list" style="flex:1;overflow:auto;padding-right:6px;"></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:12px;">
+          <div id="inventory-equip-slot" style="min-height:164px;border:1px dashed rgba(255,210,122,0.4);border-radius:10px;padding:12px;background:rgba(255,255,255,0.03);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;">
+            <div style="font-weight:700;color:var(--sand-mid);margin-bottom:8px;">Equipo</div>
+            <div id="inventory-equip-icon" style="width:56px;height:56px;display:flex;align-items:center;justify-content:center;margin-bottom:8px;"></div>
+            <div id="inventory-equip-label" style="font-size:13px;color:#fff;margin-bottom:6px;">Nada equipado</div>
+            <div id="inventory-equip-hint" style="font-size:12px;color:#bbb;">Arrastra aquí un arma u objeto equipable</div>
+          </div>
+          <button id="inventory-open-crafting" style="padding:10px 12px;border-radius:8px;border:1px solid #333;background:#222;color:#FFD27A;">Abrir crafteo</button>
+          <button id="inventory-unequip-btn" style="padding:10px 12px;border-radius:8px;border:1px solid #333;background:#341a1a;color:#FFD27A;">Desequipar</button>
+          <div style="font-size:12px;color:#bbb;line-height:1.4;">Tip: arrastra un ítem directamente sobre una receta para craftear si tienes materiales.</div>
+        </div>
+      </div>`;
     document.body.appendChild(p);
-    document.getElementById('btn-inv-close').addEventListener('click', () => p.style.display = 'none');
+    const openCraftBtn = document.getElementById('inventory-open-crafting');
+    if (openCraftBtn) openCraftBtn.addEventListener('click', () => { try { toggleCraftingPanel(); } catch (e) {} });
+    const unequipBtn = document.getElementById('inventory-unequip-btn');
+    if (unequipBtn) unequipBtn.addEventListener('click', () => { try { window.unequipItem(); updateInventory(); } catch (e) {} });
   }
 
   // Entity info panel (right-click)
@@ -7050,20 +7682,35 @@ function createAbilityBarAndMissions() {
   function updateEquippedUI() {
     const icon = document.getElementById('equipped-icon');
     const label = document.getElementById('equipped-label');
-    if (!icon || !label) return;
-    icon.innerHTML = '';
-    label.textContent = '';
+    const invIcon = document.getElementById('inventory-equip-icon');
+    const invLabel = document.getElementById('inventory-equip-label');
+    const invHint = document.getElementById('inventory-equip-hint');
+    if (icon) icon.innerHTML = '';
+    if (label) label.textContent = '';
+    if (invIcon) invIcon.innerHTML = '';
     const it = player.equipped;
     if (!it) {
-      label.textContent = 'Mano';
+      if (label) label.textContent = 'Mano';
+      if (invLabel) invLabel.textContent = 'Nada equipado';
+      if (invHint) invHint.textContent = 'Arrastra aquí un arma u objeto equipable';
+      try { refreshInventoryDropTargets(); } catch (e) {}
       return;
     }
     // draw a small canvas icon for equipped item
     const cv = document.createElement('canvas'); cv.width = 40; cv.height = 28; cv.style.width='40px'; cv.style.height='28px';
     const cctx = cv.getContext('2d');
     drawItemIcon(cctx, it, 40, 28);
-    icon.appendChild(cv);
-    label.textContent = it;
+    if (icon) icon.appendChild(cv);
+    if (label) label.textContent = it;
+
+    if (invIcon) {
+      const big = document.createElement('canvas'); big.width = 48; big.height = 48; big.style.width = '48px'; big.style.height = '48px';
+      drawItemIcon(big.getContext('2d'), it, 48, 48);
+      invIcon.appendChild(big);
+    }
+    if (invLabel) invLabel.textContent = it;
+    if (invHint) invHint.textContent = 'Arrastra otro ítem aquí para cambiarlo';
+    try { refreshInventoryDropTargets(); } catch (e) {}
   }
 
   // expose updateEquippedUI globally so other modules can call it
@@ -7073,6 +7720,7 @@ function createAbilityBarAndMissions() {
   window.equipItem = function(itemId) {
     if (!itemId) { player.equipped = null; updateEquippedUI(); return true; }
     if ((inventory[itemId] || 0) <= 0) { notify('No tienes ese objeto para equipar'); return false; }
+    if (!isEquippableItem(itemId)) { notify('Ese objeto no se puede equipar'); return false; }
     player.equipped = itemId;
     updateEquippedUI();
     notify('Equipado: ' + itemId);
@@ -7089,46 +7737,31 @@ function createAbilityBarAndMissions() {
     bar.appendChild(cb);
   } catch (e) {}
 
-  // mission queue container (right side)
-  let mq = document.getElementById('mission-queue');
-  if (!mq) {
-    mq = document.createElement('div'); mq.id = 'mission-queue';
-    mq.style.position = 'fixed'; mq.style.right = '12px'; mq.style.top = '80px'; mq.style.zIndex = 4000;
-    stylePanel(mq);
-    mq.style.minWidth = '220px';
-    mq.innerHTML = `<div style="font-weight:700;margin-bottom:6px">Misiones</div><div id="mission-list"></div>`;
-    document.body.appendChild(mq);
-    // make the missions panel floating/minimizable like other panels
-    try { enableFloatingBehavior(mq); registerPanel(mq); } catch (err) { /* ignore */ }
+  // Event history panel (replaces mission queue)
+  let eh = document.getElementById('event-history');
+  if (!eh) {
+    eh = document.createElement('div'); eh.id = 'event-history';
+    eh.style.position = 'fixed'; eh.style.right = '12px'; eh.style.top = '80px'; eh.style.zIndex = 4000;
+    stylePanel(eh);
+    eh.style.minWidth = '260px'; eh.style.maxHeight = '44vh'; eh.style.overflow = 'auto';
+    eh.innerHTML = `<div style="font-weight:700;margin-bottom:6px;color:var(--sand-mid)">Historial de eventos</div><div id="event-history-list" style="max-height:calc(44vh - 36px);overflow:auto"></div>`;
+    document.body.appendChild(eh);
+    try { enableFloatingBehavior && typeof enableFloatingBehavior === 'function' && enableFloatingBehavior(eh); registerPanel && typeof registerPanel === 'function' && registerPanel(eh); } catch (err) {}
   }
 
-  // mission system state
-  window._missions = window._missions || [];
-
-  function renderMissions() {
-    const list = document.getElementById('mission-list'); if (!list) return; list.innerHTML = '';
-    window._missions.forEach(m => {
-        const el = document.createElement('div'); el.className = 'mission-row';
-        el.style.padding = '10px'; el.style.borderBottom = '1px solid rgba(255,255,255,0.03)';
-        el.style.display = 'flex'; el.style.justifyContent = 'space-between'; el.style.alignItems = 'center';
-        el.style.background = 'transparent'; el.style.color = '#fff'; el.style.gap = '8px';
-        // left: title + desc
-        const left = document.createElement('div'); left.style.flex = '1';
-        const t = document.createElement('div'); t.textContent = m.title; t.style.fontWeight = '700'; t.style.color = 'var(--sand-mid)'; t.style.fontSize = '0.95rem';
-        const d = document.createElement('div'); d.textContent = m.desc; d.style.fontSize = '12px'; d.style.color = 'var(--ui-dim)'; d.style.marginTop = '6px';
-        left.appendChild(t); left.appendChild(d);
-        // right: progress + claim button
-        const right = document.createElement('div'); right.style.textAlign = 'right'; right.style.width = '92px';
-        const prog = document.createElement('div'); prog.textContent = `${m.progress||0}/${m.target||1}`; prog.style.fontWeight = '700'; prog.style.color = 'var(--wheat)';
-        const btn = document.createElement('button'); btn.textContent = 'Reclamar'; btn.style.marginTop = '8px'; btn.style.padding = '6px 8px'; btn.style.borderRadius = '6px'; btn.style.background = '#222'; btn.style.border = '1px solid rgba(255,255,255,0.04)'; btn.style.color = 'var(--sand-light)'; btn.style.cursor = 'pointer';
-        btn.addEventListener('click', () => { if ((m.progress||0) >= (m.target||1)) completeMission(m.id); else notify('Misión incompleta'); });
-        right.appendChild(prog); right.appendChild(btn);
-        el.appendChild(left); el.appendChild(right);
-        list.appendChild(el);
+  // event history state
+  window._eventHistory = window._eventHistory || [];
+  function renderEventHistory() {
+    const list = document.getElementById('event-history-list'); if (!list) return; list.innerHTML = '';
+    const items = (window._eventHistory || []).slice(-30).reverse();
+    items.forEach(it => {
+      const el = document.createElement('div'); el.style.padding = '8px'; el.style.borderBottom = '1px solid rgba(255,255,255,0.03)'; el.style.fontSize = '12px';
+      const t = document.createElement('div'); t.textContent = it.title || 'Evento'; t.style.fontWeight = '700'; t.style.color = '#FFD27A';
+      const d = document.createElement('div'); d.textContent = it.desc || ''; d.style.color = '#E8DCC2'; d.style.marginTop = '4px'; d.style.fontSize = '12px';
+      el.appendChild(t); el.appendChild(d); list.appendChild(el);
     });
   }
-  // expose renderer so other parts can update mission UI
-  window.renderMissions = renderMissions;
+  window.addGameEventHistory = function(ev) { try { window._eventHistory = window._eventHistory || []; window._eventHistory.push({ time: Date.now(), title: ev.title || ev.event && ev.event.title, desc: ev.desc || ev.event && ev.event.desc }); renderEventHistory(); } catch (e) {} };
 
   // ability use logic
   function useAbility(idx) {
@@ -7158,57 +7791,7 @@ function createAbilityBarAndMissions() {
   function facingDirX() { if (keyState['d'] || keyState['ArrowRight']) return 1; if (keyState['a'] || keyState['ArrowLeft']) return -1; return 1; }
   function facingDirY() { if (keyState['s'] || keyState['ArrowDown']) return 1; if (keyState['w'] || keyState['ArrowUp']) return -1; return 0; }
 
-  // mission completion -> reward
-  function completeMission(id) {
-    const idx = window._missions.findIndex(m => m.id === id); if (idx === -1) return;
-    const m = window._missions[idx];
-    // grant reward (simple: resource map)
-    if (m.reward) {
-      Object.entries(m.reward).forEach(([k,v]) => addToInventory(k, v));
-    }
-    // visual reward popup
-    showRewardPopup(m.reward || { gold:1 });
-    window._missions.splice(idx,1);
-    renderMissions();
-  }
-
-  // create a floating reward animation near top
-  function showRewardPopup(reward) {
-    const el = document.createElement('div');
-    el.style.position = 'fixed'; el.style.left = '50%'; el.style.top = '24px'; el.style.transform = 'translateX(-50%)';
-    el.style.zIndex = 5000; el.style.display = 'inline-block';
-    stylePanel(el);
-    // keep unified style: square corners and gold border from stylePanel
-    el.style.padding = '8px 14px'; el.style.fontWeight = '700';
-    el.style.color = '#FFD27A';
-    el.style.border = '3px solid #d4af37';
-    el.style.borderRadius = '4px';
-    const text = Object.entries(reward).map(([k,v]) => `+${v} ${k}`).join(', ');
-    el.textContent = `Recompensa: ${text}`;
-    document.body.appendChild(el);
-    // animate up & fade
-    requestAnimationFrame(() => { el.style.transition = 'transform 600ms ease, opacity 600ms ease'; });
-    setTimeout(() => { el.style.transform = 'translateX(-50%) translateY(-18px)'; el.style.opacity = '0'; }, 1200);
-    setTimeout(() => { try { document.body.removeChild(el); } catch (e) {} }, 2000);
-  }
-
-  // expose mission add helper
-  window.addMission = function(m) { m.id = m.id || ('m'+Math.random().toString(36).slice(2,8)); window._missions.push(m); renderMissions(); };
-
-  // sample missions to start with
-  if (window._missions.length === 0 && window._storyChapter === 0) {
-    // Default sandbox missions when not yet engaged in the story arc
-    window.addMission({ title: 'Recolecta trigo', desc: 'Reúne 3 unidades de trigo.', target: 3, progress: inventory['food']||0, reward: { food:2, stone:1 }, watch: 'food' });
-    window.addMission({ title: 'Construye una casa', desc: 'Coloca 1 casa en el mapa.', target: 1, progress: 0, reward: { stone:3 }, watch: 'build.house' });
-  } else if (window._storyChapter > 0) {
-    // Re-inject active story quest on reload
-    const existing = window._missions.find(m => m.isStory);
-    if (!existing) {
-      const q = _STORY_QUESTS[window._storyChapter];
-      if (q) { window._missions.unshift(JSON.parse(JSON.stringify(q))); }
-    }
-  }
-  renderMissions();
+  // missions removed: simplified hybrid flow uses EventManager + event history
 
   // global keybinds for abilities (1-4)
   document.addEventListener('keydown', (e) => {
@@ -7312,7 +7895,12 @@ function createMenuBar() {
   returnToMenuBtn.className = 'tool-btn';
   returnToMenuBtn.addEventListener('click', () => {
     try { saveAppState(); } catch (e) {}
-    try { localStorage.removeItem('meso.lastStartMenu'); } catch (e) {}
+    try { 
+      // mark that user explicitly returned to menu to prevent immediate auto-restore
+      localStorage.setItem('meso.doNotAutoRestore', String(Date.now()));
+      // also remove lastStartMenu so menu shows cleanly
+      localStorage.removeItem('meso.lastStartMenu');
+    } catch (e) {}
     try { clearRuntimeCaches(); } catch (e) {}
     location.reload();
   });
@@ -7403,6 +7991,27 @@ function createMenuBar() {
   const optOverlay = document.createElement('label'); optOverlay.style.display='block'; optOverlay.style.cursor='pointer'; optOverlay.style.marginTop='6px'; optOverlay.innerHTML = `<input type='checkbox' ${window.DEBUG_ISO ? 'checked' : ''}> Mostrar overlay debug`;
   optOverlay.querySelector('input').addEventListener('change', (e) => { window.DEBUG_ISO = !!e.target.checked; });
   devMenu.appendChild(optLogPlayer); devMenu.appendChild(optLogCam); devMenu.appendChild(optOverlay);
+  const devModeHdr = document.createElement('div'); devModeHdr.textContent = 'Modo'; devModeHdr.style.marginTop = '10px'; devModeHdr.style.marginBottom = '6px'; devModeHdr.style.fontWeight = '700';
+  const devModeRow = document.createElement('div'); devModeRow.style.display = 'flex'; devModeRow.style.gap = '6px'; devModeRow.style.marginBottom = '6px';
+  const devModeFreeBtn = document.createElement('button'); devModeFreeBtn.id = 'btn-dev-mode-free'; devModeFreeBtn.textContent = 'Libre'; devModeFreeBtn.className = 'tool-btn';
+  const devModeEditBtn = document.createElement('button'); devModeEditBtn.id = 'btn-dev-mode-edit'; devModeEditBtn.textContent = 'Edición'; devModeEditBtn.className = 'tool-btn';
+  devModeFreeBtn.classList.toggle('active', !editMode);
+  devModeEditBtn.classList.toggle('active', !!editMode);
+  devModeRow.appendChild(devModeFreeBtn); devModeRow.appendChild(devModeEditBtn);
+  devMenu.appendChild(devModeHdr); devMenu.appendChild(devModeRow);
+  devModeFreeBtn.addEventListener('click', () => { setEditMode(false); });
+  devModeEditBtn.addEventListener('click', () => { setEditMode(true); });
+
+  const devViewHdr = document.createElement('div'); devViewHdr.textContent = 'Vista'; devViewHdr.style.marginTop = '6px'; devViewHdr.style.marginBottom = '6px'; devViewHdr.style.fontWeight = '700';
+  const devViewRow = document.createElement('div'); devViewRow.style.display = 'flex'; devViewRow.style.gap = '6px'; devViewRow.style.marginBottom = '6px';
+  const devViewOrthoBtn = document.createElement('button'); devViewOrthoBtn.id = 'btn-dev-view-ortho'; devViewOrthoBtn.textContent = 'Ortogonal'; devViewOrthoBtn.className = 'tool-btn';
+  const devViewIsoBtn = document.createElement('button'); devViewIsoBtn.id = 'btn-dev-view-iso'; devViewIsoBtn.textContent = 'Isométrica'; devViewIsoBtn.className = 'tool-btn';
+  devViewOrthoBtn.classList.toggle('active', viewMode === 'ortho');
+  devViewIsoBtn.classList.toggle('active', viewMode === 'iso');
+  devViewRow.appendChild(devViewOrthoBtn); devViewRow.appendChild(devViewIsoBtn);
+  devMenu.appendChild(devViewHdr); devMenu.appendChild(devViewRow);
+  devViewOrthoBtn.addEventListener('click', () => { setViewMode('ortho'); });
+  devViewIsoBtn.addEventListener('click', () => { setViewMode('iso'); });
   // Auto-NPC speak config and dialogue loader
   try {
     window.AUTO_NPC_SPEAK = typeof window.AUTO_NPC_SPEAK === 'boolean' ? window.AUTO_NPC_SPEAK : true;
@@ -7855,22 +8464,49 @@ function createTaskPanel() {
 
 // find entity (resource/player) or rabbit near world float coords (x,y in tiles)
 function findEntityAtWorld(x, y) {
-  // check entities
+  // Prefer buildings (check footprint first so clicking roof selects building)
+  try {
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const info = getCellInfo(c, r);
+        if (!info || !info.isBase) continue;
+        const sz = getBuildingSize(info.type || '');
+        if (x >= info.baseCol && x <= info.baseCol + sz.w && y >= info.baseRow && y <= info.baseRow + sz.h) {
+          return { kind: 'building', type: info.type, baseCol: info.baseCol, baseRow: info.baseRow, size: sz };
+        }
+      }
+    }
+  } catch (e) {}
+
+  // check entities (resources/buildings placed as entities)
+  try {
+    // Use SceneManager spatial index when available for fast nearby entity lookup
+    if (window.SceneManager && typeof window.SceneManager.findAtPoint === 'function') {
+      const found = window.SceneManager.findAtPoint(x, y, { radius: 0.9 });
+      if (found) return found;
+    }
+  } catch (e) {}
+  // fallback: brute-force scan (last-first) for compatibility
   for (let i = entities.length - 1; i >= 0; i--) {
     const ent = entities[i];
     if (!ent) continue;
-    const dx = (ent.col + 0.5) - x; const dy = (ent.row + 0.5) - y;
-    if (Math.hypot(dx, dy) < 0.7) return ent;
+    const ex = (typeof ent.x === 'number') ? ent.x : ent.col + 0.5;
+    const ey = (typeof ent.y === 'number') ? ent.y : ent.row + 0.5;
+    const dx = ex - x; const dy = ey - y;
+    const sizeFactor = Math.max(0.6, (ent.size || 1));
+    if (Math.hypot(dx, dy) < 0.6 * sizeFactor) return ent;
   }
   // check rabbits
   for (let i = rabbits.length - 1; i >= 0; i--) {
     const rab = rabbits[i];
-    const dx = (rab.col + 0.5) - x; const dy = (rab.row + 0.5) - y;
-    if (Math.hypot(dx, dy) < 0.8) return rab;
+    const rx = (typeof rab.x === 'number') ? rab.x : (rab.col + 0.5);
+    const ry = (typeof rab.y === 'number') ? rab.y : (rab.row + 0.5);
+    const dx = rx - x; const dy = ry - y;
+    if (Math.hypot(dx, dy) < Math.max(0.6, (rab.size || 0.45) * 0.9)) return rab;
   }
   // check player
   const pdx = (player.x) - x; const pdy = (player.y) - y;
-  if (Math.hypot(pdx, pdy) < 0.8) return { kind: 'player', name: player.name, col: Math.floor(player.x), row: Math.floor(player.y), hp: char.hp, maxHp: char.maxHp };
+  if (Math.hypot(pdx, pdy) < 0.9) return { kind: 'player', name: player.name, col: Math.floor(player.x), row: Math.floor(player.y), hp: char.hp, maxHp: char.maxHp };
   return null;
 }
 
@@ -7879,6 +8515,17 @@ function showEntityInfo(ent) {
   const body = document.getElementById('entity-info-body');
   const title = document.getElementById('entity-info-title');
   if (!panel || !body || !title) return;
+  // Avoid building full info panels when viewing from far away / zoomed out.
+  try {
+    if (!shouldRenderDetailsForEntity(ent)) {
+      try {
+        title.textContent = ent.name || 'Entidad lejana';
+        body.innerHTML = '<div style="padding:8px;color:#ddd">Entidad lejana — acércate para ver detalles</div>';
+        panel.style.display = 'block';
+      } catch (e) {}
+      return;
+    }
+  } catch (e) {}
   title.textContent = ent.name || (ent.kind === 'resource' ? ent.subtype : 'Entidad');
   const lines = [];
   // header details
@@ -7896,11 +8543,18 @@ function showEntityInfo(ent) {
       lines.push('</div>');
     }
   } else {
-    // rabbit or generic
-    lines.push(`<div style="font-weight:700">Animal</div>`);
-    lines.push(`<div>HP: ${ent.hp || 'N/A'}/${ent.maxHp || 'N/A'}</div>`);
-    lines.push(`<div>Pos: ${ent.col},${ent.row}</div>`);
-    if (ent.size) lines.push(`<div>Tamaño: ${ent.size}</div>`);
+    // rabbit, building or generic
+    if (ent.kind === 'building') {
+      lines.push(`<div style="font-weight:700">Construcción</div>`);
+      lines.push(`<div>Tipo: ${ent.type}</div>`);
+      lines.push(`<div>Ubicación base: ${ent.baseCol}, ${ent.baseRow}</div>`);
+      if (ent.size) lines.push(`<div>Tamaño: ${ent.size.w}×${ent.size.h}</div>`);
+    } else {
+      lines.push(`<div style="font-weight:700">Animal</div>`);
+      lines.push(`<div>HP: ${ent.hp || 'N/A'}/${ent.maxHp || 'N/A'}</div>`);
+      lines.push(`<div>Pos: ${ent.col},${ent.row}</div>`);
+      if (ent.size) lines.push(`<div>Tamaño: ${ent.size}</div>`);
+    }
   }
 
   // action buttons when relevant
@@ -8053,6 +8707,136 @@ function drawTreesVisible() {
   }
 }
 
+function isTreeOccludingPlayer(ent, tileSize) {
+  try {
+    const ex = (typeof ent.x === 'number') ? ent.x : ent.col;
+    const ey = (typeof ent.y === 'number') ? ent.y : ent.row;
+    const dist = Math.hypot(ex - (player.x || 0), ey - (player.y || 0));
+    if (dist > 2.3) return false;
+    const playerScreen = worldToScreen(player.x, player.y);
+    const treeScreen = worldToScreen(ex, ey);
+    const dx = Math.abs((treeScreen.x + tileSize * 0.5) - (playerScreen.x + tileSize * 0.5));
+    const dy = (treeScreen.y + tileSize) - (playerScreen.y + tileSize);
+    return dx < tileSize * 0.95 && dy > -tileSize * 0.35 && dy < tileSize * 0.95;
+  } catch (e) {
+    return false;
+  }
+}
+
+function drawTreeOcclusionOverlay(ent) {
+  try {
+    const tileSize = getTileSize();
+    const ex = (typeof ent.x === 'number') ? ent.x : ent.col;
+    const ey = (typeof ent.y === 'number') ? ent.y : ent.row;
+    const { x, y } = worldToScreen(ex, ey);
+    const variant = ent.variant || 'oak';
+
+    if (variant === 'tallgrass' || variant === 'weed') {
+      const tpl = GLOBAL_TREE_TEMPLATES[6];
+      const scale = Math.max(1, Math.floor(tileSize / 7 * (ent.size || 0.6)));
+      const cx = Math.floor(x + tileSize * 0.5);
+      const cy = Math.floor(y + tileSize - 2);
+      const spriteW = 3 * scale;
+      const spriteH = 2 * scale;
+      const sx = cx - Math.floor(spriteW / 2);
+      const sy = cy - spriteH;
+      for (const [px, py, color] of tpl) {
+        ctx.fillStyle = color;
+        ctx.fillRect(sx + px * scale, sy + py * scale, scale, scale);
+      }
+      return { x: cx, y: sy - 10, dist: Math.hypot(ex - player.x, ey - player.y) };
+    }
+
+    if (variant === 'hedge') {
+      const tpl = GLOBAL_TREE_TEMPLATES[5];
+      const scale = Math.max(1, Math.floor(tileSize / 6 * (ent.size || 0.8)));
+      const cx = Math.floor(x + tileSize * 0.5);
+      const cy = Math.floor(y + tileSize - 2);
+      const spriteW = 5 * scale;
+      const spriteH = 2 * scale;
+      const sx = cx - Math.floor(spriteW / 2);
+      const sy = cy - spriteH;
+      for (const [px, py, color] of tpl) {
+        ctx.fillStyle = color;
+        ctx.fillRect(sx + px * scale, sy + py * scale, scale, scale);
+      }
+      return { x: cx, y: sy - 10, dist: Math.hypot(ex - player.x, ey - player.y) };
+    }
+
+    if (hasRegisteredSprite(variant)) {
+      const lodFactor = zoom >= GRAPHICS_CONFIG.smoothingThreshold ? 1 : 0.8;
+      const sz = Math.max(tileSize * 0.6, Math.round(tileSize * (ent.size || 1) * 1.3 * lodFactor));
+      const jitterX = Math.floor((tileNoise(ent.col || 0, ent.row || 0, 7, 8) - 0.5) * tileSize * 0.18);
+      drawEntitySpriteAt(variant, x + tileSize * 0.5 + jitterX, y + tileSize, sz, sz * 1.15);
+      return { x: x + tileSize * 0.5 + jitterX, y: y - sz * 0.35, dist: Math.hypot(ex - player.x, ey - player.y) };
+    }
+
+    const map = { pine:0, tallslim:4, oak:1, broad:1, round:1, scrub:2, bush:2, shrub:2, multi:3 };
+    let idx = (map[variant] !== undefined) ? map[variant] : Math.floor(tileNoise(ent.col || 0, ent.row || 0, 5, 6) * GLOBAL_TREE_TEMPLATES.length);
+    idx = Math.max(0, Math.min(GLOBAL_TREE_TEMPLATES.length - 1, idx));
+    const tpl = GLOBAL_TREE_TEMPLATES[idx];
+    const lodFactor = zoom >= GRAPHICS_CONFIG.smoothingThreshold ? 1 : 0.8;
+    let baseScale = Math.floor((tileSize / 4.8) * lodFactor);
+    if (variant === 'tall' || variant === 'tallslim') baseScale = Math.floor(baseScale * 1.2);
+    const scale = Math.max(1, Math.floor(baseScale * (ent.size || 1)));
+    let maxX = 0, maxY = 0;
+    for (const p of tpl) { if (p[0] > maxX) maxX = p[0]; if (p[1] > maxY) maxY = p[1]; }
+    const spriteW = (maxX + 1) * scale;
+    const spriteH = (maxY + 1) * scale;
+    const jitterX = Math.floor((tileNoise(ent.col || 0, ent.row || 0, 7, 8) - 0.5) * tileSize * 0.18);
+    const cx = Math.floor(x + tileSize * 0.5 + jitterX);
+    const cy = Math.floor(y + tileSize - 2);
+    const sx = cx - Math.floor(spriteW / 2);
+    const sy = cy - spriteH;
+    for (const [px, py, color] of tpl) {
+      ctx.fillStyle = color;
+      ctx.fillRect(sx + px * scale, sy + py * scale, scale, scale);
+    }
+    return { x: cx, y: sy - 12, dist: Math.hypot(ex - player.x, ey - player.y) };
+  } catch (e) {
+    return null;
+  }
+}
+
+function drawPlayerOcclusionIndicators() {
+  try {
+    const markers = Array.isArray(window._occlusionMarkers) ? window._occlusionMarkers.slice() : [];
+    if (!markers.length) return;
+    markers.sort((a, b) => a.dist - b.dist);
+    const m = markers[0];
+    const arrowY = Math.max(26, m.y);
+    ctx.save();
+    ctx.fillStyle = '#FFD27A';
+    ctx.strokeStyle = 'rgba(20,10,0,0.95)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(m.x, arrowY);
+    ctx.lineTo(m.x - 10, arrowY - 18);
+    ctx.lineTo(m.x - 4, arrowY - 18);
+    ctx.lineTo(m.x - 4, arrowY - 30);
+    ctx.lineTo(m.x + 4, arrowY - 30);
+    ctx.lineTo(m.x + 4, arrowY - 18);
+    ctx.lineTo(m.x + 10, arrowY - 18);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  } catch (e) {}
+}
+
+function drawTreesInFrontOfPlayer() {
+  try {
+    window._occlusionMarkers = [];
+    const tileSize = getTileSize();
+    for (const ent of (entities || [])) {
+      if (!ent || ent.kind !== 'tree') continue;
+      if (!isTreeOccludingPlayer(ent, tileSize)) continue;
+      const marker = drawTreeOcclusionOverlay(ent);
+      if (marker) window._occlusionMarkers.push(marker);
+    }
+  } catch (e) {}
+}
+
 // Create larger coherent patches by seeded expansion to improve biome patterns
 function refineBiomes() {
   // Mesopotamian variant: subtle local variation within zones (water/riparian/marsh preserved)
@@ -8160,6 +8944,12 @@ function enableFloatingBehavior(el) {
     startX = e.clientX; startY = e.clientY;
     const rect = el.getBoundingClientRect();
     // ensure element has left/top set
+    if (el.style.transform && el.style.transform.indexOf('translate') !== -1) {
+      el.style.left = rect.left + 'px';
+      el.style.top = rect.top + 'px';
+      el.style.transform = 'none';
+      el.dataset.dragMoved = '1';
+    }
     if (!el.style.left) el.style.left = rect.left + 'px';
     if (!el.style.top) el.style.top = rect.top + 'px';
     origX = parseFloat(el.style.left || 0); origY = parseFloat(el.style.top || 0);
@@ -8172,6 +8962,8 @@ function enableFloatingBehavior(el) {
     el.style.top = (origY + dy) + 'px';
     el.style.right = 'auto';
     el.style.bottom = 'auto';
+    el.style.transform = 'none';
+    el.dataset.dragMoved = '1';
   });
   document.addEventListener('mouseup', () => { if (dragging) { dragging = false; header.style.cursor = 'grab'; document.body.style.userSelect = ''; } });
   return el;
@@ -8765,6 +9557,52 @@ function drawStoryObjectiveHUD(ctx, W, H) {
 window._introSeq = window._introSeq || null;
 window._activeDialogue = window._activeDialogue || null;
 
+// Performance: when zoomed out or far from the player, avoid heavy UI/detail work
+// but keep vegetation and lightweight visuals. Tune these thresholds as needed.
+const DETAIL_MIN_ZOOM_FOR_UI = 0.7; // zoom >= -> render full UI/details
+const DETAIL_MAX_DISTANCE_TILES = 12; // within N tiles from player -> render details
+function shouldRenderDetailsForEntity(ent) {
+  try {
+    if (typeof zoom === 'number' && zoom >= DETAIL_MIN_ZOOM_FOR_UI) return true;
+    if (!ent) return false;
+    const ex = (typeof ent.x === 'number') ? ent.x : (typeof ent.col === 'number' ? (ent.col + 0.5) : 0);
+    const ey = (typeof ent.y === 'number') ? ent.y : (typeof ent.row === 'number' ? (ent.row + 0.5) : 0);
+    const px = (window.player && typeof window.player.x === 'number') ? window.player.x : 0;
+    const py = (window.player && typeof window.player.y === 'number') ? window.player.y : 0;
+    const d = Math.hypot(ex - px, ey - py);
+    return d <= DETAIL_MAX_DISTANCE_TILES;
+  } catch (e) { return true; }
+}
+
+// Determine whether an entity needs logic updates based on distance/zoom.
+function shouldUpdateEntity(ent, opts = {}) {
+  try {
+    if (!ent) return false;
+    // always update player and nearby selected units
+    if (ent.kind === 'player') return true;
+    const px = (window.player && typeof window.player.x === 'number') ? window.player.x : 0;
+    const py = (window.player && typeof window.player.y === 'number') ? window.player.y : 0;
+    const ex = (typeof ent.x === 'number') ? ent.x : (typeof ent.col === 'number' ? ent.col + 0.5 : 0);
+    const ey = (typeof ent.y === 'number') ? ent.y : (typeof ent.row === 'number' ? ent.row + 0.5 : 0);
+    const d = Math.hypot(ex - px, ey - py);
+    // base thresholds
+    const NEAR = opts.near || 6; // tiles
+    const FAR = opts.far || 28; // tiles
+    if (d <= NEAR) return true;
+    if (d >= FAR) return false;
+    // between near and far, throttle based on distance: less frequent updates
+    const now = Date.now();
+    const baseInterval = (opts.baseIntervalMs || 600); // default 600ms
+    // scale interval from baseInterval to baseInterval*6 based on distance
+    const t = (d - NEAR) / Math.max(1, (FAR - NEAR));
+    const interval = Math.round(baseInterval * (1 + t * 5));
+    const last = ent._lastLogicAt || 0;
+    if (now - last < interval) return false;
+    ent._lastLogicAt = now;
+    return true;
+  } catch (e) { return true; }
+}
+
 function startIntroSequence() {
   window._introSeq = { phase: 0, phaseStart: performance.now(), done: false };
 }
@@ -8842,6 +9680,23 @@ function drawIntroSequence(ctx, W, H) {
 // ── NPC story/dialogue helpers ────────────────────────────────
 function openNpcDialogue(npc) {
   if (!npc) return;
+
+  // If player is viewing from far away (or zoomed out), do not open the full
+  // dialogue panel — instead show a short floating phrase to avoid UI freezes.
+  try {
+    if (!shouldRenderDetailsForEntity(npc)) {
+      try {
+        const cfg = (window.NPC_DIALOGUES && window.NPC_DIALOGUES[npc.npcType]) || null;
+        const phrases = (cfg && cfg.phrases) || [];
+        if (phrases.length > 0) {
+          const ph = phrases[Math.floor(Math.random() * phrases.length)];
+          if (window.spawnFloatingText) window.spawnFloatingText(npc.col + 0.5, npc.row - 0.1, ph, '#FFF');
+          else if (window.floatingTexts) window.floatingTexts.push({ born: Date.now(), life: 2000, worldX: npc.col + 0.5, worldY: npc.row - 0.1, yv: -0.25, color: '#FFF', text: ph });
+        }
+      } catch (e) {}
+      return;
+    }
+  } catch (e) {}
 
   // Story NPCs: context-aware lines based on current chapter
   if (npc.isStoryNPC) {
@@ -9432,10 +10287,10 @@ function setViewMode(mode) {
   viewMode = mode;
   const orthoBtn = document.getElementById('btn-view-ortho');
   const isoBtn = document.getElementById('btn-view-iso');
-  if (orthoBtn && isoBtn) {
-    orthoBtn.classList.toggle('active', mode === 'ortho');
-    isoBtn.classList.toggle('active', mode === 'iso');
-  }
+  const devOrthoBtn = document.getElementById('btn-dev-view-ortho');
+  const devIsoBtn = document.getElementById('btn-dev-view-iso');
+  [orthoBtn, devOrthoBtn].filter(Boolean).forEach(btn => btn.classList.toggle('active', mode === 'ortho'));
+  [isoBtn, devIsoBtn].filter(Boolean).forEach(btn => btn.classList.toggle('active', mode === 'iso'));
   // when switching to iso, try to fit entire map; else just clamp
   if (mode === 'iso') {
     try { fitMapToViewSmooth(); } catch (err) { clampCamera(); }
@@ -9494,10 +10349,10 @@ function setEditMode(enabled) {
   document.body.classList.toggle('free-mode', !editMode);
   const editBtn = document.getElementById('btn-mode-edit');
   const freeBtn = document.getElementById('btn-mode-free');
-  if (editBtn && freeBtn) {
-    editBtn.classList.toggle('active', editMode);
-    freeBtn.classList.toggle('active', !editMode);
-  }
+  const devEditBtn = document.getElementById('btn-dev-mode-edit');
+  const devFreeBtn = document.getElementById('btn-dev-mode-free');
+  [editBtn, devEditBtn].filter(Boolean).forEach(btn => btn.classList.toggle('active', editMode));
+  [freeBtn, devFreeBtn].filter(Boolean).forEach(btn => btn.classList.toggle('active', !editMode));
   if (!editMode) {
     selectedTool = null;
     document.querySelectorAll('.build-btn, #btn-demolish').forEach(b => b.classList.remove('selected'));
@@ -9928,10 +10783,11 @@ function init() {
   setViewMode('ortho');
   setPanMode(false);
   setAdvStatsVisible(true);
-  setEditMode(true);
+  setEditMode(false);
   setFloatingPanels(false);
   // create overlay UI (follow button, inventory panel, settings)
   try { createOverlayUI(); } catch (err) { /* ignore */ }
+  try { createDebugHUD(); } catch (err) {}
   try { createAbilityBarAndMissions(); } catch (err) { /* ignore */ }
 
   // Enhance top icons and create the game guide; make panels floating
@@ -10171,9 +11027,46 @@ function postMapInit() {
   addLog('Atajos: H=Casa V=Villa F=Granja T=Templo K=Mercado G=Granero Z=Zigurat D=Demoler');
   notify('¡Bienvenido a Mesopotamia! Construye tu ciudad.');
   try { startRenderLoop(); } catch (e) {}
+  try { if (window.EventManager && typeof window.EventManager.init === 'function') { try { window.EventManager.init(); } catch (e) {} } } catch (e) {}
+  // build tree atlas for faster tree draws
+  try { if (!window._TREE_ATLAS) { buildTreeAtlas(TILE); } } catch (e) { console.warn('buildTreeAtlas failed', e); }
   // signal to any external host that engine finished map initialization
   try { if (window._onEngineReady && typeof window._onEngineReady === 'function') { try { console.log && console.log('game-engine: calling _onEngineReady'); window._onEngineReady(); } catch (e) {} } } catch (e) {}
+  // record last active timestamp so a page refresh within an hour will auto-restore
+  try { localStorage.setItem('meso.lastActive', String(Date.now())); } catch (e) {}
 }
+
+// Listen for events from EventManager and apply simple impacts to game state
+try {
+  window.addEventListener('meso:game-event', function(ev) {
+    try {
+      const d = ev && ev.detail && ev.detail.event;
+      if (!d) return;
+      const title = d.title || 'Evento';
+      const desc = d.desc || '';
+      // Log and notify
+      try { addLog(`Evento: ${title} — ${desc}`); } catch (e) {}
+      try { notify(`${title}: ${desc}`); } catch (e) {}
+      try { if (window.addGameEventHistory) window.addGameEventHistory({ title, desc }); } catch (e) {}
+      // Apply simple resource impacts when defined
+      try {
+        const impact = d.impact || {};
+        if (impact.resource && typeof impact.amount === 'number' && (typeof res !== 'undefined')) {
+          const key = impact.resource;
+          if (res.hasOwnProperty(key)) {
+            res[key] = Math.max(0, (res[key] || 0) - impact.amount);
+            try { updateInventory(); } catch (e) {}
+            try { spawnFloatingText(player.x || 0, player.y || 0, `-${impact.amount} ${key}`, { color: '#FFDDAA', force: true }); } catch (e) {}
+          }
+        }
+        if (impact.resource && typeof impact.factor === 'number') {
+          // temporary production multiplier could be implemented later; for now just notify
+          try { addLog(`Impacto: producción de ${impact.resource} x${impact.factor} (temporal)`); } catch (e) {}
+        }
+      } catch (e) { console.warn('apply event impact failed', e); }
+    } catch (e) { console.warn('meso:game-event handler error', e); }
+  });
+} catch (e) {}
 
 // Update build menu buttons based on current map (mark as 'built' when a type exists)
 function updateBuildMenuFromGrid() {

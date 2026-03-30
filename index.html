@@ -38,16 +38,6 @@
   <!-- TOOLBAR -->
   <div id="toolbar">
     <div class="tool-group">
-      <span class="tool-label">Modo</span>
-      <button class="tool-btn" id="btn-mode-edit">Edicion</button>
-      <button class="tool-btn" id="btn-mode-free">Libre</button>
-    </div>
-    <div class="tool-group">
-      <span class="tool-label">Vista</span>
-      <button class="tool-btn" id="btn-view-ortho">Ortogonal</button>
-      <button class="tool-btn" id="btn-view-iso">Isometrica</button>
-    </div>
-    <div class="tool-group">
       <span class="tool-label">Camara</span>
       <button class="tool-btn" id="btn-panmode">Desplazar</button>
       <button class="tool-btn" id="btn-resetcam">Centrar</button>
@@ -56,6 +46,10 @@
       <span class="tool-label">Paneles</span>
       <button class="tool-btn" id="btn-advstats">Estadistica avanzada</button>
       <button class="tool-btn" id="btn-floatpanels">Paneles flotantes</button>
+    </div>
+    <div class="tool-group">
+      <span class="tool-label">Dev</span>
+      <button class="tool-btn" id="btn-dev-open-ur">Juego UR</button>
     </div>
   </div>
 
@@ -306,6 +300,21 @@
     </div>
   </div>
 </div>
+
+  <!-- In-page modal for Dev: Juego UR -->
+  <div id="ur-modal" style="position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:100001">
+    <div style="position:absolute;inset:0;background:rgba(0,0,0,0.6)"></div>
+    <div style="width:900px;max-width:95%;height:700px;max-height:92%;background:#0b0b08;border-radius:10px;overflow:hidden;box-shadow:0 14px 40px rgba(0,0,0,0.6);position:relative;z-index:100002;display:flex;flex-direction:column">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid rgba(255,255,255,0.03);background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent)">
+        <div style="font-weight:700;color:#FFD27A">Juego UR</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button id="ur-modal-open-external" style="padding:6px 8px;background:transparent;border:1px solid rgba(255,255,255,0.06);border-radius:6px;color:#c8b87a">Abrir en pestaña</button>
+          <button id="ur-modal-close" style="padding:6px 8px;background:#DAA520;border:none;border-radius:6px;color:#111;font-weight:700">Cerrar</button>
+        </div>
+      </div>
+      <iframe id="ur-modal-iframe" src="" style="flex:1;border:0;width:100%;height:100%;background:#000"></iframe>
+    </div>
+  </div>
 
 </div>
 
@@ -559,7 +568,8 @@
       };
     } catch (e) { /* ignore overlay errors */ }
     // inject module script
-    const s = document.createElement('script'); s.type = 'module'; s.src = 'engine/game-engine.js';
+    const engineSrc = 'engine/game-engine.js?v=' + Date.now();
+    const s = document.createElement('script'); s.type = 'module'; s.src = engineSrc;
     console.log('loader: appending engine script', s.src);
     s.onload = () => { try { console.log('loader: engine script loaded (onload)'); } catch (e) {} };
     s.onerror = (e) => { console.error('loader: failed to load engine script', e); try { const msg = document.getElementById('global-loading-msg'); if (msg) msg.textContent = 'Error cargando el motor.'; } catch (er) {} };
@@ -625,14 +635,53 @@
     loadEngineAndStart({ forceNew:false });
   });
 
+  // Dev: open Juego UR in an in-page modal (attempt several candidate paths, else allow manual file pick)
+  try {
+    const btnUR = document.getElementById('btn-dev-open-ur');
+    const urModal = document.getElementById('ur-modal');
+    const urIframe = document.getElementById('ur-modal-iframe');
+    const urClose = document.getElementById('ur-modal-close');
+    const urOpenExternal = document.getElementById('ur-modal-open-external');
+    function openURModal(src) { try { if (!urModal || !urIframe) return; urIframe.src = src; urModal.style.display = 'flex'; } catch (e) {} }
+    if (btnUR) {
+      btnUR.addEventListener('click', async () => {
+        const candidates = [
+          'miniJuegos/ur/index.html', 'ur/index.html', 'games/ur/index.html', 'UR/index.html', 'tools/ur/index.html', 'tools/Support/ur.html', 'ur.html'
+        ];
+        for (const p of candidates) {
+          try {
+            const r = await fetch(p, { cache: 'no-store' });
+            if (r && r.ok) { openURModal(p); return; }
+          } catch (e) { /* not found */ }
+        }
+        // fallback: allow user to pick a local HTML file to open in modal iframe
+        const fiId = 'dev-ur-filepicker';
+        let fi = document.getElementById(fiId);
+        if (!fi) { fi = document.createElement('input'); fi.type = 'file'; fi.accept = 'text/html'; fi.id = fiId; fi.style.display = 'none'; document.body.appendChild(fi); }
+        fi.onchange = (ev) => {
+          const f = fi.files && fi.files[0]; if (!f) return; const url = URL.createObjectURL(f); openURModal(url);
+        };
+        fi.click();
+      });
+    }
+    if (urClose) urClose.addEventListener('click', () => { try { if (urModal) urModal.style.display = 'none'; if (urIframe) urIframe.src = ''; } catch (e) {} });
+    if (urOpenExternal) urOpenExternal.addEventListener('click', () => { try { if (urIframe && urIframe.src) window.open(urIframe.src, '_blank'); } catch (e) {} });
+  } catch (e) { console.warn('dev UR hook failed', e); }
+
   // Auto-restore: if a saved game exists and the start menu was shown recently,
   // hide the external menu and start the engine so the player sees the previous state.
   (function() {
     try {
-      const last = parseInt(localStorage.getItem('meso.lastStartMenu') || '0', 10);
+      const lastMenu = parseInt(localStorage.getItem('meso.lastStartMenu') || '0', 10);
+      const lastActive = parseInt(localStorage.getItem('meso.lastActive') || '0', 10);
       const now = Date.now(); const HOUR = 1000 * 60 * 60;
       const hasSaved = !!localStorage.getItem('meso.appState');
-      if (hasSaved && now - last < HOUR) {
+      // allow explicit opt-out: when player returned to menu intentionally we set doNotAutoRestore
+      const doNot = parseInt(localStorage.getItem('meso.doNotAutoRestore') || '0', 10);
+      const blocked = (doNot && (now - doNot) < HOUR);
+      // Auto-restore if either the menu was shown recently OR the engine was active recently
+      // and there's no recent explicit opt-out (blocked)
+      if (hasSaved && !blocked && (now - lastMenu < HOUR || now - lastActive < HOUR)) {
         try { const root = document.getElementById('main-menu-root'); if (root) root.style.display = 'none'; } catch (e) {}
         // small delay to allow DOM to settle before loading engine
         setTimeout(() => { try { loadEngineAndStart({ forceNew: false }); } catch (e) {} }, 40);
@@ -1034,6 +1083,83 @@
       }
     }
   } catch (e) {}
+</script>
+<!-- Warm onboarding and notification helpers (hybrid experience) -->
+<style>
+  /* Warm notification bubble */
+  .meso-notif {
+    position:fixed; right:18px; top:18px; z-index:100010; max-width:360px; background:linear-gradient(180deg,#1a1710,#221b12); color:#FFDFAF; border-radius:10px; padding:12px 14px; box-shadow:0 8px 30px rgba(0,0,0,0.6); border:1px solid rgba(255,215,122,0.08); font-family: sans-serif; font-size:13px;
+  }
+  .meso-notif .title { font-weight:700; color:#FFD27A; margin-bottom:6px }
+  .meso-notif .desc { color:#E8DCC2; font-size:12px; line-height:1.3 }
+  .meso-onboard { position:fixed; inset:0; display:none; align-items:center; justify-content:center; z-index:100020 }
+  .meso-onboard .card { width:760px; max-width:94%; background:linear-gradient(180deg,#0e0c08,#13100b); color:#fff; border-radius:12px; padding:18px; box-shadow:0 16px 60px rgba(0,0,0,0.6); }
+  .meso-onboard h2 { margin:0 0 8px 0; color:#FFD27A }
+  .meso-onboard p { color:#dcd1b0 }
+  .meso-onboard .actions { display:flex; gap:8px; justify-content:flex-end; margin-top:12px }
+  .meso-onboard button { padding:8px 10px; border-radius:8px; border:none }
+  .meso-btn-primary { background:#DAA520; color:#111; font-weight:700 }
+  .meso-btn-ghost { background:transparent; border:1px solid rgba(255,255,255,0.06); color:#c8b87a }
+</style>
+<div id="meso-onboard" class="meso-onboard">
+  <div class="card">
+    <h2>Bienvenido a MesoBuilder — Versión Híbrida</h2>
+    <p>Has elegido un camino híbrido: construye y gestiona tu ciudad, pero prepárate para eventos que pondrán a prueba tu habilidad de supervivencia. Empezaremos con lo esencial y añadiremos capas según lo validemos.</p>
+    <ul style="color:#e6ddc3;margin-top:8px">
+      <li>Coloca edificios, gestiona trigo y ladrillo.</li>
+      <li>Cuidado con eventos (sequía, saqueadores, festivales).</li>
+      <li>Interfaz más cálida y explicativa para orientación.</li>
+    </ul>
+    <div class="actions">
+      <button id="meso-onboard-skip" class="meso-btn-ghost">Saltar</button>
+      <button id="meso-onboard-start" class="meso-btn-primary">Comenzar partida</button>
+    </div>
+  </div>
+</div>
+<script>
+  // show a brief in-game notification
+  window.showGameNotification = function(title, desc, timeout = 6000) {
+    try {
+      const el = document.createElement('div'); el.className = 'meso-notif';
+      el.innerHTML = `<div class="title">${title}</div><div class="desc">${desc}</div>`;
+      document.body.appendChild(el);
+      setTimeout(() => { try { el.style.transition = 'opacity 280ms ease'; el.style.opacity = '0'; setTimeout(() => { try { el.remove(); } catch (e) {} }, 320); } catch (e) {} }, timeout);
+    } catch (e) { console.warn('showGameNotification', e); }
+  };
+
+  // onboarding modal handlers
+  (function(){
+    const modal = document.getElementById('meso-onboard');
+    const skip = document.getElementById('meso-onboard-skip');
+    const start = document.getElementById('meso-onboard-start');
+    if (!modal) return;
+    function show() { modal.style.display = 'flex'; }
+    function hide() { modal.style.display = 'none'; }
+    if (skip) skip.addEventListener('click', () => { hide(); });
+    if (start) start.addEventListener('click', () => {
+      hide();
+      // start the engine with a fresh map
+      try { localStorage.setItem('meso.forceNew','1'); } catch (e) {}
+      try { if (typeof loadEngineAndStart === 'function') loadEngineAndStart({ forceNew:true }); } catch (e) {}
+    });
+    // show onboard once per session (unless user previously dismissed)
+    try {
+      const seen = sessionStorage.getItem('meso.onboard.shown');
+      if (!seen) { show(); sessionStorage.setItem('meso.onboard.shown','1'); }
+    } catch (e) { show(); }
+  })();
+
+  // listen to events dispatched by EventManager
+  window.addEventListener('meso:game-event', (ev) => {
+    try {
+      const d = ev.detail && ev.detail.event;
+      if (!d) return;
+      const title = d.title || 'Evento';
+      const desc = d.desc || '';
+      showGameNotification(title, desc, 8000);
+      // allow the engine to also respond; we simply provide a friendly UX layer
+    } catch (e) {}
+  });
 </script>
 </body>
 </html>
