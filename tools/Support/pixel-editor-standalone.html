@@ -99,6 +99,7 @@
             border-radius: 2px;
             background: #3a3a3a;
             outline: none;
+            appearance: none;
             -webkit-appearance: none;
         }
 
@@ -458,6 +459,41 @@
             <button class="tool-button active" data-tool="brush">✏️ Brush</button>
             <button class="tool-button" data-tool="eraser">🧹 Eraser</button>
             <button class="tool-button" data-tool="picker">🎨 Picker</button>
+            <button class="tool-button" data-tool="bucket">🪣 Bucket</button>
+            <button class="tool-button" data-tool="line">／ Line</button>
+            <button class="tool-button" data-tool="rect">▭ Rect</button>
+            <button class="tool-button" data-tool="select">⬚ Select</button>
+
+            <div style="display:flex; flex-direction:column; gap:8px;">
+                <button class="tool-button" id="fillSelectionBtn" disabled>🪣 Fill Selection</button>
+                <button class="tool-button" id="eraseSelectionBtn" disabled>✂ Clear Selection</button>
+                <button class="tool-button" id="clearSelectionBtn" disabled>✕ Deselect</button>
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="sidebar-title">DRAW OPTIONS</div>
+            <label class="checkbox-label">
+                <input type="checkbox" id="fillShapes">
+                Fill shapes
+            </label>
+            <label class="checkbox-label">
+                <input type="checkbox" id="mirrorX">
+                Mirror X
+            </label>
+            <label class="checkbox-label">
+                <input type="checkbox" id="mirrorY">
+                Mirror Y
+            </label>
+
+            <div class="divider"></div>
+
+            <div class="sidebar-title">CANVAS OPS</div>
+            <div style="display:flex; flex-direction:column; gap:8px;">
+                <button class="tool-button" id="flipHorizontalBtn">↔ Flip H</button>
+                <button class="tool-button" id="flipVerticalBtn">↕ Flip V</button>
+                <button class="tool-button" id="rotateRightBtn">↻ Rotate 90°</button>
+            </div>
 
             <div class="divider"></div>
             <div class="color-section">
@@ -624,8 +660,20 @@
             gridSize: 16,
             zoom: 4,
             showGrid: true,
+            fillShapes: false,
+            mirrorX: false,
+            mirrorY: false,
             history: [[]],
-            historyIndex: 0
+            historyIndex: 0,
+            selection: null,
+            selectionPreview: null,
+            selectionStart: null,
+            shapeStart: null,
+            shapePreview: null,
+            isSelecting: false,
+            isDrawing: false,
+            strokeDirty: false,
+            lastPaintedCell: null
         };
 
         // Preset Colors
@@ -650,6 +698,15 @@
         const palette = document.getElementById('palette');
         const pixelCountSpan = document.getElementById('pixelCount');
         const gridInfoSpan = document.getElementById('gridInfo');
+        const fillSelectionBtn = document.getElementById('fillSelectionBtn');
+        const eraseSelectionBtn = document.getElementById('eraseSelectionBtn');
+        const clearSelectionBtn = document.getElementById('clearSelectionBtn');
+        const fillShapesCheckbox = document.getElementById('fillShapes');
+        const mirrorXCheckbox = document.getElementById('mirrorX');
+        const mirrorYCheckbox = document.getElementById('mirrorY');
+        const flipHorizontalBtn = document.getElementById('flipHorizontalBtn');
+        const flipVerticalBtn = document.getElementById('flipVerticalBtn');
+        const rotateRightBtn = document.getElementById('rotateRightBtn');
 
         // Initialize Palette
         presetColors.forEach((color, index) => {
@@ -672,12 +729,31 @@
                 document.querySelectorAll('[data-tool]').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
                 state.tool = btn.dataset.tool;
+                state.shapeStart = null;
+                state.shapePreview = null;
+                draw();
             });
+        });
+
+        fillShapesCheckbox.addEventListener('change', (e) => {
+            state.fillShapes = e.target.checked;
+            draw();
+        });
+
+        mirrorXCheckbox.addEventListener('change', (e) => {
+            state.mirrorX = e.target.checked;
+        });
+
+        mirrorYCheckbox.addEventListener('change', (e) => {
+            state.mirrorY = e.target.checked;
         });
 
         gridSizeInput.addEventListener('change', (e) => {
             const n = Math.max(4, Math.min(128, parseInt(e.target.value) || 16));
             state.gridSize = n;
+            clearSelection(false);
+            state.shapeStart = null;
+            state.shapePreview = null;
             gridSizeInput.value = n;
             document.getElementById('gridSizeValue').textContent = n;
             document.getElementById('gridSizeValue2').textContent = n;
@@ -692,6 +768,9 @@
                 const n = parseInt(e.target.dataset.size);
                 if (!n) return;
                 state.gridSize = n;
+                clearSelection(false);
+                state.shapeStart = null;
+                state.shapePreview = null;
                 gridSizeInput.value = n;
                 document.getElementById('gridSizeValue').textContent = n;
                 document.getElementById('gridSizeValue2').textContent = n;
@@ -843,6 +922,9 @@
             if (!def) return;
             // def.pixels is expected as array [x,y,color]
             state.pixels = (def.pixels || []).map(p => ({ x: p[0], y: p[1], color: p[2] }));
+            clearSelection(false);
+            state.shapeStart = null;
+            state.shapePreview = null;
             state.gridSize = def.grid || def.gridSize || state.gridSize;
             gridSizeInput.value = state.gridSize;
             document.getElementById('gridSizeValue').textContent = state.gridSize;
@@ -948,12 +1030,19 @@
         // Load library at start
         loadEntityPixelLibrary();
 
-        canvas.addEventListener('click', handleCanvasClick);
-        canvas.addEventListener('mousemove', handleCanvasDrag);
+        canvas.addEventListener('mousedown', handleCanvasPointerDown);
+        canvas.addEventListener('mousemove', handleCanvasPointerMove);
+        document.addEventListener('mouseup', handleCanvasPointerUp);
 
         document.getElementById('undoBtn').addEventListener('click', undo);
         document.getElementById('redoBtn').addEventListener('click', redo);
         document.getElementById('clearBtn').addEventListener('click', clear);
+        fillSelectionBtn.addEventListener('click', () => applySelection('fill'));
+        eraseSelectionBtn.addEventListener('click', () => applySelection('erase'));
+        clearSelectionBtn.addEventListener('click', () => { clearSelection(); showToast('Selección eliminada'); });
+        flipHorizontalBtn.addEventListener('click', () => applyCanvasTransform(pixel => ({ x: state.gridSize - 1 - pixel.x, y: pixel.y, color: pixel.color }), 'Canvas invertido horizontalmente'));
+        flipVerticalBtn.addEventListener('click', () => applyCanvasTransform(pixel => ({ x: pixel.x, y: state.gridSize - 1 - pixel.y, color: pixel.color }), 'Canvas invertido verticalmente'));
+        rotateRightBtn.addEventListener('click', () => applyCanvasTransform(pixel => ({ x: state.gridSize - 1 - pixel.y, y: pixel.x, color: pixel.color }), 'Canvas rotado 90°'));
         document.getElementById('copyBtn').addEventListener('click', copyCode);
         document.getElementById('downloadBtn').addEventListener('click', downloadCode);
         document.getElementById('importBtn').addEventListener('click', () => importModal.classList.add('active'));
@@ -1024,50 +1113,349 @@
                     ctx.beginPath(); ctx.moveTo(0, pos); ctx.lineTo(canvas.width, pos); ctx.stroke();
                 }
             }
+
+            const previewCells = getShapePreviewCells();
+            if (previewCells.length) {
+                ctx.save();
+                ctx.fillStyle = 'rgba(0, 217, 255, 0.28)';
+                previewCells.forEach(cell => {
+                    ctx.fillRect(cell.x * cs, cell.y * cs, cs, cs);
+                });
+                ctx.restore();
+            }
+
+            const selection = normalizeSelection(state.selectionPreview || state.selection);
+            if (selection) {
+                const sx = selection.x1 * cs;
+                const sy = selection.y1 * cs;
+                const sw = (selection.x2 - selection.x1 + 1) * cs;
+                const sh = (selection.y2 - selection.y1 + 1) * cs;
+                ctx.save();
+                ctx.fillStyle = state.selectionPreview ? 'rgba(0, 217, 255, 0.14)' : 'rgba(0, 217, 255, 0.10)';
+                ctx.fillRect(sx, sy, sw, sh);
+                ctx.setLineDash([6, 4]);
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = '#00D9FF';
+                ctx.strokeRect(sx + 1, sy + 1, Math.max(0, sw - 2), Math.max(0, sh - 2));
+                ctx.restore();
+            }
         }
 
-        function handleCanvasClick(e) {
+        function getCanvasCellFromEvent(e) {
             const rect = canvas.getBoundingClientRect();
             const cs = getCellSize();
-            // getBoundingClientRect reflects CSS display size; scale back to canvas logical coords
             const scaleX = canvas.width  / (rect.width  || canvas.width);
             const scaleY = canvas.height / (rect.height || canvas.height);
             const x = Math.floor((e.clientX - rect.left) * scaleX / cs);
             const y = Math.floor((e.clientY - rect.top)  * scaleY / cs);
 
-            if (x < 0 || x >= state.gridSize || y < 0 || y >= state.gridSize) return;
+            if (x < 0 || x >= state.gridSize || y < 0 || y >= state.gridSize) return null;
+            return { x, y };
+        }
 
-            if (state.tool === 'brush') {
-                const existingIndex = state.pixels.findIndex(p => p.x === x && p.y === y);
-                if (existingIndex >= 0) {
-                    state.pixels[existingIndex].color = state.currentColor;
-                } else {
-                    state.pixels.push({ x, y, color: state.currentColor });
+        function normalizeSelection(selection) {
+            if (!selection) return null;
+            const x1 = Math.max(0, Math.min(selection.x1, selection.x2));
+            const y1 = Math.max(0, Math.min(selection.y1, selection.y2));
+            const x2 = Math.min(state.gridSize - 1, Math.max(selection.x1, selection.x2));
+            const y2 = Math.min(state.gridSize - 1, Math.max(selection.y1, selection.y2));
+            if (x1 > x2 || y1 > y2) return null;
+            return { x1, y1, x2, y2 };
+        }
+
+        function updateSelectionButtons() {
+            const hasSelection = !!normalizeSelection(state.selection);
+            fillSelectionBtn.disabled = !hasSelection;
+            eraseSelectionBtn.disabled = !hasSelection;
+            clearSelectionBtn.disabled = !hasSelection;
+        }
+
+        function clearSelection(redraw = true) {
+            state.selection = null;
+            state.selectionPreview = null;
+            state.selectionStart = null;
+            state.isSelecting = false;
+            updateSelectionButtons();
+            if (redraw) draw();
+        }
+
+        function getPixelColor(x, y) {
+            const pixel = state.pixels.find(p => p.x === x && p.y === y);
+            return pixel ? pixel.color : null;
+        }
+
+        function getMirroredPoints(x, y) {
+            const candidates = [{ x, y }];
+            if (state.mirrorX) candidates.push({ x: state.gridSize - 1 - x, y });
+            if (state.mirrorY) candidates.push({ x, y: state.gridSize - 1 - y });
+            if (state.mirrorX && state.mirrorY) candidates.push({ x: state.gridSize - 1 - x, y: state.gridSize - 1 - y });
+            const seen = new Set();
+            return candidates.filter(pt => {
+                if (pt.x < 0 || pt.x >= state.gridSize || pt.y < 0 || pt.y >= state.gridSize) return false;
+                const key = `${pt.x},${pt.y}`;
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+        }
+
+        function upsertPixel(x, y, color) {
+            const existingIndex = state.pixels.findIndex(p => p.x === x && p.y === y);
+            if (existingIndex >= 0) {
+                if (state.pixels[existingIndex].color === color) return false;
+                state.pixels[existingIndex].color = color;
+                return true;
+            }
+            state.pixels.push({ x, y, color });
+            return true;
+        }
+
+        function erasePixel(x, y) {
+            const before = state.pixels.length;
+            state.pixels = state.pixels.filter(p => !(p.x === x && p.y === y));
+            return state.pixels.length !== before;
+        }
+
+        function paintPoints(points, mode = state.tool, color = state.currentColor, useMirror = true) {
+            let changed = false;
+            const seen = new Set();
+            points.forEach(point => {
+                const targets = useMirror ? getMirroredPoints(point.x, point.y) : [point];
+                targets.forEach(target => {
+                    const key = `${target.x},${target.y}`;
+                    if (seen.has(key)) return;
+                    seen.add(key);
+                    if (mode === 'brush') changed = upsertPixel(target.x, target.y, color) || changed;
+                    else if (mode === 'eraser') changed = erasePixel(target.x, target.y) || changed;
+                });
+            });
+            return changed;
+        }
+
+        function getLineCells(start, end) {
+            if (!start || !end) return [];
+            const cells = [];
+            let x0 = start.x, y0 = start.y;
+            const x1 = end.x, y1 = end.y;
+            const dx = Math.abs(x1 - x0);
+            const dy = Math.abs(y1 - y0);
+            const sx = x0 < x1 ? 1 : -1;
+            const sy = y0 < y1 ? 1 : -1;
+            let err = dx - dy;
+            while (true) {
+                cells.push({ x: x0, y: y0 });
+                if (x0 === x1 && y0 === y1) break;
+                const e2 = err * 2;
+                if (e2 > -dy) { err -= dy; x0 += sx; }
+                if (e2 < dx) { err += dx; y0 += sy; }
+            }
+            return cells;
+        }
+
+        function getRectCells(start, end, filled = false) {
+            if (!start || !end) return [];
+            const x1 = Math.min(start.x, end.x);
+            const y1 = Math.min(start.y, end.y);
+            const x2 = Math.max(start.x, end.x);
+            const y2 = Math.max(start.y, end.y);
+            const cells = [];
+            for (let y = y1; y <= y2; y++) {
+                for (let x = x1; x <= x2; x++) {
+                    if (filled || x === x1 || x === x2 || y === y1 || y === y2) cells.push({ x, y });
                 }
-            } else if (state.tool === 'eraser') {
-                state.pixels = state.pixels.filter(p => !(p.x === x && p.y === y));
-            } else if (state.tool === 'picker') {
+            }
+            return cells;
+        }
+
+        function getShapeCells(start, end) {
+            if (!start || !end) return [];
+            if (state.tool === 'line') return getLineCells(start, end);
+            if (state.tool === 'rect') return getRectCells(start, end, state.fillShapes);
+            return [];
+        }
+
+        function getShapePreviewCells() {
+            if (!state.shapeStart || !state.shapePreview) return [];
+            return getShapeCells(state.shapeStart, state.shapePreview);
+        }
+
+        function applyBucketFill(startX, startY) {
+            const targetColor = getPixelColor(startX, startY);
+            if (targetColor === state.currentColor) return false;
+            const queue = [{ x: startX, y: startY }];
+            const visited = new Set();
+            const region = [];
+            while (queue.length) {
+                const cell = queue.shift();
+                const key = `${cell.x},${cell.y}`;
+                if (visited.has(key)) continue;
+                visited.add(key);
+                if (cell.x < 0 || cell.x >= state.gridSize || cell.y < 0 || cell.y >= state.gridSize) continue;
+                if (getPixelColor(cell.x, cell.y) !== targetColor) continue;
+                region.push(cell);
+                queue.push({ x: cell.x + 1, y: cell.y });
+                queue.push({ x: cell.x - 1, y: cell.y });
+                queue.push({ x: cell.x, y: cell.y + 1 });
+                queue.push({ x: cell.x, y: cell.y - 1 });
+            }
+            return paintPoints(region, 'brush', state.currentColor, true);
+        }
+
+        function applyToolToCell(x, y) {
+            if (state.tool === 'brush') return paintPoints([{ x, y }], 'brush', state.currentColor, true);
+            if (state.tool === 'eraser') return paintPoints([{ x, y }], 'eraser', state.currentColor, true);
+            if (state.tool === 'bucket') return applyBucketFill(x, y);
+            if (state.tool === 'picker') {
                 const pixel = state.pixels.find(p => p.x === x && p.y === y);
-                if (pixel) {
-                    state.currentColor = pixel.color;
-                    colorPicker.value = pixel.color;
-                    colorPreview.style.backgroundColor = pixel.color;
-                    updateColorSwatches();
-                    state.tool = 'brush';
-                    document.querySelectorAll('[data-tool]').forEach(b => b.classList.remove('active'));
-                    document.querySelector('[data-tool="brush"]').classList.add('active');
+                if (!pixel) return false;
+                state.currentColor = pixel.color;
+                colorPicker.value = pixel.color;
+                colorPreview.style.backgroundColor = pixel.color;
+                updateColorSwatches();
+                state.tool = 'brush';
+                document.querySelectorAll('[data-tool]').forEach(b => b.classList.remove('active'));
+                document.querySelector('[data-tool="brush"]').classList.add('active');
+                return false;
+            }
+            return false;
+        }
+
+        function applySelection(action) {
+            const selection = normalizeSelection(state.selection);
+            if (!selection) {
+                showToast('No hay una selección activa', true);
+                return;
+            }
+
+            let changed = false;
+            for (let y = selection.y1; y <= selection.y2; y++) {
+                for (let x = selection.x1; x <= selection.x2; x++) {
+                    if (action === 'fill') changed = upsertPixel(x, y, state.currentColor) || changed;
+                    if (action === 'erase') changed = erasePixel(x, y) || changed;
                 }
+            }
+
+            if (!changed) {
+                showToast(action === 'fill' ? 'La selección ya tiene ese color' : 'La selección ya está vacía');
+                return;
             }
 
             addToHistory();
             updateCodeOutput();
             draw();
             scheduleAutoSave();
+            const width = selection.x2 - selection.x1 + 1;
+            const height = selection.y2 - selection.y1 + 1;
+            showToast(action === 'fill' ? `Selección pintada (${width}×${height})` : `Selección borrada (${width}×${height})`);
         }
 
-        function handleCanvasDrag(e) {
-            if (e.buttons !== 1) return;
-            handleCanvasClick(e);
+        function commitStrokeIfDirty() {
+            if (!state.strokeDirty) return;
+            state.strokeDirty = false;
+            state.lastPaintedCell = null;
+            addToHistory();
+            updateCodeOutput();
+            draw();
+            scheduleAutoSave();
+        }
+
+        function handleCanvasPointerDown(e) {
+            const cell = getCanvasCellFromEvent(e);
+            if (!cell) return;
+
+            if (state.tool === 'select') {
+                state.isSelecting = true;
+                state.selectionStart = cell;
+                state.selectionPreview = { x1: cell.x, y1: cell.y, x2: cell.x, y2: cell.y };
+                draw();
+                return;
+            }
+
+            if (state.tool === 'line' || state.tool === 'rect') {
+                state.isDrawing = true;
+                state.shapeStart = cell;
+                state.shapePreview = cell;
+                draw();
+                return;
+            }
+
+            state.isDrawing = true;
+            state.lastPaintedCell = null;
+            const changed = applyToolToCell(cell.x, cell.y);
+            state.lastPaintedCell = `${cell.x},${cell.y}`;
+            if (changed) {
+                state.strokeDirty = true;
+                updateCodeOutput();
+            }
+            draw();
+        }
+
+        function handleCanvasPointerMove(e) {
+            const cell = getCanvasCellFromEvent(e);
+            if (!cell) return;
+
+            if (state.isSelecting && state.selectionStart) {
+                state.selectionPreview = { x1: state.selectionStart.x, y1: state.selectionStart.y, x2: cell.x, y2: cell.y };
+                draw();
+                return;
+            }
+
+            if (state.isDrawing && (state.tool === 'line' || state.tool === 'rect')) {
+                state.shapePreview = cell;
+                draw();
+                return;
+            }
+
+            if (!state.isDrawing || e.buttons !== 1) return;
+            if (state.tool !== 'brush' && state.tool !== 'eraser') return;
+            const key = `${cell.x},${cell.y}`;
+            if (state.lastPaintedCell === key) return;
+            const changed = applyToolToCell(cell.x, cell.y);
+            state.lastPaintedCell = key;
+            if (changed) {
+                state.strokeDirty = true;
+                updateCodeOutput();
+                draw();
+            }
+        }
+
+        function handleCanvasPointerUp() {
+            if (state.isSelecting) {
+                const selection = normalizeSelection(state.selectionPreview || state.selection);
+                state.selection = selection;
+                state.selectionPreview = null;
+                state.selectionStart = null;
+                state.isSelecting = false;
+                updateSelectionButtons();
+                draw();
+                if (selection) {
+                    const width = selection.x2 - selection.x1 + 1;
+                    const height = selection.y2 - selection.y1 + 1;
+                    showToast(`Selección ${width}×${height}`);
+                }
+                return;
+            }
+
+            if (state.isDrawing && (state.tool === 'line' || state.tool === 'rect')) {
+                const shapeCells = getShapeCells(state.shapeStart, state.shapePreview || state.shapeStart);
+                const changed = paintPoints(shapeCells, 'brush', state.currentColor, true);
+                state.shapeStart = null;
+                state.shapePreview = null;
+                state.isDrawing = false;
+                if (changed) {
+                    addToHistory();
+                    updateCodeOutput();
+                    draw();
+                    scheduleAutoSave();
+                    showToast(state.tool === 'line' ? 'Línea creada' : 'Rectángulo creado');
+                } else {
+                    draw();
+                }
+                return;
+            }
+
+            state.isDrawing = false;
+            commitStrokeIfDirty();
         }
 
         function addToHistory() {
@@ -1082,6 +1470,9 @@
             if (state.historyIndex > 0) {
                 state.historyIndex--;
                 state.pixels = JSON.parse(JSON.stringify(state.history[state.historyIndex]));
+                clearSelection(false);
+                state.shapeStart = null;
+                state.shapePreview = null;
                 updateCodeOutput();
                 updateHistoryButtons();
                 draw();
@@ -1093,6 +1484,9 @@
             if (state.historyIndex < state.history.length - 1) {
                 state.historyIndex++;
                 state.pixels = JSON.parse(JSON.stringify(state.history[state.historyIndex]));
+                clearSelection(false);
+                state.shapeStart = null;
+                state.shapePreview = null;
                 updateCodeOutput();
                 updateHistoryButtons();
                 draw();
@@ -1102,10 +1496,36 @@
 
         function clear() {
             state.pixels = [];
+            clearSelection(false);
+            state.shapeStart = null;
+            state.shapePreview = null;
             addToHistory();
             updateCodeOutput();
             draw();
             showToast('Canvas cleared');
+        }
+
+        function applyCanvasTransform(transformer, message) {
+            const transformed = [];
+            const seen = new Set();
+            state.pixels.forEach(pixel => {
+                const next = transformer(pixel);
+                if (!next) return;
+                if (next.x < 0 || next.x >= state.gridSize || next.y < 0 || next.y >= state.gridSize) return;
+                const key = `${next.x},${next.y}`;
+                if (seen.has(key)) return;
+                seen.add(key);
+                transformed.push({ x: next.x, y: next.y, color: next.color || pixel.color });
+            });
+            state.pixels = transformed;
+            clearSelection(false);
+            state.shapeStart = null;
+            state.shapePreview = null;
+            addToHistory();
+            updateCodeOutput();
+            draw();
+            scheduleAutoSave();
+            showToast(message);
         }
 
         function updateCodeOutput() {
@@ -1248,6 +1668,7 @@
                 }
 
                 state.pixels = newPixels;
+                clearSelection(false);
                 addToHistory();
                 updateCodeOutput();
                 importModal.classList.remove('active');
@@ -1362,6 +1783,7 @@
                 document.getElementById('gridSizeValue2').textContent = grid;
                 gridInfoSpan.textContent = `${grid}x${grid}`;
                 state.pixels = newPixels;
+                clearSelection(false);
                 addToHistory();
                 updateCodeOutput();
                 resizeCanvas();
@@ -1392,6 +1814,69 @@
             document.getElementById('redoBtn').disabled = state.historyIndex === state.history.length - 1;
         }
 
+        document.addEventListener('keydown', (e) => {
+            if (e.target && ['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
+            const hasSelection = !!normalizeSelection(state.selection);
+            const key = e.key.toLowerCase();
+
+            if (key === 'b') {
+                document.querySelector('[data-tool="brush"]').click();
+                return;
+            }
+            if (key === 'e') {
+                document.querySelector('[data-tool="eraser"]').click();
+                return;
+            }
+            if (key === 'g') {
+                document.querySelector('[data-tool="bucket"]').click();
+                return;
+            }
+            if (key === 'l') {
+                document.querySelector('[data-tool="line"]').click();
+                return;
+            }
+            if (key === 'r') {
+                document.querySelector('[data-tool="rect"]').click();
+                return;
+            }
+            if (key === 's') {
+                document.querySelector('[data-tool="select"]').click();
+                return;
+            }
+            if ((e.ctrlKey || e.metaKey) && key === 'h') {
+                e.preventDefault();
+                flipHorizontalBtn.click();
+                return;
+            }
+            if ((e.ctrlKey || e.metaKey) && key === 'j') {
+                e.preventDefault();
+                flipVerticalBtn.click();
+                return;
+            }
+
+            if (e.key === 'Escape') {
+                if (state.shapeStart || state.shapePreview) {
+                    state.shapeStart = null;
+                    state.shapePreview = null;
+                    state.isDrawing = false;
+                    draw();
+                    showToast('Forma cancelada');
+                    return;
+                }
+                if (!hasSelection) return;
+                clearSelection();
+                showToast('Selección eliminada');
+            } else if (e.key === 'Enter') {
+                if (!hasSelection) return;
+                e.preventDefault();
+                applySelection('fill');
+            } else if (e.key === 'Delete' || e.key === 'Backspace') {
+                if (!hasSelection) return;
+                e.preventDefault();
+                applySelection('erase');
+            }
+        });
+
         function showToast(message, isError = false) {
             const toast = document.createElement('div');
             toast.className = `toast ${isError ? 'error' : ''}`;
@@ -1404,6 +1889,7 @@
         resizeCanvas();
         draw();
         updateHistoryButtons();
+        updateSelectionButtons();
         updateCodeOutput();
     </script>
 </body>

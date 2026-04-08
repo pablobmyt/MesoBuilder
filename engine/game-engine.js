@@ -1166,6 +1166,11 @@ BUILDINGS.road = { name: 'Camino', costBrick:0, costWheat:0, prodPop:0, prodWhea
 // Tower building for sandbox + tower-defense playstyle
 BUILDINGS.tower = { name: 'Torre', costBrick:6, costWheat:0, prodPop:0, prodWheat:0, prodBrick:0, color:'#6B6B6B', roofColor:'#444444', desc:'Torre defensiva: ataca enemigos cercanos.', size:{ w:1, h:1 }, attackRange:5, attackDmg:5, attackCooldown:800 };
 
+// ── CITY WALLS ────────────────────────────────────────────────
+// Defensive perimeter walls auto-placed around capitals and large towns
+BUILDINGS.wall_segment = { name: 'Muro', costBrick:3, costWheat:0, prodPop:0, prodWheat:0, prodBrick:0, color:'#C0B070', roofColor:'#9A8A50', desc:'Sección de muralla defensiva.', size:{ w:1, h:1 } };
+BUILDINGS.wall_tower  = { name: 'Torre de muralla', costBrick:10, costWheat:0, prodPop:0, prodWheat:0, prodBrick:0, color:'#A89860', roofColor:'#7A7040', desc:'Torre esquinera de la muralla defensiva.', size:{ w:2, h:2 } };
+
 // ── GRID ──────────────────────────────────────────────────────
 const grid = Array.from({length:ROWS}, () => Array(COLS).fill(null));
 
@@ -1280,6 +1285,62 @@ let editMode = false;
 
 // App-wide state persistence key
 const APP_STATE_KEY = 'meso.appState';
+const STORAGE_EPOCH_KEY = 'meso.currentEpoch';
+
+const EPOCH_PROFILES = {
+  mesopotamia: {
+    id: 'mesopotamia',
+    label: 'Mesopotamia',
+    gameTitle: 'MesoBuilder',
+    startTitle: 'Mesopotamia',
+    startSubtitle: 'Construye, sobrevive y proclama tu reino',
+    welcomeLog: '¡Bienvenido a Mesopotamia! Construye tu ciudad.',
+    foundedLog: 'Ciudad fundada en la orilla del Éufrates.'
+  },
+  urss: {
+    id: 'urss',
+    label: 'Antigua URSS',
+    gameTitle: 'MesoBuilder · URSS',
+    startTitle: 'URSS clásica',
+    startSubtitle: 'Industrializa, planifica y expande tu asentamiento',
+    welcomeLog: '¡Comienza la planificación de tu asentamiento soviético!',
+    foundedLog: 'Asentamiento fundado junto a la red ferroviaria.'
+  },
+  medieval: {
+    id: 'medieval',
+    label: 'Edad Media',
+    gameTitle: 'MesoBuilder · Medieval',
+    startTitle: 'Reino Medieval',
+    startSubtitle: 'Levanta tu villa, defiéndela y hazla prosperar',
+    welcomeLog: '¡Bienvenido al reino! Tu aldea debe prosperar.',
+    foundedLog: 'Villa fundada cerca del camino real.'
+  }
+};
+
+window._currentEpoch = window._currentEpoch || localStorage.getItem(STORAGE_EPOCH_KEY) || 'mesopotamia';
+
+function getEpochProfile(epochId) {
+  return EPOCH_PROFILES[epochId] || EPOCH_PROFILES.mesopotamia;
+}
+
+function applyEpochProfile(epochId, persist = true) {
+  try {
+    const key = EPOCH_PROFILES[epochId] ? epochId : 'mesopotamia';
+    window._currentEpoch = key;
+    if (persist) {
+      try { localStorage.setItem(STORAGE_EPOCH_KEY, key); } catch (e) {}
+    }
+    const profile = getEpochProfile(key);
+    try { document.title = profile.gameTitle || 'MesoBuilder'; } catch (e) {}
+    try {
+      const h1 = document.querySelector('#topbar h1');
+      if (h1) h1.innerHTML = `&#x2605; ${profile.gameTitle || 'MesoBuilder'} &#x2605;`;
+    } catch (e) {}
+    return profile;
+  } catch (e) {
+    return getEpochProfile('mesopotamia');
+  }
+}
 
 function unwrapSavedAppState(data) {
   try {
@@ -1323,6 +1384,7 @@ function saveAppState() {
       res: (typeof res !== 'undefined') ? res : null,
       // keep turn and flags
       turn: typeof turn === 'number' ? turn : 0,
+      epoch: window._currentEpoch || 'mesopotamia',
       startLocked: !!startLocked,
       editMode: !!editMode,
       camera: { camX: camX, camY: camY, zoom: zoom },
@@ -1474,6 +1536,7 @@ function loadAppState() {
       if (s.char) try { window.char = s.char; } catch (e) {}
       if (s.res) try { window.res = s.res; } catch (e) {}
       if (s.selectedTool) try { selectedTool = s.selectedTool; } catch (e) {}
+      try { if (s.epoch) applyEpochProfile(s.epoch, true); } catch (e) {}
       // restore other top-level flags
       try { if (typeof s.turn === 'number') turn = s.turn; } catch (e) {}
       try { startLocked = !!s.startLocked; } catch (e) {}
@@ -1507,6 +1570,7 @@ function exportGameToFile() {
       villages: window._VILLAGES || [],
       camera: { camX, camY, zoom },
       selectedTool,
+      epoch: window._currentEpoch || 'mesopotamia',
       FLOATING_PANELS: Object.keys(window.FLOATING_PANELS || {})
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -1620,6 +1684,7 @@ function importGameFromObject(data) {
       try { camX = typeof data.camera.camX === 'number' ? data.camera.camX : camX; camY = typeof data.camera.camY === 'number' ? data.camera.camY : camY; zoom = typeof data.camera.zoom === 'number' ? data.camera.zoom : zoom; } catch (e) {}
     }
     if (data.selectedTool) selectedTool = data.selectedTool;
+    try { if (data.epoch) applyEpochProfile(data.epoch, true); } catch (e) {}
 
     // persist and rebuild derived caches
     try { saveAppState(); } catch (e) {}
@@ -1656,30 +1721,96 @@ const DEFAULT_PALETTE = {
 };
 
 const CHARACTER_OUTFITS = {
+  // All maps are 12 rows × 8 cols. Tokens: h=hair, s=skin, c=cloth, t=trim(accent)
   tunic: {
     name: 'Túnica',
     desc: 'Clásica y equilibrada.',
-    map: ['..hh....','.hhhh...','.hsshh..','.ssss...','..cccc..','..ctcc..','..c..c..','.cc..cc.']
+    map: [
+      '..hhhh..',  // 0 - hair top
+      '.hhhhhh.',  // 1 - hair wide
+      '.hssss..',  // 2 - forehead
+      '.hsssh..',  // 3 - eye level (h = eyebrow outline)
+      '..ssss..',  // 4 - cheeks/nose
+      '..ssss..',  // 5 - mouth/chin
+      '..cccc..',  // 6 - collar
+      '.ccttcc.',  // 7 - chest (t=trim collar band)
+      '..ccccc.',  // 8 - torso
+      '..ctcc..',  // 9 - belt (t=buckle)
+      '.cc..cc.',  // 10 - upper legs
+      '.cc..cc.'   // 11 - lower legs/feet
+    ]
   },
   robe: {
     name: 'Toga',
     desc: 'Larga y ceremonial.',
-    map: ['..hh....','.hhhh...','.hsshh..','.ssss...','..cttc..','..cccc..','..cccc..','.cc..cc.']
+    map: [
+      '..hhhh..',  // 0
+      '.hhhhhh.',  // 1
+      '.hssss..',  // 2
+      '.hsssh..',  // 3
+      '..ssss..',  // 4
+      '..ssss..',  // 5
+      '.ttttt..',  // 6 - wide ceremonial collar
+      '..cccc..',  // 7
+      '..cccc..',  // 8
+      '..cccc..',  // 9
+      '..cccc..',  // 10 - long robe (no leg gap)
+      '.ccccc..'   // 11 - robe hem
+    ]
   },
   shawl: {
     name: 'Manto',
     desc: 'Con hombros marcados.',
-    map: ['..hh....','.hhhh...','.hsshh..','.tttt...','..cccc..','.ccttcc.','..c..c..','.cc..cc.']
+    map: [
+      '..hhhh..',  // 0
+      '.hhhhhh.',  // 1
+      '.hssss..',  // 2
+      '.hsssh..',  // 3
+      '..ssss..',  // 4
+      '..ssss..',  // 5
+      '.tttttt.',  // 6 - shawl across both shoulders
+      '.tcccct.',  // 7 - body with shawl trim edges
+      '..cccc..',  // 8
+      '..cctcc.',  // 9 - belt
+      '.cc..cc.',  // 10
+      '.cc..cc.'   // 11
+    ]
   },
   armor: {
     name: 'Armadura',
     desc: 'Más robusta y ornamentada.',
-    map: ['..hh....','.hhhh...','.hsshh..','.sttts..','..ctcc..','.tcccct.','..c..c..','.tc..ct.']
+    map: [
+      '..hhhh..',  // 0
+      '.hhhhhh.',  // 1
+      '.hssss..',  // 2
+      '.hsssh..',  // 3
+      '..ssss..',  // 4
+      '..ssss..',  // 5
+      '.tttttt.',  // 6 - gorget (armored collar)
+      '.tcccct.',  // 7 - chest plate (t=shoulder rivets)
+      '.tcccct.',  // 8 - lower chest plate
+      '.tttttt.',  // 9 - armored belt
+      '.tc..ct.',  // 10 - armored tassets/hips
+      '.tt..tt.'   // 11 - boots (t=metal greaves)
+    ]
   },
   worker: {
     name: 'Delantal',
     desc: 'Práctica para trabajar.',
-    map: ['..hh....','.hhhh...','.hsshh..','.ssss...','..ctcc..','.tcccc..','..ct.c..','.cc..cc.']
+    map: [
+      '..hhhh..',  // 0
+      '.hhhhhh.',  // 1
+      '.hssss..',  // 2
+      '.hsssh..',  // 3
+      '..ssss..',  // 4
+      '..ssss..',  // 5
+      '..cccc..',  // 6 - plain collar
+      '..cccc..',  // 7 - plain torso
+      '.tcccc..',  // 8 - apron strap (t=strap)
+      '..cccc..',  // 9 - apron lower
+      '.cc..cc.',  // 10
+      '.ss..ss.'   // 11 - bare feet (skin)
+    ]
   }
 };
 
@@ -1749,6 +1880,8 @@ player._attackAnimUntil = 0;
 player._attackHit = false;
 player._walkTime = 0;
 player._walkFrame = 0;
+player._shakeUntil = 0;
+player._shakeMag = 0;
 
 // Input & movement state (missing globals causing runtime errors)
 let keyState = {};
@@ -1869,7 +2002,15 @@ function drawCharacterPixels(ctx, palette, x, y, scale, opts) {
   const spriteMap = getCharacterSpriteMap(opts.outfit || 'tunic');
   // inverted horizontal axis: flip when facing 'right' instead of 'left'
   const flip = dir === 'right';
-  const maxRow = opts.headOnly ? Math.min(spriteMap.length, 4) : spriteMap.length;
+  // headOnly shows just the head region (rows 0-5 for 12-row sprites, 0-3 for legacy 8-row)
+  const headRows = spriteMap.length >= 10 ? 6 : 4;
+  const maxRow = opts.headOnly ? Math.min(spriteMap.length, headRows) : spriteMap.length;
+  // leg rows depend on sprite height: 12-row=10-11, 8-row=6-7
+  const legRow0 = spriteMap.length >= 10 ? 10 : 6;
+  const legRow1 = spriteMap.length >= 10 ? 11 : 7;
+  // torso rows for bob animation: 12-row=7-9, 8-row=4-5
+  const torsoMin = spriteMap.length >= 10 ? 7 : 4;
+  const torsoMax = spriteMap.length >= 10 ? 9 : 5;
   for (let row = 0; row < maxRow; row++) {
     const line = spriteMap[row];
     for (let col = 0; col < line.length; col++) {
@@ -1886,7 +2027,7 @@ function drawCharacterPixels(ctx, palette, x, y, scale, opts) {
       // Walk frame support for all directions.
       let dx = 0;
       let dy = 0;
-      if ((row === 6 || row === 7) && (ch === 'c' || ch === 's')) {
+      if ((row === legRow0 || row === legRow1) && (ch === 'c' || ch === 's' || ch === 't')) {
         if (dir === 'right' || dir === 'left') {
           if (frame === 1) {
             // invert horizontal axis: reverse sign so stepping matches flipped sprite
@@ -1898,7 +2039,7 @@ function drawCharacterPixels(ctx, palette, x, y, scale, opts) {
           dy = frame === 1 ? (dir === 'up' ? -1 : 1) : 0;
         }
       }
-      if ((dir === 'up' || dir === 'down') && frame === 1 && row >= 4 && row <= 5 && (ch === 'c' || ch === 's' || ch === 't')) {
+      if ((dir === 'up' || dir === 'down') && frame === 1 && row >= torsoMin && row <= torsoMax && (ch === 'c' || ch === 's' || ch === 't')) {
         dy = dir === 'up' ? -1 : 1;
       }
 
@@ -2492,12 +2633,22 @@ function getWorldBounds() {
 function clampCamera() {
   const padding = 10;
   const bounds = getWorldBounds();
-  const minCamX = canvas.width - padding - bounds.maxX;
-  const maxCamX = padding - bounds.minX;
-  const minCamY = canvas.height - padding - bounds.maxY;
-  const maxCamY = padding - bounds.minY;
-  camX = Math.max(minCamX, Math.min(maxCamX, camX));
-  camY = Math.max(minCamY, Math.min(maxCamY, camY));
+  const mapW = bounds.maxX - bounds.minX;
+  const mapH = bounds.maxY - bounds.minY;
+  if (mapW <= canvas.width - padding * 2) {
+    camX = Math.round((canvas.width - mapW) * 0.5 - bounds.minX);
+  } else {
+    const minCamX = canvas.width - padding - bounds.maxX;
+    const maxCamX = padding - bounds.minX;
+    camX = Math.max(minCamX, Math.min(maxCamX, camX));
+  }
+  if (mapH <= canvas.height - padding * 2) {
+    camY = Math.round((canvas.height - mapH) * 0.5 - bounds.minY);
+  } else {
+    const minCamY = canvas.height - padding - bounds.maxY;
+    const maxCamY = padding - bounds.minY;
+    camY = Math.max(minCamY, Math.min(maxCamY, camY));
+  }
 }
 
 function centerCamera() {
@@ -2621,11 +2772,11 @@ function rebuildInteriorDoorsFromGrid() {
 
 try { window.rebuildInteriorDoorsFromGrid = rebuildInteriorDoorsFromGrid; } catch (e) {}
 
-function setBuildingCells(baseCol, baseRow, type) {
+function setBuildingCells(baseCol, baseRow, type, orient) {
   const size = getBuildingSize(type);
   for (let r = 0; r < size.h; r++) {
     for (let c = 0; c < size.w; c++) {
-      grid[baseRow + r][baseCol + c] = { type, baseCol, baseRow };
+      grid[baseRow + r][baseCol + c] = orient ? { type, baseCol, baseRow, orient } : { type, baseCol, baseRow };
     }
   }
   try { rebuildInteriorDoorsFromGrid(); } catch (e) {}
@@ -2760,6 +2911,22 @@ function spawnVillage(baseCol, baseRow, opts) {
       [cx - 11, cy + 2, 'house'],
       [cx + 10, cy - 7, 'hut'],
       [cx - 11, cy - 7, 'hut'],
+      // Outer ring — fills city interior before the walls
+      [cx - 5, cy + 3, 'house_small'],
+      [cx + 4, cy + 3, 'house_small'],
+      [cx - 5, cy - 5, 'house_small'],
+      [cx + 4, cy - 5, 'house_small'],
+      [cx - 8, cy + 8, 'hut'],
+      [cx + 7, cy + 8, 'hut'],
+      [cx - 8, cy - 9, 'hut'],
+      [cx + 7, cy - 9, 'hut'],
+      [cx + 3, cy - 12, 'granary'],
+      [cx - 4, cy + 10, 'house_small'],
+      [cx + 3, cy + 10, 'hut'],
+      [cx - 10, cy + 5, 'hut'],
+      [cx + 9,  cy + 5, 'hut'],
+      [cx + 9,  cy - 5, 'mesopotamian_house'],
+      [cx - 10, cy - 5, 'mesopotamian_house'],
     ];
     extraSlots.forEach(([ec, er, et]) => tryPlace(ec, er, et));
 
@@ -2793,6 +2960,63 @@ function spawnVillage(baseCol, baseRow, opts) {
       const hub = houses[0];
       for (let i = 1; i < houses.length; i++) carveRoadPath(hub.c, hub.r, houses[i].c, houses[i].r);
     }
+
+    // ── CITY WALLS ──────────────────────────────────────────────
+    // Generate perimeter walls + corner towers around the capital.
+    // Walls run at distance wallR from center; gates at north and south.
+    try {
+      const wallR = ringR + 3; // 14 tiles from center
+      // Corner tower positions (top-left corner of each 2×2 tower)
+      const corners = [
+        [cx - wallR,     cy - wallR],
+        [cx + wallR - 1, cy - wallR],
+        [cx - wallR,     cy + wallR - 1],
+        [cx + wallR - 1, cy + wallR - 1]
+      ];
+      corners.forEach(([tc, tr]) => {
+        if (tc >= 1 && tr >= 1 && tc < COLS - 3 && tr < ROWS - 3) {
+          tryPlace(tc, tr, 'wall_tower');
+        }
+      });
+      // North and south wall rows (leave 3-tile gate gap centered on cx)
+      for (let i = -wallR; i <= wallR; i++) {
+        const isGap = Math.abs(i) <= 1; // gate gap ±1 around center
+        const nc = cx + i, nr = cy - wallR;
+        const sc = cx + i, sr2 = cy + wallR;
+        if (nc >= 1 && nc < COLS - 1 && nr >= 1 && nr < ROWS - 1 && !grid[nr][nc] && !isGap) {
+          const ok = tryPlace(nc, nr, 'wall_segment');
+          if (ok && grid[nr][nc]) grid[nr][nc].orient = 'h';
+        }
+        if (sc >= 1 && sc < COLS - 1 && sr2 >= 1 && sr2 < ROWS - 1 && !grid[sr2][sc] && !isGap) {
+          const okS = tryPlace(sc, sr2, 'wall_segment');
+          if (okS && grid[sr2][sc]) grid[sr2][sc].orient = 'h';
+        }
+      }
+      // West and east wall columns (skip corner tower footprints)
+      for (let i = -wallR + 1; i < wallR; i++) {
+        const wc = cx - wallR, wr2 = cy + i;
+        const ec = cx + wallR, er2 = cy + i;
+        if (wc >= 1 && wr2 >= 1 && wr2 < ROWS - 1 && !grid[wr2][wc]) {
+          const okW = tryPlace(wc, wr2, 'wall_segment');
+          if (okW && grid[wr2][wc]) grid[wr2][wc].orient = 'v';
+        }
+        if (ec < COLS - 1 && er2 >= 1 && er2 < ROWS - 1 && !grid[er2][ec]) {
+          const okE = tryPlace(ec, er2, 'wall_segment');
+          if (okE && grid[er2][ec]) grid[er2][ec].orient = 'v';
+        }
+      }
+      // Road through gate openings (north + south)
+      for (const gr of [cy - wallR, cy - wallR + 1, cy + wallR, cy + wallR - 1]) {
+        if (gr >= 0 && gr < ROWS) {
+          [-1, 0, 1].forEach(gi => {
+            const gc = cx + gi;
+            if (gc >= 0 && gc < COLS && !grid[gr][gc]) {
+              try { tileBiome[gr][gc] = 'road'; } catch (e) {}
+            }
+          });
+        }
+      }
+    } catch (e) {}
 
   } else {
 
@@ -2902,11 +3126,35 @@ function spawnVillage(baseCol, baseRow, opts) {
       }
     }
     if (villageType === 'capital') {
-      // Date palms lining the approach to the city
-      for (let i = 0; i < 5; i++) {
-        const pc = Math.max(1, Math.min(COLS-2, bc - spacing + i));
-        const pr = Math.max(1, Math.min(ROWS-2, br + 1));
-        if (!grid[pr][pc] && !isRiver(pc)) placeTree(pc, pr, 'date_palm');
+      // Date palms lining both approaches (north and south gates)
+      for (let i = -4; i <= 4; i++) {
+        if (Math.abs(i) < 2) continue; // skip very center
+        const pc = Math.max(1, Math.min(COLS-2, cx + i));
+        const pr1 = Math.max(1, Math.min(ROWS-2, cy - ringR - 5));
+        const pr2 = Math.max(1, Math.min(ROWS-2, cy + ringR + 5));
+        if (!grid[pr1][pc] && !isRiver(pc)) placeTree(pc, pr1, 'date_palm');
+        if (!grid[pr2][pc] && !isRiver(pc)) placeTree(pc, pr2, 'date_palm');
+      }
+      // Scatter trees and gardens throughout city interior for visual richness
+      const cityTreeTypes = ['date_palm', 'date_palm', 'barley', 'steppe_shrub', 'tamarisk'];
+      for (let attempt = 0; attempt < 60; attempt++) {
+        const tx = cx + Math.floor(Math.random() * 22) - 11;
+        const ty = cy + Math.floor(Math.random() * 22) - 11;
+        if (tx < 1 || ty < 1 || tx >= COLS-1 || ty >= ROWS-1) continue;
+        if (grid[ty][tx] || isRiver(tx)) continue;
+        if (tileBiome[ty] && tileBiome[ty][tx] === 'road') continue;
+        const ttype = cityTreeTypes[Math.floor(Math.random() * cityTreeTypes.length)];
+        placeTree(tx, ty, ttype);
+      }
+      // Small garden cluster near the villa nobles
+      for (let g = 0; g < 3; g++) {
+        try {
+          const gx = cx - 8 + g;
+          const gy = cy - 5 + g;
+          if (!grid[gy][gx] && !isRiver(gx)) placeTree(gx, gy, 'steppe_shrub');
+          const gx2 = cx + 8 - g;
+          if (!grid[gy][gx2] && !isRiver(gx2)) placeTree(gx2, gy, 'steppe_shrub');
+        } catch (e) {}
       }
     }
   } catch (e) {}
@@ -3122,6 +3370,7 @@ function canWalkTo(col, row) {
   if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return false;
   const cell = grid[row][col];
   if (cell) {
+    if (cell.type === 'wall_segment' || cell.type === 'wall_tower') return false;
     // Allow passage through the topmost row of a building (its "back" face):
     // visually the player appears to walk behind the structure.
     // Sides, front rows, and multi-cell-tall buildings' lower rows all remain solid.
@@ -3448,6 +3697,86 @@ function drawBuilding(col, row, type, alpha) {
     ctx.fillRect(x + pad, y + H*0.32, W - pad*2, H*0.62);
     ctx.fillStyle = b.roofColor || '#8B6914';
     ctx.fillRect(x + pad, y + H*0.2, W - pad*2, H*0.14);
+    ctx.restore();
+    return;
+  }
+
+  // ── WALL SEGMENT ──────────────────────────────────────────────
+  if (type === 'wall_segment') {
+    // Read stored orientation: 'h' = horizontal (N/S row), 'v' = vertical (E/W column)
+    const _wallOrient = (grid[row] && grid[row][col] && grid[row][col].orient) ? grid[row][col].orient : 'h';
+    const wc1 = '#C8B870', wc2 = '#A89850', wcd = '#7A6830';
+
+    if (_wallOrient === 'v') {
+      // ── VERTICAL WALL SEGMENT (E/W sides) ─────────────────
+      // Rendered as a narrow tall slab — only one face visible, running top-to-bottom.
+      const slabW = W * 0.42; // thin slab centered
+      const slabX = x + (W - slabW) * 0.5;
+      // main slab body
+      ctx.fillStyle = wc1;
+      ctx.fillRect(slabX, y + H * 0.04, slabW, H * 0.90);
+      // left shaded face
+      ctx.fillStyle = wcd;
+      ctx.fillRect(x, y + H * 0.04, (W - slabW) * 0.5, H * 0.90);
+      // right shaded face
+      ctx.fillStyle = wcd;
+      ctx.fillRect(slabX + slabW, y + H * 0.04, (W - slabW) * 0.5, H * 0.90);
+      // mortar groove
+      ctx.fillStyle = wc2;
+      ctx.fillRect(slabX, y + H * 0.47, slabW, H * 0.04);
+      // two merlons on top (left and right of slab)
+      ctx.fillStyle = wc1;
+      ctx.fillRect(slabX, y, slabW * 0.38, H * 0.12);
+      ctx.fillRect(slabX + slabW * 0.62, y, slabW * 0.38, H * 0.12);
+      // shadow at base
+      ctx.fillStyle = wcd;
+      ctx.fillRect(slabX, y + H * 0.88, slabW, H * 0.06);
+    } else {
+      // ── HORIZONTAL WALL SEGMENT (N/S rows) ────────────────
+      // Wall body (full width, runs left-right)
+      ctx.fillStyle = wc1;
+      ctx.fillRect(x, y + H * 0.38, W, H * 0.55);
+      // Shadow at wall base
+      ctx.fillStyle = wcd;
+      ctx.fillRect(x, y + H * 0.87, W, H * 0.06);
+      // Horizontal mortar line
+      ctx.fillStyle = wc2;
+      ctx.fillRect(x, y + H * 0.56, W, H * 0.04);
+      // Three battlements (merlons) on top
+      const mW = W / 5;
+      ctx.fillStyle = wc1;
+      ctx.fillRect(x + mW * 0.1, y + H * 0.12, mW * 0.7, H * 0.3);
+      ctx.fillRect(x + mW * 2.1, y + H * 0.12, mW * 0.7, H * 0.3);
+      ctx.fillRect(x + mW * 4.1, y + H * 0.12, mW * 0.7, H * 0.3);
+      // Top ledge connecting merlons
+      ctx.fillStyle = wc2;
+      ctx.fillRect(x, y + H * 0.36, W, H * 0.05);
+    }
+    ctx.restore();
+    return;
+  }
+
+  // ── WALL TOWER ────────────────────────────────────────────────
+  if (type === 'wall_tower') {
+    const tc1 = '#B8A860', tc2 = '#9A8A48', tcd = '#6A5A28';
+    // Tower body — taller than wall, slight inset
+    ctx.fillStyle = tc1;
+    ctx.fillRect(x + pad, y + H * 0.05, W - pad*2, H * 0.88);
+    // Darker face (front plane)
+    ctx.fillStyle = tc2;
+    ctx.fillRect(x + pad, y + H * 0.25, W - pad*2, H * 0.6);
+    // Battlements (4 merlons on top)
+    const tMW = (W - pad*2) / 5;
+    ctx.fillStyle = tc1;
+    for (let m = 0; m < 4; m += 2) {
+      ctx.fillRect(x + pad + m * tMW, y + H * 0.02, tMW * 0.8, H * 0.16);
+    }
+    // Arrow slit
+    ctx.fillStyle = tcd;
+    ctx.fillRect(x + W * 0.42, y + H * 0.34, W * 0.16, H * 0.26);
+    // Shadow base
+    ctx.fillStyle = tcd;
+    ctx.fillRect(x + pad, y + H * 0.88, W - pad*2, H * 0.05);
     ctx.restore();
     return;
   }
@@ -4039,6 +4368,7 @@ function render() {
   // low-detail mode when zoomed out, or when camera is moving AND we're not close to the world
   // keep full detail when camera is near (avoid disappearing entities while panning/zooming close)
   const lowDetail = (zoom < 0.5) || (cameraBusy && zoom < 0.85);
+  const veryLowDetail = (zoom < 0.34) || (cameraBusy && zoom < 0.62);
   // ensure spatial index is up-to-date (rebuild only when necessary)
   try {
     if (window.SceneManager) {
@@ -4058,6 +4388,17 @@ function render() {
       }
     } catch (e) {}
     ctx.clearRect(0, 0, W, H);
+
+    let _shakeOffX = 0, _shakeOffY = 0;
+    try {
+      if (player._shakeUntil && now < player._shakeUntil) {
+        const mag = (player._shakeMag || 4) * Math.max(0, (player._shakeUntil - now) / 250);
+        _shakeOffX = (Math.random() - 0.5) * mag * 2;
+        _shakeOffY = (Math.random() - 0.5) * mag * 2;
+        camX += _shakeOffX;
+        camY += _shakeOffY;
+      }
+    } catch (e) {}
 
     // Debug overlay (opt-in)
     if (window.DEBUG_HUD) {
@@ -4590,7 +4931,7 @@ function render() {
         sMinR = Math.min(sMinR, p.y);
         sMaxR = Math.max(sMaxR, p.y);
       }
-      const pad = cameraBusy ? 14 : 10;
+      const pad = veryLowDetail ? 7 : (cameraBusy ? 14 : 10);
       minC = Math.max(0, Math.floor(sMinC - pad));
       maxC = Math.min(COLS - 1, Math.ceil(sMaxC + pad));
       minR = Math.max(0, Math.floor(sMinR - pad));
@@ -4836,7 +5177,8 @@ function render() {
   }
 
   // ── ENTITIES (resources) ─────────────────────────────────
-  const _entityList = (entities || []).slice().sort((A, B) => {
+  const _entitySource = (entities || []);
+  const _entityList = lowDetail ? _entitySource : _entitySource.slice().sort((A, B) => {
     const ax = (typeof A.x === 'number') ? A.x : (A.col || 0);
     const ay = (typeof A.y === 'number') ? A.y : (A.row || 0);
     const bx = (typeof B.x === 'number') ? B.x : (B.col || 0);
@@ -4855,6 +5197,14 @@ function render() {
     // estimate visual radius (px) for the entity — scale with entity.size when present
     const estRadius = Math.max(24, Math.round(tileSize * (ent.size || 1) * 1.4));
     const isOffscreen = (center.x + estRadius < -24 || center.x - estRadius > W + 24 || center.y + estRadius < -24 || center.y - estRadius > H + 24);
+    if (veryLowDetail && ent.kind === 'resource') {
+      try {
+        const seed = (((ent.col || 0) * 73856093) ^ ((ent.row || 0) * 19349663)) >>> 0;
+        const rnd = (seed % 1000) / 1000;
+        if (zoom < 0.26 && rnd > 0.2) return;
+        if (zoom < 0.34 && rnd > 0.45) return;
+      } catch (e) {}
+    }
     // provide a fallback top-left coords for existing drawing code that expects x,y
     const { x, y } = worldToScreen(ent.x, ent.y);
     const nowEnt = Date.now();
@@ -4920,7 +5270,7 @@ function render() {
           ctx.beginPath(); ctx.ellipse(fcx, fcy - ih2*0.12, iw2*0.09, ih2*(0.12 + fa*0.02), 0, 0, Math.PI*2); ctx.fill();
           ctx.restore();
           // smoke emission (soft cap to reduce particle overhead)
-            if (window.smokeParticles.length < 220 && Math.random() < 0.18) {
+            if (!lowDetail && window.smokeParticles.length < 220 && Math.random() < 0.18) {
               window.smokeParticles.push({ x: fcx + (Math.random()-0.5)*iw2*0.12, y: fcy - ih2*0.22, vx: (Math.random()-0.5)*0.22, vy: -(0.32+Math.random()*0.42), r: Math.max(2, iw2*0.06), life: 1400+Math.random()*900, born: now });
             }
         } else {
@@ -4967,7 +5317,7 @@ function render() {
           ctx.beginPath(); ctx.ellipse(fcx2, fcy2 - tileSize*0.13, tileSize*0.065, tileSize*(0.08+fa2*0.015), 0, 0, Math.PI*2); ctx.fill();
           ctx.restore();
           // smoke emission
-          if (window.smokeParticles.length < 220 && Math.random() < 0.18) {
+          if (!lowDetail && window.smokeParticles.length < 220 && Math.random() < 0.18) {
             window.smokeParticles.push({ x: fcx2+(Math.random()-0.5)*tileSize*0.12, y: fcy2-tileSize*0.2, vx: (Math.random()-0.5)*0.22, vy: -(0.32+Math.random()*0.42), r: Math.max(2, tileSize*0.07), life: 1400+Math.random()*900, born: now });
           }
         } else {
@@ -4975,6 +5325,19 @@ function render() {
         }
       }
     } else if (ent.kind === 'player') {
+      if (lowDetail) {
+        try {
+          const cx = x + tileSize * 0.5;
+          const cy = y + tileSize * 0.62;
+          ctx.save();
+          ctx.fillStyle = 'rgba(235,210,170,0.95)';
+          ctx.beginPath();
+          ctx.arc(cx, cy, Math.max(2, tileSize * 0.11), 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        } catch (e) {}
+        return;
+      }
       // draw NPC using character pixels if a palette is present so NPCs look like the player
         const tileSize = getTileSize();
         // smooth interpolation towards moveTarget (if present)
@@ -5344,6 +5707,17 @@ function render() {
       const tileSize = getTileSize();
       const offPad = viewMode === 'iso' ? Math.max(24, isoSize.w) : Math.max(24, tileSize);
       if (x < -offPad || x > W + offPad || y < -offPad || y > H + offPad) return;
+      if (lowDetail) {
+        try {
+          ctx.save();
+          ctx.fillStyle = '#D2691E';
+          ctx.beginPath();
+          ctx.ellipse(x + tileSize*0.5, y + tileSize*0.6, Math.max(3, tileSize*0.1), Math.max(2, tileSize*0.06), 0, 0, Math.PI*2);
+          ctx.fill();
+          ctx.restore();
+        } catch (e) {}
+        return;
+      }
       const bmpFox = (window._ENTITY_BITMAPS && (window._ENTITY_BITMAPS['detailed_fox'] || window._ENTITY_BITMAPS['fox'] || window._ENTITY_BITMAPS['animal.fox'] || window._ENTITY_BITMAPS['fox-0'])) ? (window._ENTITY_BITMAPS['detailed_fox'] || window._ENTITY_BITMAPS['fox'] || window._ENTITY_BITMAPS['animal.fox'] || window._ENTITY_BITMAPS['fox-0']) : null;
       const fsz = Math.max(8, tileSize * (size || 0.7));
       if (bmpFox) {
@@ -5426,6 +5800,11 @@ function render() {
       const ex = (en.x || en.col) ; const ey = (en.y || en.row);
       const p = worldToScreen(ex, ey);
       const tileSize = getTileSize();
+      if (lowDetail) {
+        ctx.fillStyle = '#8B2E2E';
+        ctx.fillRect(p.x + tileSize*0.42, p.y + tileSize*0.45, Math.max(3, tileSize*0.16), Math.max(3, tileSize*0.16));
+        continue;
+      }
       // body
       ctx.fillStyle = '#8B2E2E'; ctx.beginPath(); ctx.ellipse(p.x + tileSize*0.5, p.y + tileSize*0.55, Math.max(6, tileSize*0.4), Math.max(4, tileSize*0.32), 0, 0, Math.PI*2); ctx.fill();
       // hp bar
@@ -5437,6 +5816,9 @@ function render() {
 
   // draw smoke particles (ambient campfire smoke)
   try {
+    if (lowDetail && window.smokeParticles && window.smokeParticles.length > 24) {
+      window.smokeParticles.splice(0, window.smokeParticles.length - 24);
+    }
     const nowSm = now;
     for (let i = window.smokeParticles.length - 1; i >= 0; i--) {
       const sp = window.smokeParticles[i];
@@ -5663,8 +6045,14 @@ function render() {
     if (Math.hypot(camX-targetCam.x, camY-targetCam.y) < 0.5) targetCam = null;
   }
 
-  // overlay difuminado (nubes suaves) when zoomed out
-  try { drawCloudOverlay(); } catch (err) { /* ignore */ }
+  // overlay difuminado desactivado por rendimiento
+
+  try {
+    camX -= _shakeOffX;
+    camY -= _shakeOffY;
+    _shakeOffX = 0;
+    _shakeOffY = 0;
+  } catch (e) {}
 
   drawPlayer();
   drawPlayerHealth();
@@ -5686,7 +6074,7 @@ function render() {
   // Radial gradient: transparent at player centre → dark at edges.
   // No compositing tricks needed – one fillRect does it all.
   try {
-    if (nightAlpha > 0.12 && !window.currentInterior) {
+    if (!veryLowDetail && nightAlpha > 0.12 && !window.currentInterior) {
       const { x: pvx, y: pvy } = worldToScreen(player.x + 0.5, player.y + 0.5);
       const tileSize = getTileSize();
       const flicker = 1 + 0.04 * Math.sin(now / 180) + 0.02 * Math.sin(now / 87);
@@ -5955,6 +6343,32 @@ function render() {
       }
       if (en._holdUntil && nowNpc < en._holdUntil) continue;
       if (en._holdUntil && nowNpc >= en._holdUntil) delete en._holdUntil;
+
+      if (en._hostile && !isNightNpc) {
+        en.moveTarget = { x: player.x + 0.5, y: player.y + 0.5 };
+        en.nextMove = nowNpc + 350;
+        const enx = (typeof en.x === 'number' ? en.x : en.col) + 0.5;
+        const eny = (typeof en.y === 'number' ? en.y : en.row) + 0.5;
+        const distToPlayer = Math.hypot(player.x + 0.5 - enx, player.y + 0.5 - eny);
+        if (distToPlayer < 1.6 && nowNpc >= (en._nextAttack || 0)) {
+          en._nextAttack = nowNpc + 1000 + Math.floor(Math.random() * 800);
+          const npcDmg = Math.max(1, 2 + Math.floor(Math.random() * 5));
+          char.hp = Math.max(0, (char.hp || 0) - npcDmg);
+          char._flashUntil = nowNpc + 380;
+          player._shakeUntil = nowNpc + 260;
+          player._shakeMag = 5;
+          en._flashUntil = nowNpc + 180;
+          try {
+            const ps = worldToScreen(player.x + 0.5, player.y - 0.5);
+            spawnDamageText(ps.x, ps.y, '-' + npcDmg, '#FF6655');
+          } catch (e2) {}
+          addLog(`${en.name || 'Ciudadano'} te golpea por ${npcDmg} daño.`);
+          try { updateUI(); } catch (e3) {}
+          if (char.hp <= 0) addLog('¡Has sido derrotado!');
+        }
+        continue;
+      }
+
       if (!en.nextMove) en.nextMove = nowNpc + 1000 + Math.floor(Math.random() * 3000);
       if (nowNpc >= en.nextMove) {
         en.nextMove = nowNpc + 1200 + Math.floor(Math.random() * 5000);
@@ -6919,6 +7333,16 @@ function applyPlayerAttackDamage(targetInfo, damage, weaponName) {
       const idx = entities.indexOf(target);
       if (idx >= 0) entities.splice(idx, 1);
       addLog(`${targetInfo.label} ha sido derrotado.`);
+    } else if (target.kind === 'player') {
+      target._hostile = true;
+      target._nextAttack = Date.now() + 700 + Math.floor(Math.random() * 400);
+      target.speed = Math.max(target.speed || 1.2, 1.9);
+      try {
+        const hdx = player.x - (target.x || target.col);
+        const hdy = player.y - (target.y || target.row);
+        target.dir = Math.abs(hdx) > Math.abs(hdy) ? (hdx > 0 ? 'right' : 'left') : (hdy > 0 ? 'down' : 'up');
+      } catch (e) {}
+      try { window.spawnFloatingText((target.x || target.col) + 0.5, (target.y || target.row) - 0.5, '¡Fuera!', '#FF3333'); } catch (e) {}
     }
   } else if (targetInfo.bucket === 'rabbits') {
     addLog(`Golpeas a un conejo por ${damage} daño.`);
@@ -9021,7 +9445,8 @@ function showStartMenu(force) {
     try { stylePanel(box); } catch (e) { box.style.background = 'rgba(14,14,14,0.98)'; box.style.border = '1px solid #333'; box.style.borderRadius = '10px'; }
 
     const left = document.createElement('div'); left.style.flex = '1';
-    const title = document.createElement('div'); title.innerHTML = '<h2 style="margin:0 0 8px 0">Mesopotamia</h2><div style="color:#ccc;font-size:13px">Construye, sobrevive y proclama tu reino</div>';
+    const _startEpoch = getEpochProfile(window._currentEpoch || 'mesopotamia');
+    const title = document.createElement('div'); title.innerHTML = `<h2 style="margin:0 0 8px 0">${_startEpoch.startTitle}</h2><div style="color:#ccc;font-size:13px">${_startEpoch.startSubtitle}</div>`;
     left.appendChild(title);
 
     const actions = document.createElement('div'); actions.style.marginTop = '12px';
@@ -9152,6 +9577,29 @@ function showStartupParams() {
     const box = document.createElement('div'); box.style.background = 'rgba(18,18,18,0.98)'; box.style.padding = '16px'; box.style.border = '1px solid #333'; box.style.borderRadius = '8px'; box.style.width = '520px'; box.style.color = '#fff';
     box.innerHTML = `<div style="font-weight:700;margin-bottom:8px">Parámetros de nueva partida</div>`;
     const form = document.createElement('div'); form.style.display='grid'; form.style.gridTemplateColumns='1fr 1fr'; form.style.gap='10px';
+    const epochWrap = document.createElement('div');
+    epochWrap.style.gridColumn = '1 / -1';
+    epochWrap.style.display = 'flex';
+    epochWrap.style.flexDirection = 'column';
+    const epochLabel = document.createElement('div');
+    epochLabel.style.fontSize = '13px';
+    epochLabel.style.marginBottom = '4px';
+    epochLabel.textContent = 'Época';
+    const epochSelect = document.createElement('select');
+    epochSelect.id = 'start-epoch';
+    epochSelect.style.background = '#111';
+    epochSelect.style.color = '#fff';
+    epochSelect.style.border = '1px solid #444';
+    epochSelect.style.padding = '6px';
+    Object.values(EPOCH_PROFILES).forEach(ep => {
+      const opt = document.createElement('option');
+      opt.value = ep.id;
+      opt.textContent = ep.label;
+      epochSelect.appendChild(opt);
+    });
+    epochSelect.value = window._currentEpoch || 'mesopotamia';
+    epochWrap.appendChild(epochLabel);
+    epochWrap.appendChild(epochSelect);
     const createRange = (id,label,def,min,max,step) => {
       const wrap = document.createElement('div'); wrap.style.display='flex'; wrap.style.flexDirection='column';
       const lab = document.createElement('div'); lab.style.fontSize='13px'; lab.style.marginBottom='4px'; lab.textContent = label;
@@ -9164,6 +9612,7 @@ function showStartupParams() {
     const r1 = createRange('density-npcs','Densidad NPCs', window._DEFAULT_DENSITIES && window._DEFAULT_DENSITIES.npc || 1.0, 0.2, 3.0, 0.1);
     const r2 = createRange('density-animals','Densidad animales', window._DEFAULT_DENSITIES && window._DEFAULT_DENSITIES.animals || 1.0, 0.2, 3.0, 0.1);
     const r3 = createRange('density-vegetation','Densidad vegetación', window._DEFAULT_DENSITIES && window._DEFAULT_DENSITIES.vegetation || 1.0, 0.2, 3.0, 0.1);
+    form.appendChild(epochWrap);
     form.appendChild(r1); form.appendChild(r2); form.appendChild(r3);
     box.appendChild(form);
     const footer = document.createElement('div'); footer.style.display='flex'; footer.style.justifyContent='flex-end'; footer.style.gap='10px'; footer.style.marginTop='12px';
@@ -9179,6 +9628,8 @@ function showStartupParams() {
         const dn = parseFloat(document.getElementById('density-npcs').value || '1.0');
         const da = parseFloat(document.getElementById('density-animals').value || '1.0');
         const dv = parseFloat(document.getElementById('density-vegetation').value || '1.0');
+        const epoch = (document.getElementById('start-epoch') || {}).value || 'mesopotamia';
+        const ep = applyEpochProfile(epoch, true);
         window._DEFAULT_DENSITIES = { npc: dn, animals: da, vegetation: dv };
         modal.remove();
         // first, convert/prepare sprites with visible progress so user sees them converted one-by-one
@@ -9212,6 +9663,8 @@ function showStartupParams() {
         try { window._gameStarted = true; startRenderLoop(); } catch (e) {}
         // Set a closer default zoom so the player is clearly visible at start
         try { zoom = 2.0; centerCamera(); } catch (e) {}
+        try { addLog(ep.foundedLog || 'Asentamiento fundado.'); } catch (e) {}
+        try { notify(ep.welcomeLog || '¡Nueva partida creada!'); } catch (e) {}
       } catch (err) { try { prog && prog.hide(); } catch (e) {} hideLoadingOverlay(); console.error('start new err', err); }
     });
   } catch (e) { console.error('showStartupParams err', e); }
@@ -9954,46 +10407,8 @@ function drawMiniMap(ctx, W, H) {
   ctx.restore();
 }
 
-// Draw a soft difuminado overlay when zoomed out (over the board, not the UI)
 function drawCloudOverlay() {
-  try {
-    const W = canvas.width, H = canvas.height;
-    // show overlay only when considerably zoomed out
-    const threshold = 0.6;
-    if (zoom >= threshold) return;
-    // Use a cached cloud canvas to avoid generating gradients+blur each frame
-    try {
-      const alpha = Math.min(0.35, (threshold - zoom) * 0.45);
-      // use a lower-resolution cached canvas for performance. Rebuild only on size change or periodically.
-      const lowW = Math.max(64, Math.ceil(W / 2));
-      const lowH = Math.max(64, Math.ceil(H / 2));
-      const now = Date.now();
-      const needRebuild = (!window._CLOUD_CANVAS) || window._CLOUD_CANVAS._w !== lowW || window._CLOUD_CANVAS._h !== lowH || (now - (window._CLOUD_CANVAS._lastBuild || 0) > 900);
-      if (needRebuild) {
-        const off = document.createElement('canvas'); off.width = lowW; off.height = lowH; const oc = off.getContext('2d');
-        oc.clearRect(0,0,lowW,lowH);
-        const t = Date.now() * 0.00012; // slower animation
-        for (let i = 0; i < 3; i++) {
-          const gx = (Math.sin(t + i * 0.7) * 0.25 + 0.5) * lowW;
-          const gy = (Math.cos(t * 0.85 + i * 0.9) * 0.22 + 0.45) * lowH;
-          const rg = oc.createRadialGradient(gx, gy, 8, gx, gy, Math.max(lowW, lowH) * 0.8);
-          rg.addColorStop(0, 'rgba(255,255,255,0.65)');
-          rg.addColorStop(0.6, 'rgba(250,250,250,0.18)');
-          rg.addColorStop(1, 'rgba(250,250,250,0)');
-          oc.fillStyle = rg; oc.fillRect(0,0,lowW,lowH);
-        }
-        off._w = lowW; off._h = lowH; off._lastBuild = now;
-        window._CLOUD_CANVAS = off;
-      }
-      if (window._CLOUD_CANVAS) {
-        ctx.save(); ctx.globalAlpha = alpha; // use computed alpha
-        // draw low-res canvas stretched to screen for soft overlay (cheap)
-        try { ctx.imageSmoothingEnabled = true; } catch (e) {}
-        ctx.drawImage(window._CLOUD_CANVAS, 0, 0, window._CLOUD_CANVAS.width, window._CLOUD_CANVAS.height, 0, 0, W, H);
-        ctx.restore();
-      }
-    } catch (errCloud) { /* ignore cloud build errors */ }
-  } catch (err) { /* non-fatal */ }
+  return;
 }
 
 canvas.addEventListener('mousemove', e => {
@@ -10609,6 +11024,18 @@ document.addEventListener('keyup', e => {
     keyState[e.key] = false;
   }
 });
+window.addEventListener('blur', () => {
+  try { keyState = {}; } catch (e) {}
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    try {
+      keyState = {};
+      moveTarget = null;
+      movePath = null;
+    } catch (e) {}
+  }
+});
 
 // Toggle inventory with 'I'
 document.addEventListener('keydown', e => {
@@ -10789,6 +11216,7 @@ function init() {
   try { createOverlayUI(); } catch (err) { /* ignore */ }
   try { createDebugHUD(); } catch (err) {}
   try { createAbilityBarAndMissions(); } catch (err) { /* ignore */ }
+  const _activeEpoch = applyEpochProfile(localStorage.getItem(STORAGE_EPOCH_KEY) || window._currentEpoch || 'mesopotamia', false);
 
   // Enhance top icons and create the game guide; make panels floating
   try {
@@ -10964,9 +11392,9 @@ function init() {
   // Center camera on river area
   centerCamera();
 
-  addLog('Ciudad fundada en la orilla del Éufrates.');
+  addLog((_activeEpoch && _activeEpoch.foundedLog) || 'Ciudad fundada en la orilla del Éufrates.');
   addLog('Atajos: H=Casa V=Villa F=Granja T=Templo K=Mercado G=Granero Z=Zigurat D=Demoler');
-  notify('¡Bienvenido a Mesopotamia! Construye tu ciudad.');
+  notify((_activeEpoch && _activeEpoch.welcomeLog) || '¡Bienvenido a Mesopotamia! Construye tu ciudad.');
 }
 
 // Post-map initialization tasks used after generate/import/load flows
