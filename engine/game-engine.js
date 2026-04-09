@@ -156,8 +156,8 @@ async function exportEntitySpritesPNGs(names, options = {}) {
 try { window.exportEntitySpritesPNGs = exportEntitySpritesPNGs; } catch (e) {}
 
 const DEFAULT_ENEMY_DEFS = {
-  raider: { name: 'Raider', hp: 12, speed: 0.9, reward: { brick: 1 }, sprite: 'raider', scale: 0.82 },
-  beast: { name: 'Beast', hp: 20, speed: 0.6, reward: { brick: 2 }, sprite: 'beast', scale: 0.96 }
+  raider: { name: 'Merodeador', hp: 12, speed: 0.9, reward: { brick: 1 }, sprite: 'raider', scale: 0.82 },
+  beast: { name: 'Lobo de estepa', hp: 20, speed: 0.6, reward: { brick: 2 }, sprite: 'beast', scale: 0.96 }
 };
 
 const DEFAULT_RESOURCE_DEFS = {
@@ -828,9 +828,26 @@ function _updateSelectionOverlay(rect) {
     if (!so || !box || !lbl) return;
     if (!rect) { so.style.display = 'none'; return; }
     so.style.display = 'block';
-    box.style.left = rect.x + 'px'; box.style.top = rect.y + 'px'; box.style.width = Math.max(1, rect.w) + 'px'; box.style.height = Math.max(1, rect.h) + 'px';
+    const cv = document.getElementById('gameCanvas');
+    const cvRect = cv ? cv.getBoundingClientRect() : { left: 0, top: 0 };
+    const left = cvRect.left + (rect.xCss !== undefined ? rect.xCss : rect.x);
+    const top = cvRect.top + (rect.yCss !== undefined ? rect.yCss : rect.y);
+    const width = Math.max(1, rect.wCss !== undefined ? rect.wCss : rect.w);
+    const height = Math.max(1, rect.hCss !== undefined ? rect.hCss : rect.h);
+    box.style.left = left + 'px'; box.style.top = top + 'px'; box.style.width = width + 'px'; box.style.height = height + 'px';
     const count = window._selectPreviewCount || 0; lbl.textContent = count ? `Seleccionando: ${count}` : 'Seleccionando';
   } catch (e) {}
+}
+
+function getCanvasPointerPosition(ev) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = rect.width > 0 ? (canvas.width / rect.width) : 1;
+  const scaleY = rect.height > 0 ? (canvas.height / rect.height) : 1;
+  const cssX = ev.clientX - rect.left;
+  const cssY = ev.clientY - rect.top;
+  const x = Math.max(0, Math.min(canvas.width, cssX * scaleX));
+  const y = Math.max(0, Math.min(canvas.height, cssY * scaleY));
+  return { x, y, cssX, cssY, rect, scaleX, scaleY };
 }
 
 // Global registry for floating panels so the menu can control them
@@ -883,6 +900,20 @@ let _rebuildMapTimer = null;
 let _rebuildMapAsyncRunning = false;
 
 function getBiomeFillColor(biome) {
+  const isUrss = (window._currentEpoch || 'mesopotamia') === 'urss';
+  if (isUrss) {
+    if (biome === 'water')    return '#5E6A79';
+    if (biome === 'riparian') return '#6F7973';
+    if (biome === 'marsh')    return '#626B67';
+    if (biome === 'alluvial') return '#8A887E';
+    if (biome === 'saline')   return '#E2E5EA';
+    if (biome === 'steppe')   return '#7A7E83';
+    if (biome === 'hills')    return '#666A71';
+    if (biome === 'forest')   return '#56625C';
+    if (biome === 'grass')    return '#8F9893';
+    if (biome === 'road')     return '#8A8E95';
+    return '#7D8188';
+  }
   if (biome === 'water')    return '#2A72C3';
   if (biome === 'riparian') return '#5A8C38';
   if (biome === 'marsh')    return '#3A6B52';
@@ -995,34 +1026,13 @@ function rebuildMapCache() {
         const x = Math.floor(p.x - minX1);
         const y = Math.floor(p.y - minY1);
         const biome = tileBiome[r][c] || 'alluvial';
-        if (biome === 'water') {
-          cctx.fillStyle = '#2A72C3';
-          // draw diamond
-          cctx.beginPath();
-          cctx.moveTo(x, y);
-          cctx.lineTo(x + w1/2, y + h1/2);
-          cctx.lineTo(x, y + h1);
-          cctx.lineTo(x - w1/2, y + h1/2);
-          cctx.closePath(); cctx.fill();
-        } else {
-          let fill;
-          if      (biome === 'riparian') fill = '#5A8C38';
-          else if (biome === 'marsh')    fill = '#3A6B52';
-          else if (biome === 'alluvial') fill = '#D1A86A';
-          else if (biome === 'saline')   fill = '#E8D8B8';
-          else if (biome === 'steppe')   fill = '#C8A055';
-          else if (biome === 'hills')    fill = '#B09060';
-          else if (biome === 'forest')   fill = '#4A8A3A';  // legacy saves
-          else if (biome === 'grass')    fill = '#7AAA60';  // legacy saves
-          else fill = '#C4A878';
-          cctx.fillStyle = fill;
-          cctx.beginPath();
-          cctx.moveTo(x, y);
-          cctx.lineTo(x + w1/2, y + h1/2);
-          cctx.lineTo(x, y + h1);
-          cctx.lineTo(x - w1/2, y + h1/2);
-          cctx.closePath(); cctx.fill();
-        }
+        cctx.fillStyle = getBiomeFillColor(biome);
+        cctx.beginPath();
+        cctx.moveTo(x, y);
+        cctx.lineTo(x + w1/2, y + h1/2);
+        cctx.lineTo(x, y + h1);
+        cctx.lineTo(x - w1/2, y + h1/2);
+        cctx.closePath(); cctx.fill();
       }
     }
     mapCache._isoOffset = { minX: minX1, minY: minY1 };
@@ -1040,21 +1050,8 @@ function rebuildMapCache() {
       for (let c = 0; c < COLS; c++) {
         const x = c * tileSize; const y = r * tileSize;
         const biome = tileBiome[r][c] || 'alluvial';
-        if (biome === 'water') {
-          cctx.fillStyle = '#2A72C3';
-          cctx.fillRect(x, y, tileSize, tileSize);
-        } else {
-          if      (biome === 'riparian') cctx.fillStyle = '#5A8C38';
-          else if (biome === 'marsh')    cctx.fillStyle = '#3A6B52';
-          else if (biome === 'alluvial') cctx.fillStyle = '#D1A86A';
-          else if (biome === 'saline')   cctx.fillStyle = '#E8D8B8';
-          else if (biome === 'steppe')   cctx.fillStyle = '#C8A055';
-          else if (biome === 'hills')    cctx.fillStyle = '#B09060';
-          else if (biome === 'forest')   cctx.fillStyle = '#4A8A3A';
-          else if (biome === 'grass')    cctx.fillStyle = '#7AAA60';
-          else cctx.fillStyle = '#C4A878';
-          cctx.fillRect(x, y, tileSize, tileSize);
-        }
+        cctx.fillStyle = getBiomeFillColor(biome);
+        cctx.fillRect(x, y, tileSize, tileSize);
       }
     }
     delete mapCache._isoOffset;
@@ -1114,9 +1111,9 @@ const BUILDING_SCALE = 1.0;
 // Make the map much larger
 const COLS    = 180;
 const ROWS    = 120;
-// Two-river system: Tigris (A, west/left) and Euphrates (B, east/right)
-const RIVER_A_BASE      = 42;  // Tigris approximate center column
-const RIVER_B_BASE      = 132; // Euphrates approximate center column
+// Two-river system: Río Don (A, west/left) and Río Ob Nord (B, east/right) - Soviet rivers
+const RIVER_A_BASE      = 42;  // Río Don approximate center column
+const RIVER_B_BASE      = 132; // Río Ob Nord approximate center column
 const RIVER_WIDTH_BASE  = 5;
 const RIVER_COL_START   = RIVER_A_BASE;  // backward-compat alias
 const RIVER_WIDTH       = RIVER_WIDTH_BASE;
@@ -1170,6 +1167,46 @@ BUILDINGS.tower = { name: 'Torre', costBrick:6, costWheat:0, prodPop:0, prodWhea
 // Defensive perimeter walls auto-placed around capitals and large towns
 BUILDINGS.wall_segment = { name: 'Muro', costBrick:3, costWheat:0, prodPop:0, prodWheat:0, prodBrick:0, color:'#C0B070', roofColor:'#9A8A50', desc:'Sección de muralla defensiva.', size:{ w:1, h:1 } };
 BUILDINGS.wall_tower  = { name: 'Torre de muralla', costBrick:10, costWheat:0, prodPop:0, prodWheat:0, prodBrick:0, color:'#A89860', roofColor:'#7A7040', desc:'Torre esquinera de la muralla defensiva.', size:{ w:2, h:2 } };
+
+// Soviet-era buildings (epoch pack)
+BUILDINGS.soviet_block = { name:'Bloque residencial', costBrick:10, costWheat:3, prodPop:6, prodWheat:0, prodBrick:0, color:'#8A8F97', roofColor:'#6A6F77', desc:'Alojamiento denso para trabajadores.', size:{ w:3, h:3 } };
+BUILDINGS.party_hq = { name:'Casa del Soviet', costBrick:24, costWheat:8, prodPop:12, prodWheat:0, prodBrick:0, color:'#9A3A3F', roofColor:'#5D1F24', desc:'Centro administrativo del distrito.', size:{ w:5, h:5 } };
+BUILDINGS.collective_farm = { name:'Granja colectiva', costBrick:1, costWheat:3, prodPop:0, prodWheat:4, prodBrick:0, color:'#5E7E52', roofColor:'#415B3A', desc:'Produce 4 comida/turno.' };
+BUILDINGS.factory = { name:'Fábrica', costBrick:15, costWheat:5, prodPop:4, prodWheat:1, prodBrick:2, color:'#6D7078', roofColor:'#4F525A', desc:'+4 población, +1 comida, +2 suministros.' };
+BUILDINGS.state_warehouse = { name:'Almacén estatal', costBrick:8, costWheat:4, prodPop:1, prodWheat:1, prodBrick:2, color:'#8C7A5E', roofColor:'#675540', desc:'+1 comida, +2 suministros.' };
+BUILDINGS.steel_foundry = { name:'Complejo metalúrgico', costBrick:30, costWheat:10, prodPop:10, prodWheat:2, prodBrick:4, color:'#70747D', roofColor:'#4B4E55', desc:'Proyecto mayor: +10 población, +2 comida, +4 suministros.', size:{ w:11, h:11 } };
+BUILDINGS.concrete_road = { name:'Vía de hormigón', costBrick:0, costWheat:0, prodPop:0, prodWheat:0, prodBrick:0, color:'#7A7B80', roofColor:'#7A7B80', desc:'Conecta barrios e industria.', size:{ w:1, h:1 } };
+BUILDINGS.state_clinic = { name:'Clínica estatal', costBrick:16, costWheat:4, prodPop:4, prodWheat:0, prodBrick:0, color:'#8FA0B0', roofColor:'#5F7386', desc:'Mejora la calidad de vida del distrito.', size:{ w:3, h:2 } };
+BUILDINGS.checkpoint_gate = { name:'Puerta de control', costBrick:8, costWheat:0, prodPop:0, prodWheat:0, prodBrick:0, color:'#6A6D74', roofColor:'#474A51', desc:'Acceso vigilado al núcleo urbano.', size:{ w:2, h:1 } };
+
+const EPOCH_BUILDING_MAP = {
+  urss: {
+    house: 'soviet_block',
+    house_small: 'soviet_block',
+    house_large: 'soviet_block',
+    house_garden: 'soviet_block',
+    longhouse: 'soviet_block',
+    stone_house: 'soviet_block',
+    hut: 'soviet_block',
+    mesopotamian_house: 'soviet_block',
+    mesopotamian_villa_detailed: 'party_hq',
+    mesopotamian_baths: 'state_clinic',
+    mesopotamian_arch: 'checkpoint_gate',
+    farm: 'collective_farm',
+    temple: 'factory',
+    market: 'state_warehouse',
+    granary: 'state_warehouse',
+    ziggurat: 'steel_foundry',
+    road: 'concrete_road'
+  }
+};
+
+function resolveEpochBuildingType(type, epochId) {
+  const key = epochId || window._currentEpoch || 'mesopotamia';
+  const map = EPOCH_BUILDING_MAP[key];
+  if (!map) return type;
+  return map[type] || type;
+}
 
 // ── GRID ──────────────────────────────────────────────────────
 const grid = Array.from({length:ROWS}, () => Array(COLS).fill(null));
@@ -1295,7 +1332,7 @@ const EPOCH_PROFILES = {
     startTitle: 'Mesopotamia',
     startSubtitle: 'Construye, sobrevive y proclama tu reino',
     welcomeLog: '¡Bienvenido a Mesopotamia! Construye tu ciudad.',
-    foundedLog: 'Ciudad fundada en la orilla del Éufrates.'
+    foundedLog: 'Novozarya establecida a orillas del Río Ob Nord, bajo protocolo estatal.'
   },
   urss: {
     id: 'urss',
@@ -1317,6 +1354,282 @@ const EPOCH_PROFILES = {
   }
 };
 
+const EPOCH_UI_PROFILES = {
+  mesopotamia: {
+    resources: {
+      wheat: { label: 'Trigo', productionLabel: 'trigo' },
+      brick: { label: 'Ladrillos', productionLabel: 'ladrillos' },
+      pop: { label: 'Población', productionLabel: 'población' }
+    },
+    buildings: {},
+    texts: {
+      buildPanelTitle: 'Construir',
+      productionPanelTitle: 'Producción / Turno',
+      demolishName: 'Demoler',
+      demolishDesc: 'Recupera 50%',
+      riverName: 'Río Don',
+      riverDesc: 'Fuente de vida.',
+      riverBonus: 'Construir cerca da +25% producción.',
+      guideQuickTips: 'Construye casas cerca del río para +25% producción. Usa graneros y mercados para balancear recursos.',
+      quickTipsTitle: 'Consejos'
+    },
+    quickTips: [
+      'Construye cerca del río.',
+      'Crea graneros para almacenar trigo.'
+    ]
+  },
+  urss: {
+    resources: {
+      wheat: { label: 'Comida', productionLabel: 'comida' },
+      brick: { label: 'Suministros', productionLabel: 'suministros' },
+      pop: { label: 'Población', productionLabel: 'población' }
+    },
+    buildings: {
+      house: { name: 'Bloque vecinal', desc: 'Aloja 5 habitantes.' },
+      mesopotamian_villa_detailed: { name: 'Casa del Partido', desc: 'Residencia amplia para cuadros del distrito.' },
+      farm: { name: 'Granja colectiva', desc: 'Produce 4 comida/turno.' },
+      temple: { name: 'Casa del Soviet', desc: '+5 población, +1 comida, +1 suministros.' },
+      market: { name: 'Cooperativa', desc: '+2 comida, +2 suministros.' },
+      granary: { name: 'Almacén estatal', desc: '+3 suministros/turno.' },
+      ziggurat: { name: 'Palacio de planificación', desc: 'Proyecto emblemático: +10 población, +3 de todo.' },
+      road: { name: 'Carretera', desc: 'Conecta edificios.' }
+    },
+    texts: {
+      buildPanelTitle: 'Planificación',
+      productionPanelTitle: 'Producción / Turno',
+      demolishName: 'Desmantelar',
+      demolishDesc: 'Recupera 50%',
+      riverName: 'Corredor logístico',
+      riverDesc: 'Infraestructura vital para el asentamiento.',
+      riverBonus: 'Construir cerca aporta +25% de eficiencia.',
+      guideQuickTips: 'Expande los bloques vecinales cerca de la red logística y usa cooperativas y almacenes para estabilizar la producción.',
+      quickTipsTitle: 'Consejos'
+    },
+    quickTips: [
+      'Construye cerca de la red logística.',
+      'Combina cooperativas y almacenes para estabilizar el abastecimiento.'
+    ]
+  },
+  medieval: {
+    resources: {
+      wheat: { label: 'Grano', productionLabel: 'grano' },
+      brick: { label: 'Piedra', productionLabel: 'piedra' },
+      pop: { label: 'Población', productionLabel: 'población' }
+    },
+    buildings: {
+      house: { name: 'Casa aldeana', desc: 'Aloja 5 habitantes.' },
+      mesopotamian_villa_detailed: { name: 'Manor', desc: 'Residencia amplia para la nobleza local.' },
+      farm: { name: 'Campo de cultivo', desc: 'Produce 4 grano/turno.' },
+      temple: { name: 'Capilla', desc: '+5 población, +1 grano, +1 piedra.' },
+      market: { name: 'Plaza del mercado', desc: '+2 grano, +2 piedra.' },
+      granary: { name: 'Granero real', desc: '+3 piedra/turno.' },
+      ziggurat: { name: 'Castillo', desc: 'Maravilla defensiva: +10 población, +3 de todo.' },
+      road: { name: 'Camino real', desc: 'Conecta edificios.' }
+    },
+    texts: {
+      buildPanelTitle: 'Construcción',
+      productionPanelTitle: 'Producción / Turno',
+      demolishName: 'Derribar',
+      demolishDesc: 'Recupera 50%',
+      riverName: 'Río del reino',
+      riverDesc: 'Asegura agua y comercio.',
+      riverBonus: 'Construir cerca da +25% producción.',
+      guideQuickTips: 'Levanta viviendas cerca del río y apóyate en mercados y graneros para sostener el crecimiento.',
+      quickTipsTitle: 'Consejos'
+    },
+    quickTips: [
+      'Levanta viviendas cerca del río.',
+      'Mercados y graneros ayudan a sostener una villa grande.'
+    ]
+  }
+};
+
+const EPOCH_CONTENT_PROFILES = {
+  mesopotamia: {
+    characterPresets: {
+      scribe: { name: 'Ninsun', title: 'Escriba' },
+      scout: { name: 'Kishar', title: 'Explorador' },
+      builder: { name: 'Urim', title: 'Maestro de obras' },
+      priest: { name: 'Enhedu', title: 'Sacerdote' },
+      merchant: { name: 'Tamar', title: 'Mercader' }
+    },
+    actions: {
+      explore: { name: 'Explorar', desc: 'Encuentra recursos o rutas ocultas.' },
+      gather: { name: 'Recolectar', desc: 'Recolecta trigo o ladrillos cercanos.' },
+      build: { name: 'Construir', desc: 'Activa el modo edicion para construir.' },
+      trade: { name: 'Comerciar', desc: 'Intercambia recursos en el mercado.' },
+      ritual: { name: 'Ritual', desc: 'Invoca un bonus de poblacion.' },
+      study: { name: 'Investigar', desc: 'Gana experiencia y mejora un atributo.' },
+      hunt: { name: 'Cazar', desc: 'Caza animales salvajes cercanos.' },
+      attack: { name: 'Atacar', desc: 'Ataca jugador o animal cercano.' }
+    }
+  },
+  urss: {
+    characterPresets: {
+      scribe: { name: 'Konstantin Markov', title: 'Ideólogo de Línea Dura' },
+      scout: { name: 'Nadezhda Sokolova', title: 'Exploradora de Frontera' },
+      builder: { name: 'Gavril Denisov', title: 'Reformista Campesino' },
+      priest: { name: 'Arkady Volkov', title: 'Mariscal de Acero' },
+      merchant: { name: 'Irina Petrova', title: 'Intendente Estatal' }
+    },
+    classes: {
+      builder: { name: 'Planificador', title: 'Ingeniero del Estado' },
+      scribe: { name: 'Comisario', title: 'Custodio ideológico' },
+      priest: { name: 'Mariscal', title: 'Mando del frente interno' },
+      scout: { name: 'Explorador', title: 'Ojos de la frontera' },
+      merchant: { name: 'Intendente', title: 'Gestor de suministros' }
+    },
+    actions: {
+      explore: { name: 'Reconocer', desc: 'Reconoce rutas y zonas de suministro.' },
+      gather: { name: 'Acopiar', desc: 'Acopia comida o suministros cercanos.' },
+      build: { name: 'Urbanizar', desc: 'Activa el modo edicion para construir.' },
+      trade: { name: 'Intercambiar', desc: 'Reasigna recursos del distrito.' },
+      ritual: { name: 'Mitin', desc: 'Eleva la moral y aumenta la población.' },
+      study: { name: 'Investigar', desc: 'Mejora capacidades técnicas.' },
+      hunt: { name: 'Cazar', desc: 'Caza animales salvajes cercanos.' },
+      attack: { name: 'Repeler', desc: 'Ataca jugador o animal cercano.' }
+    }
+  },
+  medieval: {
+    characterPresets: {
+      scribe: { name: 'Aldric', title: 'Escribano' },
+      scout: { name: 'Bran', title: 'Rastreador' },
+      builder: { name: 'Gareth', title: 'Maestro cantero' },
+      priest: { name: 'Elena', title: 'Prior del templo' },
+      merchant: { name: 'Roderic', title: 'Mercader' }
+    },
+    classes: {
+      builder: { name: 'Constructor', title: 'Maestro de obras' },
+      scribe: { name: 'Escriba', title: 'Custodio de saber' },
+      priest: { name: 'Sacerdote', title: 'Voz del templo' },
+      scout: { name: 'Explorador', title: 'Ojos del desierto' },
+      merchant: { name: 'Mercader', title: 'Señor de tratos' }
+    },
+    actions: {
+      explore: { name: 'Explorar', desc: 'Encuentra recursos o rutas ocultas.' },
+      gather: { name: 'Recolectar', desc: 'Recolecta grano o piedra cercanos.' },
+      build: { name: 'Construir', desc: 'Activa el modo edicion para construir.' },
+      trade: { name: 'Comerciar', desc: 'Intercambia recursos en el mercado.' },
+      ritual: { name: 'Oración', desc: 'Invoca un bonus de poblacion.' },
+      study: { name: 'Investigar', desc: 'Gana experiencia y mejora un atributo.' },
+      hunt: { name: 'Cazar', desc: 'Caza animales salvajes cercanos.' },
+      attack: { name: 'Atacar', desc: 'Ataca jugador o animal cercano.' }
+    }
+  }
+};
+
+function getEpochContentProfile(epochId) {
+  return EPOCH_CONTENT_PROFILES[epochId] || EPOCH_CONTENT_PROFILES.mesopotamia;
+}
+
+function getEpochUiProfile(epochId) {
+  return EPOCH_UI_PROFILES[epochId] || EPOCH_UI_PROFILES.mesopotamia;
+}
+
+function getEpochText(key, fallback = '') {
+  const ui = getEpochUiProfile(window._currentEpoch || 'mesopotamia');
+  return (ui && ui.texts && ui.texts[key]) || fallback;
+}
+
+function getResourceDisplay(resourceId) {
+  const ui = getEpochUiProfile(window._currentEpoch || 'mesopotamia');
+  const meta = ui && ui.resources ? ui.resources[resourceId] : null;
+  if (meta) return meta;
+  if (resourceId === 'wheat') return { label: 'Trigo', productionLabel: 'trigo' };
+  if (resourceId === 'brick') return { label: 'Ladrillos', productionLabel: 'ladrillos' };
+  if (resourceId === 'pop') return { label: 'Población', productionLabel: 'población' };
+  return { label: resourceId, productionLabel: resourceId };
+}
+
+function getBuildingDisplay(type) {
+  const resolved = resolveEpochBuildingType(type);
+  const base = BUILDINGS[resolved] || BUILDINGS[type] || { name: type || 'Edificio', desc: '' };
+  const ui = getEpochUiProfile(window._currentEpoch || 'mesopotamia');
+  const override = (ui && ui.buildings && (ui.buildings[resolved] || ui.buildings[type])) || null;
+  return override ? { ...base, ...override } : base;
+}
+
+function getEpochBuildPalette(epochId) {
+  const key = epochId || window._currentEpoch || 'mesopotamia';
+  if (key === 'urss') {
+    return ['soviet_block', 'party_hq', 'collective_farm', 'factory', 'state_warehouse', 'state_warehouse', 'steel_foundry', 'concrete_road'];
+  }
+  return ['house', 'mesopotamian_villa_detailed', 'farm', 'temple', 'market', 'granary', 'ziggurat', 'road'];
+}
+
+function remapBuildButtonsForEpoch() {
+  try {
+    const palette = getEpochBuildPalette(window._currentEpoch || 'mesopotamia');
+    const buttons = Array.from(document.querySelectorAll('.build-btn'));
+    for (let i = 0; i < buttons.length; i++) {
+      const btn = buttons[i];
+      const mappedType = palette[i] || btn.dataset.type;
+      btn.dataset.type = mappedType;
+    }
+  } catch (e) {}
+}
+
+function getEpochKeyBuildMap() {
+  const palette = getEpochBuildPalette(window._currentEpoch || 'mesopotamia');
+  return {
+    h: palette[0] || 'house',
+    v: palette[1] || 'mesopotamian_villa_detailed',
+    f: palette[2] || 'farm',
+    t: palette[3] || 'temple',
+    k: palette[4] || 'market',
+    g: palette[5] || 'granary',
+    z: palette[6] || 'ziggurat',
+    d: 'demolish',
+    Escape: null
+  };
+}
+
+function getEpochShortcutSummary() {
+  const palette = getEpochBuildPalette(window._currentEpoch || 'mesopotamia');
+  return 'Atajos: '
+    + `H=${getBuildingDisplay(palette[0] || 'house').name} `
+    + `V=${getBuildingDisplay(palette[1] || 'mesopotamian_villa_detailed').name} `
+    + `F=${getBuildingDisplay(palette[2] || 'farm').name} `
+    + `T=${getBuildingDisplay(palette[3] || 'temple').name} `
+    + `K=${getBuildingDisplay(palette[4] || 'market').name} `
+    + `G=${getBuildingDisplay(palette[5] || 'granary').name} `
+    + `Z=${getBuildingDisplay(palette[6] || 'ziggurat').name} `
+    + `D=${getEpochText('demolishName', 'Demoler')}`;
+}
+
+function updateStaticEpochUI() {
+  try {
+    const wheat = getResourceDisplay('wheat');
+    const brick = getResourceDisplay('brick');
+    const pop = getResourceDisplay('pop');
+    const setText = (id, text) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = text;
+    };
+
+    setText('label-res-wheat', `${wheat.label}:`);
+    setText('label-res-brick', `${brick.label}:`);
+    setText('label-res-pop', `${pop.label}:`);
+    setText('panel-title-build', getEpochText('buildPanelTitle', 'Construir'));
+    setText('panel-title-production', getEpochText('productionPanelTitle', 'Producción / Turno'));
+    setText('prod-label-wheat', wheat.productionLabel || wheat.label.toLowerCase());
+    setText('prod-label-brick', brick.productionLabel || brick.label.toLowerCase());
+    setText('prod-label-pop', pop.productionLabel || pop.label.toLowerCase());
+    setText('btn-demolish-name', getEpochText('demolishName', 'Demoler'));
+    setText('btn-demolish-desc', getEpochText('demolishDesc', 'Recupera 50%'));
+
+    remapBuildButtonsForEpoch();
+
+    const quickTips = document.getElementById('main-menu-quicktips');
+    if (quickTips) {
+      const tips = getEpochUiProfile(window._currentEpoch || 'mesopotamia').quickTips || [];
+      quickTips.innerHTML = `<b>${getEpochText('quickTipsTitle', 'Consejos')}</b><ul style="margin:6px 0 0 14px;padding:0;color:#bbb">${tips.map(t => `<li>${t}</li>`).join('')}</ul>`;
+    }
+
+    try { refreshBuildButtonsFromDefinitions(); } catch (e) {}
+  } catch (e) {}
+}
+
 window._currentEpoch = window._currentEpoch || localStorage.getItem(STORAGE_EPOCH_KEY) || 'mesopotamia';
 
 function getEpochProfile(epochId) {
@@ -1331,11 +1644,18 @@ function applyEpochProfile(epochId, persist = true) {
       try { localStorage.setItem(STORAGE_EPOCH_KEY, key); } catch (e) {}
     }
     const profile = getEpochProfile(key);
+    try {
+      if (document && document.body && document.body.classList) {
+        document.body.classList.toggle('theme-urss', key === 'urss');
+      }
+    } catch (e) {}
     try { document.title = profile.gameTitle || 'MesoBuilder'; } catch (e) {}
     try {
       const h1 = document.querySelector('#topbar h1');
       if (h1) h1.innerHTML = `&#x2605; ${profile.gameTitle || 'MesoBuilder'} &#x2605;`;
     } catch (e) {}
+    try { applyEpochContentProfile(key); } catch (e) {}
+    try { updateStaticEpochUI(); } catch (e) {}
     return profile;
   } catch (e) {
     return getEpochProfile('mesopotamia');
@@ -1909,6 +2229,55 @@ const ACTIONS = [
 // add attack action for PvP/hostile interactions
 ACTIONS.push({ id:'attack', name:'Atacar', cost:1, desc:'Ataca jugador o animal cercano.' });
 
+const BASE_CHARACTER_PRESETS = CHARACTER_PRESETS.map(p => ({ ...p }));
+const BASE_ACTIONS = ACTIONS.map(a => ({ ...a }));
+const BASE_CHARACTER_CLASSES = CHARACTER_CLASSES.map(c => ({ ...c }));
+
+function applyEpochContentProfile(epochId) {
+  const content = getEpochContentProfile(epochId || window._currentEpoch || 'mesopotamia');
+
+  try {
+    CHARACTER_PRESETS.forEach((preset, idx) => {
+      const base = BASE_CHARACTER_PRESETS[idx] || preset;
+      const ov = (content.characterPresets && content.characterPresets[preset.id]) || null;
+      preset.name = (ov && ov.name) || base.name;
+      preset.title = (ov && ov.title) || base.title;
+    });
+  } catch (e) {}
+
+  try {
+    CHARACTER_CLASSES.forEach((cls, idx) => {
+      const base = BASE_CHARACTER_CLASSES[idx] || cls;
+      const ov = (content.classes && content.classes[cls.id]) || null;
+      cls.name = (ov && ov.name) || base.name;
+      cls.title = (ov && ov.title) || base.title;
+    });
+  } catch (e) {}
+
+  try {
+    ACTIONS.forEach((action, idx) => {
+      const base = BASE_ACTIONS[idx] || action;
+      const ov = (content.actions && content.actions[action.id]) || null;
+      action.name = (ov && ov.name) || base.name;
+      action.desc = (ov && ov.desc) || base.desc;
+    });
+  } catch (e) {}
+
+  try {
+    _STORY_QUESTS = buildStoryQuestsForEpoch(epochId || window._currentEpoch || 'mesopotamia');
+    if (window._storyChapter && window._storyChapter > 0 && Array.isArray(window._missions)) {
+      window._missions = window._missions.filter(m => !m.isStory);
+      const q = _STORY_QUESTS[window._storyChapter];
+      if (q) window._missions.unshift(JSON.parse(JSON.stringify(q)));
+      if (window.renderMissions) window.renderMissions();
+    }
+  } catch (e) {}
+
+  try { renderActionList(); } catch (e) {}
+  try { renderCharacterOptions(); } catch (e) {}
+  try { syncCustomPreviewMeta(); } catch (e) {}
+}
+
 // ── CAMERA / PAN ──────────────────────────────────────────────
 let camX = 0, camY = 0;
 let isPanning = false, panStartX = 0, panStartY = 0, camStartX = 0, camStartY = 0;
@@ -2153,6 +2522,16 @@ function drawCharacterPortrait(ctx, w, h, palette, opts) {
 // Draw an icon by name using loaded pixel-library or cached icon canvases
 function drawRegisteredIcon(ctx, name, w, h) {
   try {
+    const hasLibDef = !!(window.ENTITY_PIXEL_LIBRARY && window.ENTITY_PIXEL_LIBRARY[name]);
+    if (hasLibDef) {
+      const liveCanvas = (window._ENTITY_BITMAPS && window._ENTITY_BITMAPS[name]) || (window._ICON_BITMAPS && window._ICON_BITMAPS[name]) || window.createCanvasFromPixelDef(window.ENTITY_PIXEL_LIBRARY[name], name, Math.min(w, h));
+      if (liveCanvas) {
+        ctx.clearRect(0,0,w,h);
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(liveCanvas, 0, 0, w, h);
+        return;
+      }
+    }
     // prefer pre-generated sprite images (blob URLs attached to hidden Image elements)
     if (window._SPRITE_IMAGES && window._SPRITE_IMAGES[name]) {
       const img = window._SPRITE_IMAGES[name];
@@ -2187,8 +2566,18 @@ function drawRegisteredIcon(ctx, name, w, h) {
 // Draw a registered sprite centered at world coords (x,y) using caches or pixel defs
 function drawEntitySpriteAt(name, x, y, w, h) {
   try {
-    // prefer pre-generated images
-    const img = (window._SPRITE_IMAGES && window._SPRITE_IMAGES[name]) || (window._ICON_BITMAPS && window._ICON_BITMAPS[name]) || (window._ENTITY_BITMAPS && window._ENTITY_BITMAPS[name]);
+    const hasLibDef = !!(window.ENTITY_PIXEL_LIBRARY && window.ENTITY_PIXEL_LIBRARY[name]);
+    // If this sprite comes from entity-pixels library, prefer live canvases over persisted cache
+    let img = null;
+    if (hasLibDef) {
+      img = (window._ENTITY_BITMAPS && window._ENTITY_BITMAPS[name]) || (window._ICON_BITMAPS && window._ICON_BITMAPS[name]);
+      if (!img) {
+        try { img = window.createCanvasFromPixelDef(window.ENTITY_PIXEL_LIBRARY[name], name, Math.min(w, h)); } catch (e) {}
+      }
+    } else {
+      // for non-library assets, keep existing priority
+      img = (window._SPRITE_IMAGES && window._SPRITE_IMAGES[name]) || (window._ICON_BITMAPS && window._ICON_BITMAPS[name]) || (window._ENTITY_BITMAPS && window._ENTITY_BITMAPS[name]);
+    }
     // Ensure we don't inherit stray transforms from callers: isolate drawing
     ctx.save();
     try { ctx.imageSmoothingEnabled = false; } catch (e) {}
@@ -2283,6 +2672,15 @@ function resolveBuildingSpriteKey(type) {
     house_garden: 'house_garden',
     longhouse: 'longhouse',
     stone_house: 'stone_house'
+    ,soviet_block: 'stone_house'
+    ,party_hq: 'mesopotamian_villa_detailed'
+    ,collective_farm: 'farm'
+    ,factory: 'temple'
+    ,state_warehouse: 'granary'
+    ,steel_foundry: 'zigurat_isometrico_escaleras_detalladas_64x64'
+    ,concrete_road: 'road'
+    ,state_clinic: 'mesopotamian_baths'
+    ,checkpoint_gate: 'mesopotamian_arch'
     ,ziggurat: 'zigurat_isometrico_escaleras_detalladas_64x64'
   };
   if (hasRegisteredSprite(type)) return type;
@@ -2316,6 +2714,13 @@ function drawWheatIcon(ctx, w, h) {
         const keys = Object.keys(window.ENTITY_PIXEL_LIBRARY);
         for (const k of keys) {
           try { window.createCanvasFromPixelDef(window.ENTITY_PIXEL_LIBRARY[k], k); } catch (e) { console.warn('icon create failed', k, e); }
+          try {
+            if (window._SPRITE_IMAGES && window._SPRITE_IMAGES[k]) delete window._SPRITE_IMAGES[k];
+            if (window._SPRITE_URLS && window._SPRITE_URLS[k]) {
+              try { URL.revokeObjectURL(window._SPRITE_URLS[k]); } catch (e) {}
+              delete window._SPRITE_URLS[k];
+            }
+          } catch (e) {}
         }
         // if the library contains tree templates (tree0..tree6), override GLOBAL_TREE_TEMPLATES
         try {
@@ -2333,6 +2738,12 @@ function drawWheatIcon(ctx, w, h) {
           }
           if (foundAny) GLOBAL_TREE_TEMPLATES = templates;
         } catch (e) { console.warn('populate tree templates err', e); }
+        // Rebuild map caches now that sprite library is ready (avoids stale pre-library renders)
+        try {
+          mapCacheDirty = true;
+          if (typeof rebuildMapCacheDebounced === 'function') rebuildMapCacheDebounced();
+          if (typeof rebuildMapCachesAsync === 'function') rebuildMapCachesAsync();
+        } catch (e) { console.warn('map cache refresh after entity library load failed', e); }
         // notify any editor/listener windows the library is ready
         try { window.postMessage({ type: 'entityPixelsLoaded', list: keys }, '*'); } catch (e) {}
         try { window.dispatchEvent(new CustomEvent('entityPixelsLoaded', { detail: keys })); } catch (e) {}
@@ -2760,6 +3171,10 @@ function rebuildInteriorDoorsFromGrid() {
         else if (type === 'mesopotamian_villa_detailed') intId = 'house_large';
         else if (type === 'mesopotamian_house') intId = 'house';
         else if (type === 'mesopotamian_baths') intId = 'house_large';
+        else if (type === 'soviet_block') intId = 'house';
+        else if (type === 'party_hq') intId = 'house_large';
+        else if (type === 'state_clinic') intId = 'house_large';
+        else if (type === 'checkpoint_gate') intId = 'house-small';
         else if (type === 'stone_house') intId = 'house';
         else if (type === 'hut') intId = 'house-small';
         doors.push({ col: doorCol, row: doorRow, interiorId: intId, buildingType: type, buildingBase: { col: info.baseCol, row: info.baseRow } });
@@ -2773,10 +3188,11 @@ function rebuildInteriorDoorsFromGrid() {
 try { window.rebuildInteriorDoorsFromGrid = rebuildInteriorDoorsFromGrid; } catch (e) {}
 
 function setBuildingCells(baseCol, baseRow, type, orient) {
+  const effectiveType = resolveEpochBuildingType(type);
   const size = getBuildingSize(type);
   for (let r = 0; r < size.h; r++) {
     for (let c = 0; c < size.w; c++) {
-      grid[baseRow + r][baseCol + c] = orient ? { type, baseCol, baseRow, orient } : { type, baseCol, baseRow };
+      grid[baseRow + r][baseCol + c] = orient ? { type: effectiveType, baseCol, baseRow, orient } : { type: effectiveType, baseCol, baseRow };
     }
   }
   try { rebuildInteriorDoorsFromGrid(); } catch (e) {}
@@ -2805,9 +3221,47 @@ function generateVillageName() {
   return pre[Math.floor(Math.random()*pre.length)] + suf[Math.floor(Math.random()*suf.length)];
 }
 
+function assignSovietVillagerProfile(npc) {
+  try {
+    if (!npc || (window._currentEpoch || 'mesopotamia') !== 'urss') return;
+    if (npc.isStoryNPC) return;
+    const type = String(npc.npcType || 'villager');
+    if (!['villager', 'farmer', 'shepherd'].includes(type)) return;
+
+    const firstNames = ['Mikhail', 'Yuri', 'Nikolai', 'Alexei', 'Dmitri', 'Sergei', 'Ivan', 'Anya', 'Olga', 'Tatiana', 'Nina', 'Zoya'];
+    const lastNames = ['Petrov', 'Sokolov', 'Kuznetsov', 'Smirnov', 'Volkov', 'Morozov', 'Orlov', 'Vasiliev', 'Fedorov', 'Lebedev'];
+    const districts = ['Novozarya', 'Volnaya', 'Kirovsk', 'Belorechensk', 'Zimny Bor'];
+    const specialties = {
+      villager: ['mantenimiento de calderas', 'racionamiento', 'brigada nocturna', 'transporte local'],
+      farmer: ['koljós de grano', 'invernaderos comunales', 'almacén estatal de semillas', 'brigada de cosecha'],
+      shepherd: ['rebaños del distrito', 'patrulla de estepa', 'ruta de forraje', 'puesto de invierno']
+    };
+    const roleLabel = {
+      villager: 'trabajador civil',
+      farmer: 'campesino del koljós',
+      shepherd: 'pastor de frontera'
+    };
+
+    const hasGenericName = !npc.name || ['Aldeano', 'Ciudadano', 'Habitante', 'DevNPC'].includes(String(npc.name));
+    if (hasGenericName) {
+      const fn = firstNames[Math.floor(Math.random() * firstNames.length)];
+      const ln = lastNames[Math.floor(Math.random() * lastNames.length)];
+      npc.name = `${fn} ${ln}`;
+    }
+
+    if (!npc.backstory) {
+      const district = districts[Math.floor(Math.random() * districts.length)];
+      const specialtyList = specialties[type] || specialties.villager;
+      const specialty = specialtyList[Math.floor(Math.random() * specialtyList.length)];
+      npc.backstory = `Nacido en ${district}, ${roleLabel[type] || 'trabajador del distrito'}. Actualmente coordina ${specialty} para sostener Novozarya durante el invierno.`;
+    }
+  } catch (e) {}
+}
+
 function spawnVillage(baseCol, baseRow, opts) {
   opts = opts || {};
   const villageType = opts.villageType || 'village'; // 'origin' | 'capital' | 'trading_post' | 'village'
+  const epochNow = window._currentEpoch || 'mesopotamia';
 
   // find a valid non-water, non-river center nearby
   let bc = baseCol, br = baseRow, t = 0;
@@ -2830,14 +3284,18 @@ function spawnVillage(baseCol, baseRow, opts) {
   } else if (villageType === 'trading_post') {
     layoutCols = 3; layoutRows = 1; spacing = 5;
   } else {
-    layoutCols = 2 + Math.floor(Math.random()*3);
+    layoutCols = 2 + Math.floor(Math.random()*2);
     layoutRows = 1 + Math.floor(Math.random()*2);
-    spacing = 5 + Math.floor(Math.random()*2);
+    spacing = 6 + Math.floor(Math.random()*3);
   }
 
   const houses = [];
   const startC = Math.max(2, Math.min(COLS-6, bc - Math.floor((layoutCols-1)/2) * spacing));
   const startR = Math.max(2, Math.min(ROWS-6, br - Math.floor((layoutRows-1)/2) * spacing));
+
+  let capitalCx = bc;
+  let capitalCy = br;
+  let capitalRingR = 11;
 
   // ── CAPITAL: structured city layout ──────────────────────────
   // Districts: [ziggurat center] [temple N] [market S] [villas NE/NW]
@@ -2846,6 +3304,96 @@ function spawnVillage(baseCol, baseRow, opts) {
   if (villageType === 'capital') {
     // compute city center
     const cx = bc, cy = br;
+    capitalCx = cx;
+    capitalCy = cy;
+    const reservedVoid = new Set();
+    const reserveRect = (x1, y1, x2, y2) => {
+      for (let rr = y1; rr <= y2; rr++) {
+        for (let cc = x1; cc <= x2; cc++) {
+          if (cc < 0 || rr < 0 || cc >= COLS || rr >= ROWS) continue;
+          reservedVoid.add(`${cc},${rr}`);
+        }
+      }
+    };
+    // Reserve central and secondary plazas to avoid overpacked capitals
+    reserveRect(cx - 2, cy - 2, cx + 2, cy + 2);
+    reserveRect(cx - 5, cy + 2, cx - 2, cy + 5);
+    reserveRect(cx + 2, cy + 2, cx + 5, cy + 5);
+    // Reserve an inner perimeter belt so walls/roads don't feel clogged
+    for (let i = -10; i <= 10; i++) {
+      reserveRect(cx - 10, cy + i, cx - 10, cy + i);
+      reserveRect(cx + 10, cy + i, cx + 10, cy + i);
+      reserveRect(cx + i, cy - 10, cx + i, cy - 10);
+      reserveRect(cx + i, cy + 10, cx + i, cy + 10);
+    }
+
+    const districtAt = (tx, ty) => {
+      const dx = tx - cx;
+      const dy = ty - cy;
+      const adx = Math.abs(dx);
+      const ady = Math.abs(dy);
+      if (adx <= 3 && ady <= 3) return 'core';
+      if (dy >= 4 || (dx <= -6 && dy >= 0)) return 'industrial';
+      if (dy <= -5 || (dx >= 6 && dy <= 0)) return 'civic';
+      return 'residential';
+    };
+
+    const districtPools = (epochNow === 'urss')
+      ? {
+          core: ['party_hq', 'state_clinic', 'soviet_block'],
+          civic: ['state_clinic', 'party_hq', 'soviet_block', 'checkpoint_gate'],
+          industrial: ['state_warehouse', 'factory', 'collective_farm', 'soviet_block'],
+          residential: ['soviet_block', 'soviet_block', 'soviet_block', 'house_small', 'house_garden']
+        }
+      : {
+          core: ['mesopotamian_villa_detailed', 'temple', 'mesopotamian_house'],
+          civic: ['temple', 'mesopotamian_baths', 'mesopotamian_villa_detailed', 'mesopotamian_arch'],
+          industrial: ['market', 'granary', 'farm', 'house_small'],
+          residential: ['mesopotamian_house', 'house', 'house_garden', 'house_small', 'stone_house', 'longhouse']
+        };
+    const pickDistrictBuilding = (tx, ty, fallback) => {
+      const district = districtAt(tx, ty);
+      const pool = districtPools[district] || districtPools.residential;
+      if (!pool || !pool.length) return fallback;
+      const candidate = pool[Math.floor(Math.random() * pool.length)];
+      return candidate || fallback;
+    };
+
+    const getGapForType = (btype) => {
+      if (btype === 'wall_segment' || btype === 'wall_tower' || btype === 'checkpoint_gate') return 0;
+      if (btype === 'road' || btype === 'concrete_road') return 0;
+      if (btype === 'ziggurat' || btype === 'steel_foundry') return 1;
+      return (epochNow === 'urss') ? 2 : 1;
+    };
+
+    const intersectsReservedVoid = (c, r, sz) => {
+      for (let dr = 0; dr < sz.h; dr++) {
+        for (let dc = 0; dc < sz.w; dc++) {
+          if (reservedVoid.has(`${c + dc},${r + dr}`)) return true;
+        }
+      }
+      return false;
+    };
+
+    const collidesPlacedWithGap = (c, r, sz, btype) => {
+      const gap = getGapForType(btype);
+      const left = c - gap;
+      const top = r - gap;
+      const right = c + sz.w - 1 + gap;
+      const bottom = r + sz.h - 1 + gap;
+      for (const h of houses) {
+        if (!h) continue;
+        const hsz = getBuildingSize(h.variant || 'house');
+        const hGap = getGapForType(h.variant || 'house');
+        const hLeft = h.c - hGap;
+        const hTop = h.r - hGap;
+        const hRight = h.c + hsz.w - 1 + hGap;
+        const hBottom = h.r + hsz.h - 1 + hGap;
+        if (!(right < hLeft || left > hRight || bottom < hTop || top > hBottom)) return true;
+      }
+      return false;
+    };
+
     // helper to try placing a building at a position
     const tryPlace = (col, row, btype) => {
       const c = Math.max(2, Math.min(COLS - 6, col));
@@ -2853,6 +3401,8 @@ function spawnVillage(baseCol, baseRow, opts) {
       if (c < 1 || r < 1 || c >= COLS-3 || r >= ROWS-3) return false;
       if (isRiver(c) || (tileBiome[r] && (tileBiome[r][c] === 'water' || tileBiome[r][c] === 'forest'))) return false;
       const sz = getBuildingSize(btype);
+      if (intersectsReservedVoid(c, r, sz)) return false;
+      if (collidesPlacedWithGap(c, r, sz, btype)) return false;
       // check if footprint is clear
       for (let dr = 0; dr < sz.h; dr++) {
         for (let dc = 0; dc < sz.w; dc++) {
@@ -2897,10 +3447,12 @@ function spawnVillage(baseCol, baseRow, opts) {
       [cx - 8, cy - 4], [cx + 7, cy - 4],        // NW/NE
       [cx - 6, cy + 9], [cx + 5, cy + 9],        // S far
     ];
-    const resBuildingPool = ['mesopotamian_house', 'mesopotamian_house', 'mesopotamian_house',
-                             'house', 'house_garden', 'house_large', 'house_small', 'longhouse',
-                             'mesopotamian_house', 'stone_house'];
-    resRing.forEach(([rc, rr], i) => tryPlace(rc, rr, resBuildingPool[i % resBuildingPool.length]));
+    resRing.forEach(([rc, rr], i) => {
+      if (Math.random() < 0.18) return; // reserve breathing gaps in residential ring
+      const fallback = (epochNow === 'urss') ? 'soviet_block' : 'mesopotamian_house';
+      const variant = pickDistrictBuilding(rc, rr, fallback);
+      tryPlace(rc, rr, variant);
+    });
     // 20. Additional houses filling gaps
     const extraSlots = [
       [cx - 3, cy + 7, 'mesopotamian_house'],
@@ -2928,7 +3480,11 @@ function spawnVillage(baseCol, baseRow, opts) {
       [cx + 9,  cy - 5, 'mesopotamian_house'],
       [cx - 10, cy - 5, 'mesopotamian_house'],
     ];
-    extraSlots.forEach(([ec, er, et]) => tryPlace(ec, er, et));
+    extraSlots.forEach(([ec, er, et]) => {
+      if (Math.random() < 0.35) return; // reduce overfilling in capitals
+      const variant = (Math.random() < 0.7) ? pickDistrictBuilding(ec, er, et) : et;
+      tryPlace(ec, er, variant);
+    });
 
     // Carve main N-S road through city
     for (let r = cy - 13; r <= cy + 10; r++) {
@@ -2942,6 +3498,7 @@ function spawnVillage(baseCol, baseRow, opts) {
     }
     // Inner ring road (square perimeter)
     const ringR = 11;
+    capitalRingR = ringR;
     for (let i = -ringR; i <= ringR; i++) {
       const rc = cx + i, rr1 = cy - ringR, rr2 = cy + ringR;
       if (rc >= 0 && rc < COLS) {
@@ -3043,6 +3600,7 @@ function spawnVillage(baseCol, baseRow, opts) {
         else { const r = Math.random(); variant = r < 0.45 ? 'longhouse' : r < 0.70 ? 'house_small' : 'hut'; }
       } else {
         // regular village: full variety of residential buildings
+        if ((rr + cc) % 2 === 1 && Math.random() < 0.40) continue;
         const r = Math.random();
         variant = r < 0.08 ? 'hut' : r < 0.20 ? 'house_small' : r < 0.34 ? 'mesopotamian_house' :
                   r < 0.46 ? 'house' : r < 0.57 ? 'house_large' : r < 0.66 ? 'longhouse' :
@@ -3083,11 +3641,37 @@ function spawnVillage(baseCol, baseRow, opts) {
   minC = Math.max(0, minC - 2); minR = Math.max(0, minR - 2);
   maxC = Math.min(COLS-1, maxC + 4); maxR = Math.min(ROWS-1, maxR + 4);
 
-  const vName = (villageType === 'capital') ? 'Nínagara' : generateVillageName();
+  const vName = (villageType === 'capital')
+    ? (epochNow === 'urss' ? 'Novozarya' : 'Nínagara')
+    : generateVillageName();
+  const bboxArea = Math.max(1, (maxC - minC + 1) * (maxR - minR + 1));
+  const builtArea = houses.reduce((acc, h) => {
+    const sz = getBuildingSize(h.variant || 'house');
+    return acc + Math.max(1, sz.w * sz.h);
+  }, 0);
+  let roadCells = 0;
+  for (let rr = minR; rr <= maxR; rr++) {
+    for (let cc = minC; cc <= maxC; cc++) {
+      if (tileBiome[rr] && tileBiome[rr][cc] === 'road') roadCells++;
+    }
+  }
+  const density = builtArea / bboxArea;
+  const villageMetrics = {
+    builtArea,
+    bboxArea,
+    density: Number(density.toFixed(3)),
+    roadCoverage: Number((roadCells / bboxArea).toFixed(3)),
+    buildings: houses.length
+  };
   const vid = 'village-' + Date.now() + '-' + Math.random().toString(36).slice(2,4);
-  const villageObj = { id: vid, name: vName, type: villageType, houses: houses.slice(), minC, maxC, minR, maxR };
+  const villageObj = { id: vid, name: vName, type: villageType, houses: houses.slice(), minC, maxC, minR, maxR, metrics: villageMetrics };
   window._VILLAGES = window._VILLAGES || [];
   window._VILLAGES.push(villageObj);
+  try {
+    if (density > 0.56) {
+      console.debug('[MapGen] Dense village detected', { village: vName, type: villageType, metrics: villageMetrics });
+    }
+  } catch (e) {}
 
   // Clear natural entities and flatten biome near buildings
   try {
@@ -3122,24 +3706,24 @@ function spawnVillage(baseCol, baseRow, opts) {
       for (let i = 0; i < 4; i++) {
         const fc = Math.max(1, Math.min(COLS-2, bc + Math.floor(Math.random()*6) - 1));
         const fr = Math.max(1, Math.min(ROWS-2, br + Math.floor(Math.random()*6) - 1));
-        if (!grid[fr][fc] && !isRiver(fc)) placeTree(fc, fr, 'barley');
+        if (!grid[fr][fc] && !isRiver(fc)) placeTree(fc, fr, 'hay');
       }
     }
     if (villageType === 'capital') {
       // Date palms lining both approaches (north and south gates)
       for (let i = -4; i <= 4; i++) {
         if (Math.abs(i) < 2) continue; // skip very center
-        const pc = Math.max(1, Math.min(COLS-2, cx + i));
-        const pr1 = Math.max(1, Math.min(ROWS-2, cy - ringR - 5));
-        const pr2 = Math.max(1, Math.min(ROWS-2, cy + ringR + 5));
-        if (!grid[pr1][pc] && !isRiver(pc)) placeTree(pc, pr1, 'date_palm');
-        if (!grid[pr2][pc] && !isRiver(pc)) placeTree(pc, pr2, 'date_palm');
+        const pc = Math.max(1, Math.min(COLS-2, capitalCx + i));
+        const pr1 = Math.max(1, Math.min(ROWS-2, capitalCy - capitalRingR - 5));
+        const pr2 = Math.max(1, Math.min(ROWS-2, capitalCy + capitalRingR + 5));
+        if (!grid[pr1][pc] && !isRiver(pc)) placeTree(pc, pr1, 'birch');
+        if (!grid[pr2][pc] && !isRiver(pc)) placeTree(pc, pr2, 'birch');
       }
       // Scatter trees and gardens throughout city interior for visual richness
-      const cityTreeTypes = ['date_palm', 'date_palm', 'barley', 'steppe_shrub', 'tamarisk'];
+      const cityTreeTypes = ['birch', 'aspen', 'hay', 'steppe_shrub', 'pine'];
       for (let attempt = 0; attempt < 60; attempt++) {
-        const tx = cx + Math.floor(Math.random() * 22) - 11;
-        const ty = cy + Math.floor(Math.random() * 22) - 11;
+        const tx = capitalCx + Math.floor(Math.random() * 22) - 11;
+        const ty = capitalCy + Math.floor(Math.random() * 22) - 11;
         if (tx < 1 || ty < 1 || tx >= COLS-1 || ty >= ROWS-1) continue;
         if (grid[ty][tx] || isRiver(tx)) continue;
         if (tileBiome[ty] && tileBiome[ty][tx] === 'road') continue;
@@ -3149,12 +3733,53 @@ function spawnVillage(baseCol, baseRow, opts) {
       // Small garden cluster near the villa nobles
       for (let g = 0; g < 3; g++) {
         try {
-          const gx = cx - 8 + g;
-          const gy = cy - 5 + g;
+          const gx = capitalCx - 8 + g;
+          const gy = capitalCy - 5 + g;
           if (!grid[gy][gx] && !isRiver(gx)) placeTree(gx, gy, 'steppe_shrub');
-          const gx2 = cx + 8 - g;
+          const gx2 = capitalCx + 8 - g;
           if (!grid[gy][gx2] && !isRiver(gx2)) placeTree(gx2, gy, 'steppe_shrub');
         } catch (e) {}
+      }
+    }
+  } catch (e) {}
+
+  // URSS capitals: ambient military aircraft near fortified sectors (non-interactive)
+  try {
+    if (epochNow === 'urss' && villageType === 'capital') {
+      const militaryAnchors = houses.filter(h => h && (
+        h.variant === 'wall_tower' || h.variant === 'checkpoint_gate' || h.variant === 'party_hq'
+      ));
+      const occupied = new Set();
+      const placeJet = (col, row) => {
+        if (col < 1 || row < 1 || col >= COLS - 1 || row >= ROWS - 1) return false;
+        if (isRiver(col)) return false;
+        if (grid[row] && grid[row][col]) return false;
+        const key = `${col},${row}`;
+        if (occupied.has(key)) return false;
+        occupied.add(key);
+        entities.push({
+          id: 'ambient-jet-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+          kind: 'ambient',
+          subtype: 'soviet_fighter_jet',
+          name: 'Caza de patrulla',
+          col,
+          row,
+          x: col,
+          y: row,
+          size: 1.95,
+          nonInteractive: true
+        });
+        return true;
+      };
+
+      const offsets = [[0, -3], [0, 3], [-3, 0], [3, 0], [-2, -2], [2, -2], [-2, 2], [2, 2]];
+      let spawned = 0;
+      for (const anchor of militaryAnchors) {
+        for (const [ox, oy] of offsets) {
+          if (spawned >= 4) break;
+          if (placeJet(anchor.c + ox, anchor.r + oy)) spawned++;
+        }
+        if (spawned >= 4) break;
       }
     }
   } catch (e) {}
@@ -3167,20 +3792,31 @@ function spawnVillage(baseCol, baseRow, opts) {
     if (villageType === 'origin') {
       // The Elder — primary story NPC
       const elderH = houses[0] || { c: bc, r: br };
-      const elder = spawnNPC('Kishdu el Anciano', elderH.c + 1, elderH.r + 1);
+      const elder = spawnNPC(epochNow === 'urss' ? 'Gavril Denisov' : 'Kishdu el Anciano', elderH.c + 1, elderH.r + 1);
       if (elder) {
         elder.npcType = 'elder';
         elder.isStoryNPC = true;
-        elder._storyLines = [
-          'Adapa... menos mal que sigues vivo.',
-          'Los raiders de Gutium quemaron los graneros anoche. Casi no quedan provisiones.',
-          'Pero hay algo más urgente. He leído los presagios en las estrellas y en el cauce del río.',
-          'En cuarenta días, el Éufrates desbordará. Vendrá el gran diluvio, como en los tiempos de los dioses.',
-          'Debes viajar al norte, a Nínagara, la ciudad del rey Ur-Nammu.',
-          'Busca a la sacerdotisa del templo. Entrégale este mensaje: "Los ríos hablan. El tiempo llega."',
-          'No pierdas tiempo. El futuro de nuestra gente está en tus manos, Adapa.',
-          '[ Misión: Viaja a Nínagara y habla con la Sacerdotisa del Templo ]'
-        ];
+        elder._storyLines = (epochNow === 'urss')
+          ? [
+              'Adapa... menos mal que sigues en pie.',
+              'Las bandas del norte incendiaron los almacenes anoche. Queda poco abastecimiento.',
+              'Pero hay algo más urgente. Hemos interceptado avisos en radio y en los canales.',
+              'En cuarenta días, una crecida romperá la red de suministro del valle.',
+              'Debes viajar al norte, a Novozarya, centro del distrito.',
+              'Busca a la comisaria local y entrégale este mensaje: "La crecida llega. Activen el plan."',
+              'No pierdas tiempo. El futuro de nuestra gente está en tus manos, Adapa.',
+              '[ Misión: Viaja a Novozarya y habla con la Comisaria del distrito ]'
+            ]
+          : [
+              'Adapa... menos mal que sigues vivo.',
+              'Los raiders de Gutium quemaron los graneros anoche. Casi no quedan provisiones.',
+              'Pero hay algo más urgente. He leído los presagios en las estrellas y en el cauce del río.',
+              'En cuarenta días, el Río Ob Nord se congelará completamente. La ventisca histórica bloqueará la región, como en los relatos de los abuelos cuando el frío devoraba pueblos enteros.',
+              'Debes viajar al norte, a Nínagara, la ciudad del rey Ur-Nammu.',
+              'Busca a la sacerdotisa del templo. Entrégale este mensaje: "Los ríos hablan. El tiempo llega."',
+              'No pierdas tiempo. El futuro de nuestra gente está en tus manos, Adapa.',
+              '[ Misión: Viaja a Nínagara y habla con la Sacerdotisa del Templo ]'
+            ];
       }
       // 1-2 survivors lingering nearby
       const survivorCount = 1 + Math.floor(Math.random() * 2);
@@ -3192,39 +3828,58 @@ function spawnVillage(baseCol, baseRow, opts) {
     } else if (villageType === 'capital') {
       // Guards flanking the first building (city gate)
       for (let g = 0; g < 2; g++) {
-        const gn = spawnNPC('Guardia de Nínagara', houses[0].c + g * 2, houses[0].r - 1);
+        const gn = spawnNPC(epochNow === 'urss' ? 'Guardia de Novozarya' : 'Guardia de Nínagara', houses[0].c + g * 2, houses[0].r - 1);
         if (gn) gn.npcType = 'guard';
       }
       // Priestess at the temple — story NPC
       const templeH = houses.find(h => h.variant === 'temple') || houses[0];
-      const priestess = spawnNPC('Sacerdotisa Enlil-Ama', templeH.c + 1, templeH.r + 1);
+      const priestess = spawnNPC(epochNow === 'urss' ? 'Konstantin Markov' : 'Sacerdotisa Enlil-Ama', templeH.c + 1, templeH.r + 1);
       if (priestess) {
         priestess.npcType = 'priestess';
         priestess.isStoryNPC = true;
-        priestess._storyLines = [
-          'Forastero, este es el templo sagrado de Enlil. Habla con respeto.',
-          '¿Un mensaje de Kidanu? Dame un momento...',
-          '"Los ríos hablan. El tiempo llega." Por los dioses...',
-          'Los presagios eran ciertos. El gran diluvio se aproxima.',
-          'El rey Ur-Nammu debe preparar los diques y los graneros elevados.',
-          'Pero primero necesitamos el ritual de protección. Las ofrendas al dios son esenciales.',
-          'Trae al templo cinco haces de cebada y tres piedras del río para el altar.',
-          '[ Misión: Reúne 5 cebada + 3 piedra para el ritual del templo ]'
-        ];
+        priestess._storyLines = (epochNow === 'urss')
+          ? [
+              'Camarada, estás en la Casa del Soviet de Novozarya. Habla claro.',
+              '¿Un mensaje de Kidu-Lam? Espera un momento...',
+              '"La crecida llega. Activen el plan." Entendido.',
+              'El aviso coincide con nuestros reportes. El desbordamiento es inminente.',
+              'Debemos reforzar diques, depósitos y rutas de evacuación.',
+              'Pero primero hay que activar el plan con recursos mínimos del distrito.',
+              'Entrega 5 comida y 3 piedra para iniciar la operación.',
+              '[ Misión: Reúne 5 comida + 3 piedra para activar el plan ]'
+            ]
+          : [
+              'Forastero, este es el templo sagrado de Enlil. Habla con respeto.',
+              '¿Un mensaje de Kidanu? Dame un momento...',
+              '"Los ríos hablan. El tiempo llega." Por los dioses...',
+              'Los presagios eran ciertos. El gran diluvio se aproxima.',
+              'El rey Ur-Nammu debe preparar los diques y los graneros elevados.',
+              'Pero primero necesitamos el ritual de protección. Las ofrendas al dios son esenciales.',
+              'Trae al templo cinco haces de cebada y tres piedras del río para el altar.',
+              '[ Misión: Reúne 5 cebada + 3 piedra para el ritual del templo ]'
+            ];
       }
       // Scribe in the administrative district — story NPC
       const scribeH = houses.length > 2 ? houses[2] : houses[houses.length - 1];
-      const scribe = spawnNPC('Escriba Imitti', scribeH.c, scribeH.r + 2);
+      const scribe = spawnNPC(epochNow === 'urss' ? 'Arkady Volkov' : 'Escriba Imitti', scribeH.c, scribeH.r + 2);
       if (scribe) {
         scribe.npcType = 'scribe';
         scribe.isStoryNPC = true;
-        scribe._storyLines = [
-          'Las tablillas de arcilla guardan la memoria de Nínagara desde hace trescientos años.',
-          'Se dice que cada gran diluvio es precedido por señales: peces muertos, estorninos volando al sur.',
-          '¿Has visto tales señales en tu camino aquí desde el sur?',
-          'El conocimiento es el escudo más potente contra el caos. No lo olvides.',
-          'Ve al templo. La sacerdotisa sabe cómo interpretar estos presagios mejor que nadie.'
-        ];
+        scribe._storyLines = (epochNow === 'urss')
+          ? [
+              'Los archivos técnicos de Novozarya registran cada crecida desde hace décadas.',
+              'Antes de un desbordamiento severo siempre fallan primero los canales secundarios.',
+              '¿Has visto daños en esclusas o puentes durante tu viaje?',
+              'El conocimiento técnico es nuestro mejor escudo contra el caos.',
+              'Ve a la Casa del Soviet. La comisaria coordina la respuesta.'
+            ]
+          : [
+              'Las tablillas de arcilla guardan la memoria de Nínagara desde hace trescientos años.',
+              'Se dice que cada gran diluvio es precedido por señales: peces muertos, estorninos volando al sur.',
+              '¿Has visto tales señales en tu camino aquí desde el sur?',
+              'El conocimiento es el escudo más potente contra el caos. No lo olvides.',
+              'Ve al templo. La sacerdotisa sabe cómo interpretar estos presagios mejor que nadie.'
+            ];
       }
       // Merchants near the market
       const marketH = houses.find(h => h.variant === 'market') || houses[houses.length - 1];
@@ -3238,7 +3893,10 @@ function spawnVillage(baseCol, baseRow, opts) {
       for (let i = 0; i < citizenCount; i++) {
         const h = houses[Math.floor(Math.random() * houses.length)];
         const np = spawnNPC('Ciudadano', h.c + Math.floor(Math.random()*3)-1, h.r + Math.floor(Math.random()*3)-1);
-        if (np) np.npcType = rolesCapital[i % rolesCapital.length];
+        if (np) {
+          np.npcType = rolesCapital[i % rolesCapital.length];
+          assignSovietVillagerProfile(np);
+        }
       }
 
     } else if (villageType === 'trading_post') {
@@ -3259,7 +3917,10 @@ function spawnVillage(baseCol, baseRow, opts) {
         const nr = Math.max(0, Math.min(ROWS-1, h.r + (Math.floor(Math.random()*3)-1)));
         if (!isRiver(nc) && !grid[nr][nc]) {
           const np = spawnNPC('Aldeano', nc, nr);
-          if (np) np.npcType = rolesVillage[i % rolesVillage.length];
+          if (np) {
+            np.npcType = rolesVillage[i % rolesVillage.length];
+            assignSovietVillagerProfile(np);
+          }
         }
       }
     }
@@ -3383,7 +4044,7 @@ function canWalkTo(col, row) {
 // placeResource/placeRabbit moved to engine/entities.js
 
 function generateMap(mapType) {
-  // ── 1. Generate two meandering rivers (Tigris A/left, Euphrates B/right) ──
+  // ── 1. Generate two meandering rivers (Río Don A/left, Río Ob Nord B/right) ──
   const meandA = [], meandB = [];
   let dA = 0, dB = 0;
   for (let r = 0; r < ROWS; r++) {
@@ -3424,9 +4085,9 @@ function generateMap(mapType) {
       const minDist = Math.min(distA, distB);
       // Riparian fringe (dense vegetation belt adjacent to water)
       if (minDist <= 6) { tileBiome[r][c] = 'riparian'; continue; }
-      // Western steppe (beyond Euphrates)
+      // Western steppe (beyond Río Ob Nord)
       if (c < mA.center - mA.width - 6) { tileBiome[r][c] = Math.random() < 0.08 ? 'hills' : 'steppe'; continue; }
-      // Eastern steppe (beyond Euphrates)
+      // Eastern steppe (beyond Río Ob Nord)
       if (c > mB.center + mB.width + 6) { tileBiome[r][c] = Math.random() < 0.08 ? 'hills' : 'steppe'; continue; }
       // Alluvial plain between rivers; south develops marshes and saline soils
       const marshy = southFactor > 0.45 && minDist > 10 && Math.random() < (southFactor - 0.45) * 0.55;
@@ -3486,19 +4147,19 @@ function generateMap(mapType) {
         const b=tileBiome[r][c];
         const roll=Math.random();
         if (b==='riparian') {
-          // Dense riparian belt: date palms, euphrates poplars, tamarisk, reeds, typha
+          // Dense riparian belt: birch, pine, aspen, willows, sedge - northern boreal forest
           if (roll<0.42*vegDensity) {
             let v;
-            if (roll<0.13) v='date_palm';
-            else if (roll<0.22) v='euphrates_poplar';
-            else if (roll<0.28) v='tamarisk';
-            else if (roll<0.35) v='reed_cluster';
-            else v='typha';
+            if (roll<0.13) v='birch';
+            else if (roll<0.22) v='fir';
+            else if (roll<0.28) v='pine';
+            else if (roll<0.35) v='willow';
+            else v='sedge';
             placeTree(c,r,v);
           }
         } else if (b==='marsh') {
           // Wetland: phragmites reeds and typha dominate
-          if (roll<0.44*vegDensity) placeTree(c,r,roll<0.28?'reed_cluster':'typha');
+          if (roll<0.44*vegDensity) placeTree(c,r,roll<0.28?'willow':'sedge');
         }
         // alluvial, steppe, saline, hills → bare desert, no vegetation
       }
@@ -3558,6 +4219,70 @@ function generateMap(mapType) {
     const foxCount=Math.max(0,Math.round(14*animalDensity));
     for (let i=0;i<foxCount;i++){const c=Math.floor(Math.random()*COLS),r=Math.floor(Math.random()*ROWS);if(!grid[r][c]&&!rFullMap[r][c])try{placeFox(c,r);}catch(e){}}
   } catch(e){}
+
+  // ── 11. Epoch flavor pass (URSS) ──
+  try {
+    if ((window._currentEpoch || 'mesopotamia') === 'urss') {
+      // Convert terrain feel to cold soviet town surroundings: gray steppe, snow patches, mountain belts
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          if (rFullMap[r][c] || (window._CANAL_MAP && window._CANAL_MAP[r] && window._CANAL_MAP[r][c])) continue;
+          const b = tileBiome[r][c];
+          if (b === 'saline') tileBiome[r][c] = Math.random() < 0.82 ? 'saline' : 'hills';
+          else if (b === 'marsh') tileBiome[r][c] = Math.random() < 0.45 ? 'saline' : 'alluvial';
+          else if (b === 'alluvial') {
+            const roll = Math.random();
+            tileBiome[r][c] = roll < 0.28 ? 'steppe' : (roll < 0.40 ? 'saline' : 'alluvial');
+          } else if (b === 'riparian') {
+            tileBiome[r][c] = Math.random() < 0.34 ? 'forest' : (Math.random() < 0.45 ? 'steppe' : 'riparian');
+          }
+
+          if (r < Math.floor(ROWS * 0.26)) {
+            if (Math.random() < 0.52) tileBiome[r][c] = 'hills';
+            else if (Math.random() < 0.34) tileBiome[r][c] = 'saline';
+          }
+        }
+      }
+
+      // Mountain ridges framing the town from west and east
+      const ridgeTop = Math.floor(ROWS * 0.10);
+      const ridgeBottom = Math.floor(ROWS * 0.38);
+      for (let r = ridgeTop; r < ridgeBottom; r++) {
+        for (let c = 0; c < COLS; c++) {
+          if (rFullMap[r][c] || (window._CANAL_MAP && window._CANAL_MAP[r] && window._CANAL_MAP[r][c])) continue;
+          const westBand = c < Math.floor(COLS * 0.18);
+          const eastBand = c > Math.floor(COLS * 0.82);
+          if (!westBand && !eastBand) continue;
+          const ridgeRoll = Math.random();
+          if (ridgeRoll < 0.62) tileBiome[r][c] = 'hills';
+          else if (ridgeRoll < 0.84) tileBiome[r][c] = 'saline';
+          else tileBiome[r][c] = 'steppe';
+        }
+      }
+
+      // Add horizontal industrial corridors (road-like rail lanes)
+      const lanes = [Math.floor(ROWS * 0.22), Math.floor(ROWS * 0.50), Math.floor(ROWS * 0.76)];
+      lanes.forEach(rr => {
+        for (let c = 0; c < COLS; c++) {
+          if (rFullMap[rr] && rFullMap[rr][c]) continue;
+          if (window._CANAL_MAP && window._CANAL_MAP[rr] && window._CANAL_MAP[rr][c]) continue;
+          if (tileBiome[rr] && tileBiome[rr][c] !== 'water') tileBiome[rr][c] = 'road';
+        }
+      });
+
+      // Extra industrial resources near roads/hills
+      for (let i = 0; i < 180; i++) {
+        const c = Math.floor(Math.random() * COLS);
+        const r = Math.floor(Math.random() * ROWS);
+        if (grid[r][c] || (rFullMap[r] && rFullMap[r][c])) continue;
+        const b = tileBiome[r][c];
+        if (b === 'road' || b === 'hills' || b === 'steppe') {
+          if (Math.random() < 0.22) placeResource(c, r, Math.random() < 0.65 ? 'brick' : 'stone');
+        }
+      }
+    }
+  } catch (e) {}
+
   // ----- finalize
   try { rebuildInteriorDoorsFromGrid(); } catch (e) {}
   // Kick off an async chunked rebuild of BOTH terrain caches (ortho + iso).
@@ -3585,6 +4310,15 @@ function drawBuilding(col, row, type, alpha) {
     W = iso.w * BUILDING_SCALE * size.w;
     H = iso.h * BUILDING_SCALE * size.h;
   }
+
+  // Per-building visual scale tweaks (render-only; does not change footprint/collision)
+  let visualScale = 1;
+  if (type === 'soviet_block') visualScale = (viewMode === 'iso') ? 5.0 : 4.5;
+  if (visualScale !== 1) {
+    W *= visualScale;
+    H *= visualScale;
+  }
+
   const pad = Math.max(1, Math.round(Math.min(W, H) * 0.05));
 
   ctx.save();
@@ -3593,7 +4327,7 @@ function drawBuilding(col, row, type, alpha) {
   // (Previously inserted isometric face rendering removed — depth should be
   // represented by sprite artwork in data/entity-pixels.json instead.)
 
-  const houseTypes = new Set(['house', 'house_small', 'house_large', 'house_garden', 'longhouse', 'stone_house', 'mesopotamian_villa_detailed', 'mesopotamian_house', 'mesopotamian_arch', 'mesopotamian_baths']);
+  const houseTypes = new Set(['house', 'house_small', 'house_large', 'house_garden', 'longhouse', 'stone_house', 'soviet_block', 'mesopotamian_villa_detailed', 'mesopotamian_house', 'mesopotamian_arch', 'mesopotamian_baths']);
   const spriteKey = resolveBuildingSpriteKey(type);
 
   if (houseTypes.has(type)) {
@@ -4048,8 +4782,21 @@ function drawTileHighlight(col, row, fillStyle, strokeStyle, lineWidth) {
 
 function getWorldMapBiomeColor(col, row) {
   try {
-    if (tileBiome[row][col] === 'water' || isRiver(col)) return '#2E6FA3';
+    const isUrss = (window._currentEpoch || 'mesopotamia') === 'urss';
+    if (tileBiome[row][col] === 'water' || isRiver(col)) return isUrss ? '#6A7686' : '#2E6FA3';
     const biome = tileBiome[row][col] || 'sand';
+    if (isUrss) {
+      if (biome === 'road') return '#898D95';
+      if (biome === 'forest') return '#5A665F';
+      if (biome === 'riparian') return '#6C7671';
+      if (biome === 'marsh') return '#636D69';
+      if (biome === 'alluvial') return '#8E8B82';
+      if (biome === 'saline') return '#E2E6EC';
+      if (biome === 'steppe') return '#7C8086';
+      if (biome === 'hills') return '#676C73';
+      if (biome === 'grass') return '#8E9894';
+      return '#7D8188';
+    }
     if (biome === 'road') return '#B9A37A';
     if (biome === 'forest') return '#507B48';
     if (biome === 'riparian') return '#5A8C38';
@@ -4067,6 +4814,13 @@ function getWorldMapBiomeColor(col, row) {
 
 function getWorldMapBuildingColor(type) {
   if (!type) return '#E8D5A3';
+  if (type === 'soviet_block') return '#B7BDC8';
+  if (type === 'party_hq') return '#CC5454';
+  if (type === 'collective_farm') return '#7D9B5A';
+  if (type === 'factory') return '#8D939E';
+  if (type === 'state_warehouse') return '#A58A6B';
+  if (type === 'steel_foundry') return '#9EA3AD';
+  if (type === 'concrete_road') return '#8B8F97';
   if (type.includes('house') || type.includes('villa') || type === 'longhouse' || type === 'hut') return '#F4E1A1';
   if (type === 'farm') return '#7FB24A';
   if (type === 'temple') return '#F5ECD7';
@@ -5013,6 +5767,7 @@ function render() {
         }
       }
       if (viewMode === 'iso') {
+        const isUrss = (window._currentEpoch || 'mesopotamia') === 'urss';
         const w = isoSize.w;
         const h = isoSize.h;
         if (x + w / 2 < 0 || x - w / 2 > W || y + h < 0 || y > H) continue;
@@ -5034,21 +5789,29 @@ function render() {
         } else {
           const biome = tileBiome[r][c] || 'sand';
           if (biome === 'road') {
-            drawDiamond(x, y, w, h, '#D7C59A', null, null);
+            drawDiamond(x, y, w, h, isUrss ? '#8B8F95' : '#D7C59A', null, null);
             // slight border for cobblestone separation
-            drawDiamond(x, y, w, h, null, 'rgba(160,130,70,0.30)', 0.7);
+            drawDiamond(x, y, w, h, null, isUrss ? 'rgba(200,205,215,0.22)' : 'rgba(160,130,70,0.30)', 0.7);
           } else if (biome === 'forest') {
-            drawDiamond(x, y, w, h, '#2E6FA3', null, null);
+            drawDiamond(x, y, w, h, isUrss ? '#5A665F' : '#2E6FA3', null, null);
           } else if (biome === 'hills') {
-            drawDiamond(x, y, w, h, '#B8860B', null, null);
+            drawDiamond(x, y, w, h, isUrss ? '#686D74' : '#B8860B', null, null);
+          } else if (biome === 'saline') {
+            drawDiamond(x, y, w, h, isUrss ? '#E3E7EE' : '#E8D8B8', null, null);
           } else if (biome === 'grass') {
-            drawDiamond(x, y, w, h, '#9BC17A', null, null);
+            drawDiamond(x, y, w, h, isUrss ? '#929D97' : '#9BC17A', null, null);
           } else {
-            const sandVar = ((c*7 + r*13) % 5) * 3;
-            const sand = `rgb(${200+sandVar},${165+sandVar},${100+sandVar})`;
-            drawDiamond(x, y, w, h, sand, null, null);
+            if (isUrss) {
+              const frostVar = ((c*5 + r*11) % 6) * 3;
+              const base = 126 + frostVar;
+              drawDiamond(x, y, w, h, `rgb(${base},${base+2},${base+6})`, null, null);
+            } else {
+              const sandVar = ((c*7 + r*13) % 5) * 3;
+              const sand = `rgb(${200+sandVar},${165+sandVar},${100+sandVar})`;
+              drawDiamond(x, y, w, h, sand, null, null);
+            }
           }
-          if (isNearRiver(c)) drawDiamond(x, y, w, h, 'rgba(74,124,63,0.15)', null, null);
+          if (isNearRiver(c)) drawDiamond(x, y, w, h, isUrss ? 'rgba(220,232,245,0.10)' : 'rgba(74,124,63,0.15)', null, null);
         }
         
         // only draw grid stroke when in edit mode
@@ -5084,21 +5847,54 @@ function render() {
                 if (biome === 'road') {
                   // compressed-earth cobblestone path at high detail
                   const stoneIdx = (sx + sy * 3 + c + r) % 5;
-                  const lum = 190 + stoneIdx * 5;
-                  ctx.fillStyle = `rgb(${lum},${lum - 28},${lum - 78})`;
+                  if ((window._currentEpoch || 'mesopotamia') === 'urss') {
+                    const lum = 132 + stoneIdx * 6;
+                    ctx.fillStyle = `rgb(${lum},${lum + 4},${lum + 10})`;
+                  } else {
+                    const lum = 190 + stoneIdx * 5;
+                    ctx.fillStyle = `rgb(${lum},${lum - 28},${lum - 78})`;
+                  }
                 } else if (biome === 'forest') {
                   // darker/lighter greens
-                  const g = Math.floor(100 + v * 80);
-                  ctx.fillStyle = `rgb(${30+Math.floor(v*10)},${g},${50})`;
+                  if ((window._currentEpoch || 'mesopotamia') === 'urss') {
+                    const g = Math.floor(88 + v * 48);
+                    ctx.fillStyle = `rgb(${72+Math.floor(v*12)},${g},${88+Math.floor(v*12)})`;
+                  } else {
+                    const g = Math.floor(100 + v * 80);
+                    ctx.fillStyle = `rgb(${30+Math.floor(v*10)},${g},${50})`;
+                  }
                 } else if (biome === 'hills') {
-                  const b = 110 + Math.floor(v * 40);
-                  ctx.fillStyle = `rgb(${150},${120},${b})`;
+                  if ((window._currentEpoch || 'mesopotamia') === 'urss') {
+                    const b = 112 + Math.floor(v * 36);
+                    ctx.fillStyle = `rgb(${108},${112},${b})`;
+                  } else {
+                    const b = 110 + Math.floor(v * 40);
+                    ctx.fillStyle = `rgb(${150},${120},${b})`;
+                  }
+                } else if (biome === 'saline') {
+                  if ((window._currentEpoch || 'mesopotamia') === 'urss') {
+                    const s = 224 + Math.floor(v * 20);
+                    ctx.fillStyle = `rgb(${s},${s+4},${Math.min(255, s+10)})`;
+                  } else {
+                    const s = 220 + Math.floor(v * 16);
+                    ctx.fillStyle = `rgb(${s},${s-8},${s-26})`;
+                  }
                 } else if (biome === 'grass') {
-                  const g = 140 + Math.floor(v * 60);
-                  ctx.fillStyle = `rgb(${80},${g},${60})`;
+                  if ((window._currentEpoch || 'mesopotamia') === 'urss') {
+                    const g = 140 + Math.floor(v * 32);
+                    ctx.fillStyle = `rgb(${132},${g},${145})`;
+                  } else {
+                    const g = 140 + Math.floor(v * 60);
+                    ctx.fillStyle = `rgb(${80},${g},${60})`;
+                  }
                 } else {
-                  const s = 200 + Math.floor((c*7 + r*13 + sx*3 + sy*5) % 20);
-                  ctx.fillStyle = `rgb(${s},${165 + (s%6)},${100 + (s%6)})`;
+                  if ((window._currentEpoch || 'mesopotamia') === 'urss') {
+                    const s = 126 + Math.floor((c*5 + r*11 + sx*3 + sy*5) % 24);
+                    ctx.fillStyle = `rgb(${s},${s+4},${s+10})`;
+                  } else {
+                    const s = 200 + Math.floor((c*7 + r*13 + sx*3 + sy*5) % 20);
+                    ctx.fillStyle = `rgb(${s},${165 + (s%6)},${100 + (s%6)})`;
+                  }
                 }
                 ctx.fillRect(nx, ny, Math.ceil(sw)+1, Math.ceil(sw)+1);
               }
@@ -5106,34 +5902,47 @@ function render() {
           } else {
             if (biome === 'road') {
               // draw cobblestone-like road tile
-              ctx.fillStyle = '#D7C59A'; ctx.fillRect(x, y, tileSize, tileSize);
-              ctx.fillStyle = '#C9B286';
+              const isUrss = (window._currentEpoch || 'mesopotamia') === 'urss';
+              ctx.fillStyle = isUrss ? '#8B8F95' : '#D7C59A'; ctx.fillRect(x, y, tileSize, tileSize);
+              ctx.fillStyle = isUrss ? '#A6ABB4' : '#C9B286';
               const stoneW = Math.max(4, Math.floor(tileSize/4));
               const stoneH = Math.max(4, Math.floor(tileSize/6));
               for (let ry=0; ry<3; ry++) {
                 for (let rx=0; rx<3; rx++) {
                   const sx = x + rx * (stoneW + 2) + (ry%2 ? 2 : 0);
                   const sy = y + ry * (stoneH + 2) + 2;
-                  ctx.fillStyle = (rx+ry)%2 ? '#C5A96A' : '#E0C99A';
+                  ctx.fillStyle = isUrss ? ((rx+ry)%2 ? '#7A7F89' : '#B3B9C3') : ((rx+ry)%2 ? '#C5A96A' : '#E0C99A');
                   ctx.fillRect(sx, sy, stoneW, stoneH);
                 }
               }
             } else if (biome === 'forest') {
-              ctx.fillStyle = '#2E6FA3';
+              ctx.fillStyle = (window._currentEpoch || 'mesopotamia') === 'urss' ? '#5A665F' : '#2E6FA3';
               ctx.fillRect(x, y, tileSize, tileSize);
             } else if (biome === 'hills') {
-              ctx.fillStyle = '#B8860B';
+              ctx.fillStyle = (window._currentEpoch || 'mesopotamia') === 'urss' ? '#686D74' : '#B8860B';
+              ctx.fillRect(x, y, tileSize, tileSize);
+            } else if (biome === 'saline') {
+              ctx.fillStyle = (window._currentEpoch || 'mesopotamia') === 'urss' ? '#E3E7EE' : '#E8D8B8';
               ctx.fillRect(x, y, tileSize, tileSize);
             } else if (biome === 'grass') {
-              ctx.fillStyle = '#9BC17A';
+              ctx.fillStyle = (window._currentEpoch || 'mesopotamia') === 'urss' ? '#929D97' : '#9BC17A';
               ctx.fillRect(x, y, tileSize, tileSize);
             } else {
-              const sandVar = ((c*7 + r*13) % 5) * 3;
-              ctx.fillStyle = `rgb(${200+sandVar},${165+sandVar},${100+sandVar})`;
+              if ((window._currentEpoch || 'mesopotamia') === 'urss') {
+                const frostVar = ((c*5 + r*11) % 6) * 3;
+                const base = 126 + frostVar;
+                ctx.fillStyle = `rgb(${base},${base+2},${base+6})`;
+              } else {
+                const sandVar = ((c*7 + r*13) % 5) * 3;
+                ctx.fillStyle = `rgb(${200+sandVar},${165+sandVar},${100+sandVar})`;
+              }
               ctx.fillRect(x, y, tileSize, tileSize);
             }
           }
-          if (isNearRiver(c)) { ctx.fillStyle = 'rgba(74,124,63,0.15)'; ctx.fillRect(x, y, tileSize, tileSize); }
+          if (isNearRiver(c)) {
+            ctx.fillStyle = (window._currentEpoch || 'mesopotamia') === 'urss' ? 'rgba(220,232,245,0.10)' : 'rgba(74,124,63,0.15)';
+            ctx.fillRect(x, y, tileSize, tileSize);
+          }
         }
 
         // only draw cell borders in edit mode
@@ -5423,6 +6232,14 @@ function render() {
           } catch (ee) {}
           ctx.restore();
         }
+      } catch (e) {}
+    } else if (ent.kind === 'ambient' && ent.subtype === 'soviet_fighter_jet') {
+      if (isOffscreen) return;
+      try {
+        const bob = Math.sin(now / 520 + ((ent.col || 0) * 3 + (ent.row || 0) * 5)) * Math.max(1, tileSize * 0.04);
+        const jetW = Math.max(tileSize * 1.9, tileSize * (ent.size || 1.9));
+        const jetH = Math.max(tileSize * 0.9, jetW * 0.52);
+        drawEntitySpriteAt('soviet_fighter_jet', x + tileSize * 0.5, y + tileSize * 0.22 - bob, jetW, jetH);
       } catch (e) {}
     } else if (ent.kind === 'tree') {
       if (isOffscreen) return;
@@ -6262,7 +7079,7 @@ function render() {
   }
 
   // ── RIVER LABEL ─────────────────────────────────────────--
-  // Left river: Tigris
+  // Left river: Río Don
   const { x: rx } = worldToScreen(RIVER_COL_START, 0);
   const labelOffset = viewMode === 'iso' ? isoSize.w : tileSize;
   ctx.save();
@@ -6272,9 +7089,11 @@ function render() {
   ctx.font = 'bold 11px Courier New';
   ctx.letterSpacing = '3px';
   ctx.textAlign = 'center';
-  ctx.fillText('RÍO TIGRIS', 0, 0);
+  if ((window._currentEpoch || 'mesopotamia') === 'urss') ctx.fillText('CANAL PRINCIPAL', 0, 0);
+  else if ((window._currentEpoch || 'mesopotamia') === 'medieval') ctx.fillText('RÍO REAL', 0, 0);
+  else ctx.fillText('RÍO DON', 0, 0);
   ctx.restore();
-  // Right river: Éufrates
+  // Right river: Río Ob Nord
   const { x: rxB } = worldToScreen(RIVER_B_BASE, 0);
   ctx.save();
   ctx.translate(rxB + labelOffset, H/2);
@@ -6283,7 +7102,7 @@ function render() {
   ctx.font = 'bold 11px Courier New';
   ctx.letterSpacing = '3px';
   ctx.textAlign = 'center';
-  ctx.fillText('RÍO ÉUFRATES', 0, 0);
+  ctx.fillText('RÍO OB NORD', 0, 0);
   ctx.restore();
 
   // Request next frame for animation
@@ -6538,7 +7357,8 @@ function render() {
 //  GAME LOGIC
 // ═══════════════════════════════════════════════════════════════
 function canBuild(type) {
-  const b = BUILDINGS[type];
+  const b = BUILDINGS[resolveEpochBuildingType(type)] || BUILDINGS[type];
+  if (!b) return false;
   return res.brick >= b.costBrick && res.wheat >= b.costWheat;
 }
 
@@ -6657,14 +7477,15 @@ function placeBuild(col, row) {
   if (!canBuild(selectedTool)) {
     notify('Recursos insuficientes.'); return;
   }
-  const b = BUILDINGS[selectedTool];
+  const effectiveType = resolveEpochBuildingType(selectedTool);
+  const b = BUILDINGS[effectiveType] || BUILDINGS[selectedTool];
   res.brick -= b.costBrick;
   res.wheat -= b.costWheat;
-  setBuildingCells(col, row, selectedTool);
+  setBuildingCells(col, row, effectiveType);
   updateUI();
-  addLog(`Construido: ${b.name} en (${col},${row})`);
+  addLog(`Construido: ${getBuildingDisplay(effectiveType).name} en (${col},${row})`);
   gainXP(10);
-  notify(`${b.name} construida.`);
+  notify(`${getBuildingDisplay(effectiveType).name} construida.`);
   // mission progress: building events
   try {
     if (window._missions && window._missions.length > 0) {
@@ -6692,15 +7513,16 @@ function placeBuildMultiple(rect) {
       if (!canPlaceAt(c, r, selectedTool)) continue;
       if (!canBuild(selectedTool)) { return placed; }
       // apply cost and set cells
-      const b = BUILDINGS[selectedTool];
+      const effectiveType = resolveEpochBuildingType(selectedTool);
+      const b = BUILDINGS[effectiveType] || BUILDINGS[selectedTool];
       res.brick -= b.costBrick;
       res.wheat -= b.costWheat;
-      setBuildingCells(c, r, selectedTool);
+      setBuildingCells(c, r, effectiveType);
       placed.push({c,r});
     }
   }
   if (placed.length > 0) {
-    updateUI(); addLog(`Construidos ${placed.length} x ${BUILDINGS[selectedTool].name}`);
+    updateUI(); addLog(`Construidos ${placed.length} x ${getBuildingDisplay(selectedTool).name}`);
     // update missions for bulk builds
     try {
       if (window._missions && window._missions.length > 0) {
@@ -6805,6 +7627,7 @@ function updateUI() {
   document.getElementById('res-wheat').textContent = res.wheat;
   document.getElementById('res-brick').textContent = res.brick;
   document.getElementById('res-pop').textContent   = res.pop;
+  updateStaticEpochUI();
   // show current day count
   const tn = document.getElementById('turn-num'); if (tn) tn.textContent = dayCount;
   updateProduction();
@@ -6815,7 +7638,7 @@ function refreshBuildButtonsFromDefinitions() {
   try {
     document.querySelectorAll('.build-btn').forEach(btn => {
       const type = btn.dataset.type;
-      const def = BUILDINGS[type];
+      const def = getBuildingDisplay(type);
       if (!type || !def) return;
       const nameEl = btn.querySelector('.bname');
       const costEl = btn.querySelector('.bcost');
@@ -7383,10 +8206,10 @@ function performAction(actionId) {
     const roll = Math.random();
     if (roll < 0.5) {
       res.wheat += 2;
-      addLog('Exploracion: encontraste trigo.');
+      addLog(`Exploración: encontraste ${getResourceDisplay('wheat').productionLabel || 'trigo'}.`);
     } else {
       res.brick += 2;
-      addLog('Exploracion: hallaste ladrillos.');
+      addLog(`Exploración: hallaste ${getResourceDisplay('brick').productionLabel || 'ladrillos'}.`);
     }
     gainXP(5);
   } else if (actionId === 'gather') {
@@ -7404,10 +8227,12 @@ function performAction(actionId) {
     if (picked) {
       if (isNearRiver(player.col)) {
         addToInventory('water', 3);
-        addLog('Recolectas agua en la ribera.');
+        if ((window._currentEpoch || 'mesopotamia') === 'urss') addLog('Acopias agua en el punto de bombeo.');
+        else addLog('Recolectas agua en la ribera.');
       } else {
         res.brick += 2;
-        addLog('Recolectas arcilla y obtienes ladrillos.');
+        if ((window._currentEpoch || 'mesopotamia') === 'urss') addLog('Recuperas material industrial y obtienes suministros.');
+        else addLog('Recolectas arcilla y obtienes ladrillos.');
       }
     }
     gainXP(3);
@@ -7418,11 +8243,11 @@ function performAction(actionId) {
     if (res.wheat >= 5) {
       res.wheat -= 5;
       res.brick += 3;
-      addLog('Intercambias trigo por ladrillos.');
+      addLog(`Intercambias ${getResourceDisplay('wheat').productionLabel || 'trigo'} por ${getResourceDisplay('brick').productionLabel || 'ladrillos'}.`);
     } else if (res.brick >= 5) {
       res.brick -= 5;
       res.wheat += 3;
-      addLog('Intercambias ladrillos por trigo.');
+      addLog(`Intercambias ${getResourceDisplay('brick').productionLabel || 'ladrillos'} por ${getResourceDisplay('wheat').productionLabel || 'trigo'}.`);
     } else {
       char.ap += action.cost;
       notify('No tienes recursos para comerciar.');
@@ -7431,18 +8256,19 @@ function performAction(actionId) {
   } else if (actionId === 'ritual') {
     if (res.wheat < 2 || res.brick < 2) {
       char.ap += action.cost;
-      notify('Necesitas 2 trigo y 2 ladrillos.');
+      notify(`Necesitas 2 ${getResourceDisplay('wheat').productionLabel || 'trigo'} y 2 ${getResourceDisplay('brick').productionLabel || 'ladrillos'}.`);
       return;
     }
     res.wheat -= 2;
     res.brick -= 2;
     res.pop += 2;
     gainXP(4);
-    addLog('Ritual completado: la ciudad crece.');
+    if ((window._currentEpoch || 'mesopotamia') === 'urss') addLog('Mitin completado: el distrito crece.');
+    else addLog('Ritual completado: la ciudad crece.');
   } else if (actionId === 'study') {
     if (res.wheat < 1) {
       char.ap += action.cost;
-      notify('Necesitas 1 trigo para investigar.');
+      notify(`Necesitas 1 ${getResourceDisplay('wheat').productionLabel || 'trigo'} para investigar.`);
       return;
     }
     res.wheat -= 1;
@@ -7925,18 +8751,18 @@ function showTooltip(col, row, mx, my) {
   if (!tip) return;
   if (col < 0 || col >= COLS || row < 0 || row >= ROWS) { tip.style.display='none'; return; }
   if (isRiver(col)) {
-    tip.innerHTML = '<b>Río Tigris</b><br>Fuente de vida.<br>Construir cerca da +25% producción.';
+    tip.innerHTML = `<b>${getEpochText('riverName', 'Río Don')}</b><br>${getEpochText('riverDesc', 'Vía de vida en el invierno.')}<br>${getEpochText('riverBonus', 'Construir cerca da +25% producción.')}`;
     tip.style.display = 'block';
   } else if (grid[row][col]) {
     const info = getCellInfo(col, row);
     if (!info) { tip.style.display = 'none'; return; }
-    const b = BUILDINGS[info.type];
+    const b = getBuildingDisplay(info.type);
     if (!b) { tip.style.display = 'none'; console.warn('showTooltip: unknown building type', info.type); return; }
     const bonus = isNearRiver(col) ? ' 🌊+25%' : '';
     tip.innerHTML = `<b>${b.name}</b>${bonus}<br>${b.desc}`;
     tip.style.display = 'block';
   } else if (selectedTool && selectedTool !== 'demolish') {
-    const b = BUILDINGS[selectedTool];
+    const b = getBuildingDisplay(selectedTool);
     if (!b) { tip.style.display = 'none'; console.warn('showTooltip: unknown selectedTool', selectedTool); return; }
     tip.innerHTML = `<b>${b.name}</b><br>Costo: 🧱${b.costBrick} 🌾${b.costWheat}<br>${b.desc}`;
     tip.style.display = 'block';
@@ -8531,12 +9357,15 @@ function createMenuBar() {
           if (Array.isArray(data.npcs)) {
             data.npcs.forEach((nd, ni) => {
               try {
-                const names = ['Gilmesh','Enlila','Dumuzi','Ninsun','Uttu','Ninmah','Anu','Enki','Nanna','Utu'];
+                const names = ((window._currentEpoch || 'mesopotamia') === 'urss')
+                  ? ['Mikhail Petrov','Olga Sokolova','Yuri Volkov','Tatiana Smirnova','Nikolai Orlov','Anya Lebedeva']
+                  : ['Gilmesh','Enlila','Dumuzi','Ninsun','Uttu','Ninmah','Anu','Enki','Nanna','Utu'];
                 const nm = nd.name || names[ni % names.length];
                 const npc = spawnNPC(nm, nd.col || 1, nd.row || 1);
                 if (npc) {
                   npc._interiorNpc = true;
                   npc.npcType = 'villager';
+                  assignSovietVillagerProfile(npc);
                   npc._interiorBounds = { minC: 1, maxC: (data.width||8)-2, minR: 1, maxR: (data.height||6)-2 };
                 }
               } catch (e) {}
@@ -8854,6 +9683,7 @@ function createTaskPanel() {
     const list = document.getElementById('npc-list'); if (!list) return; list.innerHTML = '';
     // show entities that look like NPCs (id starts with 'npc-')
     const npcs = entities.filter(en => en.id && en.id.indexOf('npc-') === 0);
+    try { npcs.forEach(n => assignSovietVillagerProfile(n)); } catch (e) {}
     if (npcs.length === 0) {
       list.innerHTML = '<div style="color:#ccc;font-size:13px">No hay aldeanos (aún).</div>';
       return;
@@ -8907,31 +9737,41 @@ function findEntityAtWorld(x, y) {
     // Use SceneManager spatial index when available for fast nearby entity lookup
     if (window.SceneManager && typeof window.SceneManager.findAtPoint === 'function') {
       const found = window.SceneManager.findAtPoint(x, y, { radius: 0.9 });
-      if (found) return found;
+      if (found && !(found.nonInteractive || found.kind === 'ambient')) return found;
     }
   } catch (e) {}
-  // fallback: brute-force scan (last-first) for compatibility
+  // fallback: choose nearest entity within click radius (more precise than first-hit scan)
+  let nearest = null;
+  let nearestDist = Infinity;
+  const updateNearest = (candidate, cx, cy, radius) => {
+    const dist = Math.hypot(cx - x, cy - y);
+    if (dist <= radius && dist < nearestDist) {
+      nearest = candidate;
+      nearestDist = dist;
+    }
+  };
   for (let i = entities.length - 1; i >= 0; i--) {
     const ent = entities[i];
     if (!ent) continue;
-    const ex = (typeof ent.x === 'number') ? ent.x : ent.col + 0.5;
-    const ey = (typeof ent.y === 'number') ? ent.y : ent.row + 0.5;
-    const dx = ex - x; const dy = ey - y;
-    const sizeFactor = Math.max(0.6, (ent.size || 1));
-    if (Math.hypot(dx, dy) < 0.6 * sizeFactor) return ent;
+    if (ent.nonInteractive || ent.kind === 'ambient') continue;
+    const ex = (typeof ent.x === 'number') ? (ent.x + 0.5) : (ent.col + 0.5);
+    const ey = (typeof ent.y === 'number') ? (ent.y + 0.6) : (ent.row + 0.6);
+    const sizeFactor = Math.max(0.55, (ent.size || 1));
+    const clickRadius = 0.42 * sizeFactor;
+    updateNearest(ent, ex, ey, clickRadius);
   }
   // check rabbits
   for (let i = rabbits.length - 1; i >= 0; i--) {
     const rab = rabbits[i];
-    const rx = (typeof rab.x === 'number') ? rab.x : (rab.col + 0.5);
-    const ry = (typeof rab.y === 'number') ? rab.y : (rab.row + 0.5);
-    const dx = rx - x; const dy = ry - y;
-    if (Math.hypot(dx, dy) < Math.max(0.6, (rab.size || 0.45) * 0.9)) return rab;
+    const rx = (typeof rab.x === 'number') ? (rab.x + 0.5) : (rab.col + 0.5);
+    const ry = (typeof rab.y === 'number') ? (rab.y + 0.55) : (rab.row + 0.55);
+    const clickRadius = Math.max(0.3, (rab.size || 0.45) * 0.55);
+    updateNearest(rab, rx, ry, clickRadius);
   }
   // check player
   const pdx = (player.x) - x; const pdy = (player.y) - y;
-  if (Math.hypot(pdx, pdy) < 0.9) return { kind: 'player', name: player.name, col: Math.floor(player.x), row: Math.floor(player.y), hp: char.hp, maxHp: char.maxHp };
-  return null;
+  if (Math.hypot(pdx, pdy) < 0.55 && nearestDist > 0.45) return { kind: 'player', name: player.name, col: Math.floor(player.x), row: Math.floor(player.y), hp: char.hp, maxHp: char.maxHp };
+  return nearest;
 }
 
 function showEntityInfo(ent) {
@@ -8957,9 +9797,23 @@ function showEntityInfo(ent) {
     lines.push(`<div style="margin-bottom:6px"><b>Recurso:</b> ${ent.subtype}</div>`);
     lines.push(`<div>Ubicación: ${ent.col}, ${ent.row}</div>`);
   } else if (ent.kind === 'player') {
+    try { assignSovietVillagerProfile(ent); } catch (e) {}
     lines.push(`<div style="display:flex;align-items:center;gap:8px"><div style="width:64px;height:64px;background:#222;padding:6px;border-radius:6px">`);
     lines.push(`</div><div><div style="font-weight:700">${ent.name || 'NPC'}</div><div style="font-size:12px;color:#ccc">Pos: ${ent.col}, ${ent.row}</div></div></div>`);
     lines.push(`<div style="margin-top:8px">HP: <b>${ent.hp}/${ent.maxHp}</b></div>`);
+    if (String(ent.id || '').startsWith('npc-')) {
+      const roleMap = {
+        villager: 'Aldeano',
+        farmer: 'Campesino',
+        shepherd: 'Pastor',
+        guard: 'Guardia',
+        merchant: 'Mercader',
+        elder: 'Veterano',
+        survivor: 'Superviviente'
+      };
+      lines.push(`<div style="margin-top:6px"><b>Rol:</b> ${roleMap[ent.npcType] || (ent.npcType || 'NPC')}</div>`);
+      if (ent.backstory) lines.push(`<div style="margin-top:6px"><b>Historia:</b> ${ent.backstory}</div>`);
+    }
     if (ent.special) {
       lines.push('<div style="margin-top:6px"><b>Stats</b></div>');
       lines.push('<div style="display:flex;flex-wrap:wrap;gap:6px">');
@@ -9402,10 +10256,11 @@ function createGameGuideUI() {
   g.style.position = 'fixed'; g.style.left = '12px'; g.style.top = '12px'; g.style.zIndex = 1900;
   stylePanel(g);
   g.style.minWidth = '260px';
+  const guideTips = getEpochText('guideQuickTips', 'Construye casas cerca del río para +25% producción. Usa graneros y mercados para balancear recursos.');
   g.innerHTML = `
     <div style="font-size:13px;line-height:1.3;max-height:280px;overflow:auto">
       <p><b>Controles:</b> Click izquierdo construir/mover, click derecho inspeccionar/mover (modo libre). Teclas: F seguir cámara, I inventario, Enter turno.</p>
-      <p><b>Consejos rápidos:</b> Construye casas cerca del río para +25% producción. Usa graneros y mercados para balancear recursos.</p>
+      <p><b>Consejos rápidos:</b> ${guideTips}</p>
       <hr>
       <p><b>Ideas para una base estable de desarrollo:</b></p>
       <ul>
@@ -9446,8 +10301,33 @@ function showStartMenu(force) {
 
     const left = document.createElement('div'); left.style.flex = '1';
     const _startEpoch = getEpochProfile(window._currentEpoch || 'mesopotamia');
-    const title = document.createElement('div'); title.innerHTML = `<h2 style="margin:0 0 8px 0">${_startEpoch.startTitle}</h2><div style="color:#ccc;font-size:13px">${_startEpoch.startSubtitle}</div>`;
+    const title = document.createElement('div'); title.innerHTML = `<h2 id="main-menu-title" style="margin:0 0 8px 0">${_startEpoch.startTitle}</h2><div id="main-menu-subtitle" style="color:#ccc;font-size:13px">${_startEpoch.startSubtitle}</div>`;
     left.appendChild(title);
+
+    const epochPanel = document.createElement('div');
+    epochPanel.style.marginTop = '14px';
+    epochPanel.style.padding = '10px';
+    epochPanel.style.border = '1px solid rgba(255,210,122,0.25)';
+    epochPanel.style.borderRadius = '8px';
+    epochPanel.style.background = 'rgba(255,210,122,0.06)';
+    epochPanel.innerHTML = '<div style="font-size:12px;font-weight:700;color:#FFD27A;margin-bottom:6px">Época de la partida</div><div style="font-size:12px;color:#cfc7b0;margin-bottom:8px">Elige aquí la ambientación antes de pulsar Nueva partida.</div>';
+    const menuEpochSelect = document.createElement('select');
+    menuEpochSelect.id = 'menu-epoch-select';
+    menuEpochSelect.style.width = '100%';
+    menuEpochSelect.style.background = '#111';
+    menuEpochSelect.style.color = '#fff';
+    menuEpochSelect.style.border = '1px solid #555';
+    menuEpochSelect.style.padding = '8px';
+    menuEpochSelect.style.borderRadius = '6px';
+    Object.values(EPOCH_PROFILES).forEach(ep => {
+      const opt = document.createElement('option');
+      opt.value = ep.id;
+      opt.textContent = ep.label;
+      menuEpochSelect.appendChild(opt);
+    });
+    menuEpochSelect.value = window._currentEpoch || 'mesopotamia';
+    epochPanel.appendChild(menuEpochSelect);
+    left.appendChild(epochPanel);
 
     const actions = document.createElement('div'); actions.style.marginTop = '12px';
     const btnLoad = document.createElement('button'); btnLoad.textContent = 'Cargar partida'; btnLoad.style.display='block'; btnLoad.style.width='100%'; btnLoad.style.margin='8px 0';
@@ -9465,7 +10345,9 @@ function showStartMenu(force) {
     right.appendChild(portraitWrap);
     const info = document.createElement('div'); info.style.fontSize = '12px'; info.style.color = '#ddd'; info.innerHTML = '<b>Última partida:</b><br/>' + (localStorage.getItem(APP_STATE_KEY) ? 'Guardada en local' : 'No hay partida guardada');
     right.appendChild(info);
-    const quickTips = document.createElement('div'); quickTips.style.fontSize='12px'; quickTips.style.color='#bbb'; quickTips.innerHTML = '<b>Consejos</b><ul style="margin:6px 0 0 14px;padding:0;color:#bbb"><li>Construye cerca del río.</li><li>Crea graneros para almacenar trigo.</li></ul>';
+    const quickTips = document.createElement('div'); quickTips.id = 'main-menu-quicktips'; quickTips.style.fontSize='12px'; quickTips.style.color='#bbb';
+    const quickTipItems = getEpochUiProfile(window._currentEpoch || 'mesopotamia').quickTips || [];
+    quickTips.innerHTML = `<b>${getEpochText('quickTipsTitle', 'Consejos')}</b><ul style="margin:6px 0 0 14px;padding:0;color:#bbb">${quickTipItems.map(t => `<li>${t}</li>`).join('')}</ul>`;
     right.appendChild(quickTips);
     // cache preview list and precache button (ensure variables exist)
     const cacheList = document.createElement('div'); cacheList.id = 'main-menu-cachelist'; cacheList.style.display = 'flex'; cacheList.style.flexWrap = 'wrap'; cacheList.style.gap = '6px'; cacheList.style.marginTop = '8px'; cacheList.style.maxHeight = '160px'; cacheList.style.overflow = 'auto'; cacheList.style.padding = '6px'; cacheList.style.background = 'rgba(0,0,0,0.04)'; cacheList.style.borderRadius = '6px'; right.appendChild(cacheList);
@@ -9519,6 +10401,18 @@ function showStartMenu(force) {
 
     btnSettings.addEventListener('click', () => { try { overlay.remove(); createOptionsPanel && createOptionsPanel(); } catch (e) {} });
     btnCredits.addEventListener('click', () => { try { overlay.remove(); showCreditsSplash(1200); } catch (e) {} });
+
+    menuEpochSelect.addEventListener('change', () => {
+      try {
+        const epochId = menuEpochSelect.value || 'mesopotamia';
+        const profile = applyEpochProfile(epochId, true);
+        const titleEl = document.getElementById('main-menu-title');
+        const subtitleEl = document.getElementById('main-menu-subtitle');
+        if (titleEl) titleEl.textContent = profile.startTitle || profile.label || 'MesoBuilder';
+        if (subtitleEl) subtitleEl.textContent = profile.startSubtitle || '';
+        updateStaticEpochUI();
+      } catch (e) {}
+    });
 
     // populate cache list preview (safe)
     try {
@@ -9575,22 +10469,32 @@ function showStartupParams() {
     const modal = document.createElement('div'); modal.id = 'startup-params';
     modal.style.position = 'fixed'; modal.style.left = '0'; modal.style.top = '0'; modal.style.right = '0'; modal.style.bottom = '0'; modal.style.zIndex = 120000; modal.style.display = 'flex'; modal.style.alignItems = 'center'; modal.style.justifyContent = 'center';
     const box = document.createElement('div'); box.style.background = 'rgba(18,18,18,0.98)'; box.style.padding = '16px'; box.style.border = '1px solid #333'; box.style.borderRadius = '8px'; box.style.width = '520px'; box.style.color = '#fff';
-    box.innerHTML = `<div style="font-weight:700;margin-bottom:8px">Parámetros de nueva partida</div>`;
+    box.innerHTML = `<div style="font-weight:700;margin-bottom:4px">Parámetros de nueva partida</div><div style="font-size:12px;color:#ccc;margin-bottom:10px">La época se elige en el primer bloque.</div>`;
     const form = document.createElement('div'); form.style.display='grid'; form.style.gridTemplateColumns='1fr 1fr'; form.style.gap='10px';
     const epochWrap = document.createElement('div');
     epochWrap.style.gridColumn = '1 / -1';
     epochWrap.style.display = 'flex';
     epochWrap.style.flexDirection = 'column';
+    epochWrap.style.padding = '10px';
+    epochWrap.style.border = '1px solid rgba(255,210,122,0.25)';
+    epochWrap.style.borderRadius = '8px';
+    epochWrap.style.background = 'rgba(255,210,122,0.06)';
     const epochLabel = document.createElement('div');
     epochLabel.style.fontSize = '13px';
     epochLabel.style.marginBottom = '4px';
     epochLabel.textContent = 'Época';
+    const epochHint = document.createElement('div');
+    epochHint.style.fontSize = '12px';
+    epochHint.style.color = '#cfc7b0';
+    epochHint.style.marginBottom = '8px';
+    epochHint.textContent = 'Selecciona aquí la ambientación de la partida antes de generarla.';
     const epochSelect = document.createElement('select');
     epochSelect.id = 'start-epoch';
     epochSelect.style.background = '#111';
     epochSelect.style.color = '#fff';
     epochSelect.style.border = '1px solid #444';
     epochSelect.style.padding = '6px';
+    epochSelect.style.borderRadius = '6px';
     Object.values(EPOCH_PROFILES).forEach(ep => {
       const opt = document.createElement('option');
       opt.value = ep.id;
@@ -9599,6 +10503,7 @@ function showStartupParams() {
     });
     epochSelect.value = window._currentEpoch || 'mesopotamia';
     epochWrap.appendChild(epochLabel);
+    epochWrap.appendChild(epochHint);
     epochWrap.appendChild(epochSelect);
     const createRange = (id,label,def,min,max,step) => {
       const wrap = document.createElement('div'); wrap.style.display='flex'; wrap.style.flexDirection='column';
@@ -9866,21 +10771,65 @@ function createBuildPanelControls() {
 // ══════════════════════════════════════════════════════════════
 window._storyChapter = window._storyChapter || 0;
 
-const _STORY_QUESTS = [
-  null, // chapter 0 — no quest yet
-  { id: 'story_ch1', title: 'El aviso del Anciano',
-    desc: 'Viaja a Nínagara y habla con la Sacerdotisa del Templo.',
-    target: 1, progress: 0, reward: { food: 2, stone: 1 },
-    watch: null, isStory: true },
-  { id: 'story_ch2', title: 'El Ritual de Protección',
-    desc: 'Lleva al templo 5 comida y 3 piedra. Habla con la Sacerdotisa.',
-    target: 8, progress: 0, reward: { food: 5, stone: 2 },
-    watch: null, isStory: true },
-  { id: 'story_ch3', title: '¡Nínagara ha sido salvada!',
-    desc: 'El ritual de Enlil se ha completado. El diluvio ha sido contenido.',
-    target: 1, progress: 1, reward: {},
-    watch: null, isStory: true, done: true }
-];
+function buildStoryQuestsForEpoch(epochId) {
+  if (epochId === 'urss') {
+    return [
+      null,
+      { id: 'story_ch1', title: 'Orden de Emergencia',
+        desc: 'Reúnete en Novozarya con la comisaria del distrito y activa el protocolo de invierno.',
+        target: 1, progress: 0, reward: { food: 2, stone: 1 },
+        watch: null, isStory: true },
+      { id: 'story_ch2', title: 'Racionamiento de Invierno',
+        desc: 'Entrega 5 comida y 3 piedra en la Casa del Soviet para asegurar calefacción y refugio.',
+        target: 8, progress: 0, reward: { food: 5, stone: 2 },
+        watch: null, isStory: true },
+      { id: 'story_ch3', title: '¡Novozarya aguanta el frente!',
+        desc: 'El pueblo ha resistido la tormenta: la red de suministro sigue en pie.',
+        target: 1, progress: 1, reward: {},
+        watch: null, isStory: true, done: true }
+    ];
+  }
+  if (epochId === 'medieval') {
+    return [
+      null,
+      { id: 'story_ch1', title: 'El aviso del anciano',
+        desc: 'Viaja a Norhaven y habla con el prior del templo.',
+        target: 1, progress: 0, reward: { food: 2, stone: 1 },
+        watch: null, isStory: true },
+      { id: 'story_ch2', title: 'Ritual de protección',
+        desc: 'Lleva al templo 5 comida y 3 piedra.',
+        target: 8, progress: 0, reward: { food: 5, stone: 2 },
+        watch: null, isStory: true },
+      { id: 'story_ch3', title: '¡Norhaven ha sido salvada!',
+        desc: 'El ritual se ha completado y la villa está preparada.',
+        target: 1, progress: 1, reward: {},
+        watch: null, isStory: true, done: true }
+    ];
+  }
+  return [
+    null,
+    { id: 'story_ch1', title: 'El aviso del Anciano',
+      desc: 'Viaja a Nínagara y habla con la Sacerdotisa del Templo.',
+      target: 1, progress: 0, reward: { food: 2, stone: 1 },
+      watch: null, isStory: true },
+    { id: 'story_ch2', title: 'El Ritual de Protección',
+      desc: 'Lleva al templo 5 comida y 3 piedra. Habla con la Sacerdotisa.',
+      target: 8, progress: 0, reward: { food: 5, stone: 2 },
+      watch: null, isStory: true },
+    { id: 'story_ch3', title: '¡Nínagara ha sido salvada!',
+      desc: 'El ritual de Enlil se ha completado. El diluvio ha sido contenido.',
+      target: 1, progress: 1, reward: {},
+      watch: null, isStory: true, done: true }
+  ];
+}
+
+function getStoryChapterTitles(epochId) {
+  if (epochId === 'urss') return ['', 'Acto I — El Telegrama', 'Acto II — La Tormenta', 'Epílogo — Novozarya Resiste'];
+  if (epochId === 'medieval') return ['', 'Acto I — El Aviso', 'Acto II — El Rito', 'Epílogo — La Tormenta Cede'];
+  return ['', 'Acto I — La Advertencia', 'Acto II — El Ritual', 'Epílogo — El Diluvio Se Aleja'];
+}
+
+let _STORY_QUESTS = buildStoryQuestsForEpoch(window._currentEpoch || 'mesopotamia');
 
 function advanceStoryChapter(chapter) {
   if (window._storyChapter >= chapter) return; // never regress
@@ -9896,7 +10845,7 @@ function advanceStoryChapter(chapter) {
     }
   } catch (e) {}
   // Chapter title notification
-  const titles = ['', 'Acto I — La Advertencia', 'Acto II — El Ritual', 'Epílogo — El Diluvio Se Aleja'];
+  const titles = getStoryChapterTitles(window._currentEpoch || 'mesopotamia');
   try { notify(titles[chapter] || 'Nueva misión de historia'); } catch (e) {}
 }
 
@@ -9914,7 +10863,11 @@ function checkChapter2Completion() {
     try {
       window._storyComplete = { start: Date.now() };
     } catch (e) {}
-    try { notify('¡El ritual de Enlil está completo! Nínagara ha sido salvada.'); } catch (e) {}
+    try {
+      if ((window._currentEpoch || 'mesopotamia') === 'urss') notify('¡El plan está completo! Novozarya ha sido asegurada.');
+      else if ((window._currentEpoch || 'mesopotamia') === 'medieval') notify('¡El ritual está completo! Norhaven ha sido asegurada.');
+      else notify('¡El ritual de Enlil está completo! Nínagara ha sido salvada.');
+    } catch (e) {}
   }
 }
 
@@ -10087,28 +11040,57 @@ function drawIntroSequence(ctx, W, H) {
   ctx.fillRect(0, 0, W, H);
   ctx.globalAlpha = alpha;
   const cx = W / 2, cy = H / 2;
+  const epochNow = window._currentEpoch || 'mesopotamia';
+  const protagonistName = (window.player && window.player.name) ? window.player.name : 'el camarada';
+  const protagonistTitle = (window.player && window.player.title) ? window.player.title : 'responsable del distrito';
   if (seq.phase === 0) {
     ctx.textAlign = 'center';
     ctx.fillStyle = '#c8a96e';
     ctx.font = 'italic 18px serif';
-    ctx.fillText('Mesopotamia, 2350 a.C.', cx, cy - 18);
+    if (epochNow === 'urss') ctx.fillText('URSS clásica, 1926', cx, cy - 18);
+    else if (epochNow === 'medieval') ctx.fillText('Reino del Norte, año 1187', cx, cy - 18);
+    else ctx.fillText('Mesopotamia, 2350 a.C.', cx, cy - 18);
     ctx.font = '13px serif';
     ctx.fillStyle = 'rgba(255,235,200,0.82)';
-    ctx.fillText('Entre el Éufrates y el Tigris, toda vida depende del capricho de los ríos.', cx, cy + 10);
+    if (epochNow === 'urss') ctx.fillText('Novozarya, un pueblo soviético entre nieve y acero, depende de una red frágil de suministro.', cx, cy + 10);
+    else if (epochNow === 'medieval') ctx.fillText('Entre caminos y ríos, toda aldea depende del clima y del comercio.', cx, cy + 10);
+    else ctx.fillText('Entre el Río Don y el Río Ob Nord, bajo el hielo perpetuo, solo el trabajo colectivo sostiene la vida.', cx, cy + 10);
   } else if (seq.phase === 1) {
     ctx.textAlign = 'center';
     ctx.font = '14px serif';
     ctx.fillStyle = 'rgba(255,240,210,0.92)';
-    const lore = [
-      'Tu aldea, Kidu-Lam, fue arrasada por raiders del norte al amanecer.',
-      'Eres Adapa — cazador, superviviente, el único con la mente despejada.',
-      '',
-      'El anciano del templo ha leído los presagios en los astros:',
-      'en cuarenta días, el gran diluvio llegará y lo borrará todo.',
-      '',
-      'Tu misión: llevar el aviso a las ciudades del norte',
-      'antes de que las aguas lo sepulten todo.'
-    ];
+    const lore = (epochNow === 'urss')
+      ? [
+          `Eres ${protagonistName}, ${protagonistTitle} en Novozarya.`,
+          'La noche pasada, un sabotaje dejó al pueblo sin calefacción ni reservas.',
+          '',
+          'El viejo operador de radio interceptó un aviso crítico:',
+          'una ventisca histórica y una crecida bloquearán la región en cuarenta días.',
+          '',
+          'Tu misión: reorganizar el pueblo, asegurar víveres y',
+          'activar la red de emergencia antes de que Novozarya quede aislada.'
+        ]
+      : (epochNow === 'medieval')
+        ? [
+            'Tu aldea, Kidu-Lam, fue saqueada al amanecer por bandidos del norte.',
+            'Eres Adapa, cazador y último mensajero con fuerzas para viajar.',
+            '',
+            'El anciano del priorato leyó señales de tormenta en el cielo:',
+            'en cuarenta días, una riada cubrirá campos y caminos.',
+            '',
+            'Tu misión: llevar el aviso a las villas del norte',
+            'antes de que el reino quede aislado.'
+          ]
+        : [
+            'Tu aldea, Kidu-Lam, fue arrasada por raiders del norte al amanecer.',
+            'Eres Adapa — cazador, superviviente, el único con la mente despejada.',
+            '',
+            'El anciano del templo ha leído los presagios en los astros:',
+            'en cuarenta días, el gran diluvio llegará y lo borrará todo.',
+            '',
+            'Tu misión: llevar el aviso a las ciudades del norte',
+            'antes de que las aguas lo sepulten todo.'
+          ];
     const lh = 22;
     const startY = cy - ((lore.length - 1) * lh) / 2;
     lore.forEach((line, i) => ctx.fillText(line, cx, startY + i * lh));
@@ -10118,11 +11100,15 @@ function drawIntroSequence(ctx, W, H) {
     ctx.shadowBlur = 20;
     ctx.fillStyle = '#FFD27A';
     ctx.font = 'bold 34px serif';
-    ctx.fillText('ADAPA Y EL DILUVIO', cx, cy - 10);
+    if (epochNow === 'urss') ctx.fillText('OPERACIÓN NOVOZARYA', cx, cy - 10);
+    else if (epochNow === 'medieval') ctx.fillText('ADAPA Y LA TORMENTA', cx, cy - 10);
+    else ctx.fillText('ADAPA Y EL DILUVIO', cx, cy - 10);
     ctx.shadowBlur = 0;
     ctx.font = 'italic 15px serif';
     ctx.fillStyle = 'rgba(255,240,210,0.75)';
-    ctx.fillText('Una historia de Mesopotamia', cx, cy + 26);
+    if (epochNow === 'urss') ctx.fillText('Una historia de un pueblo soviético', cx, cy + 26);
+    else if (epochNow === 'medieval') ctx.fillText('Una crónica del reino medieval', cx, cy + 26);
+    else ctx.fillText('Una historia de Mesopotamia', cx, cy + 26);
     ctx.font = '11px monospace';
     ctx.fillStyle = 'rgba(200,200,200,0.45)';
     ctx.fillText('[ cualquier tecla para continuar ]', cx, cy + 62);
@@ -10161,12 +11147,23 @@ function openNpcDialogue(npc) {
         // First meeting: deliver the main quest
         lines = npc._storyLines;
       } else if (ch === 1) {
-        lines = ['¡Que los dioses te guíen, Adapa! Tu camino te lleva al norte.',
-                 'Busca a la Sacerdotisa Enlil-Ama en el templo de Nínagara.',
-                 'No te demores. Los presagios no mienten.'];
+        if ((window._currentEpoch || 'mesopotamia') === 'urss') {
+          lines = ['Mantente firme, camarada Adapa. Tu camino sigue al norte.',
+                   'Busca a Konstantin Markov en la Casa del Soviet de Novozarya.',
+                   'No te retrases. El informe de crecida es real.'];
+        } else {
+          lines = ['¡Que los dioses te guíen, Adapa! Tu camino te lleva al norte.',
+                   'Busca a la Sacerdotisa Enlil-Ama en el templo de Nínagara.',
+                   'No te demores. Los presagios no mienten.'];
+        }
       } else if (ch >= 2) {
-        lines = ['Siento el cambio en el viento... algo ha cambiado en el norte.',
-                 'Confío en ti, Adapa. Sigue adelante.'];
+        if ((window._currentEpoch || 'mesopotamia') === 'urss') {
+          lines = ['El viento trae olor a combustible y barro... algo cambió en el norte.',
+                   'Confío en ti, Adapa. Mantén la ruta.'];
+        } else {
+          lines = ['Siento el cambio en el viento... algo ha cambiado en el norte.',
+                   'Confío en ti, Adapa. Sigue adelante.'];
+        }
       }
     } else if (npc.npcType === 'priestess') {
       if (ch <= 1 && npc._storyLines) {
@@ -10176,22 +11173,45 @@ function openNpcDialogue(npc) {
         const food = inventory['food'] || 0;
         const stone = inventory['stone'] || 0;
         if (food >= 5 && stone >= 3) {
-          lines = ['¡Adapa! Veo que traes las ofrendas.',
-                   'Cinco haces de cebada y tres piedras del río... es suficiente.',
-                   'El ritual de Enlil comenzará ahora. Silencio y reverencia.',
-                   '...', '...los dioses escuchan.',
-                   'El ritual ha concluido. Los diques aguantarán el diluvio.',
-                   'Ur-Nammu ya ha dado las órdenes. Nínagara se prepara.',
-                   'Tu aldea, Kidu-Lam, también recibirá ayuda. Lo juro ante Enlil.',
-                   '[ Las ofrendas han sido aceptadas. Historia completada. ]'];
+          if ((window._currentEpoch || 'mesopotamia') === 'urss') {
+            lines = ['Adapa, buen trabajo. Traes los recursos solicitados.',
+                     'Cinco lotes de comida y tres cargas de piedra... suficiente.',
+                     'Activaremos el plan de contingencia del distrito. Mantén silencio.',
+                     '...', '...las brigadas ya están en marcha.',
+                     'Recuerda esto: la confianza es buena, pero el control es mejor.',
+                     'El plan se ejecutó. Los diques y bombas resistirán la crecida.',
+                     'Markov ya ha firmado las órdenes. Novozarya se prepara.',
+                     'Tu asentamiento, Kidu-Lam, también recibirá convoyes de apoyo.',
+                     '[ Recursos entregados. Historia completada. ]'];
+          } else {
+            lines = ['¡Adapa! Veo que traes las ofrendas.',
+                     'Cinco haces de cebada y tres piedras del río... es suficiente.',
+                     'El ritual de Enlil comenzará ahora. Silencio y reverencia.',
+                     '...', '...los dioses escuchan.',
+                     'El ritual ha concluido. Los diques aguantarán el diluvio.',
+                     'Ur-Nammu ya ha dado las órdenes. Nínagara se prepara.',
+                     'Tu aldea, Kidu-Lam, también recibirá ayuda. Lo juro ante Enlil.',
+                     '[ Las ofrendas han sido aceptadas. Historia completada. ]'];
+          }
         } else {
-          lines = [`Aún no tienes todo lo necesario, ${(window.char && window.char.name) || 'Adapa'}.`,
-                   `Necesito 5 comida y 3 piedra. Llevas: ${food}/5 comida, ${stone}/3 piedra.`,
-                   'Regresa cuando tengas las ofrendas completas.'];
+          if ((window._currentEpoch || 'mesopotamia') === 'urss') {
+            lines = [`Aún faltan suministros, ${(window.char && window.char.name) || 'Adapa'}.`,
+                     `Se requieren 5 comida y 3 piedra. Llevas: ${food}/5 comida, ${stone}/3 piedra.`,
+                     'Vuelve cuando completes el cargamento.'];
+          } else {
+            lines = [`Aún no tienes todo lo necesario, ${(window.char && window.char.name) || 'Adapa'}.`,
+                     `Necesito 5 comida y 3 piedra. Llevas: ${food}/5 comida, ${stone}/3 piedra.`,
+                     'Regresa cuando tengas las ofrendas completas.'];
+          }
         }
       } else if (ch >= 3) {
-        lines = ['Los dioses están satisfechos. Nínagara resistirá el diluvio.',
-                 'Tu nombre quedará grabado en las tablillas de arcilla para siempre.'];
+        if ((window._currentEpoch || 'mesopotamia') === 'urss') {
+          lines = ['El comité está conforme. Novozarya resistirá la crecida.',
+                   'Tu nombre figurará en el informe de reconstrucción firmado por Markov.'];
+        } else {
+          lines = ['Los dioses están satisfechos. Nínagara resistirá el diluvio.',
+                   'Tu nombre quedará grabado en las tablillas de arcilla para siempre.'];
+        }
       }
     } else if (npc.npcType === 'scribe' && npc._storyLines) {
       // Scribe always cycles through lore lines
@@ -10413,9 +11433,11 @@ function drawCloudOverlay() {
 
 canvas.addEventListener('mousemove', e => {
   if (startLocked) return;
-  const rect = canvas.getBoundingClientRect();
-  const mx = e.clientX - rect.left;
-  const my = e.clientY - rect.top;
+  const ptr = getCanvasPointerPosition(e);
+  const mx = ptr.x;
+  const my = ptr.y;
+  const mxCss = ptr.cssX;
+  const myCss = ptr.cssY;
 
   if (isZooming) {
     markCameraInput();
@@ -10428,14 +11450,19 @@ canvas.addEventListener('mousemove', e => {
   // update selection rectangle when ctrl-dragging
   if (_isSelecting && _selectStart) {
     try {
-      const rectEl = canvas.getBoundingClientRect();
-      const sx = Math.max(0, Math.min(canvas.width, e.clientX - rectEl.left));
-      const sy = Math.max(0, Math.min(canvas.height, e.clientY - rectEl.top));
+      const sx = mx;
+      const sy = my;
+      const sxCss = Math.max(0, Math.min(ptr.rect.width, mxCss));
+      const syCss = Math.max(0, Math.min(ptr.rect.height, myCss));
       const x = Math.min(_selectStart.sx, sx);
       const y = Math.min(_selectStart.sy, sy);
       const w = Math.abs(sx - _selectStart.sx);
       const h = Math.abs(sy - _selectStart.sy);
-      _selectRect = { x, y, w, h };
+      const xCss = Math.min(_selectStart.sxCss, sxCss);
+      const yCss = Math.min(_selectStart.syCss, syCss);
+      const wCss = Math.abs(sxCss - _selectStart.sxCss);
+      const hCss = Math.abs(syCss - _selectStart.syCss);
+      _selectRect = { x, y, w, h, xCss, yCss, wCss, hCss };
       // live preview: count selectable entities inside current rect
       try {
         const tl = screenToWorldFloat(x, y);
@@ -10479,7 +11506,7 @@ canvas.addEventListener('mousemove', e => {
   }
 
   hoverCell = screenToWorld(mx, my);
-  showTooltip(hoverCell.col, hoverCell.row, mx, my);
+  showTooltip(hoverCell.col, hoverCell.row, mxCss, myCss);
 
   // update build drag selection when in edit mode
   if (isBuildDragging && buildDragStart) {
@@ -10513,16 +11540,16 @@ canvas.addEventListener('mousedown', e => {
     canvas.style.cursor = 'ns-resize';
     e.preventDefault();
   } else if (e.button === 0) {
-    const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
+    const ptr = getCanvasPointerPosition(e);
+    const mx = ptr.x;
+    const my = ptr.y;
     const { col, row } = screenToWorld(mx, my);
     // RTS-style selection: start a selection rectangle when Ctrl (or Meta) is held
     if ((e.ctrlKey || e.metaKey) && !isPanning && !isZooming) {
       try {
         _isSelecting = true;
-        _selectStart = { sx: mx, sy: my };
-        _selectRect = { x: mx, y: my, w: 0, h: 0 };
+        _selectStart = { sx: mx, sy: my, sxCss: ptr.cssX, syCss: ptr.cssY };
+        _selectRect = { x: mx, y: my, w: 0, h: 0, xCss: ptr.cssX, yCss: ptr.cssY, wCss: 0, hCss: 0 };
         try { _updateSelectionOverlay(_selectRect); } catch (e) {}
         // prevent browser text selection while dragging
         try { document.body.style.userSelect = 'none'; } catch (u) {}
@@ -10630,9 +11657,9 @@ let zoomAnimating = false;
 canvas.addEventListener('wheel', (ev) => {
   if (startLocked) return;
   ev.preventDefault();
-  const rect = canvas.getBoundingClientRect();
-  const mx = ev.clientX - rect.left;
-  const my = ev.clientY - rect.top;
+  const ptr = getCanvasPointerPosition(ev);
+  const mx = ptr.x;
+  const my = ptr.y;
   // capture world point under cursor before zoom
   const world = screenToWorldFloat(mx, my);
   // adjust target zoom factor (do not apply instantly)
@@ -10658,9 +11685,9 @@ canvas.addEventListener('contextmenu', e => {
   if (startLocked) return;
   // if user is zooming or panning, don't set move target
   if (isZooming || isPanning) return;
-  const rect = canvas.getBoundingClientRect();
-  const mx = e.clientX - rect.left;
-  const my = e.clientY - rect.top;
+  const ptr = getCanvasPointerPosition(e);
+  const mx = ptr.x;
+  const my = ptr.y;
   const pos = screenToWorldFloat(mx, my);
   if (!editMode && _getSelectedEntities().length > 0) {
     _issueGroupMoveCommand(pos.x, pos.y, { radius: 0.65 });
@@ -10933,7 +11960,7 @@ document.addEventListener('keydown', e => {
     }
   }
   if (editMode) {
-    const map = { h:'house', v:'mesopotamian_villa_detailed', f:'farm', t:'temple', k:'market', g:'granary', z:'ziggurat', d:'demolish', Escape:null };
+    const map = getEpochKeyBuildMap();
     if (e.key in map) {
       const type = map[e.key];
       document.querySelectorAll('.build-btn, #btn-demolish').forEach(b => b.classList.remove('selected'));
@@ -11392,8 +12419,8 @@ function init() {
   // Center camera on river area
   centerCamera();
 
-  addLog((_activeEpoch && _activeEpoch.foundedLog) || 'Ciudad fundada en la orilla del Éufrates.');
-  addLog('Atajos: H=Casa V=Villa F=Granja T=Templo K=Mercado G=Granero Z=Zigurat D=Demoler');
+  addLog((_activeEpoch && _activeEpoch.foundedLog) || 'Novozarya establecida a orillas del Río Ob Nord, bajo protocolo estatal.');
+  addLog(getEpochShortcutSummary());
   notify((_activeEpoch && _activeEpoch.welcomeLog) || '¡Bienvenido a Mesopotamia! Construye tu ciudad.');
 }
 
@@ -11451,9 +12478,9 @@ function postMapInit() {
   try { updateBuildMenuFromGrid(); } catch (e) {}
   try { centerCamera(); } catch (e) {}
   try { createTimeControlWidget(); } catch (e) {}
-  addLog('Ciudad fundada en la orilla del Éufrates.');
-  addLog('Atajos: H=Casa V=Villa F=Granja T=Templo K=Mercado G=Granero Z=Zigurat D=Demoler');
-  notify('¡Bienvenido a Mesopotamia! Construye tu ciudad.');
+  addLog(getEpochProfile(window._currentEpoch || 'mesopotamia').foundedLog || 'Novozarya establecida a orillas del Río Ob Nord, bajo protocolo estatal.');
+  addLog(getEpochShortcutSummary());
+  notify(getEpochProfile(window._currentEpoch || 'mesopotamia').welcomeLog || '¡Bienvenido a Mesopotamia! Construye tu ciudad.');
   try { startRenderLoop(); } catch (e) {}
   try { if (window.EventManager && typeof window.EventManager.init === 'function') { try { window.EventManager.init(); } catch (e) {} } } catch (e) {}
   // build tree atlas for faster tree draws

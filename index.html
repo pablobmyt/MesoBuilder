@@ -15,17 +15,17 @@
     <div class="res-group">
       <div class="res-item">
         <canvas class="res-icon" id="icon-wheat" width="18" height="18"></canvas>
-        <span>Trigo:</span>
+        <span id="label-res-wheat">Trigo:</span>
         <span class="res-val" id="res-wheat">50</span>
       </div>
       <div class="res-item">
         <canvas class="res-icon" id="icon-brick" width="18" height="18"></canvas>
-        <span>Ladrillos:</span>
+        <span id="label-res-brick">Ladrillos:</span>
         <span class="res-val" id="res-brick">40</span>
       </div>
       <div class="res-item">
         <canvas class="res-icon" id="icon-pop" width="18" height="18"></canvas>
-        <span>Población:</span>
+        <span id="label-res-pop">Población:</span>
         <span class="res-val" id="res-pop">0</span>
       </div>
     </div>
@@ -60,7 +60,7 @@
     <!-- RIGHT PANEL -->
     <div id="panel">
       <div class="panel-section">
-        <div class="panel-title">Construir</div>
+        <div class="panel-title" id="panel-title-build">Construir</div>
 
         <button class="build-btn" data-type="house" id="btn-house">
           <canvas class="bicon" id="icon-house" width="22" height="22"></canvas>
@@ -129,18 +129,18 @@
         <button id="btn-demolish" data-type="demolish">
           <span style="font-size:1.1em;">&#x2716;</span>
           <div>
-            <span class="bname" style="color:inherit;">Demoler</span>
-            <span class="bcost" style="color:#884444;">Recupera 50%</span>
+            <span class="bname" id="btn-demolish-name" style="color:inherit;">Demoler</span>
+            <span class="bcost" id="btn-demolish-desc" style="color:#884444;">Recupera 50%</span>
           </div>
         </button>
       </div>
 
       <div class="panel-section">
-        <div class="panel-title">Producción / Turno</div>
+        <div class="panel-title" id="panel-title-production">Producción / Turno</div>
         <div style="font-size:0.65rem;color:var(--ui-dim);line-height:1.8;">
-          <div>&#x1F33E; <span id="prod-wheat">+0</span> trigo</div>
-          <div>&#x1F9F1; <span id="prod-brick">+0</span> ladrillos</div>
-          <div>&#x1F464; <span id="prod-pop">+0</span> población</div>
+          <div>&#x1F33E; <span id="prod-wheat">+0</span> <span id="prod-label-wheat">trigo</span></div>
+          <div>&#x1F9F1; <span id="prod-brick">+0</span> <span id="prod-label-brick">ladrillos</span></div>
+          <div>&#x1F464; <span id="prod-pop">+0</span> <span id="prod-label-pop">población</span></div>
         </div>
       </div>
 
@@ -155,8 +155,8 @@
       </div>
 
       <div id="log">
-        <p class="new">&#x25B6; Bienvenido a Mesopotamia.</p>
-        <p>Construye cerca del río para prosperar.</p>
+        <p class="new">&#x25B6; Bienvenido.</p>
+        <p>Prepara tu asentamiento.</p>
       </div>
     </div>
 
@@ -356,7 +356,7 @@
       <div id="menu-panel-character" style="display:grid;grid-template-columns:1fr auto;gap:14px;align-items:start">
         <!-- Left: customisation fields -->
         <div style="display:flex;flex-direction:column;gap:10px">
-          <div>
+          <div id="menu-char-name-wrap">
             <label style="font-size:12px;color:#c8b87a;display:block;margin-bottom:4px">Nombre del gobernante</label>
             <input id="menu-char-name" type="text" maxlength="14" placeholder="Tu nombre" style="width:100%;padding:8px;border-radius:6px;background:#111;border:1px solid rgba(255,255,255,0.08);color:#fff;box-sizing:border-box">
           </div>
@@ -364,6 +364,7 @@
             <label style="font-size:12px;color:#c8b87a;display:block;margin-bottom:5px">Apariencia</label>
             <div id="menu-char-presets" style="display:flex;flex-wrap:wrap;gap:5px"></div>
           </div>
+          <div id="menu-urss-intro" style="display:none;padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.08);background:rgba(0,0,0,0.22);font-size:12px;color:#d8d8d8;line-height:1.35"></div>
           <div>
             <label style="font-size:12px;color:#c8b87a;display:block;margin-bottom:5px">Colores</label>
             <div id="menu-color-rows" style="display:flex;flex-direction:column;gap:5px"></div>
@@ -392,6 +393,15 @@
         </div>
       </div>
       <div id="menu-panel-options" style="display:none;grid-template-columns:1fr 1fr;gap:10px">
+        <div style="grid-column:1 / span 2">
+          <label style="font-size:13px">Época</label>
+          <select id="menu-epoch" style="width:100%;padding:8px;border-radius:6px;background:#111;border:1px solid rgba(255,255,255,0.04);color:#fff">
+            <option value="mesopotamia">Mesopotamia</option>
+            <option value="urss">Antigua URSS</option>
+            <option value="medieval">Edad Media</option>
+          </select>
+          <div style="font-size:12px;color:#c8b87a;margin-top:4px">La época se aplicará al crear la partida.</div>
+        </div>
         <div>
           <label style="font-size:13px">Preset de mundo</label>
           <select id="menu-density-preset" style="width:100%;padding:8px;border-radius:6px;background:#111;border:1px solid rgba(255,255,255,0.04);color:#fff">
@@ -777,14 +787,46 @@
       cloth: ['#8B6914','#2E6FA3','#4A7C3F','#A0522D','#D2691E'],
       trim:  ['#DAA520','#C8A84B','#E8D5A3','#F5ECD7']
     };
-    const MENU_PRESETS = [
-      { id:'scribe',   name:'Escriba',      title:'Custodio del saber',   outfit:'robe',   palette:{ skin:'#CFA07A', hair:'#2C1A0A', cloth:'#2E6FA3', trim:'#DAA520' } },
-      { id:'builder',  name:'Constructor',  title:'Maestro de obras',     outfit:'worker', palette:{ skin:'#D2A178', hair:'#1A1208', cloth:'#A0522D', trim:'#E8D5A3' } },
-      { id:'priest',   name:'Sacerdote',    title:'Voz del templo',       outfit:'robe',   palette:{ skin:'#CFA07A', hair:'#3A2612', cloth:'#F5ECD7', trim:'#8B6914' } },
-      { id:'scout',    name:'Explorador',   title:'Ojos del desierto',    outfit:'shawl',  palette:{ skin:'#C79063', hair:'#3D2510', cloth:'#4A7C3F', trim:'#C8A84B' } },
-      { id:'merchant', name:'Mercader',     title:'Señor de tratos',      outfit:'tunic',  palette:{ skin:'#C8956C', hair:'#2B1C12', cloth:'#D2691E', trim:'#C8A84B' } }
-    ];
-    window._menuChar = { name:'', preset:'builder', title:'Maestro de obras', outfit:'worker', dir:'down', palette:{ skin:'#D2A178', hair:'#1A1208', cloth:'#A0522D', trim:'#E8D5A3' } };
+    const MENU_PRESETS_BY_EPOCH = {
+      mesopotamia: [
+        { id:'scribe',   name:'Escriba',      title:'Custodio del saber',   outfit:'robe',   palette:{ skin:'#CFA07A', hair:'#2C1A0A', cloth:'#2E6FA3', trim:'#DAA520' } },
+        { id:'builder',  name:'Constructor',  title:'Maestro de obras',     outfit:'worker', palette:{ skin:'#D2A178', hair:'#1A1208', cloth:'#A0522D', trim:'#E8D5A3' } },
+        { id:'priest',   name:'Sacerdote',    title:'Voz del templo',       outfit:'robe',   palette:{ skin:'#CFA07A', hair:'#3A2612', cloth:'#F5ECD7', trim:'#8B6914' } },
+        { id:'scout',    name:'Explorador',   title:'Ojos del desierto',    outfit:'shawl',  palette:{ skin:'#C79063', hair:'#3D2510', cloth:'#4A7C3F', trim:'#C8A84B' } },
+        { id:'merchant', name:'Mercader',     title:'Señor de tratos',      outfit:'tunic',  palette:{ skin:'#C8956C', hair:'#2B1C12', cloth:'#D2691E', trim:'#C8A84B' } }
+      ],
+      urss: [
+        { id:'scribe',   name:'Konstantin Markov', title:'Línea Dura del Partido', outfit:'robe',   palette:{ skin:'#CFA07A', hair:'#1A1208', cloth:'#8B1E2A', trim:'#F0D2A8' } },
+        { id:'builder',  name:'Gavril Denisov',    title:'Reformista Campesino',    outfit:'worker', palette:{ skin:'#D2A178', hair:'#2C1A0A', cloth:'#B94A3A', trim:'#E8D5A3' } },
+        { id:'priest',   name:'Arkady Volkov',     title:'Mariscal de Acero',        outfit:'armor',  palette:{ skin:'#CFA07A', hair:'#1A1208', cloth:'#5C6673', trim:'#D7B35E' } },
+        { id:'scout',    name:'Nadezhda Sokolova', title:'Exploradora de Frontera',  outfit:'shawl',  palette:{ skin:'#C79063', hair:'#2C1A0A', cloth:'#6F3B2A', trim:'#C29A7A' } },
+        { id:'merchant', name:'Irina Petrova',     title:'Intendente Estatal',       outfit:'tunic',  palette:{ skin:'#C8956C', hair:'#2B1C12', cloth:'#7A1018', trim:'#D7B35E' } }
+      ],
+      medieval: [
+        { id:'scribe',   name:'Aldric',  title:'Escribano',         outfit:'robe',   palette:{ skin:'#CFA07A', hair:'#2C1A0A', cloth:'#2E6FA3', trim:'#DAA520' } },
+        { id:'builder',  name:'Gareth',  title:'Maestro cantero',   outfit:'worker', palette:{ skin:'#D2A178', hair:'#1A1208', cloth:'#A0522D', trim:'#E8D5A3' } },
+        { id:'priest',   name:'Elena',   title:'Prior del templo',  outfit:'robe',   palette:{ skin:'#CFA07A', hair:'#3A2612', cloth:'#F5ECD7', trim:'#8B6914' } },
+        { id:'scout',    name:'Bran',    title:'Rastreador',        outfit:'shawl',  palette:{ skin:'#C79063', hair:'#3D2510', cloth:'#4A7C3F', trim:'#C8A84B' } },
+        { id:'merchant', name:'Roderic', title:'Mercader',          outfit:'tunic',  palette:{ skin:'#C8956C', hair:'#2B1C12', cloth:'#D2691E', trim:'#C8A84B' } }
+      ]
+    };
+
+    function getMenuEpoch() {
+      try { return localStorage.getItem('meso.currentEpoch') || 'mesopotamia'; } catch (e) { return 'mesopotamia'; }
+    }
+
+    function getMenuPresets() {
+      const epoch = getMenuEpoch();
+      return MENU_PRESETS_BY_EPOCH[epoch] || MENU_PRESETS_BY_EPOCH.mesopotamia;
+    }
+
+    function getDefaultMenuPreset() {
+      const presets = getMenuPresets();
+      return presets.find(p => p.id === 'builder') || presets[0];
+    }
+
+    const _defaultPreset = getDefaultMenuPreset();
+    window._menuChar = { name:'', preset:_defaultPreset.id, title:_defaultPreset.title, outfit:_defaultPreset.outfit, dir:'down', palette:{ ..._defaultPreset.palette } };
 
     function drawMenuPixels(ctx, palette, x, y, scale, opts) {
       opts = opts || {};
@@ -833,7 +875,11 @@
       const mc = window._menuChar;
       drawMenuPortrait(canvas, { outfit: mc.outfit, dir: mc.dir, frame: Math.floor(Date.now() / 220) % 2, palette: mc.palette });
       const nameInput = document.getElementById('menu-char-name');
-      const displayName = (nameInput && nameInput.value.trim()) || mc.name || 'Gobernante';
+      const epoch = getMenuEpoch();
+      const presets = getMenuPresets();
+      const chosen = presets.find(p => p.id === mc.preset) || presets[0];
+      const fixedUrssName = (epoch === 'urss' && chosen) ? chosen.name : '';
+      const displayName = fixedUrssName || (nameInput && nameInput.value.trim()) || mc.name || 'Gobernante';
       const nameEl = document.getElementById('menu-preview-name');
       const titleEl = document.getElementById('menu-preview-title');
       const outfitEl = document.getElementById('menu-preview-outfit');
@@ -845,7 +891,8 @@
       const cont = document.getElementById('menu-char-presets');
       if (!cont) return;
       cont.innerHTML = '';
-      MENU_PRESETS.forEach(p => {
+      const presets = getMenuPresets();
+      presets.forEach(p => {
         const btn = document.createElement('button');
         btn.textContent = p.name;
         const isActive = window._menuChar.preset === p.id;
@@ -857,7 +904,9 @@
           window._menuChar.title = p.title;
           window._menuChar.outfit = p.outfit;
           window._menuChar.palette = { ...p.palette };
-          if (ni && !ni.value.trim()) { ni.value = p.name; window._menuChar.name = p.name; }
+          const epochNow = getMenuEpoch();
+          if (ni && (epochNow === 'urss' || !ni.value.trim())) { ni.value = p.name; window._menuChar.name = p.name; }
+          if (window._syncMenuCharacterUiForEpoch) window._syncMenuCharacterUiForEpoch();
           renderMenuPresets(); renderMenuColorRows(); renderMenuOutfits(); updateMenuPreview();
         });
         cont.appendChild(btn);
@@ -881,6 +930,7 @@
           sw.style.cssText = 'width:18px;height:18px;border-radius:3px;cursor:pointer;flex-shrink:0;background:' + color + ';' +
             (isActive ? 'outline:2px solid #DAA520;outline-offset:1px;' : 'outline:1px solid rgba(255,255,255,0.1);');
           sw.addEventListener('click', () => {
+            if (getMenuEpoch() === 'urss') return;
             window._menuChar.palette = { ...window._menuChar.palette, [key]: color };
             window._menuChar.preset = 'custom';
             renderMenuPresets(); renderMenuColorRows(); updateMenuPreview();
@@ -901,12 +951,55 @@
         btn.style.cssText = 'padding:5px 9px;border-radius:6px;cursor:pointer;font-size:12px;' +
           (isActive ? 'background:#2E6FA3;border:1px solid #5a9fd4;color:#fff;font-weight:700;' : 'background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);color:#c8b87a;');
         btn.addEventListener('click', () => {
+          if (getMenuEpoch() === 'urss') return;
           window._menuChar.outfit = id;
           window._menuChar.preset = 'custom';
           renderMenuPresets(); renderMenuOutfits(); updateMenuPreview();
         });
         cont.appendChild(btn);
       });
+    }
+
+    function syncMenuCharacterUiForEpoch() {
+      try {
+        const epochNow = getMenuEpoch();
+        const isUrss = epochNow === 'urss';
+        const nameWrap = document.getElementById('menu-char-name-wrap');
+        const nameInput = document.getElementById('menu-char-name');
+        const intro = document.getElementById('menu-urss-intro');
+        const randomBtn = document.getElementById('menu-char-random');
+        const resetBtn = document.getElementById('menu-char-reset');
+        const colors = document.getElementById('menu-color-rows');
+        const outfits = document.getElementById('menu-char-outfits');
+        if (nameWrap) nameWrap.style.display = isUrss ? 'none' : 'block';
+        if (randomBtn) randomBtn.style.display = isUrss ? 'none' : 'inline-block';
+        if (resetBtn) resetBtn.style.display = isUrss ? 'none' : 'inline-block';
+        if (colors) { colors.style.opacity = isUrss ? '0.45' : '1'; colors.style.pointerEvents = isUrss ? 'none' : 'auto'; }
+        if (outfits) { outfits.style.opacity = isUrss ? '0.45' : '1'; outfits.style.pointerEvents = isUrss ? 'none' : 'auto'; }
+
+        const presets = getMenuPresets();
+        const chosen = presets.find(p => p.id === window._menuChar.preset) || presets[0];
+        if (isUrss && chosen) {
+          window._menuChar.preset = chosen.id;
+          window._menuChar.title = chosen.title;
+          window._menuChar.outfit = chosen.outfit;
+          window._menuChar.palette = { ...chosen.palette };
+          window._menuChar.name = chosen.name;
+          if (nameInput) {
+            nameInput.value = chosen.name;
+            nameInput.readOnly = true;
+            nameInput.disabled = true;
+          }
+          if (intro) {
+            intro.style.display = 'block';
+            intro.textContent = `${chosen.name}, ${chosen.title}. Novozarya atraviesa un invierno severo: los suministros se congelan, las rutas colapsan y el comité local te encomienda mantener vivo el pueblo. Tu historia comienza con una orden simple: reorganizar el distrito antes de la gran tormenta.`;
+          }
+        } else {
+          if (nameInput) { nameInput.readOnly = false; nameInput.disabled = false; }
+          if (intro) intro.style.display = 'none';
+        }
+        updateMenuPreview();
+      } catch (e) {}
     }
     function initMenuCharEditor() {
       try {
@@ -944,9 +1037,25 @@
           }
         }, 220);
         updateMenuPreview();
+        syncMenuCharacterUiForEpoch();
       } catch (e) { console.warn('initMenuCharEditor', e); }
     }
+
+    window._refreshMenuCharForEpoch = function() {
+      try {
+        const presets = getMenuPresets();
+        const chosen = presets.find(p => p.id === window._menuChar.preset) || getDefaultMenuPreset();
+        if (window._menuChar.preset !== 'custom') {
+          window._menuChar.preset = chosen.id;
+          window._menuChar.title = chosen.title;
+          window._menuChar.outfit = chosen.outfit;
+          window._menuChar.palette = { ...chosen.palette };
+        }
+        renderMenuPresets(); renderMenuColorRows(); renderMenuOutfits(); syncMenuCharacterUiForEpoch(); updateMenuPreview();
+      } catch (e) {}
+    };
     window._renderMenuCharEditor = function() { renderMenuPresets(); renderMenuColorRows(); renderMenuOutfits(); updateMenuPreview(); };
+    window._syncMenuCharacterUiForEpoch = syncMenuCharacterUiForEpoch;
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initMenuCharEditor);
     else initMenuCharEditor();
   })();
@@ -955,12 +1064,20 @@
   try {
     const dn = document.getElementById('menu-density-npcs'); const da = document.getElementById('menu-density-animals'); const dv = document.getElementById('menu-density-vegetation');
     const ln = document.getElementById('label-npc'); const la = document.getElementById('label-animals'); const lv = document.getElementById('label-veg');
+    const epochSelect = document.getElementById('menu-epoch');
     const presetSelect = document.getElementById('menu-density-preset');
     const tabCharacter = document.getElementById('menu-start-tab-character');
     const tabOptions = document.getElementById('menu-start-tab-options');
     const charNameInput = document.getElementById('menu-char-name');
     const randomCharBtn = document.getElementById('menu-char-random');
     const resetCharBtn = document.getElementById('menu-char-reset');
+
+    function applyMenuThemeForEpoch(epoch) {
+      try {
+        const key = epoch || 'mesopotamia';
+        document.body.classList.toggle('theme-urss', key === 'urss');
+      } catch (e) {}
+    }
 
     function setDensityValues(npc, animals, vegetation) {
       if (dn) dn.value = String(npc);
@@ -993,11 +1110,27 @@
     const defaults = (window._DEFAULT_DENSITIES && typeof window._DEFAULT_DENSITIES === 'object') ? window._DEFAULT_DENSITIES : (savedDens || { npc: 1.0, animals: 1.0, vegetation: 1.0 });
     setDensityValues(defaults.npc || 1.0, defaults.animals || 1.0, defaults.vegetation || 1.0);
     syncPresetFromSliders();
+    try {
+      const savedEpoch = localStorage.getItem('meso.currentEpoch') || 'mesopotamia';
+      if (epochSelect) epochSelect.value = savedEpoch;
+      applyMenuThemeForEpoch(savedEpoch);
+      try { if (window._refreshMenuCharForEpoch) window._refreshMenuCharForEpoch(); } catch (e) {}
+    } catch (e) {}
 
     if (dn) dn.addEventListener('input', () => { if (ln) ln.textContent = dn.value; syncPresetFromSliders(); });
     if (da) da.addEventListener('input', () => { if (la) la.textContent = da.value; syncPresetFromSliders(); });
     if (dv) dv.addEventListener('input', () => { if (lv) lv.textContent = dv.value; syncPresetFromSliders(); });
     if (presetSelect) presetSelect.addEventListener('change', () => { applyDensityPreset(presetSelect.value); syncPresetFromSliders(); });
+    if (epochSelect) epochSelect.addEventListener('change', () => {
+      try {
+        const ep = epochSelect.value || 'mesopotamia';
+        localStorage.setItem('meso.currentEpoch', ep);
+        applyMenuThemeForEpoch(ep);
+        if (window._refreshMenuCharForEpoch) window._refreshMenuCharForEpoch();
+        if (window._syncMenuCharacterUiForEpoch) window._syncMenuCharacterUiForEpoch();
+      } catch (e) {}
+    });
+    try { if (window._syncMenuCharacterUiForEpoch) window._syncMenuCharacterUiForEpoch(); } catch (e) {}
 
     if (tabCharacter) tabCharacter.addEventListener('click', () => { showStartupModal('character'); });
     if (tabOptions) tabOptions.addEventListener('click', () => { showStartupModal('options'); });
@@ -1011,11 +1144,18 @@
     if (randomCharBtn) {
       randomCharBtn.addEventListener('click', () => {
         if (!window._menuChar) return;
-        const MNAMES = ['Iktan','Nahuel','Luma','Tariq','Aixa','Naira','Koa','Mara','Enbilulu','Kishar'];
+        const epochNow = (epochSelect && epochSelect.value) || localStorage.getItem('meso.currentEpoch') || 'mesopotamia';
+        const MNAMES = epochNow === 'urss'
+          ? ['Konstantin','Gavril','Arkady','Irina','Nadezhda','Viktor','Sergei','Natalia','Boris','Zoya']
+          : ['Iktan','Nahuel','Luma','Tariq','Aixa','Naira','Koa','Mara','Enbilulu','Kishar'];
         const MSKINS = ['#C8956C','#CFA07A','#D2A178','#B7835E'];
         const MHAIRS = ['#2C1A0A','#3D2510','#1A1208','#5A3A1A'];
-        const MCLOTHS = ['#8B6914','#2E6FA3','#4A7C3F','#A0522D','#D2691E'];
-        const MTRIMS = ['#DAA520','#C8A84B','#E8D5A3','#F5ECD7'];
+        const MCLOTHS = epochNow === 'urss'
+          ? ['#7A1018','#B94A3A','#5C6673','#6F3B2A','#8B1E2A']
+          : ['#8B6914','#2E6FA3','#4A7C3F','#A0522D','#D2691E'];
+        const MTRIMS = epochNow === 'urss'
+          ? ['#D7B35E','#F0D2A8','#C29A7A','#E8D5A3']
+          : ['#DAA520','#C8A84B','#E8D5A3','#F5ECD7'];
         const MOUTFITS = ['tunic','robe','shawl','armor','worker'];
         const rnd = arr => arr[Math.floor(Math.random() * arr.length)];
         if (charNameInput && !charNameInput.value.trim()) { charNameInput.value = rnd(MNAMES); window._menuChar.name = charNameInput.value; }
@@ -1029,11 +1169,16 @@
     if (resetCharBtn) {
       resetCharBtn.addEventListener('click', () => {
         if (charNameInput) charNameInput.value = '';
+        const epochNow = (epochSelect && epochSelect.value) || localStorage.getItem('meso.currentEpoch') || 'mesopotamia';
+        const presets = (epochNow === 'urss')
+          ? [{ id:'builder', title:'Reformista Campesino', outfit:'worker', palette:{ skin:'#D2A178', hair:'#2C1A0A', cloth:'#B94A3A', trim:'#E8D5A3' } }]
+          : [{ id:'builder', title:'Maestro de obras', outfit:'worker', palette:{ skin:'#D2A178', hair:'#1A1208', cloth:'#A0522D', trim:'#E8D5A3' } }];
+        const p = presets[0];
         if (window._menuChar) {
-          window._menuChar.preset = 'builder';
-          window._menuChar.title = 'Maestro de obras';
-          window._menuChar.outfit = 'worker';
-          window._menuChar.palette = { skin:'#D2A178', hair:'#1A1208', cloth:'#A0522D', trim:'#E8D5A3' };
+          window._menuChar.preset = p.id;
+          window._menuChar.title = p.title;
+          window._menuChar.outfit = p.outfit;
+          window._menuChar.palette = { ...p.palette };
         }
         try { if (window._renderMenuCharEditor) window._renderMenuCharEditor(); } catch (e) {}
       });
@@ -1051,8 +1196,15 @@
         };
         window._DEFAULT_DENSITIES = densities;
       } catch (e) {}
+      try {
+        const epoch = (epochSelect && epochSelect.value) ? epochSelect.value : 'mesopotamia';
+        localStorage.setItem('meso.currentEpoch', epoch);
+      } catch (e) {}
       try { localStorage.setItem('meso.menuDensities', JSON.stringify(densities)); } catch (e) {}
-      const name = (charNameInput || {}).value || '';
+      const selectedEpoch = (epochSelect && epochSelect.value) ? epochSelect.value : (localStorage.getItem('meso.currentEpoch') || 'mesopotamia');
+      const name = (selectedEpoch === 'urss')
+        ? ((window._menuChar && window._menuChar.name) || ((charNameInput || {}).value || ''))
+        : ((charNameInput || {}).value || '');
       try { if (name) localStorage.setItem('meso.playerName', name); } catch (e) {}
       // save full character data for engine to read
       try {
@@ -1084,7 +1236,7 @@
     }
   } catch (e) {}
 </script>
-<!-- Warm onboarding and notification helpers (hybrid experience) -->
+<!-- Notification helpers -->
 <style>
   /* Warm notification bubble */
   .meso-notif {
@@ -1092,30 +1244,7 @@
   }
   .meso-notif .title { font-weight:700; color:#FFD27A; margin-bottom:6px }
   .meso-notif .desc { color:#E8DCC2; font-size:12px; line-height:1.3 }
-  .meso-onboard { position:fixed; inset:0; display:none; align-items:center; justify-content:center; z-index:100020 }
-  .meso-onboard .card { width:760px; max-width:94%; background:linear-gradient(180deg,#0e0c08,#13100b); color:#fff; border-radius:12px; padding:18px; box-shadow:0 16px 60px rgba(0,0,0,0.6); }
-  .meso-onboard h2 { margin:0 0 8px 0; color:#FFD27A }
-  .meso-onboard p { color:#dcd1b0 }
-  .meso-onboard .actions { display:flex; gap:8px; justify-content:flex-end; margin-top:12px }
-  .meso-onboard button { padding:8px 10px; border-radius:8px; border:none }
-  .meso-btn-primary { background:#DAA520; color:#111; font-weight:700 }
-  .meso-btn-ghost { background:transparent; border:1px solid rgba(255,255,255,0.06); color:#c8b87a }
 </style>
-<div id="meso-onboard" class="meso-onboard">
-  <div class="card">
-    <h2>Bienvenido a MesoBuilder — Versión Híbrida</h2>
-    <p>Has elegido un camino híbrido: construye y gestiona tu ciudad, pero prepárate para eventos que pondrán a prueba tu habilidad de supervivencia. Empezaremos con lo esencial y añadiremos capas según lo validemos.</p>
-    <ul style="color:#e6ddc3;margin-top:8px">
-      <li>Coloca edificios, gestiona trigo y ladrillo.</li>
-      <li>Cuidado con eventos (sequía, saqueadores, festivales).</li>
-      <li>Interfaz más cálida y explicativa para orientación.</li>
-    </ul>
-    <div class="actions">
-      <button id="meso-onboard-skip" class="meso-btn-ghost">Saltar</button>
-      <button id="meso-onboard-start" class="meso-btn-primary">Comenzar partida</button>
-    </div>
-  </div>
-</div>
 <script>
   // show a brief in-game notification
   window.showGameNotification = function(title, desc, timeout = 6000) {
@@ -1126,28 +1255,6 @@
       setTimeout(() => { try { el.style.transition = 'opacity 280ms ease'; el.style.opacity = '0'; setTimeout(() => { try { el.remove(); } catch (e) {} }, 320); } catch (e) {} }, timeout);
     } catch (e) { console.warn('showGameNotification', e); }
   };
-
-  // onboarding modal handlers
-  (function(){
-    const modal = document.getElementById('meso-onboard');
-    const skip = document.getElementById('meso-onboard-skip');
-    const start = document.getElementById('meso-onboard-start');
-    if (!modal) return;
-    function show() { modal.style.display = 'flex'; }
-    function hide() { modal.style.display = 'none'; }
-    if (skip) skip.addEventListener('click', () => { hide(); });
-    if (start) start.addEventListener('click', () => {
-      hide();
-      // start the engine with a fresh map
-      try { localStorage.setItem('meso.forceNew','1'); } catch (e) {}
-      try { if (typeof loadEngineAndStart === 'function') loadEngineAndStart({ forceNew:true }); } catch (e) {}
-    });
-    // show onboard once per session (unless user previously dismissed)
-    try {
-      const seen = sessionStorage.getItem('meso.onboard.shown');
-      if (!seen) { show(); sessionStorage.setItem('meso.onboard.shown','1'); }
-    } catch (e) { show(); }
-  })();
 
   // listen to events dispatched by EventManager
   window.addEventListener('meso:game-event', (ev) => {

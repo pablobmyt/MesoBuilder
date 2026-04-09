@@ -20,22 +20,22 @@ export function placeStone(col, row) {
 export function placeTree(col, row, variant) {
   // Mesopotamian flora types (primary) + legacy types for backward compat
   const types = [
-    'date_palm','reed_cluster','gallery_tree','tamarisk','euphrates_poplar',
-    'steppe_shrub','barley','typha','scrub','bush','shrub','tallgrass'
+    'birch','willow','aspen','pine','fir',
+    'steppe_shrub','hay','sedge','scrub','bush','shrub','winter_grass'
   ];
   const chosen = variant || types[Math.floor(Math.random() * types.length)];
   const id = 'tree-' + Date.now() + '-' + Math.random().toString(36).slice(2,6);
   // Render size hints (tile-relative)
   let size = 1.0;
-  if (chosen === 'date_palm') size = 2.2;
-  else if (chosen === 'reed_cluster') size = 1.6;
-  else if (chosen === 'gallery_tree') size = 1.9;
-  else if (chosen === 'tamarisk') size = 1.8;
-  else if (chosen === 'euphrates_poplar') size = 2.4;
+  if (chosen === 'birch') size = 2.2;
+  else if (chosen === 'willow') size = 1.6;
+  else if (chosen === 'aspen') size = 1.9;
+  else if (chosen === 'pine') size = 1.8;
+  else if (chosen === 'fir') size = 2.4;
   else if (chosen === 'steppe_shrub') size = 1.1;
-  else if (chosen === 'barley') size = 0.9;
-  else if (chosen === 'typha') size = 1.3;
-  else if (chosen === 'tallgrass' || chosen === 'weed') size = 0.6;
+  else if (chosen === 'hay') size = 0.9;
+  else if (chosen === 'sedge') size = 1.3;
+  else if (chosen === 'winter_grass' || chosen === 'weed') size = 0.6;
   else if (chosen === 'shrub') size = 1.4;
   else if (chosen === 'bush') size = 1.6;
   entities.push({ id, kind: 'tree', col, row, variant: chosen, hp: 10, size });

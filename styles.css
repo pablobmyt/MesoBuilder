@@ -28,6 +28,56 @@ html, body {
   user-select: none;
 }
 
+body.theme-urss {
+  --sand-dark:  #7A1018;
+  --sand-mid:   #C53A3A;
+  --sand-light: #F0D2A8;
+  --sand-pale:  #F7E8C9;
+  --river:      #5B6675;
+  --river-light:#8391A3;
+  --river-dark: #2E3642;
+  --brick:      #8B1E2A;
+  --wheat:      #D7B35E;
+  --green:      #58664D;
+  --ui-bg:      #2A0E12;
+  --ui-border:  #C53A3A;
+  --ui-text:    #F6DFC0;
+  --ui-dim:     #C29A7A;
+  --hp-green:   #9AB75E;
+  --hp-red:     #D94A4A;
+  background: #17090b;
+  font-family: Impact, Haettenschweiler, 'Arial Narrow Bold', 'Segoe UI', sans-serif;
+}
+
+body.theme-urss #topbar h1,
+body.theme-urss #main-menu-box h1,
+body.theme-urss .panel-title,
+body.theme-urss .tool-label {
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+body.theme-urss #main-menu-root {
+  background:
+    radial-gradient(circle at top, rgba(197,58,58,0.28), transparent 38%),
+    linear-gradient(180deg, #200609 0%, #360d13 58%, #140608 100%) !important;
+}
+
+body.theme-urss #main-menu-box,
+body.theme-urss #menu-startup-modal > div {
+  border-color: #c53a3a !important;
+  box-shadow: 0 0 0 2px rgba(120,20,26,0.45), 0 18px 48px rgba(0,0,0,0.72) !important;
+}
+
+body.theme-urss #menu-new,
+body.theme-urss #menu-start-confirm,
+body.theme-urss #menu-start-tab-character,
+body.theme-urss #btn-endturn {
+  background: linear-gradient(180deg, #d25151, #8b1f2c) !important;
+  border-color: #f0d2a8 !important;
+  color: #21090d !important;
+}
+
 /* â”€â”€ LAYOUT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #app {
   display: flex;

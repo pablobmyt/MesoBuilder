@@ -1,100 +1,100 @@
 {
   "villager": {
     "phrases": [
-      "Los canales necesitan mantenimiento antes de la crecida.",
-      "Mi familia cultiva cebada desde hace cinco generaciones.",
-      "¿Has visto pasar comerciantes por el camino del sur?",
-      "Este año la cosecha promete ser abundante.",
-      "Dicen que en Nínagara el rey acumula trigo para diez años.",
-      "Cuidado con los zorros; anoche robaron dos gallinas.",
-      "Los niños juegan cerca del río... les advierto que es peligroso."
+      "Los suministros llegan cada martes si la carretera no se congela.",
+      "Mi familia ha vivido en este distrito desde 1952. Hemos visto de todo.",
+      "¿Has visto pasar los camiones de abastecimiento por la ruta norte?",
+      "Este invierno promete ser más severo que el anterior.",
+      "Dicen que en el comité central acumulan reservas para diez años completos.",
+      "Cuidado con los merodeadores del bosque; la noche pasada rondaron el perímetro.",
+      "Los niños juegan cerca del río... les advierto que el hielo aún no es seguro."
     ]
   },
   "farmer": {
     "phrases": [
-      "La tierra aluvial es bendición de los dioses. Rica y oscura.",
-      "Sembramos cebada cuando las Pléyades aparecen al amanecer.",
-      "El canal principal está casi colmatado. Necesita limpieza urgente.",
-      "Una buena cosecha requiere paciencia y trabajo, no oraciones.",
-      "Ayer vi peces muertos flotando en el canal... mal presagio.",
-      "El arado de madera no dura mucho. Necesitamos bronce."
+      "La tierra negra de Novozarya es bendición del suelo. Rica y profunda.",
+      "Sembramos el lino cuando las primeras flores aparecen en primavera.",
+      "El drenaje del colectivo está casi bloqueado. Necesita limpieza urgente.",
+      "Una buena cosecha requiere paciencia, trabajo organizado y coordinación con el camarada delegado.",
+      "Ayer vi heladas inusuales en los cultivos del norte... mal presagio para la temporada.",
+      "Las herramientas de hierro se desgastan. Necesitamos refuerzo de la fábrica estatal."
     ]
   },
   "shepherd": {
     "phrases": [
-      "Mis cabras conocen el camino a los pastos mejor que yo.",
-      "Esta mañana vi lobos en las colinas del este. Atención.",
-      "La lana de este año está siendo de buena calidad.",
-      "El río ha estado más alto que de costumbre. Me preocupa.",
-      "En la estepa no hay muchos lugares donde esconderse de la tormenta."
+      "Mis cabras conocen el camino a los pastos mejor que cualquier mapa.",
+      "Esta mañana vi lobos en las colinas del este, cerca de las turberas. Atención.",
+      "La lana de este año será de buena calidad. El rebaño está fuerte.",
+      "El río ha estado más congelado que de costumbre. Preocupante para el próximo ciclo.",
+      "En la estepa, no hay muchos lugares donde esconderse de la ventisca: solo el trabajo organizado nos salva."
     ]
   },
   "merchant": {
     "phrases": [
-      "¡Lino fino de Nippur, dátiles del sur, plata del norte!",
-      "El precio del cobre ha subido desde que los nómadas bloquearon el paso.",
-      "Comercio justo, trato honesto. Así se construye una reputación.",
-      "He recorrido las rutas desde el Golfo hasta las montañas de Zagros.",
-      "Los de Nínagara pagan bien por herramientas de bronce.",
-      "Un mercader sin contactos es como un barco sin timón.",
-      "¿Tienes algo para intercambiar? Las plumas de avestruz están de moda."
+      "¡Lino fino de Kiev, ámbar del Báltico, acero de los talleres de Magnitogorsk!",
+      "El precio del cobre ha bajado desde que el comité controla toda la comercialización.",
+      "Comercio justo, trato honesto. Así construimos la confianza colectiva.",
+      "He recorrido las rutas desde Moscú hasta los Polares, conociendo todos los puestos estatales.",
+      "Los comisarios de Leningrado pagan bien por herramientas de calidad y equipos industriales.",
+      "Un mercader sin contactos en el comité es como un barco sin timón.",
+      "¿Tienes algo para intercambiar? Las pieles de marta cibeles están de moda en los comités."
     ]
   },
   "guard": {
     "phrases": [
-      "Alto. ¿Tienes permiso del consejo para entrar a la ciudad?",
-      "Vigilo estas murallas desde el amanecer hasta la puesta del sol.",
-      "Los últimos meses han sido tranquilos. Demasiado, quizás.",
-      "Los guti no se han visto cerca desde la última luna llena.",
-      "El rey Ur-Nammu exige disciplina. Nada se cuela por estas puertas.",
-      "Mantén tus armas enfundadas dentro de las murallas."
+      "Alto. ¿Tienes permisos del camarada delegado para acceder al núcleo del distrito?",
+      "Vigilo estas estructuras defensivas desde el alba hasta el anochecer, según la orden.",
+      "Los últimos meses han sido tranquilos. Demasiado, quizás. La vigilancia nunca cesa.",
+      "Los saboteadores no se han visto desde la última ronda de purgas.",
+      "El Partido exige disciplina inquebrantable. Nada se filtra por estos puestos de control.",
+      "Mantén tus herramientas y armas dentro de los moldes permitidos por la normativa."
     ]
   },
   "elder": {
     "phrases": [
-      "Llevo setenta inviernos observando los ciclos de las aguas.",
-      "Los jóvenes ya no escuchan a los ríos. Nosotros sí lo hacíamos.",
-      "Cuando era niño, el Éufrates era más ancho y más generoso.",
-      "Los presagios no mienten, aunque los hombres sí.",
-      "Recuerda: el agua que da vida también puede arrebatarla."
+      "Llevo cincuenta y seis turnos de cosechas observando los ciclos del agua y el hielo.",
+      "Los jóvenes ya no escuchan a los ríos. Nosotros sí aprendimos a hacerlo.",
+      "Cuando era niño, el Ob era menos impredecible. O quizás el mundo ha cambiado.",
+      "Los presagios en las nubes no mienten, aunque los comités frecuentemente sí.",
+      "Recuerda: el agua que calienta la casa también puede congelarte si la abandonas."
     ]
   },
   "scribe": {
     "phrases": [
-      "La escritura cuneiforme preserva el saber para las generaciones futuras.",
-      "Llevo el registro de cada carga de grano que entra en la ciudad.",
-      "Las tablillas de arcilla son más duraderas que la memoria.",
-      "El rey necesita cuentas exactas. Un error puede costar la cabeza.",
-      "He copiado el Poema de Gilgamesh doscientas veces. Cada vez aprendo algo nuevo.",
-      "Los impuestos se pagan en trigo, lana o trabajo. No hay otra manera."
+      "Los informes estatales preservan el saber para las futuras generaciones de camaradas.",
+      "Llevo el registro de cada carga de grano, acero y suministro que entra en el distrito.",
+      "Las tablillas de papel mantienen la verdad mejor que la memoria de los hombres.",
+      "El delegado necesita cuentas exactas. Un error en los libros puede costar el cargo.",
+      "He copiado los mandatos del Kremlin doscientas veces. Cada vez comprendo mejor la lógica revolucionaria.",
+      "Los impuestos se pagan en cereales, trabajo o acero. No hay otra manera permitida."
     ]
   },
   "priestess": {
     "phrases": [
-      "Enlil guía nuestros destinos, pero somos nosotros quienes caminamos.",
-      "El templo recibe ofrendas para sostener los rituales de protección.",
-      "Los astros anuncian cambios. La conjunción de esta luna es inusual.",
-      "El zigurat conecta la tierra con los cielos. Es el eje del mundo.",
-      "Las aguas sagradas del templo reflejan la voluntad de los dioses.",
-      "Sin ritual, sin orden. Sin orden, sin ciudad. Sin ciudad, nada."
+      "La Naturaleza y la Razón guían nuestros destinos, pero somos nosotros quienes construimos.",
+      "El centro cultural recibe recursos para sostener los rituales de cohesión comunitaria.",
+      "Los ciclos de las constelaciones anuncian cambios. La alineación de este invierno es inusual.",
+      "El pabellón de actos conecta la teoría con la práctica. Es el eje del colectivo.",
+      "Las aguas glaciales del río reflejan la voluntad del pueblo trabajador.",
+      "Sin estructuración, sin orden. Sin orden, sin industria. Sin industria no hay Soviet."
     ]
   },
   "storyteller": {
     "phrases": [
-      "¿Conoces la historia del diluvio de Utnapishtim? Sobrevivió gracias a su obediencia.",
-      "Gilgamesh buscó la inmortalidad y encontró... algo distinto, pero igualmente valioso.",
-      "Los mitos son memorias disfrazadas. Escúchalos bien.",
-      "Dicen que antes de las ciudades, los hombres vivían como animales salvajes.",
-      "La historia de Enkidu y el hombre civilizado... ¿cuál era el salvaje, en realidad?"
+      "¿Conoces la historia de Iván el Valiente, que resistió el bloqueo de mil días? Su fe en la causa lo salvó.",
+      "La Revolución buscó justicia y encontró... algo distinto, pero igualmente transformador.",
+      "Los mitos de la clase campesina son memorias del sufrimiento. Escúchalos bien.",
+      "Dicen que antes de la colectivización, los hombres vivían como animales egoístas y salvajes.",
+      "La historia del camarada y el kulak... ¿quién era realmente el enemigo, en verdad?"
     ]
   },
   "survivor": {
     "phrases": [
-      "Los raiders llegaron antes del alba. No dimos ni un grito.",
-      "Escapé al río y me oculté entre las cañas toda la noche.",
-      "Todo lo que teníamos... se fue en una hora.",
-      "¿Volverán? No lo sé. Pero no pienso quedarme a averiguarlo.",
-      "El Anciano Kishdu sigue en el pueblo. Es demasiado viejo para correr."
+      "Los contrarrevolucionarios llegaron antes del alba. No nos rendimos.",
+      "Escapé al bosque y me oculté entre los abedules toda la noche buscando refugio.",
+      "Todo lo que teníamos... se fue en una hora de fuego.",
+      "¿Volverán? No lo sé. Pero no pienso abandonar la causa colectiva.",
+      "El Camarada Korolyov sigue en el pueblo organizando resistencia. Es un líder verdadero."
     ]
   }
 }

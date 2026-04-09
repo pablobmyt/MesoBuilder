@@ -468,6 +468,9 @@
                 <button class="tool-button" id="fillSelectionBtn" disabled>🪣 Fill Selection</button>
                 <button class="tool-button" id="eraseSelectionBtn" disabled>✂ Clear Selection</button>
                 <button class="tool-button" id="clearSelectionBtn" disabled>✕ Deselect</button>
+                <button class="tool-button" id="copySelectionBtn" disabled>📋 Copy Selection</button>
+                <button class="tool-button" id="cutSelectionBtn" disabled>✂ Cut Selection</button>
+                <button class="tool-button" id="pasteSelectionBtn" disabled>📌 Paste</button>
             </div>
 
             <div class="divider"></div>
@@ -493,6 +496,8 @@
                 <button class="tool-button" id="flipHorizontalBtn">↔ Flip H</button>
                 <button class="tool-button" id="flipVerticalBtn">↕ Flip V</button>
                 <button class="tool-button" id="rotateRightBtn">↻ Rotate 90°</button>
+                <button class="tool-button" id="trimCanvasBtn">✂ Trim Content</button>
+                <button class="tool-button" id="centerSpriteBtn">◎ Center Sprite</button>
             </div>
 
             <div class="divider"></div>
@@ -563,6 +568,10 @@
             <label class="checkbox-label">
                 <input type="checkbox" id="showGrid" checked>
                 Grid
+            </label>
+            <label class="checkbox-label">
+                <input type="checkbox" id="showTransparency" checked>
+                PNG Background
             </label>
 
             <div class="divider"></div>
@@ -670,10 +679,13 @@
             selectionStart: null,
             shapeStart: null,
             shapePreview: null,
+            clipboard: null,
+            pasteCount: 0,
             isSelecting: false,
             isDrawing: false,
             strokeDirty: false,
-            lastPaintedCell: null
+            lastPaintedCell: null,
+            showTransparency: true
         };
 
         // Preset Colors
@@ -701,12 +713,18 @@
         const fillSelectionBtn = document.getElementById('fillSelectionBtn');
         const eraseSelectionBtn = document.getElementById('eraseSelectionBtn');
         const clearSelectionBtn = document.getElementById('clearSelectionBtn');
+        const copySelectionBtn = document.getElementById('copySelectionBtn');
+        const cutSelectionBtn = document.getElementById('cutSelectionBtn');
+        const pasteSelectionBtn = document.getElementById('pasteSelectionBtn');
         const fillShapesCheckbox = document.getElementById('fillShapes');
         const mirrorXCheckbox = document.getElementById('mirrorX');
         const mirrorYCheckbox = document.getElementById('mirrorY');
+        const showTransparencyCheckbox = document.getElementById('showTransparency');
         const flipHorizontalBtn = document.getElementById('flipHorizontalBtn');
         const flipVerticalBtn = document.getElementById('flipVerticalBtn');
         const rotateRightBtn = document.getElementById('rotateRightBtn');
+        const trimCanvasBtn = document.getElementById('trimCanvasBtn');
+        const centerSpriteBtn = document.getElementById('centerSpriteBtn');
 
         // Initialize Palette
         presetColors.forEach((color, index) => {
@@ -792,6 +810,11 @@
 
         showGridCheckbox.addEventListener('change', (e) => {
             state.showGrid = e.target.checked;
+            draw();
+        });
+
+        showTransparencyCheckbox.addEventListener('change', (e) => {
+            state.showTransparency = e.target.checked;
             draw();
         });
 
@@ -930,6 +953,7 @@
             document.getElementById('gridSizeValue').textContent = state.gridSize;
             document.getElementById('gridSizeValue2').textContent = state.gridSize;
             gridInfoSpan.textContent = `${state.gridSize}x${state.gridSize}`;
+            fitZoomToCanvas();
             resizeCanvas();
             addToHistory(); updateCodeOutput(); draw();
             showToast(`Loaded ${k}`);
@@ -1040,9 +1064,14 @@
         fillSelectionBtn.addEventListener('click', () => applySelection('fill'));
         eraseSelectionBtn.addEventListener('click', () => applySelection('erase'));
         clearSelectionBtn.addEventListener('click', () => { clearSelection(); showToast('Selección eliminada'); });
+        copySelectionBtn.addEventListener('click', () => copySelectionToClipboard(false));
+        cutSelectionBtn.addEventListener('click', () => copySelectionToClipboard(true));
+        pasteSelectionBtn.addEventListener('click', () => pasteClipboardIntoCanvas());
         flipHorizontalBtn.addEventListener('click', () => applyCanvasTransform(pixel => ({ x: state.gridSize - 1 - pixel.x, y: pixel.y, color: pixel.color }), 'Canvas invertido horizontalmente'));
         flipVerticalBtn.addEventListener('click', () => applyCanvasTransform(pixel => ({ x: pixel.x, y: state.gridSize - 1 - pixel.y, color: pixel.color }), 'Canvas invertido verticalmente'));
         rotateRightBtn.addEventListener('click', () => applyCanvasTransform(pixel => ({ x: state.gridSize - 1 - pixel.y, y: pixel.x, color: pixel.color }), 'Canvas rotado 90°'));
+        trimCanvasBtn.addEventListener('click', trimCanvasToContent);
+        centerSpriteBtn.addEventListener('click', centerSpriteToGrid);
         document.getElementById('copyBtn').addEventListener('click', copyCode);
         document.getElementById('downloadBtn').addEventListener('click', downloadCode);
         document.getElementById('importBtn').addEventListener('click', () => importModal.classList.add('active'));
@@ -1094,8 +1123,7 @@
 
         function draw() {
             const cs = getCellSize();
-            ctx.fillStyle = '#0a0a0a';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            drawBackground(cs);
 
             // Draw pixels
             state.pixels.forEach(pixel => {
@@ -1141,6 +1169,24 @@
             }
         }
 
+        function drawBackground(cs) {
+            if (!state.showTransparency) {
+                ctx.fillStyle = '#0a0a0a';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                return;
+            }
+            const tile = Math.max(4, Math.floor(cs));
+            const c1 = '#11151b';
+            const c2 = '#1b222b';
+            for (let y = 0; y < canvas.height; y += tile) {
+                for (let x = 0; x < canvas.width; x += tile) {
+                    const even = ((Math.floor(x / tile) + Math.floor(y / tile)) % 2) === 0;
+                    ctx.fillStyle = even ? c1 : c2;
+                    ctx.fillRect(x, y, tile, tile);
+                }
+            }
+        }
+
         function getCanvasCellFromEvent(e) {
             const rect = canvas.getBoundingClientRect();
             const cs = getCellSize();
@@ -1168,6 +1214,9 @@
             fillSelectionBtn.disabled = !hasSelection;
             eraseSelectionBtn.disabled = !hasSelection;
             clearSelectionBtn.disabled = !hasSelection;
+            copySelectionBtn.disabled = !hasSelection;
+            cutSelectionBtn.disabled = !hasSelection;
+            pasteSelectionBtn.disabled = !state.clipboard;
         }
 
         function clearSelection(redraw = true) {
@@ -1347,6 +1396,141 @@
             const width = selection.x2 - selection.x1 + 1;
             const height = selection.y2 - selection.y1 + 1;
             showToast(action === 'fill' ? `Selección pintada (${width}×${height})` : `Selección borrada (${width}×${height})`);
+        }
+
+        function copySelectionToClipboard(cut = false) {
+            const selection = normalizeSelection(state.selection);
+            if (!selection) {
+                showToast('No hay una selección activa', true);
+                return;
+            }
+            const pixels = [];
+            for (let y = selection.y1; y <= selection.y2; y++) {
+                for (let x = selection.x1; x <= selection.x2; x++) {
+                    const color = getPixelColor(x, y);
+                    if (color) pixels.push({ x: x - selection.x1, y: y - selection.y1, color });
+                }
+            }
+            state.clipboard = {
+                width: selection.x2 - selection.x1 + 1,
+                height: selection.y2 - selection.y1 + 1,
+                pixels
+            };
+            state.pasteCount = 0;
+            if (cut) {
+                applySelection('erase');
+                showToast(`Selección cortada (${state.clipboard.width}×${state.clipboard.height})`);
+            } else {
+                showToast(`Selección copiada (${state.clipboard.width}×${state.clipboard.height})`);
+            }
+            updateSelectionButtons();
+        }
+
+        function pasteClipboardIntoCanvas() {
+            if (!state.clipboard) {
+                showToast('No hay nada para pegar', true);
+                return;
+            }
+            const clip = state.clipboard;
+            const selection = normalizeSelection(state.selection);
+            let anchorX = 0;
+            let anchorY = 0;
+            if (selection) {
+                anchorX = selection.x1;
+                anchorY = selection.y1;
+            }
+            const offset = state.pasteCount;
+            anchorX = Math.max(0, Math.min(state.gridSize - 1, anchorX + offset));
+            anchorY = Math.max(0, Math.min(state.gridSize - 1, anchorY + offset));
+
+            let changed = false;
+            clip.pixels.forEach(pixel => {
+                const x = anchorX + pixel.x;
+                const y = anchorY + pixel.y;
+                if (x < 0 || y < 0 || x >= state.gridSize || y >= state.gridSize) return;
+                changed = upsertPixel(x, y, pixel.color) || changed;
+            });
+
+            if (!changed) {
+                showToast('Pegado fuera de límites o sin cambios');
+                return;
+            }
+
+            state.selection = normalizeSelection({
+                x1: anchorX,
+                y1: anchorY,
+                x2: anchorX + clip.width - 1,
+                y2: anchorY + clip.height - 1
+            });
+            state.pasteCount++;
+            addToHistory();
+            updateCodeOutput();
+            updateSelectionButtons();
+            draw();
+            scheduleAutoSave();
+            showToast(`Pegado ${clip.width}×${clip.height}`);
+        }
+
+        function trimCanvasToContent() {
+            if (!state.pixels.length) {
+                showToast('No hay contenido para recortar');
+                return;
+            }
+            const minX = Math.min(...state.pixels.map(p => p.x));
+            const minY = Math.min(...state.pixels.map(p => p.y));
+            const maxX = Math.max(...state.pixels.map(p => p.x));
+            const maxY = Math.max(...state.pixels.map(p => p.y));
+            const nextSize = Math.max(4, Math.min(128, Math.max(maxX - minX + 1, maxY - minY + 1)));
+            const shifted = state.pixels
+                .map(p => ({ x: p.x - minX, y: p.y - minY, color: p.color }))
+                .filter(p => p.x >= 0 && p.y >= 0 && p.x < nextSize && p.y < nextSize);
+            state.gridSize = nextSize;
+            state.pixels = shifted;
+            gridSizeInput.value = nextSize;
+            document.getElementById('gridSizeValue').textContent = nextSize;
+            document.getElementById('gridSizeValue2').textContent = nextSize;
+            gridInfoSpan.textContent = `${nextSize}x${nextSize}`;
+            clearSelection(false);
+            fitZoomToCanvas();
+            resizeCanvas();
+            addToHistory();
+            updateCodeOutput();
+            draw();
+            scheduleAutoSave();
+            showToast(`Canvas recortado a ${nextSize}×${nextSize}`);
+        }
+
+        function centerSpriteToGrid() {
+            if (!state.pixels.length) {
+                showToast('No hay contenido para centrar');
+                return;
+            }
+            const minX = Math.min(...state.pixels.map(p => p.x));
+            const minY = Math.min(...state.pixels.map(p => p.y));
+            const maxX = Math.max(...state.pixels.map(p => p.x));
+            const maxY = Math.max(...state.pixels.map(p => p.y));
+            const spriteW = maxX - minX + 1;
+            const spriteH = maxY - minY + 1;
+            const offsetX = Math.floor((state.gridSize - spriteW) / 2) - minX;
+            const offsetY = Math.floor((state.gridSize - spriteH) / 2) - minY;
+            const centered = [];
+            const seen = new Set();
+            state.pixels.forEach(pixel => {
+                const x = pixel.x + offsetX;
+                const y = pixel.y + offsetY;
+                if (x < 0 || y < 0 || x >= state.gridSize || y >= state.gridSize) return;
+                const key = `${x},${y}`;
+                if (seen.has(key)) return;
+                seen.add(key);
+                centered.push({ x, y, color: pixel.color });
+            });
+            state.pixels = centered;
+            clearSelection(false);
+            addToHistory();
+            updateCodeOutput();
+            draw();
+            scheduleAutoSave();
+            showToast('Sprite centrado en el canvas');
         }
 
         function commitStrokeIfDirty() {
@@ -1627,38 +1811,52 @@
         function importPixels() {
             try {
                 const code = importCode.value;
-                const match = code.match(/\[\s*(\d+)\s*,\s*(\d+)\s*,\s*['"]([^'"]+)['"]\s*\]/g);
-                
-                if (!match) {
-                    showToast('Invalid code format', true);
+                let newPixels = [];
+                let newGridSize = null;
+
+                try {
+                    const obj = JSON.parse(code);
+                    if (obj && Array.isArray(obj.pixels)) {
+                        newPixels = obj.pixels
+                            .map(p => ({ x: Number(p[0]), y: Number(p[1]), color: p[2] }))
+                            .filter(p => Number.isFinite(p.x) && Number.isFinite(p.y) && typeof p.color === 'string');
+                        if (typeof obj.grid === 'number' && obj.grid > 0) newGridSize = obj.grid;
+                    } else if (Array.isArray(obj)) {
+                        newPixels = obj
+                            .map(p => ({ x: Number(p[0]), y: Number(p[1]), color: p[2] }))
+                            .filter(p => Number.isFinite(p.x) && Number.isFinite(p.y) && typeof p.color === 'string');
+                    }
+                } catch (e) {
+                    // Not valid JSON, fallback to regex extraction
+                    const match = code.match(/\[\s*(-?\d+)\s*,\s*(-?\d+)\s*,\s*['"]([^'"]+)['"]\s*\]/g);
+                    if (!match) {
+                        showToast('Invalid code format', true);
+                        return;
+                    }
+                    newPixels = match.map(item => {
+                        const parsed = item.match(/\[\s*(-?\d+)\s*,\s*(-?\d+)\s*,\s*['"]([^'"]+)['"]\s*\]/);
+                        return parsed ? { x: parseInt(parsed[1], 10), y: parseInt(parsed[2], 10), color: parsed[3] } : null;
+                    }).filter(Boolean);
+                }
+
+                if (!newPixels.length) {
+                    showToast('No se encontraron pixels válidos', true);
                     return;
                 }
 
-                const newPixels = [];
-                match.forEach(item => {
-                    const parsed = item.match(/\[\s*(\d+)\s*,\s*(\d+)\s*,\s*['"]([^'"]+)['"]\s*\]/);
-                    if (parsed) {
-                        newPixels.push({
-                            x: parseInt(parsed[1]),
-                            y: parseInt(parsed[2]),
-                            color: parsed[3]
-                        });
-                    }
-                });
+                // normalize to non-negative coordinates
+                const minX = Math.min(...newPixels.map(p => p.x));
+                const minY = Math.min(...newPixels.map(p => p.y));
+                if (minX < 0 || minY < 0) {
+                    newPixels = newPixels.map(p => ({ x: p.x - minX, y: p.y - minY, color: p.color }));
+                }
 
-                // Detect grid size: prefer explicit `grid` property in JSON, else compute from pixel bounds
-                let newGridSize = null;
-                try {
-                    const obj = JSON.parse(code);
-                    if (obj && typeof obj.grid === 'number' && obj.grid > 0) {
-                        newGridSize = obj.grid;
-                    }
-                } catch (e) { /* not JSON, compute from bounds */ }
                 if (!newGridSize && newPixels.length > 0) {
                     const maxX = Math.max(...newPixels.map(p => p.x));
                     const maxY = Math.max(...newPixels.map(p => p.y));
                     newGridSize = Math.max(maxX, maxY) + 1;
                 }
+                if (newGridSize) newGridSize = Math.max(4, Math.min(128, newGridSize));
                 if (newGridSize && newGridSize !== state.gridSize) {
                     state.gridSize = newGridSize;
                     gridSizeInput.value = newGridSize;
@@ -1667,18 +1865,33 @@
                     gridInfoSpan.textContent = `${newGridSize}x${newGridSize}`;
                 }
 
-                state.pixels = newPixels;
+                state.pixels = newPixels.filter(p => p.x >= 0 && p.y >= 0 && p.x < state.gridSize && p.y < state.gridSize);
                 clearSelection(false);
                 addToHistory();
                 updateCodeOutput();
                 importModal.classList.remove('active');
                 importCode.value = '';
+                fitZoomToCanvas();
                 resizeCanvas();
                 draw();
-                showToast('Pixels imported successfully!');
+                showToast(`Importado: ${state.pixels.length} px · ${state.gridSize}×${state.gridSize}`);
             } catch (error) {
                 showToast('Error importing pixels', true);
             }
+        }
+
+        function fitZoomToCanvas() {
+            const scroll = document.getElementById('canvasScroll');
+            if (!scroll || !state.gridSize) return;
+            const availW = Math.max(120, scroll.clientWidth - 24);
+            const availH = Math.max(120, scroll.clientHeight - 24);
+            const targetCellW = Math.floor(availW / state.gridSize);
+            const targetCellH = Math.floor(availH / state.gridSize);
+            const targetCell = Math.max(2, Math.min(targetCellW, targetCellH));
+            const nextZoom = Math.max(1, Math.min(20, Math.floor(targetCell / BASE_CELL) || 1));
+            state.zoom = nextZoom;
+            zoomInput.value = String(nextZoom);
+            document.getElementById('zoomValue').textContent = String(nextZoom);
         }
 
         function updateColorSwatches() {
@@ -1786,6 +1999,7 @@
                 clearSelection(false);
                 addToHistory();
                 updateCodeOutput();
+                fitZoomToCanvas();
                 resizeCanvas();
                 draw();
                 // Save to disk immediately
@@ -1819,6 +2033,35 @@
             const hasSelection = !!normalizeSelection(state.selection);
             const key = e.key.toLowerCase();
 
+            if ((e.ctrlKey || e.metaKey) && key === 'z' && !e.shiftKey) {
+                e.preventDefault();
+                undo();
+                return;
+            }
+            if ((e.ctrlKey || e.metaKey) && (key === 'y' || (key === 'z' && e.shiftKey))) {
+                e.preventDefault();
+                redo();
+                return;
+            }
+            if ((e.ctrlKey || e.metaKey) && key === 'c') {
+                if (!hasSelection) return;
+                e.preventDefault();
+                copySelectionToClipboard(false);
+                return;
+            }
+            if ((e.ctrlKey || e.metaKey) && key === 'x') {
+                if (!hasSelection) return;
+                e.preventDefault();
+                copySelectionToClipboard(true);
+                return;
+            }
+            if ((e.ctrlKey || e.metaKey) && key === 'v') {
+                if (!state.clipboard) return;
+                e.preventDefault();
+                pasteClipboardIntoCanvas();
+                return;
+            }
+
             if (key === 'b') {
                 document.querySelector('[data-tool="brush"]').click();
                 return;
@@ -1841,6 +2084,14 @@
             }
             if (key === 's') {
                 document.querySelector('[data-tool="select"]').click();
+                return;
+            }
+            if (key === 't') {
+                trimCanvasToContent();
+                return;
+            }
+            if (key === 'c' && !e.ctrlKey && !e.metaKey) {
+                centerSpriteToGrid();
                 return;
             }
             if ((e.ctrlKey || e.metaKey) && key === 'h') {
