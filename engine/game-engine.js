@@ -1,160 +1,43 @@
 import './scene-manager.js';
 import EventManager from './event-manager.js';
 import { buildTreeAtlas } from './atlas-builder.js';
+import {
+  showProgressOverlay
+} from './game-engine-bootstrap-utils.js';
+import {
+  showLoadingOverlay,
+  generateSpriteImages,
+  hideLoadingOverlay
+} from './game-engine-sprite-runtime-utils.js';
+import {
+  _isControllableUnit,
+  _isEntityReferenceFromCollections,
+  _isSelectableEntity,
+  _entitySelectionKey,
+  _getSelectedEntities,
+  _setSelectedEntities,
+  _toggleSelectedEntity,
+  _collectSelectableEntitiesInRect,
+  _getSelectedNPCs,
+  _assignTaskToNPCs,
+  _issueGroupMoveCommand,
+  _sendSelectedNPCsToGather
+} from './game-engine-selection-utils.js';
+import {
+  initializeEntityRuntimeCaches,
+  loadEntityDefinitions as loadEntityDefinitionsImpl,
+  importEntityDefinitionsFromObject as importEntityDefinitionsFromObjectImpl,
+  exportEntityDefinitionsToJSON as exportEntityDefinitionsToJSONImpl,
+  ensureEntityPixelsReady,
+  installEntityEditorMessageHandlers
+} from './game-engine-entity-def-utils.js';
+import {
+  preloadAllBeforeStart as preloadAllBeforeStartImpl,
+  clearRuntimeCaches as clearRuntimeCachesImpl
+} from './game-engine-preload-utils.js';
+import { createMapEditorCore } from './game-engine-map-editor-core.js';
+import { createStandaloneEditorUtils } from './game-engine-standalone-editor-utils.js';
 try { window.EventManager = EventManager; } catch (e) {}
-function showProgressOverlay(title) {
-  let el = document.getElementById('progress-overlay');
-  if (!el) {
-    el = document.createElement('div'); el.id = 'progress-overlay';
-    el.style.position = 'fixed'; el.style.left = '0'; el.style.top = '0'; el.style.right = '0'; el.style.bottom = '0';
-    el.style.display = 'flex'; el.style.alignItems = 'center'; el.style.justifyContent = 'center';
-    el.style.background = 'rgba(0,0,0,0.75)'; el.style.zIndex = 110000;
-    el.innerHTML = `<div style="width:520px;max-width:94%;background:rgba(20,20,20,0.98);color:#FFD27A;padding:18px 22px;border-radius:10px;font-weight:700;font-family:sans-serif">
-      <div id="progress-title">${title || 'Cargando...'}</div>
-      <div style="margin-top:12px;background:#111;border:1px solid #333;height:18px;border-radius:8px;overflow:hidden">
-        <div id="progress-bar" style="height:100%;width:0%;background:linear-gradient(90deg,#DAA520,#FFD27A)"></div>
-      </div>
-      <div id="progress-msg" style="margin-top:8px;font-size:12px;color:#ccc">Preparando...</div>
-      <div id="progress-activity" style="margin-top:10px;font-size:12px;color:#bbb;max-height:120px;overflow:auto"></div>
-    </div>`;
-    document.body.appendChild(el);
-  }
-  el.style.display = 'flex';
-  function update(p, msg) {
-    const bar = document.getElementById('progress-bar'); if (bar) bar.style.width = Math.max(0,Math.min(100,p)) + '%';
-      const m = document.getElementById('progress-msg'); if (m && msg) m.textContent = msg;
-      const act = document.getElementById('progress-activity'); if (act && msg) {
-        const time = (new Date()).toLocaleTimeString();
-        const line = document.createElement('div'); line.textContent = `[${time}] ${msg}`; act.appendChild(line); act.scrollTop = act.scrollHeight;
-      }
-  }
-  function hide() { const e = document.getElementById('progress-overlay'); if (e) e.style.display = 'none'; }
-  return { update, hide };
-}
-
-// Export pre-rendered entity sprites (from window._ENTITY_BITMAPS) into a JSON mapping of key -> base64 PNG
-async function exportEntitySpritesToJSON(download = true) {
-  try {
-    const cache = window._ENTITY_BITMAPS || {};
-    const out = {};
-    for (const k of Object.keys(cache)) {
-      try {
-        const v = cache[k];
-        // prepare temporary canvas
-        const tmp = document.createElement('canvas');
-        const w = (v && v.width) ? v.width : 64;
-        const h = (v && v.height) ? v.height : 64;
-        tmp.width = w; tmp.height = h;
-        const tc = tmp.getContext('2d'); tc.clearRect(0,0,w,h);
-        try { tc.drawImage(v, 0, 0, w, h); } catch (e) { /* ignore draw failures */ }
-        let data = null;
-        try { data = tmp.toDataURL('image/png'); } catch (e) { data = null; }
-        out[k] = { key: k, width: w, height: h, dataURI: data };
-      } catch (ie) { out[k] = { key: k, error: String(ie) }; }
-    }
-    if (download) {
-      const blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
-      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'entity-sprites.json'; document.body.appendChild(a); a.click(); setTimeout(() => { try { document.body.removeChild(a); URL.revokeObjectURL(a.href); } catch (e) {} }, 200);
-    }
-    return out;
-  } catch (e) { console.warn('exportEntitySpritesToJSON err', e); return null; }
-}
-try { window.exportEntitySpritesToJSON = exportEntitySpritesToJSON; } catch (e) {}
-
-// Export pre-rendered entity sprites as pixel arrays (hex RGBA per pixel) in a JSON structure
-async function exportEntitySpritesPixelsJSON(download = true) {
-  try {
-    const cache = window._ENTITY_BITMAPS || {};
-    const out = {};
-    for (const k of Object.keys(cache)) {
-      try {
-        const v = cache[k];
-        const w = (v && v.width) ? v.width : 64;
-        const h = (v && v.height) ? v.height : 64;
-        const tmp = document.createElement('canvas'); tmp.width = w; tmp.height = h;
-        const tc = tmp.getContext('2d'); tc.clearRect(0,0,w,h);
-        try { tc.drawImage(v, 0, 0, w, h); } catch (e) {}
-        let img = null;
-        try { img = tc.getImageData(0,0,w,h); } catch (e) { img = null; }
-        if (!img) { out[k] = { key: k, width: w, height: h, pixels: null, error: 'no-image-data' }; continue; }
-        const data = img.data;
-        const rows = [];
-        for (let y = 0; y < h; y++) {
-          const row = [];
-          for (let x = 0; x < w; x++) {
-            const i = (y * w + x) * 4;
-            const r = data[i], g = data[i+1], b = data[i+2], a = data[i+3];
-            if (a === 0) { row.push(null); }
-            else {
-              const hr = r.toString(16).padStart(2,'0');
-              const hg = g.toString(16).padStart(2,'0');
-              const hb = b.toString(16).padStart(2,'0');
-              const ha = a.toString(16).padStart(2,'0');
-              row.push('#' + hr + hg + hb + ha);
-            }
-          }
-          rows.push(row);
-        }
-        out[k] = { key: k, width: w, height: h, pixels: rows };
-      } catch (inner) { out[k] = { key: k, error: String(inner) }; }
-    }
-    if (download) {
-      const blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
-      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'entity-sprites-pixels.json'; document.body.appendChild(a); a.click(); setTimeout(() => { try { document.body.removeChild(a); URL.revokeObjectURL(a.href); } catch (e) {} }, 200);
-    }
-    return out;
-  } catch (e) { console.warn('exportEntitySpritesPixelsJSON err', e); return null; }
-}
-try { window.exportEntitySpritesPixelsJSON = exportEntitySpritesPixelsJSON; } catch (e) {}
-
-// Export selected entity sprites as PNG files: tries POST to local save server, falls back to download
-async function exportEntitySpritesPNGs(names, options = {}) {
-  try {
-    const server = options.server || (window.SPRITE_SERVER_URL || 'http://localhost:3001/save-sprite');
-    const doPost = options.post !== undefined ? options.post : true;
-    const doDownload = options.download !== undefined ? options.download : true;
-    const lib = window.ENTITY_PIXEL_LIBRARY || {};
-    const exported = [];
-    const toExport = Array.isArray(names) && names.length ? names : Object.keys(lib).filter(k => k.startsWith('tree') || k === 'mountain');
-    for (const name of toExport) {
-      try {
-        let canvas = null;
-        // use cached bitmap if present
-        if (window._ENTITY_BITMAPS && window._ENTITY_BITMAPS[name]) {
-          const bmp = window._ENTITY_BITMAPS[name];
-          canvas = document.createElement('canvas'); canvas.width = bmp.width || 32; canvas.height = bmp.height || 32;
-          const ctxc = canvas.getContext('2d'); try { ctxc.drawImage(bmp, 0, 0); } catch (e) { /* ignore */ }
-        } else if (lib[name]) {
-          canvas = window.createCanvasFromPixelDef(lib[name], name, lib[name].grid || 16);
-        }
-        if (!canvas) continue;
-        // get blob
-        const blob = await new Promise((res) => canvas.toBlob(res, 'image/png'));
-        if (!blob) continue;
-        const dataURI = await new Promise((res) => {
-          try { const tmp = document.createElement('canvas'); tmp.width = canvas.width; tmp.height = canvas.height; tmp.getContext('2d').drawImage(canvas,0,0); res(tmp.toDataURL('image/png')); } catch (e) { res(null); }
-        });
-        // attempt POST
-        let posted = false;
-        if (doPost && server && server.indexOf('http') === 0) {
-          try {
-            await fetch(server, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name + '.png', dataURI }) });
-            posted = true;
-          } catch (e) { posted = false; }
-        }
-        // fallback: download
-        if (!posted && doDownload) {
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a'); a.href = url; a.download = name + '.png'; document.body.appendChild(a); a.click(); setTimeout(() => { try { document.body.removeChild(a); URL.revokeObjectURL(url); } catch (e) {} }, 400);
-        }
-        exported.push({ name, posted });
-      } catch (inner) { console.warn('export sprite err', name, inner); }
-    }
-    return exported;
-  } catch (e) { console.warn('exportEntitySpritesPNGs err', e); return null; }
-}
-try { window.exportEntitySpritesPNGs = exportEntitySpritesPNGs; } catch (e) {}
-
 const DEFAULT_ENEMY_DEFS = {
   raider: { name: 'Merodeador', hp: 12, speed: 0.9, reward: { brick: 1 }, sprite: 'raider', scale: 0.82 },
   beast: { name: 'Lobo de estepa', hp: 20, speed: 0.6, reward: { brick: 2 }, sprite: 'beast', scale: 0.96 }
@@ -168,260 +51,18 @@ const DEFAULT_RESOURCE_DEFS = {
 };
 
 // Load entity definitions from `data/entities-defs.json` (merge into runtime)
-async function loadEntityDefinitions(progress) {
-  try {
-    if (progress && progress.update) progress.update(2, 'Cargando definiciones...');
-    const path = 'data/entities-defs.json';
-    let resp = null;
-    try { resp = await fetch(path, { cache: 'no-store' }); } catch (e) { resp = null; }
-    if (!resp || !resp.ok) {
-      if (progress && progress.update) progress.update(6, 'Defs: fallback');
-      window._ENTITY_DEFS = window._ENTITY_DEFS || { buildings: BUILDINGS, enemies: DEFAULT_ENEMY_DEFS, resources: DEFAULT_RESOURCE_DEFS };
-      return;
-    }
-    const j = await resp.json();
-    window._ENTITY_DEFS = window._ENTITY_DEFS || {};
-    window._ENTITY_DEFS.buildings = Object.assign({}, BUILDINGS, j.buildings || {});
-    window._ENTITY_DEFS.trees = Array.isArray(j.trees) ? j.trees.slice() : (window._ENTITY_DEFS.trees || []);
-    window._ENTITY_DEFS.animals = Object.assign({}, j.animals || {});
-    window._ENTITY_DEFS.enemies = Object.assign({}, DEFAULT_ENEMY_DEFS, j.enemies || {});
-    window._ENTITY_DEFS.resources = Object.assign({}, DEFAULT_RESOURCE_DEFS, j.resources || {});
-    try { for (const k in window._ENTITY_DEFS.buildings) BUILDINGS[k] = window._ENTITY_DEFS.buildings[k]; } catch (e) {}
-    if (progress && progress.update) progress.update(8, 'Defs cargadas');
-  } catch (e) { console.warn('loadEntityDefinitions err', e); }
-}
-
-// Import (merge) entity definitions from JSON object (used by editor)
-function importEntityDefinitionsFromObject(obj) {
-  try {
-    if (!obj) return false;
-    window._ENTITY_DEFS = window._ENTITY_DEFS || {};
-    if (obj.buildings) window._ENTITY_DEFS.buildings = Object.assign({}, window._ENTITY_DEFS.buildings || {}, obj.buildings);
-    if (obj.trees) window._ENTITY_DEFS.trees = Array.isArray(obj.trees) ? obj.trees.slice() : (window._ENTITY_DEFS.trees || []);
-    if (obj.animals) window._ENTITY_DEFS.animals = Object.assign({}, window._ENTITY_DEFS.animals || {}, obj.animals);
-    if (obj.enemies) window._ENTITY_DEFS.enemies = Object.assign({}, DEFAULT_ENEMY_DEFS, window._ENTITY_DEFS.enemies || {}, obj.enemies);
-    if (obj.resources) window._ENTITY_DEFS.resources = Object.assign({}, DEFAULT_RESOURCE_DEFS, window._ENTITY_DEFS.resources || {}, obj.resources);
-    try { for (const k in window._ENTITY_DEFS.buildings) BUILDINGS[k] = window._ENTITY_DEFS.buildings[k]; } catch (e) {}
-    return true;
-  } catch (e) { console.warn('importEntityDefinitionsFromObject err', e); return false; }
-}
-// expose to other windows (editor)
+const _entityDefDeps = () => ({ BUILDINGS, DEFAULT_ENEMY_DEFS, DEFAULT_RESOURCE_DEFS });
+const loadEntityDefinitions = (progress) => loadEntityDefinitionsImpl(progress, _entityDefDeps());
+const importEntityDefinitionsFromObject = (obj) => importEntityDefinitionsFromObjectImpl(obj, _entityDefDeps());
+const exportEntityDefinitionsToJSON = () => exportEntityDefinitionsToJSONImpl(_entityDefDeps());
 try { window.importEntityDefinitionsFromObject = importEntityDefinitionsFromObject; } catch (e) {}
+try { window.exportEntityDefinitionsToJSON = exportEntityDefinitionsToJSON; } catch (e) {}
+try { window.loadEntityDefinitions = loadEntityDefinitions; } catch (e) {}
+initializeEntityRuntimeCaches();
 
-// Lightweight caches used during runtime preload
-window._ICON_BITMAPS = window._ICON_BITMAPS || {};
-window.MAP_CHUNKS = window.MAP_CHUNKS || {};
-window._ENTITY_BITMAPS = window._ENTITY_BITMAPS || {}; // cached entity sprites
-// Restore sprite images from localStorage cache if present (best-effort)
-try {
-  window._SPRITE_IMAGES = window._SPRITE_IMAGES || {};
-  const _raw = localStorage.getItem('meso.spriteCache');
-  if (_raw) {
-    try {
-      const _cache = JSON.parse(_raw || '{}');
-      const sprites = _cache.sprites || {};
-      for (const k of Object.keys(sprites)) {
-        try {
-          const dataURI = sprites[k];
-          if (!dataURI) continue;
-          const img = new Image(); img.src = dataURI; img.dataset.spriteName = k;
-          window._SPRITE_IMAGES[k] = img;
-        } catch (e) { /* ignore bad entries */ }
-      }
-    } catch (e) { /* ignore parse errors */ }
-  }
-} catch (e) {}
-// default densities (modifiable from new-game UI)
-window._DEFAULT_DENSITIES = window._DEFAULT_DENSITIES || { npc: 1.0, animals: 1.0, vegetation: 0.6 };
-// whether the main game loop is running (menu pauses the loop until user starts)
-window._gameStarted = window._gameStarted || false;
-// whether the UI panels (topbar/toolbar/main) should be shown — only set true when loading/creating
-window._showPanels = window._showPanels || false;
-// RTS-style selection state
-window._selectedEntities = window._selectedEntities || [];
 let _isSelecting = false;
-let _selectStart = null; // { sx, sy }
-let _selectRect = null; // { x,y,w,h }
-window._unitCommandTarget = window._unitCommandTarget || null;
-
-function _isControllableUnit(ent) {
-  try {
-    if (!ent) return false;
-    const id = String(ent.id || '');
-    return id.startsWith('npc-') || id.startsWith('rabbit-') || id.startsWith('fox-');
-  } catch (e) { return false; }
-}
-
-function _isEntityReferenceFromCollections(ent) {
-  try {
-    if (!ent) return false;
-    if (Array.isArray(entities) && entities.includes(ent)) return true;
-    if (Array.isArray(rabbits) && rabbits.includes(ent)) return true;
-    if (Array.isArray(foxes) && foxes.includes(ent)) return true;
-    if (Array.isArray(enemies) && enemies.includes(ent)) return true;
-    return false;
-  } catch (e) { return false; }
-}
-
-function _isSelectableEntity(ent) {
-  try {
-    if (!ent || typeof ent !== 'object') return false;
-    if (ent.kind === 'building' || ent.nonInteractive || ent.kind === 'ambient') return false;
-    return _isEntityReferenceFromCollections(ent);
-  } catch (e) { return false; }
-}
-
-function _entitySelectionKey(ent) {
-  try {
-    if (!ent) return 'null';
-    if (ent.id) return String(ent.id);
-    const kind = String(ent.kind || 'entity');
-    const col = (typeof ent.col === 'number') ? ent.col : (typeof ent.x === 'number' ? Math.floor(ent.x) : -1);
-    const row = (typeof ent.row === 'number') ? ent.row : (typeof ent.y === 'number' ? Math.floor(ent.y) : -1);
-    return `${kind}:${col},${row}`;
-  } catch (e) { return 'entity:unknown'; }
-}
-
-function _getSelectedEntities() {
-  try {
-    const list = Array.isArray(window._selectedEntities) ? window._selectedEntities : [];
-    const seen = new Set();
-    const out = [];
-    for (const ent of list) {
-      if (!ent || !_isSelectableEntity(ent)) continue;
-      const key = _entitySelectionKey(ent);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push(ent);
-    }
-    window._selectedEntities = out;
-    return out;
-  } catch (e) { return []; }
-}
-
-function _setSelectedEntities(list, append = false) {
-  try {
-    const base = append ? _getSelectedEntities().slice() : [];
-    const incoming = Array.isArray(list) ? list : [];
-    const merged = base.concat(incoming);
-    const seen = new Set();
-    const out = [];
-    for (const ent of merged) {
-      if (!ent || !_isSelectableEntity(ent)) continue;
-      const key = _entitySelectionKey(ent);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push(ent);
-    }
-    window._selectedEntities = out;
-    window._selectPreviewCount = out.length;
-    try { if (window.renderNPCList) window.renderNPCList(); } catch (e) {}
-    return out;
-  } catch (e) { return []; }
-}
-
-function _toggleSelectedEntity(ent) {
-  try {
-    if (!ent || !_isSelectableEntity(ent)) return _getSelectedEntities();
-    const list = _getSelectedEntities();
-    const key = _entitySelectionKey(ent);
-    const exists = list.some(item => _entitySelectionKey(item) === key);
-    if (exists) return _setSelectedEntities(list.filter(item => _entitySelectionKey(item) !== key), false);
-    return _setSelectedEntities(list.concat([ent]), false);
-  } catch (e) { return _getSelectedEntities(); }
-}
-
-function _collectSelectableEntitiesInRect(minX, minY, maxX, maxY) {
-  const selected = [];
-  const pushIfInside = (ent) => {
-    try {
-      if (!ent || !_isSelectableEntity(ent)) return;
-      const ex = (typeof ent.x === 'number') ? ent.x : ent.col;
-      const ey = (typeof ent.y === 'number') ? ent.y : ent.row;
-      if (typeof ex !== 'number' || typeof ey !== 'number') return;
-      if (ex >= minX && ex <= maxX && ey >= minY && ey <= maxY) selected.push(ent);
-    } catch (e) {}
-  };
-  try { for (const ent of (entities || [])) pushIfInside(ent); } catch (e) {}
-  try { for (const ent of (rabbits || [])) pushIfInside(ent); } catch (e) {}
-  try { for (const ent of (foxes || [])) pushIfInside(ent); } catch (e) {}
-  try { for (const ent of (enemies || [])) pushIfInside(ent); } catch (e) {}
-  return selected;
-}
-
-function _getSelectedNPCs() {
-  try {
-    return _getSelectedEntities().filter(en => String(en.id || '').startsWith('npc-'));
-  } catch (e) { return []; }
-}
-
-function _assignTaskToNPCs(npcs, actionId) {
-  try {
-    const arr = Array.isArray(npcs) ? npcs : [];
-    let assigned = 0;
-    for (const npc of arr) {
-      if (!npc) continue;
-      npc.task = { id: actionId, progress: 0, assignedAt: Date.now() };
-      assigned++;
-    }
-    if (assigned > 0) {
-      notify(`Tarea ${actionId} asignada a ${assigned} aldeano(s)`);
-      try { if (window.renderNPCList) window.renderNPCList(); } catch (e) {}
-    }
-    return assigned;
-  } catch (e) { return 0; }
-}
-
-function _issueGroupMoveCommand(tx, ty, opts = {}) {
-  try {
-    const units = _getSelectedEntities().filter(_isControllableUnit);
-    if (!units.length) return 0;
-    const radius = opts.radius || 0.75;
-    const n = units.length;
-    for (let i = 0; i < n; i++) {
-      const ent = units[i];
-      if (!ent) continue;
-      const angle = (i / Math.max(1, n)) * Math.PI * 2;
-      const spread = n <= 1 ? 0 : radius;
-      const targetX = tx + Math.cos(angle) * spread;
-      const targetY = ty + Math.sin(angle) * spread;
-      ent.moveTarget = { x: targetX, y: targetY };
-      try {
-        if (Math.abs(targetX - ent.x) > Math.abs(targetY - ent.y)) ent.dir = (targetX < ent.x) ? 'left' : 'right';
-        else ent.dir = (targetY < ent.y) ? 'up' : 'down';
-      } catch (e) {}
-    }
-    window._unitCommandTarget = { x: tx, y: ty, until: Date.now() + 1200, color: 'rgba(80,170,255,0.95)' };
-    notify(`Orden de movimiento: ${units.length} unidad(es)`);
-    return units.length;
-  } catch (e) { return 0; }
-}
-
-function _sendSelectedNPCsToGather() {
-  try {
-    const npcs = _getSelectedNPCs();
-    if (!npcs.length) { notify('Selecciona aldeanos para recolectar.'); return 0; }
-    const resources = entities.filter(ent => ent && (ent.kind === 'resource' || ent.kind === 'tree'));
-    if (!resources.length) { notify('No hay recursos cercanos disponibles.'); return 0; }
-    for (const npc of npcs) {
-      let nearest = null;
-      let best = Infinity;
-      for (const res of resources) {
-        const rx = (res.x !== undefined ? res.x : (res.col + 0.5));
-        const ry = (res.y !== undefined ? res.y : (res.row + 0.5));
-        const dist = Math.hypot((npc.x || npc.col) - rx, (npc.y || npc.row) - ry);
-        if (dist < best) { best = dist; nearest = { x: rx, y: ry }; }
-      }
-      if (nearest) {
-        npc.moveTarget = { x: nearest.x, y: nearest.y };
-        npc.task = { id: 'gather', progress: 0, assignedAt: Date.now() };
-      }
-    }
-    try { if (window.renderNPCList) window.renderNPCList(); } catch (e) {}
-    notify(`Recolectar cercano: ${npcs.length} aldeano(s)`);
-    return npcs.length;
-  } catch (e) { return 0; }
-}
+let _selectStart = null;
+let _selectRect = null;
 
 function setNpcPatrol(npc, route, opts = {}) {
   try {
@@ -437,419 +78,28 @@ function setNpcPatrol(npc, route, opts = {}) {
   } catch (e) { return npc; }
 }
 
-// Simple loading overlay (spinner + text) used by several flows
-function showLoadingOverlay(text) {
-  try {
-    let el = document.getElementById('loading-overlay');
-    if (!el) {
-      el = document.createElement('div'); el.id = 'loading-overlay';
-      el.style.position = 'fixed'; el.style.left = '0'; el.style.top = '0'; el.style.right = '0'; el.style.bottom = '0';
-      el.style.display = 'flex'; el.style.alignItems = 'center'; el.style.justifyContent = 'center';
-      el.style.background = 'rgba(0,0,0,0.6)'; el.style.zIndex = 120001;
-      const box = document.createElement('div');
-      box.style.display = 'flex'; box.style.flexDirection = 'column'; box.style.alignItems = 'center'; box.style.gap = '10px';
-      box.style.background = 'rgba(18,18,18,0.98)'; box.style.color = '#FFD27A'; box.style.padding = '18px 22px'; box.style.borderRadius = '10px'; box.style.fontFamily = 'sans-serif';
-      const spinner = document.createElement('div'); spinner.id = 'loading-spinner';
-      spinner.style.width = '42px'; spinner.style.height = '42px'; spinner.style.border = '5px solid rgba(255,255,255,0.08)'; spinner.style.borderTopColor = '#FFD27A'; spinner.style.borderRadius = '50%'; spinner.style.animation = 'meso-spin 900ms linear infinite';
-      const label = document.createElement('div'); label.id = 'loading-label'; label.textContent = text || '(cargando)'; label.style.fontWeight = '700'; label.style.marginTop = '4px';
-      box.appendChild(spinner); box.appendChild(label); el.appendChild(box);
-      const style = document.createElement('style'); style.id = 'meso-loading-styles'; style.textContent = '@keyframes meso-spin { from { transform: rotate(0deg);} to { transform: rotate(360deg);} }';
-      document.head.appendChild(style);
-      document.body.appendChild(el);
-    }
-    const lbl = document.getElementById('loading-label'); if (lbl) lbl.textContent = text || '(cargando)';
-    el.style.display = 'flex';
-  } catch (e) { /* ignore */ }
-}
-
-// Generate PNG blob URLs and Image objects from cached entity canvases to speed rendering
-async function generateSpriteImages(progress) {
-  try {
-    const cache = window._ENTITY_BITMAPS || {};
-    window._SPRITE_URLS = window._SPRITE_URLS || {};
-    window._SPRITE_IMAGES = window._SPRITE_IMAGES || {};
-    // persistent sprite cache in localStorage to avoid regenerating/saving repeatedly
-    const SPRITE_CACHE_KEY = 'meso.spriteCache';
-    const SPRITE_CACHE_LIMIT_BYTES = 3 * 1024 * 1024; // ~3MB
-    let spriteCache = { ts: Date.now(), sprites: {}, size: 0 };
-    try {
-      const raw = localStorage.getItem(SPRITE_CACHE_KEY);
-      if (raw) spriteCache = Object.assign(spriteCache, JSON.parse(raw));
-    } catch (e) { spriteCache = { ts: Date.now(), sprites: {}, size: 0 }; }
-    window._spriteServerAvailable = (window._spriteServerAvailable === undefined) ? true : window._spriteServerAvailable;
-    const keys = Object.keys(cache);
-    if (keys.length === 0) { if (progress && progress.update) progress.update(60, 'Sprites: none'); return; }
-    for (let i = 0; i < keys.length; i++) {
-      const k = keys[i];
-      try {
-        if (!cache[k]) continue;
-        if (window._SPRITE_IMAGES[k]) continue; // already generated
-        if (progress && progress.update) progress.update(Math.floor(60 + (i / Math.max(1, keys.length)) * 30), `Generando sprites... (${i+1}/${keys.length})`);
-        const v = cache[k];
-        const tmp = document.createElement('canvas'); tmp.width = v.width || 32; tmp.height = v.height || 32;
-        const tc = tmp.getContext('2d'); tc.clearRect(0,0,tmp.width,tmp.height);
-        try { tc.drawImage(v, 0, 0, tmp.width, tmp.height); } catch (e) {/* ignore draw issues */}
-
-        // Prefer createImageBitmap for fast, GPU-friendly bitmaps
-        try {
-          if (window.createImageBitmap) {
-            const bmp = await createImageBitmap(tmp);
-            window._SPRITE_IMAGES[k] = bmp;
-            // keep an optional object URL for debug or legacy code, but it's not required
-            try { const blob = await new Promise((resolve) => tmp.toBlob(resolve, 'image/png')); if (blob) window._SPRITE_URLS[k] = URL.createObjectURL(blob); } catch (e) {}
-          } else {
-            // fallback: create an Image element but don't append to DOM
-            const blob = await new Promise((resolve) => tmp.toBlob(resolve, 'image/png'));
-            if (!blob) continue;
-            const url = URL.createObjectURL(blob);
-            const img = new Image(); img.src = url; img.dataset.spriteName = k;
-            window._SPRITE_IMAGES[k] = img;
-            window._SPRITE_URLS[k] = url;
-          }
-        } catch (e) {
-          console.warn('generateSpriteImages: createImageBitmap failed for', k, e);
-        }
-
-        // Optional: non-blocking upload/save of dataURI (do not await)
-        (async () => {
-          try {
-            // Persist into localStorage cache (size-limited)
-            try {
-              if (!spriteCache.sprites[k]) {
-                const dataURI = tmp.toDataURL('image/png');
-                const approxSize = dataURI.length * 2; // rough bytes
-                if ((spriteCache.size + approxSize) <= SPRITE_CACHE_LIMIT_BYTES) {
-                  spriteCache.sprites[k] = dataURI;
-                  spriteCache.size += approxSize;
-                  spriteCache.ts = Date.now();
-                }
-              }
-            } catch (e) { /* ignore storage errors */ }
-            // Try to send to external sprite server only if previously available
-            const server = (window.SPRITE_SERVER_URL || 'http://localhost:3001/save-sprite');
-            if (window._spriteServerAvailable && server && server.indexOf('http') === 0) {
-              try {
-                const dataURI = spriteCache.sprites[k] || tmp.toDataURL('image/png');
-                const res = await fetch(server, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ name: k + '.png', dataURI })
-                });
-                if (!res.ok) {
-                  console.warn('sprite save failed', k, res.status);
-                  // if server responds non-OK, mark unavailable to avoid further tries
-                  window._spriteServerAvailable = false;
-                }
-              } catch (e) {
-                // network error -> disable further attempts this session
-                window._spriteServerAvailable = false;
-              }
-            }
-            // flush cache back to localStorage (best-effort)
-            try { localStorage.setItem(SPRITE_CACHE_KEY, JSON.stringify(spriteCache)); } catch (e) {}
-          } catch (e) {}
-        })();
-
-      } catch (e) { console.warn('generateSpriteImages error', k, e); }
-    }
-    if (progress && progress.update) progress.update(95, 'Sprites generados');
-    // Save sprite cache at end (best-effort)
-    try { localStorage.setItem(SPRITE_CACHE_KEY, JSON.stringify(spriteCache)); } catch (e) {}
-  } catch (e) { console.warn('generateSpriteImages err', e); }
-}
-function hideLoadingOverlay() { try { const el = document.getElementById('loading-overlay'); if (el) el.style.display = 'none'; } catch (e) {} }
-
-// Cache icon canvases into ImageBitmaps for faster draws
-async function cacheIcons(progress) {
-  try {
-    // collect all canvas elements whose id starts with 'icon-' so new icons are auto-detected
-    const canvasEls = Array.from(document.querySelectorAll('canvas[id^="icon-"]'));
-    if (canvasEls.length === 0) { progress.update(10, 'Iconos: none'); return; }
-    const total = canvasEls.length; let i = 0;
-    for (const c of canvasEls) {
-      i++;
-      const id = c.id || ('icon-' + i);
-      try {
-        // clone to offscreen canvas to avoid altering visible canvas
-        const off = document.createElement('canvas'); off.width = c.width || 32; off.height = c.height || 32;
-        const cx = off.getContext('2d'); cx.drawImage(c,0,0);
-        if (window.createImageBitmap) {
-          const bmp = await createImageBitmap(off);
-          window._ICON_BITMAPS[id] = bmp;
-        } else {
-          window._ICON_BITMAPS[id] = off;
-        }
-        progress.update((i/total)*30, `Iconos: ${id}`);
-      } catch (e) {
-        progress.update((i/total)*30, `Iconos: ${id} (err)`);
-      }
-    }
-  } catch (e) { /* ignore */ }
-}
-
-// Build a simple procedural atlas from cached icons
-async function buildSpritesheet(progress) {
-  try {
-    const keys = Object.keys(window._ICON_BITMAPS || {});
-    if (keys.length === 0) { progress.update(35, 'Sprites: none'); return; }
-    const size = 32; const cols = Math.ceil(Math.sqrt(keys.length)); const rows = Math.ceil(keys.length / cols);
-    const atlas = document.createElement('canvas'); atlas.width = cols * size; atlas.height = rows * size;
-    const ax = atlas.getContext('2d');
-    let i = 0;
-    for (const id of keys) {
-      const x = (i % cols) * size; const y = Math.floor(i / cols) * size;
-      const bmp = window._ICON_BITMAPS[id];
-      try { ax.drawImage(bmp, x + 4, y + 4, size-8, size-8); } catch (e) { /* ignore */ }
-      window._ICON_BITMAPS[id+'_atlas_pos'] = { x:x+4, y:y+4, w:size-8, h:size-8 };
-      i++; progress.update(30 + (i/keys.length)*10, `Sprites: ${i}/${keys.length}`);
-    }
-    if (window.createImageBitmap) window._ICON_BITMAPS['_atlas'] = await createImageBitmap(atlas); else window._ICON_BITMAPS['_atlas'] = atlas;
-  } catch (e) { /* ignore */ }
-}
-
-// Pre-render map into chunks (32x32 tiles) and cache as ImageBitmap/canvas
-async function preRenderMapChunks(progress) {
-  try {
-    const CHUNK = 32;
-    const chunkCols = Math.ceil(COLS / CHUNK);
-    const chunkRows = Math.ceil(ROWS / CHUNK);
-    let total = chunkCols * chunkRows; let count = 0;
-    for (let cy = 0; cy < chunkRows; cy++) {
-      for (let cx = 0; cx < chunkCols; cx++) {
-        const key = cx + ',' + cy;
-        try {
-          const off = document.createElement('canvas'); off.width = CHUNK * TILE; off.height = CHUNK * TILE;
-          const oc = off.getContext('2d');
-          // draw simple tile background from tileBiome (best-effort)
-          for (let ty = 0; ty < CHUNK; ty++) {
-            for (let tx = 0; tx < CHUNK; tx++) {
-              const col = cx * CHUNK + tx; const row = cy * CHUNK + ty;
-              if (col >= COLS || row >= ROWS) continue;
-              const b = (tileBiome && tileBiome[row] && tileBiome[row][col]) ? tileBiome[row][col] : 'sand';
-              // simple color mapping
-              let color = '#EBD9B3';
-              if (b === 'sand') color = '#EBD9B3'; else if (b === 'dirt') color = '#CFA07A'; else if (b === 'water') color = '#6EA8D7'; else if (b === 'grass') color = '#8BBF7E';
-              oc.fillStyle = color; oc.fillRect(tx * TILE, ty * TILE, TILE, TILE);
-            }
-          }
-          // optionally draw buildings inside this chunk for better fidelity
-          // iterate grid cells
-          for (let ty = 0; ty < CHUNK; ty++) {
-            for (let tx = 0; tx < CHUNK; tx++) {
-              const col = cx * CHUNK + tx; const row = cy * CHUNK + ty;
-              if (col >= COLS || row >= ROWS) continue;
-              const cell = grid[row][col];
-              if (!cell) continue;
-              try {
-                // draw base tile if string
-                if (typeof cell === 'string') {
-                  // nothing extra
-                } else if (cell.type) {
-                  // draw building icon if available
-                  const pos = window._ICON_BITMAPS[cell.type ? ('icon-'+cell.type) : 'icon-house'];
-                  if (pos) {
-                    // draw a small representation
-                    try { oc.fillStyle = '#00000022'; oc.fillRect(tx*TILE+4, ty*TILE+4, TILE-8, TILE-8); } catch (e) {}
-                  }
-                }
-              } catch (e) {}
-            }
-          }
-          // create bitmap
-          if (window.createImageBitmap) {
-            try { window.MAP_CHUNKS[key] = await createImageBitmap(off); } catch (e) { window.MAP_CHUNKS[key] = off; }
-          } else window.MAP_CHUNKS[key] = off;
-        } catch (e) { /* ignore chunk failure */ }
-        count++; progress.update(45 + (count/total)*50, `Chunks: ${count}/${total}`);
-      }
-    }
-  } catch (e) { /* ignore */ }
-}
-
-// Pre-render entities (trees, animals, buildings, NPCs) into offscreen canvases
-async function preRenderEntities(progress) {
-  try {
-    const entries = [];
-    // collect placed grid buildings
-    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
-      const cell = grid[r][c]; if (!cell) continue;
-      if (typeof cell === 'string') entries.push({ type: cell, key: 'building:' + cell });
-      else if (cell.type) entries.push({ type: cell.type, key: 'building:' + cell.type });
-    }
-    // runtime entities from entities.js
-    try { (window.entities || []).forEach(en => { if (en && en.kind) entries.push({ type: en.kind + (en.variant? (':' + en.variant) : ''), key: 'entity:' + (en.id || (en.kind + '-' + en.col + '-' + en.row)) }); }); } catch (e) {}
-    try { (window.rabbits || []).forEach(r => entries.push({ type: 'rabbit', key: 'rabbit:' + r.id })); } catch (e) {}
-    try { (window.foxes || []).forEach(f => entries.push({ type: 'fox', key: 'fox:' + f.id })); } catch (e) {}
-
-    // dedupe by key
-    const map = {}; entries.forEach(e => { map[e.key] = e; });
-    const keys = Object.keys(map); if (keys.length === 0) { progress.update(40, 'Entidades: none'); return; }
-    let i = 0; for (const k of keys) {
-      i++; const en = map[k]; const id = k.replace(/[:]/g,'_');
-      try {
-        const off = document.createElement('canvas'); off.width = 64; off.height = 64; const oc = off.getContext('2d');
-        // simple placeholder rendering depending on type
-        if (en.type.indexOf('tree') !== -1 || en.type.indexOf('tree') === 0) {
-          oc.fillStyle = '#3A6B2A'; oc.beginPath(); oc.ellipse(32,22,18,14,0,0,Math.PI*2); oc.fill(); oc.fillStyle = '#5B3E1B'; oc.fillRect(28,28,8,20);
-        } else if (en.type.indexOf('rabbit') !== -1 || en.type === 'rabbit') {
-          oc.fillStyle = '#DDDDDD'; oc.beginPath(); oc.ellipse(36,34,10,6,0,0,Math.PI*2); oc.fill(); oc.fillStyle='#222'; oc.fillRect(30,30,2,2);
-        } else if (en.type.indexOf('fox') !== -1 || en.type === 'fox') {
-          oc.fillStyle = '#C85A1A'; oc.beginPath(); oc.ellipse(36,34,11,7,0,0,Math.PI*2); oc.fill();
-        } else if (en.type.indexOf('building') !== -1 || en.type.indexOf('house') !== -1) {
-          oc.fillStyle = '#C8A84B'; oc.fillRect(16,20,32,24); oc.fillStyle='#7A4F12'; oc.fillRect(14,12,36,12);
-        } else {
-          // generic dot
-          oc.fillStyle = '#FFF'; oc.beginPath(); oc.arc(32,32,8,0,Math.PI*2); oc.fill();
-        }
-        if (window.createImageBitmap) {
-          try { window._ENTITY_BITMAPS[id] = await createImageBitmap(off); } catch (e) { window._ENTITY_BITMAPS[id] = off; }
-        } else window._ENTITY_BITMAPS[id] = off;
-      } catch (e) {}
-      progress.update(40 + (i/keys.length)*10, `Entidades: ${i}/${keys.length}`);
-    }
-  } catch (e) { /* ignore */ }
-}
-
-// Export current entity definitions (buildings, trees, animals, enemies, resources) as a JSON file
-function exportEntityDefinitionsToJSON() {
-  try {
-    const defs = window._ENTITY_DEFS || { buildings: BUILDINGS, trees: null, animals: null, enemies: DEFAULT_ENEMY_DEFS, resources: DEFAULT_RESOURCE_DEFS };
-    const data = {
-      buildings: defs.buildings || BUILDINGS,
-      trees: defs.trees || null,
-      animals: defs.animals || null,
-      enemies: defs.enemies || DEFAULT_ENEMY_DEFS,
-      resources: defs.resources || DEFAULT_RESOURCE_DEFS
-    };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'entities-defs.json'; document.body.appendChild(a); a.click(); setTimeout(() => { try { document.body.removeChild(a); URL.revokeObjectURL(a.href); } catch (e) {} }, 200);
-  } catch (e) { console.warn('exportEntityDefinitionsToJSON err', e); }
-}
-try { window.exportEntityDefinitionsToJSON = exportEntityDefinitionsToJSON; } catch (e) {}
-
-try { window.loadEntityDefinitions = loadEntityDefinitions; } catch (e) {}
-
-// Wait until entity pixel library is ready (created canvases), resolve early if already available
-async function ensureEntityPixelsReady(timeoutMs = 1200) {
-  if (window.ENTITY_PIXEL_LIBRARY && Object.keys(window.ENTITY_PIXEL_LIBRARY).length > 0) return true;
-  return await new Promise((resolve) => {
-    let done = false;
-    const onReady = () => { if (done) return; done = true; cleanup(); resolve(true); };
-    const cleanup = () => { window.removeEventListener('entityPixelsLoaded', onReady); window.removeEventListener('message', onMessage); if (timer) clearTimeout(timer); };
-    const onMessage = (ev) => { try { if (ev && ev.data && ev.data.type === 'entityPixelsLoaded') onReady(); } catch (e) {} };
-    window.addEventListener('entityPixelsLoaded', onReady);
-    window.addEventListener('message', onMessage);
-    const timer = setTimeout(() => { if (done) return; done = true; cleanup(); resolve(!!(window.ENTITY_PIXEL_LIBRARY && Object.keys(window.ENTITY_PIXEL_LIBRARY).length > 0)); }, timeoutMs);
-  });
-}
-
-// Accept postMessage imports from editor windows
-window.addEventListener('message', (ev) => {
-  try {
-    const d = ev.data; if (!d) return;
-    // legacy import from editor: entity definitions
-    if (d.type === 'meso.importEntityDefs' && d.data) {
-      const ok = importEntityDefinitionsFromObject(d.data);
-      try { if (ev.source && ev.source.postMessage) ev.source.postMessage({ type: 'meso.importResult', ok: !!ok, msg: ok? 'Imported' : 'Failed' }, '*'); } catch (e) {}
-      return;
-    }
-
-    // Editor requests current entity-pixels JSON
-    if (d.type === 'requestEntityPixels') {
-      const data = window.ENTITY_PIXEL_LIBRARY || {};
-      try { if (ev.source && ev.source.postMessage) ev.source.postMessage({ type: 'entityPixelsData', data }, '*'); } catch (e) { window.postMessage({ type: 'entityPixelsData', data }, '*'); }
-      return;
-    }
-
-    // Editor asks for list of available pixel objects
-    if (d.type === 'listEntityPixels') {
-      const keys = Object.keys(window.ENTITY_PIXEL_LIBRARY || {});
-      try { if (ev.source && ev.source.postMessage) ev.source.postMessage({ type: 'entityPixelsList', list: keys }, '*'); } catch (e) { window.postMessage({ type: 'entityPixelsList', list: keys }, '*'); }
-      return;
-    }
-
-    // Editor sends updated pixel definitions to save/replace
-    if (d.type === 'saveEntityPixels' && d.data) {
-      try {
-        const newData = d.data || {};
-        // provide a backup download of the previous version for safety
-        try {
-          const oldData = JSON.stringify(window.ENTITY_PIXEL_LIBRARY || {}, null, 2);
-          const blobOld = new Blob([oldData], { type: 'application/json' });
-          const aOld = document.createElement('a');
-          aOld.href = URL.createObjectURL(blobOld);
-          aOld.download = 'entity-pixels.bck.' + new Date().toISOString().replace(/[:.]/g,'-') + '.json';
-          document.body.appendChild(aOld); aOld.click(); aOld.remove();
-        } catch (e) { console.warn('Could not create backup download', e); }
-
-        // update in-memory library and regenerate canvases
-        window.ENTITY_PIXEL_LIBRARY = newData.icons || newData;
-        for (const k in window.ENTITY_PIXEL_LIBRARY) {
-          try { window.createCanvasFromPixelDef(window.ENTITY_PIXEL_LIBRARY[k], k); } catch (e) { console.warn('rebuild icon', k, e); }
-        }
-
-        // trigger a save download of the updated JSON so developer can persist the change
-        try {
-          const blobNew = new Blob([JSON.stringify({ icons: window.ENTITY_PIXEL_LIBRARY }, null, 2)], { type: 'application/json' });
-          const a = document.createElement('a');
-          a.href = URL.createObjectURL(blobNew);
-          a.download = 'entity-pixels.json';
-          document.body.appendChild(a); a.click(); a.remove();
-        } catch (e) { console.warn('Could not trigger save download', e); }
-
-        try { if (ev.source && ev.source.postMessage) ev.source.postMessage({ type: 'entityPixelsSaved', ok: true }, '*'); } catch (e) { window.postMessage({ type: 'entityPixelsSaved', ok: true }, '*'); }
-      } catch (err) {
-        try { if (ev.source && ev.source.postMessage) ev.source.postMessage({ type: 'entityPixelsSaved', ok: false, error: err.message }, '*'); } catch (e) { window.postMessage({ type: 'entityPixelsSaved', ok: false, error: err.message }, '*'); }
-      }
-      return;
-    }
-  } catch (e) { console.error('message handler error', e); }
-});
+installEntityEditorMessageHandlers(importEntityDefinitionsFromObject);
 
 // Master preload runner
-async function preloadAllBeforeStart() {
-  const p = showProgressOverlay('Precargando recursos...');
-  try {
-    p.update(0, 'Iniciando...');
-    try { await loadEntityDefinitions(p); } catch (e) { /* ignore */ }
-    await cacheIcons(p);
-    await buildSpritesheet(p);
-    await preRenderEntities(p);
-    // generate static sprite images (blob URLs) from pre-rendered canvases to speed runtime draws
-    try { p.update(55, 'Generando imágenes de sprites...'); await generateSpriteImages(p); } catch (e) { console.warn('sprite gen failed', e); }
-    await preRenderMapChunks(p);
-    p.update(99, 'Finalizando...');
-    await new Promise(r => setTimeout(r, 120));
-  } catch (e) { console.warn('preloadAllBeforeStart err', e); }
-  p.hide();
-}
+const preloadAllBeforeStart = () => preloadAllBeforeStartImpl({
+  showProgressOverlay,
+  loadEntityDefinitions,
+  generateSpriteImages,
+  COLS,
+  ROWS,
+  TILE,
+  tileBiome,
+  grid
+});
 
 // Clear caches used by preload and runtime
-function clearRuntimeCaches() {
-  try { mapCache = null; mapCacheOrtho = null; mapCacheIso = null; mapCacheDirty = true; } catch (e) {}
-  try { window.MAP_CHUNKS = {}; } catch (e) {}
-  try { window._ICON_BITMAPS = {}; } catch (e) {}
-  try {
-    // revoke generated sprite blob URLs and remove hidden img nodes
-    if (window._SPRITE_URLS) {
-      for (const k of Object.keys(window._SPRITE_URLS)) {
-        try { URL.revokeObjectURL(window._SPRITE_URLS[k]); } catch (e) {}
-      }
-    }
-    if (window._SPRITE_IMAGES) {
-      for (const k of Object.keys(window._SPRITE_IMAGES)) {
-        try { const img = window._SPRITE_IMAGES[k]; if (img && img.parentNode) img.parentNode.removeChild(img); } catch (e) {}
-      }
-    }
-    window._SPRITE_URLS = {};
-    window._SPRITE_IMAGES = {};
-    window._ENTITY_BITMAPS = {};
-  } catch (e) {}
+const clearRuntimeCaches = () => clearRuntimeCachesImpl({
+  resetMapCaches: () => { mapCache = null; mapCacheOrtho = null; mapCacheIso = null; mapCacheDirty = true; }
+});
 
-  // Check interior doors (enter) when standing on mapped tile
-  // Previously auto-entered interiors when standing on door tiles.
-  // Entry must now be explicit via the 'E' key to avoid accidental transitions.
-}
+// Check interior doors (enter) when standing on mapped tile
+// Previously auto-entered interiors when standing on door tiles.
+// Entry must now be explicit via the 'E' key to avoid accidental transitions.
 //  MESOPOTAMIA CITY BUILDER  —  Core engine module (moved from game.js)
 // This file is now loaded as an ES module from index.html
 
@@ -957,12 +207,46 @@ function registerPanel(el) {
     if (saved) {
       if (saved.left) el.style.left = saved.left;
       if (saved.top) el.style.top = saved.top;
+      if (saved.right) el.style.right = saved.right;
+      if (saved.bottom) el.style.bottom = saved.bottom;
+      if (saved.width) el.style.width = saved.width;
+      if (saved.height) el.style.height = saved.height;
+      if (saved.transform) el.style.transform = saved.transform;
       if (saved.display === 'none') el.style.display = 'none';
+      if (saved.dragMoved) el.dataset.dragMoved = '1';
       // if minimized, hide body when body exists
       const body = el.querySelector && el.querySelector('.floating-body');
-      if (body && saved.minimized) body.style.display = 'none';
+      if (body) {
+        body.style.display = saved.minimized ? 'none' : '';
+        const minBtn = el.querySelector('.btn-minimize');
+        if (minBtn) minBtn.textContent = saved.minimized ? '+' : '—';
+      }
     }
   } catch (e) { /* ignore */ }
+}
+
+function restoreRegisteredPanelsFromState(savedPanels) {
+  try {
+    if (!savedPanels || typeof savedPanels !== 'object') return;
+    Object.keys(window.FLOATING_PANELS || {}).forEach(id => {
+      const el = window.FLOATING_PANELS[id];
+      const saved = savedPanels[id];
+      if (!el || !saved) return;
+      if (saved.left) el.style.left = saved.left;
+      if (saved.top) el.style.top = saved.top;
+      if (saved.right) el.style.right = saved.right;
+      if (saved.bottom) el.style.bottom = saved.bottom;
+      if (saved.width) el.style.width = saved.width;
+      if (saved.height) el.style.height = saved.height;
+      if (saved.transform) el.style.transform = saved.transform;
+      el.style.display = saved.display === 'none' ? 'none' : '';
+      if (saved.dragMoved) el.dataset.dragMoved = '1';
+      const body = el.querySelector && el.querySelector('.floating-body');
+      if (body) body.style.display = saved.minimized ? 'none' : '';
+      const minBtn = el.querySelector && el.querySelector('.btn-minimize');
+      if (minBtn) minBtn.textContent = saved.minimized ? '+' : '—';
+    });
+  } catch (e) {}
 }
 // --- Map rendering cache (offscreen) ---
 let mapCache = null;         // kept for backward-compat references inside rebuildMapCache
@@ -1017,436 +301,30 @@ function withAlpha(hexColor, alpha) {
   }
 }
 
-function getMapTerrainMeta(terrainId) {
-  return MAP_EDITOR_TERRAINS.find(t => t.id === terrainId) || MAP_EDITOR_TERRAINS[0];
-}
-
-function getMapTerrainLabel(terrainId) {
-  return getMapTerrainMeta(terrainId).label;
-}
-
-function getMapBrushCells(centerCol, centerRow) {
-  const radius = Math.max(0, Number(mapEditorBrushSize || 1) - 1);
-  const cells = [];
-  for (let row = centerRow - radius; row <= centerRow + radius; row++) {
-    for (let col = centerCol - radius; col <= centerCol + radius; col++) {
-      if (col < 0 || col >= COLS || row < 0 || row >= ROWS) continue;
-      if (radius > 0 && Math.hypot(col - centerCol, row - centerRow) > radius + 0.25) continue;
-      cells.push({ col, row });
-    }
-  }
-  return cells;
-}
-
-function updateMapEditorUI() {
-  try {
-    const toggleBtn = document.getElementById('btn-map-editor-toggle');
-    const shortcutBtn = document.getElementById('btn-map-editor-shortcut');
-    const statusEl = document.getElementById('map-editor-status');
-    const sizeInput = document.getElementById('map-editor-brush-size');
-    const sizeLabel = document.getElementById('map-editor-brush-size-label');
-    if (toggleBtn) {
-      toggleBtn.classList.toggle('active', mapEditorEnabled);
-      toggleBtn.textContent = mapEditorEnabled ? 'Desactivar editor' : 'Activar editor';
-    }
-    if (shortcutBtn) shortcutBtn.classList.toggle('active', mapEditorEnabled);
-    if (sizeInput) sizeInput.value = String(mapEditorBrushSize);
-    if (sizeLabel) sizeLabel.textContent = String(mapEditorBrushSize);
-    document.querySelectorAll('.map-editor-terrain').forEach(btn => {
-      btn.classList.toggle('active', btn.dataset.terrain === mapEditorBrush);
-    });
-    if (statusEl) {
-      if (!editMode) statusEl.textContent = 'Activa el modo edición para pintar el mapa manualmente.';
-      else if (mapEditorEnabled) statusEl.textContent = `Pincel ${getMapTerrainLabel(mapEditorBrush)} · tamaño ${mapEditorBrushSize}. Arrastra sobre el mapa para pintar.`;
-      else statusEl.textContent = 'Pulsa “Activar editor” para dibujar biomas y caminos a mano.';
-    }
-  } catch (e) {}
-}
-
-function setMapEditorBrush(terrainId) {
-  const meta = getMapTerrainMeta(terrainId);
-  mapEditorBrush = meta.id;
-  updateMapEditorUI();
-}
-
-function setMapEditorEnabled(enabled, options = {}) {
-  const next = !!enabled;
-  mapEditorEnabled = next;
-  if (next) {
-    if (!editMode) setEditMode(true);
-    selectedTool = null;
-    try { document.querySelectorAll('.build-btn, #btn-demolish').forEach(b => b.classList.remove('selected')); } catch (e) {}
-  }
-  mapEditorPainting = false;
-  mapEditorLastPaintKey = null;
-  updateMapEditorUI();
-  if (!options.silent) notify(next ? `Editor de mapa activo: ${getMapTerrainLabel(mapEditorBrush)}.` : 'Editor de mapa desactivado.');
-}
-
-function pruneEditedTerrainEntities(cells, terrainId) {
-  try {
-    const edited = new Set(cells.map(cell => `${cell.col},${cell.row}`));
-    for (let i = entities.length - 1; i >= 0; i--) {
-      const ent = entities[i];
-      if (!ent) continue;
-      const col = (typeof ent.col === 'number') ? ent.col : (typeof ent.x === 'number' ? Math.floor(ent.x) : null);
-      const row = (typeof ent.row === 'number') ? ent.row : (typeof ent.y === 'number' ? Math.floor(ent.y) : null);
-      if (col === null || row === null || !edited.has(`${col},${row}`)) continue;
-      if (ent.kind === 'tree' || ent.kind === 'ambient' || (terrainId === 'water' && ent.kind === 'resource')) entities.splice(i, 1);
-    }
-  } catch (e) {}
-}
-
-function paintTerrainAt(centerCol, centerRow) {
-  if ((startLocked && !window._standaloneEditorMode) || !editMode || !mapEditorEnabled) return 0;
-  if (centerCol < 0 || centerCol >= COLS || centerRow < 0 || centerRow >= ROWS) return 0;
-  const cells = getMapBrushCells(centerCol, centerRow);
-  const targetHeight = MAP_EDITOR_HEIGHT_PRESETS[mapEditorBrush];
-  const changed = [];
-  for (const cell of cells) {
-    const { col, row } = cell;
-    if (grid[row] && grid[row][col]) continue;
-    const currentBiome = (tileBiome[row] && tileBiome[row][col]) || 'alluvial';
-    const currentHeight = (heightMap[row] && typeof heightMap[row][col] === 'number') ? heightMap[row][col] : null;
-    const nextHeight = (typeof targetHeight === 'number') ? targetHeight : currentHeight;
-    if (currentBiome === mapEditorBrush && currentHeight === nextHeight) continue;
-    tileBiome[row][col] = mapEditorBrush;
-    if (typeof nextHeight === 'number') heightMap[row][col] = nextHeight;
-    changed.push(cell);
-  }
-  if (!changed.length) return 0;
-  pruneEditedTerrainEntities(changed, mapEditorBrush);
-  mapCacheDirty = true;
-  try { rebuildMapCacheDebounced(20); } catch (e) {}
-  try { saveAppStateDebounced(500); } catch (e) {}
-  try { render(); } catch (e) {}
-  return changed.length;
-}
-
-function cloneMapDesignValue(value, fallback) {
-  try {
-    return JSON.parse(JSON.stringify(value));
-  } catch (e) {
-    return fallback;
-  }
-}
-
-function getMapDesignObject() {
-  return {
-    meta: {
-      type: 'mesobuilder-map-design',
-      version: 2,
-      exportedAt: new Date().toISOString(),
-      epoch: window._currentEpoch || 'mesopotamia'
-    },
-    epoch: window._currentEpoch || 'mesopotamia',
-    cols: COLS,
-    rows: ROWS,
-    tileBiome: tileBiome.map(row => row.slice()),
-    heightMap: heightMap.map(row => row.slice()),
-    grid: cloneMapDesignValue(grid, []),
-    entities: cloneMapDesignValue(entities || [], []),
-    villages: cloneMapDesignValue(window._VILLAGES || [], []),
-    player: {
-      col: player.col,
-      row: player.row,
-      x: player.x,
-      y: player.y
-    }
-  };
-}
-
-function exportMapDesign() {
-  try {
-    const data = getMapDesignObject();
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `meso-map-design-${stamp}.json`;
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => {
-      try { a.remove(); } catch (e) {}
-      try { URL.revokeObjectURL(url); } catch (e) {}
-    }, 300);
-    notify('Diseño de mapa exportado.');
-  } catch (e) {
-    console.error('exportMapDesign', e);
-    notify('No se pudo exportar el diseño del mapa.');
-  }
-}
-
-function importMapDesignFromObject(data, options = {}) {
-  try {
-    const source = (data && data.tileBiome) ? data : (data && data.mapDesign && data.mapDesign.tileBiome ? data.mapDesign : null);
-    if (!source || !Array.isArray(source.tileBiome)) throw new Error('Formato de diseño no válido');
-    if (source.epoch && !options.skipEpochApply && source.epoch !== (window._currentEpoch || 'mesopotamia')) {
-      try { applyEpochProfile(source.epoch, true); } catch (e) {}
-    }
-    const copyRows = Math.min(ROWS, source.tileBiome.length);
-    for (let r = 0; r < copyRows; r++) {
-      const row = Array.isArray(source.tileBiome[r]) ? source.tileBiome[r].slice(0, COLS) : Array(COLS).fill('alluvial');
-      while (row.length < COLS) row.push('alluvial');
-      tileBiome[r] = row;
-    }
-    for (let r = copyRows; r < ROWS; r++) tileBiome[r] = Array(COLS).fill('alluvial');
-    if (Array.isArray(source.heightMap)) {
-      const heightRows = Math.min(ROWS, source.heightMap.length);
-      for (let r = 0; r < heightRows; r++) {
-        const row = Array.isArray(source.heightMap[r]) ? source.heightMap[r].slice(0, COLS) : Array(COLS).fill(0.12);
-        while (row.length < COLS) row.push(0.12);
-        heightMap[r] = row.map(v => (typeof v === 'number' ? Math.max(0, Math.min(1, v)) : 0.12));
-      }
-      for (let r = heightRows; r < ROWS; r++) heightMap[r] = Array(COLS).fill(0.12);
-    }
-    if (Array.isArray(source.grid)) {
-      const gridRows = Math.min(ROWS, source.grid.length);
-      for (let r = 0; r < gridRows; r++) {
-        const row = Array.isArray(source.grid[r]) ? source.grid[r].slice(0, COLS) : Array(COLS).fill(null);
-        while (row.length < COLS) row.push(null);
-        grid[r] = row.map(cell => (cell ? cloneMapDesignValue(cell, null) : null));
-      }
-      for (let r = gridRows; r < ROWS; r++) grid[r] = Array(COLS).fill(null);
-    }
-    if (Object.prototype.hasOwnProperty.call(source, 'entities') && Array.isArray(source.entities)) {
-      try {
-        entities.length = 0;
-        source.entities.forEach(ent => {
-          if (!ent || typeof ent !== 'object') return;
-          const it = cloneMapDesignValue(ent, null);
-          if (!it) return;
-          if (typeof it.col !== 'number') it.col = (typeof it.x === 'number') ? Math.floor(it.x) : 0;
-          if (typeof it.row !== 'number') it.row = (typeof it.y === 'number') ? Math.floor(it.y) : 0;
-          it.x = typeof it.x === 'number' ? it.x : it.col;
-          it.y = typeof it.y === 'number' ? it.y : it.row;
-          entities.push(it);
-        });
-      } catch (e) {}
-    }
-    if (Object.prototype.hasOwnProperty.call(source, 'villages') && Array.isArray(source.villages)) {
-      try { window._VILLAGES = cloneMapDesignValue(source.villages, []); } catch (e) {}
-    }
-    if (source.player && typeof source.player === 'object') {
-      try {
-        const px = typeof source.player.x === 'number' ? source.player.x : source.player.col;
-        const py = typeof source.player.y === 'number' ? source.player.y : source.player.row;
-        if (typeof px === 'number' && typeof py === 'number') {
-          player.x = px;
-          player.y = py;
-          player.col = Math.floor(px);
-          player.row = Math.floor(py);
-        }
-      } catch (e) {}
-    }
-    try { rebuildInteriorDoorsFromGrid(); } catch (e) {}
-    mapCacheDirty = true;
-    try { rebuildMapCacheDebounced(10); } catch (e) {}
-    try { saveAppStateDebounced(10); } catch (e) {}
-    try { updateBuildMenuFromGrid(); } catch (e) {}
-    try { updateUI(); } catch (e) {}
-    try { updateCharCard(); } catch (e) {}
-    try { render(); } catch (e) {}
-    updateMapEditorUI();
-    notify('Diseño de mapa importado.');
-  } catch (e) {
-    console.error('importMapDesignFromObject', e);
-    notify('El archivo de diseño no es válido.');
-  }
-}
-
-function syncSelectedToolButtons() {
-  try {
-    document.querySelectorAll('.build-btn').forEach(btn => btn.classList.toggle('selected', btn.dataset.type === selectedTool));
-    const demolishBtn = document.getElementById('btn-demolish');
-    if (demolishBtn) demolishBtn.classList.toggle('selected', selectedTool === 'demolish');
-  } catch (e) {}
-}
-
-function resetWorldForProceduralEditor() {
-  try { if (grid && grid.length) { for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) grid[r][c] = null; } } catch (e) {}
-  try { if (entities && entities.length >= 0) entities.length = 0; } catch (e) {}
-  try { rabbits.length = 0; foxes.length = 0; } catch (e) {}
-  try { window._VILLAGES = []; } catch (e) {}
-  try { window.MAP_CHUNKS = {}; mapCacheDirty = true; } catch (e) {}
-}
-
-function ensureStandaloneEditorSandboxState() {
-  try { startLocked = false; } catch (e) {}
-  try {
-    res.wheat = Math.max(Number(res.wheat) || 0, 999999);
-    res.brick = Math.max(Number(res.brick) || 0, 999999);
-    res.pop = Math.max(Number(res.pop) || 0, 5000);
-  } catch (e) {}
-  try { setEditMode(true); } catch (e) {}
-  try { updateUI(); } catch (e) {}
-}
-
-function getStandaloneEditorBuildingScale() {
-  if (!window._standaloneEditorMode) return 1;
-  const value = Number(standaloneEditorBuildingScale);
-  if (!Number.isFinite(value)) return 1;
-  return Math.max(0.5, Math.min(2.5, value));
-}
-
-function setStandaloneEditorBuildingScale(scale) {
-  const value = Number(scale);
-  standaloneEditorBuildingScale = Number.isFinite(value) ? Math.max(0.5, Math.min(2.5, value)) : 1;
-  try { render(); } catch (e) {}
-  return standaloneEditorBuildingScale;
-}
-
-function getStandaloneEditorEntityScale() {
-  if (!window._standaloneEditorMode) return 1;
-  const value = Number(standaloneEditorEntityScale);
-  if (!Number.isFinite(value)) return 1;
-  return Math.max(0.5, Math.min(2.5, value));
-}
-
-function setStandaloneEditorEntityScale(scale) {
-  const value = Number(scale);
-  standaloneEditorEntityScale = Number.isFinite(value) ? Math.max(0.5, Math.min(2.5, value)) : 1;
-  try { render(); } catch (e) {}
-  return standaloneEditorEntityScale;
-}
-
-function regenerateProceduralMapForEditor(epochId) {
-  try {
-    if (epochId) applyEpochProfile(epochId, true);
-  } catch (e) {}
-  ensureStandaloneEditorSandboxState();
-  resetWorldForProceduralEditor();
-  generateMap('random');
-  ensureStandaloneEditorSandboxState();
-  try { setMapEditorEnabled(false, { silent: true }); } catch (e) {}
-  try { selectedTool = null; syncSelectedToolButtons(); } catch (e) {}
-  try { updateUI(); } catch (e) {}
-  try { updateCharCard(); } catch (e) {}
-  try { renderActionList(); } catch (e) {}
-  try { updateInventory(); } catch (e) {}
-  try { rebuildMapSceneTriggers(); } catch (e) {}
-  try { updateBuildMenuFromGrid(); } catch (e) {}
-  try { centerCamera(); } catch (e) {}
-  try { rebuildMapCacheDebounced(10); } catch (e) {}
-  try { render(); } catch (e) {}
-  try { saveAppStateDebounced(10); } catch (e) {}
-  return getMapDesignObject();
-}
-
-function setStandaloneBuildTool(type) {
-  ensureStandaloneEditorSandboxState();
-  if (!type) {
-    selectedTool = null;
-  } else if (type === 'demolish') {
-    selectedTool = 'demolish';
-  } else {
-    if (mapEditorEnabled) setMapEditorEnabled(false, { silent: true });
-    selectedTool = type;
-  }
-  syncSelectedToolButtons();
-  return selectedTool;
-}
-
-function getStandaloneBuildPalette(epochId) {
-  const palette = getEpochBuildPalette(epochId || window._currentEpoch || 'mesopotamia');
-  return palette.map(type => ({
-    id: type,
-    resolvedId: resolveEpochBuildingType(type, epochId),
-    ...getBuildingDisplay(type)
-  }));
-}
-
-function refreshStandaloneEditorApi() {
-  try {
-    window.MESO_MAP_EDITOR_API = {
-      ready: true,
-      getEpoch: () => window._currentEpoch || 'mesopotamia',
-      setEpoch: (epochId) => { try { applyEpochProfile(epochId || 'mesopotamia', true); } catch (e) {} return window._currentEpoch || 'mesopotamia'; },
-      regenerateProceduralMap: (epochId) => regenerateProceduralMapForEditor(epochId),
-      enableTerrainBrush: (terrainId, size) => {
-        ensureStandaloneEditorSandboxState();
-        if (terrainId) setMapEditorBrush(terrainId);
-        if (typeof size === 'number') mapEditorBrushSize = Math.max(1, Math.min(6, Math.round(size)));
-        setMapEditorEnabled(true, { silent: true });
-        updateMapEditorUI();
-        return { brush: mapEditorBrush, brushSize: mapEditorBrushSize };
-      },
-      disableTerrainBrush: () => { try { setMapEditorEnabled(false, { silent: true }); } catch (e) {} return true; },
-      setBrushSize: (size) => { mapEditorBrushSize = Math.max(1, Math.min(6, Math.round(size || 1))); updateMapEditorUI(); return mapEditorBrushSize; },
-      setBuildingScale: (scale) => setStandaloneEditorBuildingScale(scale),
-      getBuildingScale: () => getStandaloneEditorBuildingScale(),
-      setEntityScale: (scale) => setStandaloneEditorEntityScale(scale),
-      getEntityScale: () => getStandaloneEditorEntityScale(),
-      selectBuildTool: (type) => setStandaloneBuildTool(type),
-      clearTool: () => setStandaloneBuildTool(null),
-      getBuildPalette: (epochId) => getStandaloneBuildPalette(epochId),
-      exportMapDesignData: () => getMapDesignObject(),
-      importMapDesignData: (data) => { ensureStandaloneEditorSandboxState(); return importMapDesignFromObject(data); },
-      savePendingMapDesign: () => getMapDesignObject()
-    };
-  } catch (e) {}
-}
-
-function setupMapEditorUI() {
-  try {
-    const toggleBtn = document.getElementById('btn-map-editor-toggle');
-    const shortcutBtn = document.getElementById('btn-map-editor-shortcut');
-    const exportBtn = document.getElementById('btn-map-editor-export');
-    const importBtn = document.getElementById('btn-map-editor-import');
-    const importInput = document.getElementById('map-editor-import-input');
-    const sizeInput = document.getElementById('map-editor-brush-size');
-    if (toggleBtn && !toggleBtn.dataset.bound) {
-      toggleBtn.dataset.bound = '1';
-      toggleBtn.addEventListener('click', () => setMapEditorEnabled(!mapEditorEnabled));
-    }
-    if (shortcutBtn && !shortcutBtn.dataset.bound) {
-      shortcutBtn.dataset.bound = '1';
-      shortcutBtn.addEventListener('click', () => setMapEditorEnabled(!mapEditorEnabled));
-    }
-    if (exportBtn && !exportBtn.dataset.bound) {
-      exportBtn.dataset.bound = '1';
-      exportBtn.addEventListener('click', () => exportMapDesign());
-    }
-    if (importBtn && importInput && !importBtn.dataset.bound) {
-      importBtn.dataset.bound = '1';
-      importBtn.addEventListener('click', () => importInput.click());
-    }
-    if (importInput && !importInput.dataset.bound) {
-      importInput.dataset.bound = '1';
-      importInput.addEventListener('change', async (ev) => {
-        try {
-          const file = ev.target && ev.target.files && ev.target.files[0];
-          if (!file) return;
-          const text = await file.text();
-          importMapDesignFromObject(JSON.parse(text));
-        } catch (e) {
-          console.error('map editor import', e);
-          notify('No se pudo leer el archivo del mapa.');
-        } finally {
-          try { importInput.value = ''; } catch (e) {}
-        }
-      });
-    }
-    if (sizeInput && !sizeInput.dataset.bound) {
-      sizeInput.dataset.bound = '1';
-      sizeInput.addEventListener('input', () => {
-        mapEditorBrushSize = Math.max(1, Math.min(6, parseInt(sizeInput.value || '1', 10) || 1));
-        updateMapEditorUI();
-      });
-    }
-    document.querySelectorAll('.map-editor-terrain').forEach(btn => {
-      if (btn.dataset.bound) return;
-      btn.dataset.bound = '1';
-      btn.addEventListener('click', () => {
-        setMapEditorBrush(btn.dataset.terrain || 'alluvial');
-        if (!mapEditorEnabled) setMapEditorEnabled(true, { silent: true });
-        updateMapEditorUI();
-      });
-    });
-    updateMapEditorUI();
-  } catch (e) { console.error('setupMapEditorUI', e); }
-}
+function getMapTerrainMeta(terrainId) { return mapEditorCore.getMapTerrainMeta(terrainId); }
+function getMapTerrainLabel(terrainId) { return mapEditorCore.getMapTerrainLabel(terrainId); }
+function getMapBrushCells(centerCol, centerRow) { return mapEditorCore.getMapBrushCells(centerCol, centerRow); }
+function updateMapEditorUI() { return mapEditorCore.updateMapEditorUI(); }
+function setMapEditorBrush(terrainId) { return mapEditorCore.setMapEditorBrush(terrainId); }
+function setMapEditorEnabled(enabled, options = {}) { return mapEditorCore.setMapEditorEnabled(enabled, options); }
+function pruneEditedTerrainEntities(cells, terrainId) { return mapEditorCore.pruneEditedTerrainEntities(cells, terrainId); }
+function paintTerrainAt(centerCol, centerRow) { return mapEditorCore.paintTerrainAt(centerCol, centerRow); }
+function cloneMapDesignValue(value, fallback) { return mapEditorCore.cloneMapDesignValue(value, fallback); }
+function getMapDesignObject() { return mapEditorCore.getMapDesignObject(); }
+function exportMapDesign() { return mapEditorCore.exportMapDesign(); }
+function importMapDesignFromObject(data, options = {}) { return mapEditorCore.importMapDesignFromObject(data, options); }
+function syncSelectedToolButtons() { return standaloneEditorUtils.syncSelectedToolButtons(); }
+function resetWorldForProceduralEditor() { return standaloneEditorUtils.resetWorldForProceduralEditor(); }
+function ensureStandaloneEditorSandboxState() { return standaloneEditorUtils.ensureStandaloneEditorSandboxState(); }
+function getStandaloneEditorBuildingScale() { return standaloneEditorUtils.getStandaloneEditorBuildingScale(); }
+function setStandaloneEditorBuildingScale(scale) { return standaloneEditorUtils.setStandaloneEditorBuildingScale(scale); }
+function getStandaloneEditorEntityScale() { return standaloneEditorUtils.getStandaloneEditorEntityScale(); }
+function setStandaloneEditorEntityScale(scale) { return standaloneEditorUtils.setStandaloneEditorEntityScale(scale); }
+function regenerateProceduralMapForEditor(epochId) { return standaloneEditorUtils.regenerateProceduralMapForEditor(epochId); }
+function setStandaloneBuildTool(type) { return standaloneEditorUtils.setStandaloneBuildTool(type); }
+function getStandaloneBuildPalette(epochId) { return standaloneEditorUtils.getStandaloneBuildPalette(epochId); }
+function refreshStandaloneEditorApi() { return standaloneEditorUtils.refreshStandaloneEditorApi(); }
+function setupMapEditorUI() { return standaloneEditorUtils.setupMapEditorUI(); }
 
 // Async chunked terrain cache builder – yields every BATCH rows so the main
 // thread stays responsive. Builds BOTH ortho and iso caches in one call.
@@ -2241,8 +1119,14 @@ function saveAppState() {
         panels[id] = {
           left: p.style.left || null,
           top: p.style.top || null,
+          right: p.style.right || null,
+          bottom: p.style.bottom || null,
+          width: p.style.width || null,
+          height: p.style.height || null,
+          transform: p.style.transform || null,
           display: (p.style.display === 'none') ? 'none' : 'block',
-          minimized: body ? (body.style.display === 'none') : false
+          minimized: body ? (body.style.display === 'none') : false,
+          dragMoved: p.dataset && p.dataset.dragMoved === '1'
         };
       } catch (e) {}
     });
@@ -2262,8 +1146,6 @@ function saveAppState() {
       selectedTool: selectedTool,
       tileBiome,
       grid,
-      // persist entities and runtime lists so world persists exactly
-      // If player is inside a building, exterior entities live in _savedExterior — save those instead
       entities: (window._savedExterior && Array.isArray(window._savedExterior.entities))
         ? window._savedExterior.entities.map(e => ({ ...e }))
         : (Array.isArray(entities) ? entities.map(e => ({ ...e })) : []),
@@ -2282,7 +1164,6 @@ function saveAppState() {
       storySceneFlags: { ...(window._storySceneFlags || {}) }
     };
     localStorage.setItem(APP_STATE_KEY, JSON.stringify(state));
-    // Also save transient panel visibility/position to sessionStorage so it survives reloads in this session
     try { sessionStorage.setItem('meso.panelsSession', JSON.stringify(panels)); } catch (e) { /* ignore */ }
   } catch (err) { /* ignore */ }
 }
@@ -2293,20 +1174,17 @@ function loadAppState() {
     if (!raw) return null;
     const s = unwrapSavedAppState(JSON.parse(raw));
     if (!s) return null;
-    // restore biomes and grid if present (be tolerant of older/smaller saves)
     try {
       if (s.tileBiome && Array.isArray(s.tileBiome)) {
         const copyRows = Math.min(ROWS, s.tileBiome.length);
         for (let r = 0; r < copyRows; r++) {
           const row = Array.isArray(s.tileBiome[r]) ? s.tileBiome[r].slice(0, COLS) : Array(COLS).fill('sand');
-          // ensure row has COLS entries
           while (row.length < COLS) row.push('sand');
           tileBiome[r] = row;
         }
         for (let r = copyRows; r < ROWS; r++) tileBiome[r] = Array(COLS).fill('sand');
       }
     } catch (e) { console.warn('tileBiome restore skipped due to malformed data', e); }
-
     try {
       if (s.grid && Array.isArray(s.grid)) {
         const copyRows = Math.min(ROWS, s.grid.length);
@@ -2318,7 +1196,6 @@ function loadAppState() {
         for (let r = copyRows; r < ROWS; r++) grid[r] = Array(COLS).fill(null);
       }
     } catch (e) { console.warn('grid restore skipped due to malformed data', e); }
-    // restore player pos if present
     if (s.player && typeof s.player.x === 'number') {
       player.x = s.player.x; player.y = s.player.y; player.col = Math.floor(s.player.x); player.row = Math.floor(s.player.y);
       try { if (s.player.name) player.name = s.player.name; } catch (e) {}
@@ -2326,274 +1203,133 @@ function loadAppState() {
       try { if (s.player.outfit) player.outfit = s.player.outfit; } catch (e) {}
       try { if (s.player.presetId) player.presetId = s.player.presetId; } catch (e) {}
     }
-      // restore entities and rabbits if present
-      try {
-        if (s.entities && Array.isArray(s.entities)) {
-          entities.length = 0;
-          s.entities.forEach(e => {
-            if (!e || typeof e !== 'object') return;
-            const it = { ...e };
-            if (typeof it.col !== 'number') {
-              if (typeof it.x === 'number') it.col = Math.floor(it.x);
-              else it.col = 0;
-            }
-            if (typeof it.row !== 'number') {
-              if (typeof it.y === 'number') it.row = Math.floor(it.y);
-              else it.row = 0;
-            }
-            it.x = typeof it.x === 'number' ? it.x : it.col;
-            it.y = typeof it.y === 'number' ? it.y : it.row;
-            entities.push(it);
-          });
-        }
-        if (s.rabbits && Array.isArray(s.rabbits)) {
-          rabbits.length = 0;
-          s.rabbits.forEach(r => {
-            if (!r || typeof r !== 'object') return;
-            const it = { ...r };
-            if (typeof it.col !== 'number') {
-              if (typeof it.x === 'number') it.col = Math.floor(it.x);
-              else it.col = 0;
-            }
-            if (typeof it.row !== 'number') {
-              if (typeof it.y === 'number') it.row = Math.floor(it.y);
-              else it.row = 0;
-            }
-            it.x = typeof it.x === 'number' ? it.x : it.col;
-            it.y = typeof it.y === 'number' ? it.y : it.row;
-            rabbits.push(it);
-          });
-        }
-        // restore foxes, enemies and transient lists if present
-        if (s.foxes && Array.isArray(s.foxes)) {
-          try {
-            foxes.length = 0;
-            s.foxes.forEach(f => {
-              if (!f || typeof f !== 'object') return;
-              const it = { ...f };
-              if (typeof it.col !== 'number') { if (typeof it.x === 'number') it.col = Math.floor(it.x); else it.col = 0; }
-              if (typeof it.row !== 'number') { if (typeof it.y === 'number') it.row = Math.floor(it.y); else it.row = 0; }
-              it.x = typeof it.x === 'number' ? it.x : it.col;
-              it.y = typeof it.y === 'number' ? it.y : it.row;
-              foxes.push(it);
-            });
-          } catch (e) { console.warn('foxes restore error', e); }
-        }
-        if (s.enemies && Array.isArray(s.enemies)) {
-          try { enemies.length = 0; s.enemies.forEach(en => { if (!en || typeof en !== 'object') return; enemies.push({ ...en }); }); } catch (e) { console.warn('enemies restore error', e); }
-        }
-        if (s.effectParticles && Array.isArray(s.effectParticles)) {
-          try { effectParticles.length = 0; s.effectParticles.forEach(p => effectParticles.push({ ...p })); } catch (e) {}
-        }
-        if (s.floatingTexts && Array.isArray(s.floatingTexts)) {
-          try { window.floatingTexts.length = 0; s.floatingTexts.forEach(t => window.floatingTexts.push({ ...t })); } catch (e) {}
-        }
-        if (s.villages && Array.isArray(s.villages)) {
-          try { window._VILLAGES = s.villages.map(v => ({ ...v })); } catch (e) { window._VILLAGES = window._VILLAGES || []; }
-        }
-        if (s.interiorDoors && Array.isArray(s.interiorDoors)) {
-          try { window.INTERIOR_DOORS = s.interiorDoors.map(d => ({ ...d })); } catch (e) { window.INTERIOR_DOORS = window.INTERIOR_DOORS || []; }
-        } else {
-          try { rebuildInteriorDoorsFromGrid(); } catch (e) {}
-        }
-      } catch (e) { /* ignore restore errors */ }
-    // restore panels metadata later when panels are registered
-    window._MESO_SAVED_STATE = s;
-    // restore camera/other top-level pieces (deferred application in init)
     try {
-      if (s.camera) {
-        camX = typeof s.camera.camX === 'number' ? s.camera.camX : camX;
-        camY = typeof s.camera.camY === 'number' ? s.camera.camY : camY;
-        zoom = typeof s.camera.zoom === 'number' ? s.camera.zoom : zoom;
-      }
-      if (s.char) try { window.char = s.char; } catch (e) {}
-      if (s.res) try { window.res = s.res; } catch (e) {}
-      if (s.selectedTool) try { selectedTool = s.selectedTool; } catch (e) {}
-      try { if (s.epoch) applyEpochProfile(s.epoch, true); } catch (e) {}
-      try { if (typeof s.storyChapter === 'number') window._storyChapter = s.storyChapter; } catch (e) {}
-      try { if (s.storySceneFlags && typeof s.storySceneFlags === 'object') window._storySceneFlags = { ...s.storySceneFlags }; } catch (e) {}
-      // restore other top-level flags
-      try { if (typeof s.turn === 'number') turn = s.turn; } catch (e) {}
-      try { startLocked = !!s.startLocked; } catch (e) {}
-      try { editMode = (typeof s.editMode !== 'undefined') ? s.editMode : editMode; } catch (e) {}
-      try {
-        if (s.mapEditor && typeof s.mapEditor === 'object') {
-          if (s.mapEditor.brush) mapEditorBrush = getMapTerrainMeta(s.mapEditor.brush).id;
-          if (typeof s.mapEditor.brushSize === 'number') mapEditorBrushSize = Math.max(1, Math.min(6, Math.round(s.mapEditor.brushSize)));
-          mapEditorEnabled = false;
-        }
-      } catch (e) {}
-    } catch (e) {}
-    try { updateMapEditorUI(); } catch (e) {}
-    return s;
-  } catch (err) { return null; }
-}
-
-// Export current game state to a downloadable JSON file
-function exportGameToFile() {
-  try {
-    // ensure latest app state saved
-    try { saveAppState(); } catch (e) {}
-    const base = JSON.parse(localStorage.getItem(APP_STATE_KEY) || '{}');
-    const data = {
-      meta: { exportedAt: (new Date()).toISOString(), version: 1 },
-      appState: base,
-      player: { x: player.x, y: player.y, col: player.col, row: player.row },
-      char,
-      turn,
-      res,
-      grid,
-      tileBiome,
-      entities: entities || [],
-      rabbits: rabbits || [],
-      foxes: foxes || [],
-      enemies: enemies || [],
-      effectParticles: effectParticles || [],
-      floatingTexts: window.floatingTexts || [],
-      villages: window._VILLAGES || [],
-      camera: { camX, camY, zoom },
-      mapEditor: { enabled: mapEditorEnabled, brush: mapEditorBrush, brushSize: mapEditorBrushSize },
-      selectedTool,
-      epoch: window._currentEpoch || 'mesopotamia',
-      FLOATING_PANELS: Object.keys(window.FLOATING_PANELS || {})
-    };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const ts = new Date().toISOString().replace(/[:.]/g, '-');
-    const filename = `meso-save-${ts}.json`;
-    // create a temporary anchor to trigger download
-    const a = document.createElement('a');
-    a.href = url; a.download = filename; a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => {
-      try { document.body.removeChild(a); } catch (e) {}
-      try { URL.revokeObjectURL(url); } catch (e) {}
-    }, 1000);
-    notify('Partida exportada');
-  } catch (err) {
-    console.error('export error', err);
-    notify('Error exportando partida');
-  }
-}
-
-// Import a save object (JS object) into the running game
-function importGameFromObject(data) {
-  try {
-    if (!data || typeof data !== 'object') throw new Error('Invalid save');
-    if (!confirm('Importar partida: esto sobrescribirá el estado actual. ¿Continuar?')) return;
-    // If save contains appState, persist and apply
-    if (data.appState) {
-      try { localStorage.setItem(APP_STATE_KEY, JSON.stringify(unwrapSavedAppState(data))); } catch (e) {}
-      // apply sparse structures (tolerant copy)
-      const s = unwrapSavedAppState(data);
-      try {
-        if (s.tileBiome && Array.isArray(s.tileBiome)) {
-          const copyRows = Math.min(ROWS, s.tileBiome.length);
-          for (let r = 0; r < copyRows; r++) {
-            const row = Array.isArray(s.tileBiome[r]) ? s.tileBiome[r].slice(0, COLS) : Array(COLS).fill('sand');
-            while (row.length < COLS) row.push('sand');
-            tileBiome[r] = row;
-          }
-          for (let r = copyRows; r < ROWS; r++) tileBiome[r] = Array(COLS).fill('sand');
-        }
-      } catch (e) { console.warn('import tileBiome skipped malformed', e); }
-      try {
-        if (s.grid && Array.isArray(s.grid)) {
-          const copyRows = Math.min(ROWS, s.grid.length);
-          for (let r = 0; r < copyRows; r++) {
-            const row = Array.isArray(s.grid[r]) ? s.grid[r].slice(0, COLS) : Array(COLS).fill(null);
-            while (row.length < COLS) row.push(null);
-            grid[r] = row;
-          }
-          for (let r = copyRows; r < ROWS; r++) grid[r] = Array(COLS).fill(null);
-        }
-      } catch (e) { console.warn('import grid skipped malformed', e); }
-      try { if (s.player && typeof s.player.x === 'number') { player.x = s.player.x; player.y = s.player.y; player.col = Math.floor(s.player.x); player.row = Math.floor(s.player.y); } } catch (e) {}
-      // keep for panel restore
-      window._MESO_SAVED_STATE = s;
-    }
-    // apply other top-level pieces if present
-    if (data.player && typeof data.player.x === 'number') { player.x = data.player.x; player.y = data.player.y; player.col = Math.floor(data.player.x); player.row = Math.floor(data.player.y); }
-    if (data.char) { try { window.char = data.char; } catch (e) {} }
-    if (data.turn !== undefined) try { turn = data.turn; } catch (e) {}
-    if (data.res) try { res = data.res; } catch (e) {}
-    if (Array.isArray(data.entities)) {
-      try {
+      if (s.entities && Array.isArray(s.entities)) {
         entities.length = 0;
-        data.entities.forEach(e => {
+        s.entities.forEach(e => {
           if (!e || typeof e !== 'object') return;
           const it = { ...e };
-          if (typeof it.col !== 'number') { if (typeof it.x === 'number') it.col = Math.floor(it.x); else it.col = 0; }
-          if (typeof it.row !== 'number') { if (typeof it.y === 'number') it.row = Math.floor(it.y); else it.row = 0; }
+          if (typeof it.col !== 'number') {
+            if (typeof it.x === 'number') it.col = Math.floor(it.x);
+            else it.col = 0;
+          }
+          if (typeof it.row !== 'number') {
+            if (typeof it.y === 'number') it.row = Math.floor(it.y);
+            else it.row = 0;
+          }
           it.x = typeof it.x === 'number' ? it.x : it.col;
           it.y = typeof it.y === 'number' ? it.y : it.row;
           entities.push(it);
         });
-      } catch (e) { console.warn('import entities error', e); }
-    }
-    if (Array.isArray(data.rabbits)) {
-      try {
+      }
+      if (s.rabbits && Array.isArray(s.rabbits)) {
         rabbits.length = 0;
-        data.rabbits.forEach(r => {
+        s.rabbits.forEach(r => {
           if (!r || typeof r !== 'object') return;
           const it = { ...r };
-          if (typeof it.col !== 'number') { if (typeof it.x === 'number') it.col = Math.floor(it.x); else it.col = 0; }
-          if (typeof it.row !== 'number') { if (typeof it.y === 'number') it.row = Math.floor(it.y); else it.row = 0; }
+          if (typeof it.col !== 'number') {
+            if (typeof it.x === 'number') it.col = Math.floor(it.x);
+            else it.col = 0;
+          }
+          if (typeof it.row !== 'number') {
+            if (typeof it.y === 'number') it.row = Math.floor(it.y);
+            else it.row = 0;
+          }
           it.x = typeof it.x === 'number' ? it.x : it.col;
           it.y = typeof it.y === 'number' ? it.y : it.row;
           rabbits.push(it);
         });
-      } catch (e) { console.warn('import rabbits error', e); }
-    }
-    if (Array.isArray(data.foxes)) {
-      try {
+      }
+      if (s.foxes && Array.isArray(s.foxes)) {
         foxes.length = 0;
-        data.foxes.forEach(f => {
+        s.foxes.forEach(f => {
           if (!f || typeof f !== 'object') return;
           const it = { ...f };
-          if (typeof it.col !== 'number') { if (typeof it.x === 'number') it.col = Math.floor(it.x); else it.col = 0; }
-          if (typeof it.row !== 'number') { if (typeof it.y === 'number') it.row = Math.floor(it.y); else it.row = 0; }
+          if (typeof it.col !== 'number') {
+            if (typeof it.x === 'number') it.col = Math.floor(it.x);
+            else it.col = 0;
+          }
+          if (typeof it.row !== 'number') {
+            if (typeof it.y === 'number') it.row = Math.floor(it.y);
+            else it.row = 0;
+          }
           it.x = typeof it.x === 'number' ? it.x : it.col;
           it.y = typeof it.y === 'number' ? it.y : it.row;
           foxes.push(it);
         });
-      } catch (e) { console.warn('import foxes error', e); }
-    }
-    if (Array.isArray(data.enemies)) { try { enemies.length = 0; data.enemies.forEach(en => { if (!en || typeof en !== 'object') return; enemies.push({ ...en }); }); } catch (e) { console.warn('import enemies error', e); } }
-    if (Array.isArray(data.effectParticles)) { try { effectParticles.length = 0; data.effectParticles.forEach(it => effectParticles.push({ ...it })); } catch (e) { console.warn('import effectParticles error', e); } }
-    if (Array.isArray(data.floatingTexts)) { try { window.floatingTexts.length = 0; data.floatingTexts.forEach(it => window.floatingTexts.push({ ...it })); } catch (e) { console.warn('import floatingTexts error', e); } }
-    if (Array.isArray(data.villages)) { try { window._VILLAGES = data.villages.map(v => ({ ...v })); } catch (e) { console.warn('import villages error', e); } }
-    if (data.camera) {
-      try { camX = typeof data.camera.camX === 'number' ? data.camera.camX : camX; camY = typeof data.camera.camY === 'number' ? data.camera.camY : camY; zoom = typeof data.camera.zoom === 'number' ? data.camera.zoom : zoom; } catch (e) {}
-    }
-    if (data.selectedTool) selectedTool = data.selectedTool;
-    try { if (data.epoch) applyEpochProfile(data.epoch, true); } catch (e) {}
-
-    // persist and rebuild derived caches
-    try { saveAppState(); } catch (e) {}
-    mapCacheDirty = true; rebuildMapCacheDebounced();
-
-    // restore panel positions/visibility on already-registered panels
+      }
+      if (s.enemies && Array.isArray(s.enemies)) {
+        try { enemies.length = 0; s.enemies.forEach(en => { if (!en || typeof en !== 'object') return; enemies.push({ ...en }); }); } catch (e) { console.warn('enemies restore error', e); }
+      }
+      if (s.effectParticles && Array.isArray(s.effectParticles)) {
+        try { effectParticles.length = 0; s.effectParticles.forEach(p => effectParticles.push({ ...p })); } catch (e) {}
+      }
+      if (s.floatingTexts && Array.isArray(s.floatingTexts)) {
+        try { window.floatingTexts.length = 0; s.floatingTexts.forEach(t => window.floatingTexts.push({ ...t })); } catch (e) {}
+      }
+      if (s.villages && Array.isArray(s.villages)) {
+        try { window._VILLAGES = s.villages.map(v => ({ ...v })); } catch (e) { window._VILLAGES = window._VILLAGES || []; }
+      }
+      if (s.interiorDoors && Array.isArray(s.interiorDoors)) {
+        try { window.INTERIOR_DOORS = s.interiorDoors.map(d => ({ ...d })); } catch (e) { window.INTERIOR_DOORS = window.INTERIOR_DOORS || []; }
+      } else {
+        try { rebuildInteriorDoorsFromGrid(); } catch (e) {}
+      }
+    } catch (e) { /* ignore restore errors */ }
     try {
-      if (window._MESO_SAVED_STATE && window._MESO_SAVED_STATE.panels) {
-        Object.keys(window.FLOATING_PANELS || {}).forEach(id => {
-          const p = window.FLOATING_PANELS[id];
-          const saved = window._MESO_SAVED_STATE.panels[id];
-          if (!p || !saved) return;
-          if (saved.left) p.style.left = saved.left;
-          if (saved.top) p.style.top = saved.top;
-          p.style.display = saved.display === 'none' ? 'none' : 'block';
-          const body = p.querySelector && p.querySelector('.floating-body');
-          if (body) body.style.display = saved.minimized ? 'none' : 'block';
+      if (s.char && typeof s.char === 'object' && typeof char !== 'undefined') {
+        Object.assign(char, s.char);
+      }
+    } catch (e) { console.warn('char restore skipped', e); }
+    try {
+      if (s.res && typeof s.res === 'object') {
+        Object.keys(res || {}).forEach(key => {
+          if (Object.prototype.hasOwnProperty.call(s.res, key)) res[key] = s.res[key];
         });
       }
-    } catch (e) {}
-
-    notify('Partida importada');
+    } catch (e) { console.warn('resource restore skipped', e); }
+    try {
+      if (s.epoch) applyEpochProfile(s.epoch, false);
+    } catch (e) { console.warn('epoch restore skipped', e); }
+    try {
+      if (s.camera && typeof s.camera === 'object') {
+        if (typeof s.camera.camX === 'number') camX = s.camera.camX;
+        if (typeof s.camera.camY === 'number') camY = s.camera.camY;
+        if (typeof s.camera.zoom === 'number') {
+          zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, s.camera.zoom));
+          targetZoom = zoom;
+        }
+      }
+    } catch (e) { console.warn('camera restore skipped', e); }
+    try {
+      if (s.mapEditor && typeof s.mapEditor === 'object') {
+        mapEditorEnabled = !!s.mapEditor.enabled;
+        if (typeof s.mapEditor.brush === 'string') mapEditorBrush = s.mapEditor.brush;
+        if (typeof s.mapEditor.brushSize === 'number') mapEditorBrushSize = s.mapEditor.brushSize;
+      }
+    } catch (e) { console.warn('map editor restore skipped', e); }
+    try {
+      if (typeof s.selectedTool === 'string' || s.selectedTool === null) selectedTool = s.selectedTool || null;
+    } catch (e) { console.warn('selected tool restore skipped', e); }
+    try {
+      if (typeof s.editMode === 'boolean') setEditMode(s.editMode);
+    } catch (e) { console.warn('edit mode restore skipped', e); }
+    try {
+      const modal = document.getElementById('char-select');
+      startLocked = !!s.startLocked && !!(modal && !modal.classList.contains('hidden'));
+    } catch (e) {
+      startLocked = false;
+    }
+    try { clampCamera(); } catch (e) {}
+    try { updateUI(); } catch (e) {}
+    try { updateInventory(); } catch (e) {}
+    try { updateCharCard(); } catch (e) {}
+    window._MESO_SAVED_STATE = s;
+    try { restoreRegisteredPanelsFromState(s.panels || {}); } catch (e) {}
+    return s;
   } catch (err) {
-    console.error('import error', err);
-    notify('Error importando partida');
+    console.warn('loadAppState failed', err);
+    return null;
   }
 }
 
@@ -2766,6 +1502,98 @@ player._walkTime = 0;
 player._walkFrame = 0;
 player._shakeUntil = 0;
 player._shakeMag = 0;
+
+const mapEditorCore = createMapEditorCore({
+  MAP_EDITOR_TERRAINS,
+  MAP_EDITOR_HEIGHT_PRESETS,
+  COLS,
+  ROWS,
+  getTileBiome: () => tileBiome,
+  getHeightMap: () => heightMap,
+  getGrid: () => grid,
+  getEntities: () => entities,
+  getPlayer: () => player,
+  getCurrentEpoch: () => (window._currentEpoch || 'mesopotamia'),
+  getState: () => ({
+    mapEditorEnabled,
+    mapEditorBrush,
+    mapEditorBrushSize,
+    mapEditorPainting,
+    mapEditorLastPaintKey,
+    selectedTool,
+    editMode,
+    startLocked
+  }),
+  setState: (patch) => {
+    if (Object.prototype.hasOwnProperty.call(patch, 'mapEditorEnabled')) mapEditorEnabled = patch.mapEditorEnabled;
+    if (Object.prototype.hasOwnProperty.call(patch, 'mapEditorBrush')) mapEditorBrush = patch.mapEditorBrush;
+    if (Object.prototype.hasOwnProperty.call(patch, 'mapEditorBrushSize')) mapEditorBrushSize = patch.mapEditorBrushSize;
+    if (Object.prototype.hasOwnProperty.call(patch, 'mapEditorPainting')) mapEditorPainting = patch.mapEditorPainting;
+    if (Object.prototype.hasOwnProperty.call(patch, 'mapEditorLastPaintKey')) mapEditorLastPaintKey = patch.mapEditorLastPaintKey;
+    if (Object.prototype.hasOwnProperty.call(patch, 'selectedTool')) selectedTool = patch.selectedTool;
+  },
+  notify,
+  setEditMode,
+  setMapCacheDirty: (value) => { mapCacheDirty = !!value; },
+  rebuildMapCacheDebounced,
+  saveAppStateDebounced,
+  render,
+  applyEpochProfile,
+  rebuildInteriorDoorsFromGrid,
+  updateBuildMenuFromGrid,
+  updateUI,
+  updateCharCard
+});
+
+const standaloneEditorUtils = createStandaloneEditorUtils({
+  COLS,
+  ROWS,
+  getGrid: () => grid,
+  getEntities: () => entities,
+  getRabbits: () => rabbits,
+  getFoxes: () => foxes,
+  getResources: () => res,
+  getState: () => ({
+    selectedTool,
+    mapEditorEnabled,
+    mapEditorBrush,
+    mapEditorBrushSize,
+    standaloneEditorBuildingScale,
+    standaloneEditorEntityScale,
+    startLocked
+  }),
+  setState: (patch) => {
+    if (Object.prototype.hasOwnProperty.call(patch, 'selectedTool')) selectedTool = patch.selectedTool;
+    if (Object.prototype.hasOwnProperty.call(patch, 'mapEditorBrushSize')) mapEditorBrushSize = patch.mapEditorBrushSize;
+    if (Object.prototype.hasOwnProperty.call(patch, 'standaloneEditorBuildingScale')) standaloneEditorBuildingScale = patch.standaloneEditorBuildingScale;
+    if (Object.prototype.hasOwnProperty.call(patch, 'standaloneEditorEntityScale')) standaloneEditorEntityScale = patch.standaloneEditorEntityScale;
+    if (Object.prototype.hasOwnProperty.call(patch, 'startLocked')) startLocked = patch.startLocked;
+  },
+  setMapCacheDirty: (value) => { mapCacheDirty = !!value; },
+  setEditMode,
+  updateUI,
+  render,
+  applyEpochProfile,
+  setMapEditorEnabled,
+  setMapEditorBrush,
+  updateMapEditorUI,
+  generateMap,
+  updateCharCard,
+  renderActionList,
+  updateInventory,
+  rebuildMapSceneTriggers,
+  updateBuildMenuFromGrid,
+  centerCamera,
+  rebuildMapCacheDebounced,
+  saveAppStateDebounced,
+  getMapDesignObject,
+  getEpochBuildPalette,
+  resolveEpochBuildingType,
+  getBuildingDisplay,
+  importMapDesignFromObject,
+  exportMapDesign,
+  notify
+});
 
 // Input & movement state (missing globals causing runtime errors)
 let keyState = {};
@@ -9335,6 +8163,7 @@ function notify(msg) {
   if (notifTimer) clearTimeout(notifTimer);
   notifTimer = setTimeout(() => { el.style.opacity = '0'; }, 2000);
 }
+try { window.notify = notify; } catch (e) {}
 
 // ── CHARACTER SELECTION ───────────────────────────────────
 let selectedPresetId = null;
@@ -9877,15 +8706,63 @@ function createOverlayUI() {
     info.style.position = 'fixed'; info.style.left = '50%'; info.style.top = '50%'; info.style.transform = 'translate(-50%,-50%)';
     info.style.zIndex = 3000; info.style.display = 'none'; info.style.minWidth = '220px';
     stylePanel(info);
-    info.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><strong id="entity-info-title">Entidad</strong><button id="entity-info-close" style="background:#222;color:#FFD27A;border:none;padding:6px 8px;border-radius:6px">X</button></div><div id="entity-info-body"></div>`;
+    info.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><strong id="entity-info-title">Entidad</strong></div><div id="entity-info-body"></div>`;
     document.body.appendChild(info);
-    document.getElementById('entity-info-close').addEventListener('click', () => info.style.display = 'none');
   }
 
   // (settings gear removed — use top-menubar 'Ajustes' instead)
 }
 
 // Ability bar and missions UI
+function ensureBottomHudDock() {
+  if (window._standaloneEditorMode) return null;
+  let dock = document.getElementById('bottom-hud-dock');
+  if (!dock) {
+    dock = document.createElement('div');
+    dock.id = 'bottom-hud-dock';
+    dock.style.position = 'fixed';
+    dock.style.left = '50%';
+    dock.style.bottom = '8px';
+    dock.style.transform = 'translateX(-50%)';
+    dock.style.display = 'flex';
+    dock.style.alignItems = 'flex-end';
+    dock.style.gap = '12px';
+    dock.style.zIndex = '3900';
+    dock.style.pointerEvents = 'none';
+    document.body.appendChild(dock);
+  }
+
+  const bar = document.getElementById('ability-bar');
+  const card = document.getElementById('char-card');
+  if (card) {
+    card.style.position = 'relative';
+    card.style.left = 'auto';
+    card.style.right = 'auto';
+    card.style.top = 'auto';
+    card.style.bottom = 'auto';
+    card.style.transform = 'none';
+    card.style.margin = '0';
+    card.style.zIndex = '1';
+    card.style.pointerEvents = 'auto';
+    if (card.parentElement !== dock) dock.appendChild(card);
+  }
+  if (bar) {
+    bar.style.position = 'relative';
+    bar.style.left = 'auto';
+    bar.style.right = 'auto';
+    bar.style.top = 'auto';
+    bar.style.bottom = 'auto';
+    bar.style.transform = 'none';
+    bar.style.margin = '0';
+    bar.style.zIndex = '1';
+    bar.style.pointerEvents = 'auto';
+    if (bar.parentElement !== dock) dock.appendChild(bar);
+  }
+
+  dock.style.display = ((card && card.style.display !== 'none' && !card.classList.contains('hidden')) || (bar && bar.style.display !== 'none')) ? 'flex' : 'none';
+  return dock;
+}
+
 function createAbilityBarAndMissions() {
   if (window._standaloneEditorMode) return;
   // ability state
@@ -9983,6 +8860,7 @@ function createAbilityBarAndMissions() {
     cb.style.marginLeft = '8px'; cb.style.padding = '6px 8px'; cb.style.borderRadius = '6px'; cb.style.border = '1px solid #444'; cb.style.background = '#1a1a1a'; cb.style.color = '#FFD27A'; cb.addEventListener('click', () => { try { toggleCraftingPanel(); } catch (e) {} });
     bar.appendChild(cb);
   } catch (e) {}
+  try { ensureBottomHudDock(); } catch (e) {}
 
   // Event history panel (replaces mission queue)
   let eh = document.getElementById('event-history');
@@ -11183,6 +10061,9 @@ function enableFloatingBehavior(el) {
   if (!controls) {
     controls = document.createElement('div'); controls.className = 'float-controls';
     controls.style.display = 'flex'; controls.style.gap = '6px';
+    controls.style.opacity = '0';
+    controls.style.pointerEvents = 'none';
+    controls.style.transition = 'opacity 0.16s ease';
     header.appendChild(controls);
   }
 
@@ -11247,7 +10128,20 @@ function enableFloatingBehavior(el) {
     el.style.transform = 'none';
     el.dataset.dragMoved = '1';
   });
-  document.addEventListener('mouseup', () => { if (dragging) { dragging = false; header.style.cursor = 'grab'; document.body.style.userSelect = ''; } });
+  document.addEventListener('mouseup', () => {
+    if (dragging) {
+      dragging = false;
+      header.style.cursor = 'grab';
+      document.body.style.userSelect = '';
+      try { saveAppStateDebounced(); } catch (e) {}
+    }
+  });
+  const toggleControls = (show) => {
+    controls.style.opacity = show ? '1' : '0';
+    controls.style.pointerEvents = show ? 'auto' : 'none';
+  };
+  el.addEventListener('mouseenter', () => toggleControls(true));
+  el.addEventListener('mouseleave', () => toggleControls(false));
   return el;
 }
 
@@ -11279,6 +10173,9 @@ function makeUiElementClosable(el, opts = {}) {
       btn.style.width = '24px';
       btn.style.height = '24px';
     }
+    btn.style.opacity = '0';
+    btn.style.pointerEvents = 'none';
+    btn.style.transition = 'opacity 0.16s ease';
     btn.addEventListener('click', (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
@@ -11287,6 +10184,14 @@ function makeUiElementClosable(el, opts = {}) {
       try { saveAppStateDebounced(); } catch (e) {}
     });
     el.appendChild(btn);
+    el.addEventListener('mouseenter', () => {
+      btn.style.opacity = '1';
+      btn.style.pointerEvents = 'auto';
+    });
+    el.addEventListener('mouseleave', () => {
+      btn.style.opacity = '0';
+      btn.style.pointerEvents = 'none';
+    });
 
     if (opts.draggable && el.dataset.uiDragReady !== '1') {
       el.dataset.uiDragReady = '1';
@@ -11359,7 +10264,7 @@ function registerClosableUIElements() {
     try {
       const el = document.getElementById(def.id);
       if (!el) continue;
-      makeUiElementClosable(el, { title: def.title, draggable: def.id === 'char-card' });
+      makeUiElementClosable(el, { title: def.title, draggable: false });
     } catch (e) {}
   }
 }
@@ -11498,6 +10403,7 @@ function showStartMenu(force) {
         updateUI();
         try { window._gameStarted = true; startRenderLoop(); } catch (e) {}
         try { createTimeControlWidget(); } catch (e) {}
+        try { startLocked = false; targetZoom = zoom; ensureBottomHudDock(); canvas.focus({ preventScroll: true }); } catch (e) {}
       } catch (e) { console.error(e); try { prog && prog.hide(); } catch (er) {} notify('Error cargando partida'); }
     });
 
@@ -11991,13 +10897,10 @@ function checkChapter2Completion() {
 
 function drawStoryObjectiveHUD(ctx, W, H) {
   // Only show in free mode when there is an active story chapter
-  if (editMode) return;
-  const ch = window._storyChapter || 0;
-  if (ch === 0 || !window._missions) return;
-  const q = window._missions.find(m => m.isStory);
-  if (!q) return;
-
-  // Story completion flash (3 s)
+  if (editMode) {
+    try { const panel = document.getElementById('story-objective-overlay'); if (panel) panel.style.display = 'none'; } catch (e) {}
+    return;
+  }
   if (window._storyComplete) {
     const elapsed = Date.now() - window._storyComplete.start;
     const dur = 3200;
@@ -12021,57 +10924,59 @@ function drawStoryObjectiveHUD(ctx, W, H) {
       ctx.fillStyle = 'rgba(200,200,200,0.55)';
       ctx.fillText('Historia completada', W / 2, H / 2 + 44);
       ctx.restore();
-      return;
     } else {
       window._storyComplete = null;
     }
   }
+  const ch = window._storyChapter || 0;
+  if (ch === 0 || !window._missions) {
+    try { const panel = document.getElementById('story-objective-overlay'); if (panel) panel.style.display = 'none'; } catch (e) {}
+    return;
+  }
+  const q = window._missions.find(m => m.isStory);
+  if (!q) {
+    try { const panel = document.getElementById('story-objective-overlay'); if (panel) panel.style.display = 'none'; } catch (e) {}
+    return;
+  }
 
-  // Small objective banner — top-left below any potential toolbar
-  const panW = Math.min(W - 20, 340);
-  const panH = 44;
-  const px = 10, py = 42;
-  ctx.save();
-  ctx.globalAlpha = 0.88;
-  ctx.fillStyle = 'rgba(6,4,2,0.82)';
-  ctx.strokeStyle = ch === 3 ? '#5DB85D' : '#9B7520';
-  ctx.lineWidth = 1.4;
-  ctx.beginPath();
-  ctx.roundRect(px, py, panW, panH, 6);
-  ctx.fill(); ctx.stroke();
-  ctx.globalAlpha = 1;
-  // Chapter badge
-  const badgeW = 56;
-  ctx.fillStyle = ch === 3 ? 'rgba(60,140,60,0.7)' : 'rgba(100,70,10,0.7)';
-  ctx.beginPath(); ctx.roundRect(px + 6, py + 7, badgeW, 30, 4); ctx.fill();
-  ctx.font = 'bold 9px monospace';
-  ctx.fillStyle = ch === 3 ? '#8FE88F' : '#FFD27A';
-  ctx.textAlign = 'center';
-  ctx.fillText(ch === 3 ? 'FIN' : `ACTO ${ch}`, px + 6 + badgeW / 2, py + 20);
-  ctx.font = 'bold 10px sans-serif';
-  ctx.fillStyle = ch === 3 ? '#8FE88F' : '#FFD27A';
-  ctx.fillText(q.title.toUpperCase(), px + 6 + badgeW / 2, py + 31);
-  // Objective text
-  ctx.textAlign = 'left';
-  ctx.font = '11px sans-serif';
-  ctx.fillStyle = 'rgba(240,235,215,0.90)';
-  const maxTW = panW - badgeW - 22;
-  let desc = q.desc;
-  if (ctx.measureText(desc).width > maxTW) {
-    // truncate with ellipsis
-    while (desc.length > 10 && ctx.measureText(desc + '…').width > maxTW) desc = desc.slice(0, -1);
-    desc += '…';
-  }
-  ctx.fillText(desc, px + badgeW + 16, py + 20);
-  // Progress for chapter 2 offering
-  if (ch === 2) {
-    const food = Math.min(5, inventory['food'] || 0);
-    const stone = Math.min(3, inventory['stone'] || 0);
-    ctx.font = '10px monospace';
-    ctx.fillStyle = 'rgba(200,220,255,0.75)';
-    ctx.fillText(`Comida: ${food}/5   Piedra: ${stone}/3`, px + badgeW + 16, py + 34);
-  }
-  ctx.restore();
+  try {
+    let panel = document.getElementById('story-objective-overlay');
+    if (!panel) {
+      panel = document.createElement('div');
+      panel.id = 'story-objective-overlay';
+      panel.setAttribute('data-title', 'Objetivo');
+      panel.style.position = 'fixed';
+      panel.style.left = '12px';
+      panel.style.top = '52px';
+      panel.style.zIndex = '4200';
+      panel.style.minWidth = '320px';
+      panel.style.maxWidth = '360px';
+      panel.style.pointerEvents = 'auto';
+      panel.innerHTML = '<div class="story-objective-content"></div>';
+      document.body.appendChild(panel);
+      enableFloatingBehavior(panel);
+      registerPanel(panel);
+    }
+    const content = panel.querySelector('.story-objective-content');
+    if (content) {
+      const food = Math.min(5, inventory['food'] || 0);
+      const stone = Math.min(3, inventory['stone'] || 0);
+      content.innerHTML = `
+        <div style="display:flex;align-items:flex-start;gap:10px;min-width:0;">
+          <div style="flex:0 0 62px;padding:6px 4px;border-radius:4px;background:${ch === 3 ? 'rgba(60,140,60,0.7)' : 'rgba(100,70,10,0.7)'};text-align:center;">
+            <div style="font:700 10px monospace;color:${ch === 3 ? '#8FE88F' : '#FFD27A'};">${ch === 3 ? 'FIN' : `ACTO ${ch}`}</div>
+            <div style="font:700 10px sans-serif;color:${ch === 3 ? '#8FE88F' : '#FFD27A'};margin-top:3px;word-break:break-word;">${String(q.title || '').toUpperCase()}</div>
+          </div>
+          <div style="flex:1;min-width:0;">
+            <div style="font:600 11px sans-serif;color:rgba(240,235,215,0.96);line-height:1.35;word-break:break-word;">${q.desc || ''}</div>
+            ${ch === 2 ? `<div style="margin-top:7px;font:10px monospace;color:rgba(200,220,255,0.82);">Comida: ${food}/5 &nbsp;&nbsp; Piedra: ${stone}/3</div>` : ''}
+          </div>
+        </div>`;
+    }
+    panel.style.display = worldMapOverlayVisible || isCinematicActive() ? 'none' : 'block';
+  } catch (e) {}
+
+  return;
 }
 
 function drawCompactGuideOverlay(ctx, W, H) {
@@ -13151,6 +12056,11 @@ let targetZoom = zoom;
 let zoomLerpSpeed = 0.18; // higher = faster
 let zoomAnimating = false;
 
+try {
+  canvas.tabIndex = 0;
+  canvas.addEventListener('pointerdown', () => { try { canvas.focus({ preventScroll: true }); } catch (e) {} });
+} catch (e) {}
+
 canvas.addEventListener('wheel', (ev) => {
   if (startLocked && !window._standaloneEditorMode) return;
   ev.preventDefault();
@@ -14112,6 +13022,10 @@ function postMapInit() {
   try { if (window._onEngineReady && typeof window._onEngineReady === 'function') { try { console.log && console.log('game-engine: calling _onEngineReady'); window._onEngineReady(); } catch (e) {} } } catch (e) {}
   // record last active timestamp so a page refresh within an hour will auto-restore
   try { localStorage.setItem('meso.lastActive', String(Date.now())); } catch (e) {}
+  try { startLocked = false; } catch (e) {}
+  try { targetZoom = zoom; } catch (e) {}
+  try { ensureBottomHudDock(); } catch (e) {}
+  try { canvas.tabIndex = 0; canvas.focus({ preventScroll: true }); } catch (e) {}
 }
 
 // Listen for events from EventManager and apply simple impacts to game state
@@ -14194,4 +13108,3 @@ try {
     document.body.appendChild(el);
   } catch (err2) { console.error('Error showing init overlay', err2); }
 }
-
