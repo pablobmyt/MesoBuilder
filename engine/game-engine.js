@@ -364,6 +364,20 @@ function _sendSelectedNPCsToGather() {
   } catch (e) { return 0; }
 }
 
+function setNpcPatrol(npc, route, opts = {}) {
+  try {
+    if (!npc || !Array.isArray(route) || route.length === 0) return npc;
+    npc.patrolRoute = route
+      .filter(pt => pt && typeof pt.c === 'number' && typeof pt.r === 'number')
+      .map(pt => ({ c: Math.max(0, Math.min(COLS - 1, Math.floor(pt.c))), r: Math.max(0, Math.min(ROWS - 1, Math.floor(pt.r))) }));
+    npc.patrolIndex = Math.max(0, Math.min(npc.patrolRoute.length - 1, opts.startIndex || 0));
+    npc.patrolLoop = opts.loop !== false;
+    npc.patrolPauseMs = opts.pauseMs || 600;
+    npc.nextMove = Date.now() + (opts.initialDelayMs || 300);
+    return npc;
+  } catch (e) { return npc; }
+}
+
 // Simple loading overlay (spinner + text) used by several flows
 function showLoadingOverlay(text) {
   try {
@@ -1674,10 +1688,10 @@ function unwrapSavedAppState(data) {
 
 // Debounced save helper
 let _saveTimer = null;
-function saveAppStateDebounced(delay = 250) {
+function saveAppStateDebounced(delay = 1200) {
   if (_saveTimer) clearTimeout(_saveTimer);
   const busyCamera = isPanning || isZooming || zoomAnimating || (Date.now() - lastCameraInputAt) < 350;
-  const finalDelay = busyCamera ? Math.max(delay, 900) : delay;
+  const finalDelay = busyCamera ? Math.max(delay, 2200) : Math.max(700, delay);
   _saveTimer = setTimeout(() => { try { saveAppState(); } catch (e) {} }, finalDelay);
 }
 
@@ -1726,7 +1740,9 @@ function saveAppState() {
       effectParticles: (typeof effectParticles !== 'undefined' && Array.isArray(effectParticles)) ? effectParticles.map(p => ({ ...p })) : [],
       floatingTexts: (typeof window.floatingTexts !== 'undefined' && Array.isArray(window.floatingTexts)) ? window.floatingTexts.map(t => ({ ...t })) : [],
       villages: (window._VILLAGES && Array.isArray(window._VILLAGES)) ? window._VILLAGES.map(v => ({ ...v })) : [],
-      interiorDoors: (window.INTERIOR_DOORS && Array.isArray(window.INTERIOR_DOORS)) ? window.INTERIOR_DOORS.map(d => ({ ...d })) : []
+      interiorDoors: (window.INTERIOR_DOORS && Array.isArray(window.INTERIOR_DOORS)) ? window.INTERIOR_DOORS.map(d => ({ ...d })) : [],
+      storyChapter: window._storyChapter || 0,
+      storySceneFlags: { ...(window._storySceneFlags || {}) }
     };
     localStorage.setItem(APP_STATE_KEY, JSON.stringify(state));
     // Also save transient panel visibility/position to sessionStorage so it survives reloads in this session
@@ -1857,6 +1873,8 @@ function loadAppState() {
       if (s.res) try { window.res = s.res; } catch (e) {}
       if (s.selectedTool) try { selectedTool = s.selectedTool; } catch (e) {}
       try { if (s.epoch) applyEpochProfile(s.epoch, true); } catch (e) {}
+      try { if (typeof s.storyChapter === 'number') window._storyChapter = s.storyChapter; } catch (e) {}
+      try { if (s.storySceneFlags && typeof s.storySceneFlags === 'object') window._storySceneFlags = { ...s.storySceneFlags }; } catch (e) {}
       // restore other top-level flags
       try { if (typeof s.turn === 'number') turn = s.turn; } catch (e) {}
       try { startLocked = !!s.startLocked; } catch (e) {}
@@ -2369,8 +2387,8 @@ function drawCharacterPixels(ctx, palette, x, y, scale, opts) {
   const dir = opts.dir || 'down'; // 'down','up','left','right'
   const frame = opts.frame || 0; // 0 or 1 (walking)
   const spriteMap = getCharacterSpriteMap(opts.outfit || 'tunic');
-  // inverted horizontal axis: flip when facing 'right' instead of 'left'
-  const flip = dir === 'right';
+  // mirror sprite when facing left
+  const flip = dir === 'left';
   // headOnly shows just the head region (rows 0-5 for 12-row sprites, 0-3 for legacy 8-row)
   const headRows = spriteMap.length >= 10 ? 6 : 4;
   const maxRow = opts.headOnly ? Math.min(spriteMap.length, headRows) : spriteMap.length;
@@ -2399,8 +2417,7 @@ function drawCharacterPixels(ctx, palette, x, y, scale, opts) {
       if ((row === legRow0 || row === legRow1) && (ch === 'c' || ch === 's' || ch === 't')) {
         if (dir === 'right' || dir === 'left') {
           if (frame === 1) {
-            // invert horizontal axis: reverse sign so stepping matches flipped sprite
-            dx = (dir === 'right') ? -1 : 1;
+            dx = (dir === 'right') ? 1 : -1;
           }
         } else if (dir === 'up' || dir === 'down') {
           const side = col < Math.floor(line.length / 2) ? -1 : 1;
@@ -2688,6 +2705,62 @@ function resolveBuildingSpriteKey(type) {
   return alias && hasRegisteredSprite(alias) ? alias : null;
 }
 
+function augmentSovietBlockVariants(lib) {
+  try {
+    if (!lib || !lib.soviet_block || !Array.isArray(lib.soviet_block.pixels)) return;
+    const base = lib.soviet_block;
+    const clone = () => ({ grid: base.grid || 27, pixels: (base.pixels || []).map(p => [p[0], p[1], p[2]]) });
+
+    if (!lib.soviet_block_warm) {
+      const warm = clone();
+      warm.pixels = warm.pixels.map(([x, y, c]) => {
+        if (c === '#3A3F47') return [x, y, '#2E333A'];
+        if (c === '#C8CFD8') return [x, y, '#D7DDE5'];
+        if (c === '#FFD97A') return [x, y, '#FFC95A'];
+        return [x, y, c];
+      });
+      for (let y = 3; y <= 25; y += 4) {
+        for (let x = 15; x <= 21; x += 2) warm.pixels.push([x, y, '#FFB347']);
+      }
+      lib.soviet_block_warm = warm;
+    }
+
+    if (!lib.soviet_block_dark) {
+      const dark = clone();
+      dark.pixels = dark.pixels.map(([x, y, c]) => {
+        if (c === '#A7ADB5') return [x, y, '#8E949D'];
+        if (c === '#A0A6AF') return [x, y, '#868D97'];
+        if (c === '#959CA6') return [x, y, '#7A818C'];
+        if (c === '#BFC6CF') return [x, y, '#AEB6C0'];
+        if (c === '#C8CFD8') return [x, y, '#B8C0CA'];
+        if (c === '#FFD97A') return [x, y, '#E0BC64'];
+        return [x, y, c];
+      });
+      dark.pixels.push([14, 2, '#C63B45'], [22, 2, '#C63B45'], [14, 14, '#C63B45'], [22, 14, '#C63B45']);
+      lib.soviet_block_dark = dark;
+    }
+
+    if (!lib.soviet_block_retrofit) {
+      const retrofit = clone();
+      retrofit.pixels = retrofit.pixels.map(([x, y, c]) => {
+        if (c === '#C8CFD8' && (y % 6 === 1 || y % 6 === 3)) return [x, y, '#A9D0FF'];
+        return [x, y, c];
+      });
+      for (let y = 2; y <= 24; y += 6) {
+        retrofit.pixels.push([13, y, '#6E7680'], [23, y, '#6E7680']);
+      }
+      retrofit.pixels.push([18, 0, '#D9DDE3'], [18, 1, '#E6EBF1'], [17, 0, '#7A818B'], [19, 0, '#7A818B']);
+      lib.soviet_block_retrofit = retrofit;
+    }
+  } catch (e) { console.warn('augmentSovietBlockVariants err', e); }
+}
+
+function pickSovietBlockVariant(col, row) {
+  const variants = ['soviet_block', 'soviet_block_warm', 'soviet_block_dark', 'soviet_block_retrofit'];
+  const seed = ((((col || 0) * 73856093) ^ ((row || 0) * 19349663)) >>> 0);
+  return variants[seed % variants.length];
+}
+
 function drawWheatIcon(ctx, w, h) {
   ctx.clearRect(0,0,w,h);
   ctx.fillStyle = '#DAA520';
@@ -2711,6 +2784,7 @@ function drawWheatIcon(ctx, w, h) {
         if (!res.ok) throw new Error('entity-pixels.json not found');
         const json = await res.json();
         window.ENTITY_PIXEL_LIBRARY = json.icons || json || {};
+        augmentSovietBlockVariants(window.ENTITY_PIXEL_LIBRARY);
         const keys = Object.keys(window.ENTITY_PIXEL_LIBRARY);
         for (const k of keys) {
           try { window.createCanvasFromPixelDef(window.ENTITY_PIXEL_LIBRARY[k], k); } catch (e) { console.warn('icon create failed', k, e); }
@@ -3260,7 +3334,7 @@ function assignSovietVillagerProfile(npc) {
 
 function spawnVillage(baseCol, baseRow, opts) {
   opts = opts || {};
-  const villageType = opts.villageType || 'village'; // 'origin' | 'capital' | 'trading_post' | 'village'
+  const villageType = opts.villageType || 'village'; // 'origin' | 'capital' | 'military_base' | 'trading_post' | 'village'
   const epochNow = window._currentEpoch || 'mesopotamia';
 
   // find a valid non-water, non-river center nearby
@@ -3279,6 +3353,8 @@ function spawnVillage(baseCol, baseRow, opts) {
     layoutCols = 4 + Math.floor(Math.random()*2); // 4-5
     layoutRows = 3 + Math.floor(Math.random()*2); // 3-4
     spacing = 7;
+  } else if (villageType === 'military_base') {
+    layoutCols = 4; layoutRows = 2; spacing = 5;
   } else if (villageType === 'origin') {
     layoutCols = 2; layoutRows = 1; spacing = 5;
   } else if (villageType === 'trading_post') {
@@ -3301,9 +3377,10 @@ function spawnVillage(baseCol, baseRow, opts) {
   // Districts: [ziggurat center] [temple N] [market S] [villas NE/NW]
   //            [baths E/W] [meso_house residential ring] [granary edge]
   //            [arch gates at N/S entrances] [ring road]
-  if (villageType === 'capital') {
+  if (villageType === 'capital' || villageType === 'military_base') {
     // compute city center
     const cx = bc, cy = br;
+    const isMilitaryBase = villageType === 'military_base';
     capitalCx = cx;
     capitalCy = cy;
     const reservedVoid = new Set();
@@ -3412,79 +3489,213 @@ function spawnVillage(baseCol, baseRow, opts) {
       try { setBuildingCells(c, r, btype); houses.push({ c, r, variant: btype }); return true; } catch(e) { return false; }
     };
 
-    // 1. CORE: Ziggurat at center (size-driven)
-    try {
-      const zsize = getBuildingSize('ziggurat');
-      const zx = cx - Math.floor(zsize.w / 2);
-      const zy = cy - Math.floor(zsize.h / 2);
-      tryPlace(zx, zy, 'ziggurat');
-    } catch (e) { tryPlace(cx - 2, cy - 2, 'ziggurat'); }
-    // 2. TEMPLE: north of ziggurat, slightly offset
-    tryPlace(cx - 1, cy - 9, 'temple');
-    // 3. MONUMENT ARCH: north city gate (entrance)
-    tryPlace(cx - 1, cy - 12, 'mesopotamian_arch');
-    // 4. MONUMENT ARCH: south city gate
-    tryPlace(cx - 1, cy + 8, 'mesopotamian_arch');
-    // 5. VILLA NOBLE: NW quadrant
-    tryPlace(cx - 9, cy - 7, 'mesopotamian_villa_detailed');
-    // 6. VILLA NOBLE: NE quadrant
-    tryPlace(cx + 6, cy - 7, 'mesopotamian_villa_detailed');
-    // 7. PUBLIC BATHS: west district
-    tryPlace(cx - 9, cy - 1, 'mesopotamian_baths');
-    // 8. PUBLIC BATHS: east district
-    tryPlace(cx + 7, cy - 1, 'mesopotamian_baths');
-    // 9. MARKET: SW corner (commercial hub)
-    tryPlace(cx - 9, cy + 5, 'market');
-    // 10. GRANARY: SE corner
-    tryPlace(cx + 7, cy + 5, 'granary');
-    // 11. GRANARY: NE far edge
-    tryPlace(cx + 11, cy - 4, 'granary');
-    // 12-19. RESIDENTIAL RING — mesopotamian_houses radiating from center
-    const resRing = [
-      [cx - 7, cy + 1], [cx + 5, cy + 1],       // E/W mid
-      [cx - 5, cy + 6], [cx + 4, cy + 6],        // S near
-      [cx - 3, cy - 8], [cx + 3, cy - 8],        // N near
-      [cx - 8, cy - 4], [cx + 7, cy - 4],        // NW/NE
-      [cx - 6, cy + 9], [cx + 5, cy + 9],        // S far
-    ];
-    resRing.forEach(([rc, rr], i) => {
-      if (Math.random() < 0.18) return; // reserve breathing gaps in residential ring
-      const fallback = (epochNow === 'urss') ? 'soviet_block' : 'mesopotamian_house';
-      const variant = pickDistrictBuilding(rc, rr, fallback);
-      tryPlace(rc, rr, variant);
-    });
-    // 20. Additional houses filling gaps
-    const extraSlots = [
-      [cx - 3, cy + 7, 'mesopotamian_house'],
-      [cx + 2, cy + 7, 'mesopotamian_house'],
-      [cx - 3, cy - 10, 'house_small'],
-      [cx + 2, cy - 10, 'house_small'],
-      [cx + 10, cy + 2, 'mesopotamian_house'],
-      [cx - 11, cy + 2, 'house'],
-      [cx + 10, cy - 7, 'hut'],
-      [cx - 11, cy - 7, 'hut'],
-      // Outer ring — fills city interior before the walls
-      [cx - 5, cy + 3, 'house_small'],
-      [cx + 4, cy + 3, 'house_small'],
-      [cx - 5, cy - 5, 'house_small'],
-      [cx + 4, cy - 5, 'house_small'],
-      [cx - 8, cy + 8, 'hut'],
-      [cx + 7, cy + 8, 'hut'],
-      [cx - 8, cy - 9, 'hut'],
-      [cx + 7, cy - 9, 'hut'],
-      [cx + 3, cy - 12, 'granary'],
-      [cx - 4, cy + 10, 'house_small'],
-      [cx + 3, cy + 10, 'hut'],
-      [cx - 10, cy + 5, 'hut'],
-      [cx + 9,  cy + 5, 'hut'],
-      [cx + 9,  cy - 5, 'mesopotamian_house'],
-      [cx - 10, cy - 5, 'mesopotamian_house'],
-    ];
-    extraSlots.forEach(([ec, er, et]) => {
-      if (Math.random() < 0.35) return; // reduce overfilling in capitals
-      const variant = (Math.random() < 0.7) ? pickDistrictBuilding(ec, er, et) : et;
-      tryPlace(ec, er, variant);
-    });
+    const pushAmbient = (subtype, col, row, size = 1) => {
+      if (col < 1 || row < 1 || col >= COLS - 1 || row >= ROWS - 1) return false;
+      if (isRiver(col) || (grid[row] && grid[row][col])) return false;
+      entities.push({
+        id: `ambient-${subtype}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        kind: 'ambient', subtype, col, row, x: col, y: row, size, nonInteractive: true
+      });
+      return true;
+    };
+
+    if (epochNow === 'urss') {
+      if (isMilitaryBase) {
+        const baseR = 8;
+        capitalRingR = baseR;
+        reserveRect(cx - 1, cy - baseR, cx + 1, cy + baseR);
+        reserveRect(cx - baseR, cy - 1, cx + baseR, cy + 1);
+
+        tryPlace(cx - 2, cy - 2, 'party_hq');
+        tryPlace(cx - 8, cy - 4, 'soviet_block');
+        tryPlace(cx + 5, cy - 4, 'soviet_block');
+        tryPlace(cx - 8, cy + 3, 'state_warehouse');
+        tryPlace(cx + 5, cy + 3, 'state_warehouse');
+        tryPlace(cx - 1, cy - 8, 'state_clinic');
+        tryPlace(cx + 5, cy - 1, 'factory');
+
+        [[cx - 1, cy - 10], [cx - 1, cy + 8], [cx - 10, cy], [cx + 8, cy]].forEach(([gc, gr]) => {
+          tryPlace(gc, gr, 'checkpoint_gate');
+        });
+
+        const baseCorners = [
+          [cx - baseR, cy - baseR],
+          [cx + baseR - 1, cy - baseR],
+          [cx - baseR, cy + baseR - 1],
+          [cx + baseR - 1, cy + baseR - 1]
+        ];
+        baseCorners.forEach(([tc, tr]) => { tryPlace(tc, tr, 'wall_tower'); });
+        for (let i = -baseR + 2; i <= baseR - 2; i++) {
+          const skipGate = Math.abs(i) <= 1;
+          if (!skipGate) {
+            const northOk = tryPlace(cx + i, cy - baseR, 'wall_segment');
+            if (northOk && grid[cy - baseR] && grid[cy - baseR][cx + i]) grid[cy - baseR][cx + i].orient = 'h';
+            const southOk = tryPlace(cx + i, cy + baseR, 'wall_segment');
+            if (southOk && grid[cy + baseR] && grid[cy + baseR][cx + i]) grid[cy + baseR][cx + i].orient = 'h';
+            const westOk = tryPlace(cx - baseR, cy + i, 'wall_segment');
+            if (westOk && grid[cy + i] && grid[cy + i][cx - baseR]) grid[cy + i][cx - baseR].orient = 'v';
+            const eastOk = tryPlace(cx + baseR, cy + i, 'wall_segment');
+            if (eastOk && grid[cy + i] && grid[cy + i][cx + baseR]) grid[cy + i][cx + baseR].orient = 'v';
+          }
+        }
+        for (let r = cy - baseR; r <= cy + baseR; r++) {
+          if (r >= 0 && r < ROWS && !grid[r][cx]) tileBiome[r][cx] = 'concrete_road';
+        }
+        for (let c = cx - baseR; c <= cx + baseR; c++) {
+          if (c >= 0 && c < COLS && !grid[cy][c]) tileBiome[cy][c] = 'concrete_road';
+        }
+        [[cx - 3, cy - 10], [cx + 3, cy - 10], [cx - 3, cy + 8], [cx + 3, cy + 8], [cx - 10, cy - 2], [cx - 10, cy + 2], [cx + 8, cy - 2], [cx + 8, cy + 2]].forEach(([ac, ar]) => pushAmbient('guard_booth', ac, ar, 0.95));
+        [[cx - 6, cy - 6], [cx + 6, cy - 6], [cx - 6, cy + 5], [cx + 6, cy + 5]].forEach(([ac, ar]) => pushAmbient('soviet_streetlight', ac, ar, 1.0));
+        [[cx - 4, cy + 3], [cx + 4, cy + 3], [cx - 5, cy - 3], [cx + 5, cy - 3], [cx, cy + 5]].forEach(([ac, ar]) => pushAmbient('crate_stack', ac, ar, 0.95));
+      } else {
+        // URSS capital: ordered administrative core + industrial south belt + clear access controls
+        reserveRect(cx - 1, cy - 12, cx + 1, cy + 12); // main avenue
+        reserveRect(cx - 12, cy - 1, cx + 12, cy + 1); // cross avenue
+
+        tryPlace(cx - 2, cy - 3, 'party_hq');
+        tryPlace(cx - 1, cy - 10, 'state_clinic');
+        tryPlace(cx + 6, cy - 6, 'factory');
+        tryPlace(cx - 9, cy - 6, 'state_warehouse');
+        tryPlace(cx - 9, cy + 5, 'collective_farm');
+        tryPlace(cx + 7, cy + 5, 'state_warehouse');
+
+        const sovietResidentialBands = [
+          [cx - 12, cy - 8], [cx - 12, cy - 3], [cx - 12, cy + 3], [cx - 12, cy + 8],
+          [cx + 10, cy - 8], [cx + 10, cy - 3], [cx + 10, cy + 3], [cx + 10, cy + 8],
+          [cx - 6, cy - 13], [cx + 4, cy - 13], [cx - 6, cy + 11], [cx + 4, cy + 11],
+          [cx - 5, cy - 7], [cx + 3, cy - 7], [cx - 5, cy + 5], [cx + 3, cy + 5]
+        ];
+        sovietResidentialBands.forEach(([rc, rr], idx) => {
+          if (Math.random() < (idx < 8 ? 0.08 : 0.18)) return;
+          tryPlace(rc, rr, 'soviet_block');
+        });
+
+        // Visible checkpoints on the four main entries
+        tryPlace(cx - 1, cy - 13, 'checkpoint_gate');
+        tryPlace(cx - 1, cy + 11, 'checkpoint_gate');
+        tryPlace(cx - 13, cy, 'checkpoint_gate');
+        tryPlace(cx + 11, cy, 'checkpoint_gate');
+
+        // Monument and public space props
+        pushAmbient('soviet_monument', cx, cy + 3, 1.15);
+        [[cx - 4, cy + 3], [cx + 4, cy + 3], [cx - 4, cy - 3], [cx + 4, cy - 3], [cx, cy - 8], [cx, cy + 8]].forEach(([ac, ar]) => {
+          pushAmbient('soviet_streetlight', ac, ar, 1.0);
+        });
+        [[cx - 3, cy - 13], [cx + 3, cy - 13], [cx - 3, cy + 11], [cx + 3, cy + 11], [cx - 13, cy - 2], [cx - 13, cy + 2], [cx + 11, cy - 2], [cx + 11, cy + 2]].forEach(([ac, ar]) => {
+          pushAmbient('guard_booth', ac, ar, 0.95);
+        });
+        [[cx - 10, cy + 2], [cx - 9, cy + 8], [cx + 9, cy + 4], [cx + 8, cy - 5]].forEach(([ac, ar]) => {
+          pushAmbient('crate_stack', ac, ar, 0.95);
+        });
+      }
+    } else {
+      if (isMilitaryBase) {
+        const fortR = 7;
+        capitalRingR = fortR;
+        tryPlace(cx - 1, cy - 2, 'temple');
+        tryPlace(cx - 6, cy - 3, 'longhouse');
+        tryPlace(cx + 4, cy - 3, 'longhouse');
+        tryPlace(cx - 6, cy + 3, 'granary');
+        tryPlace(cx + 4, cy + 3, 'tower');
+        tryPlace(cx - 1, cy - 8, 'mesopotamian_arch');
+        tryPlace(cx - 1, cy + 6, 'mesopotamian_arch');
+        const fortCorners = [
+          [cx - fortR, cy - fortR],
+          [cx + fortR - 1, cy - fortR],
+          [cx - fortR, cy + fortR - 1],
+          [cx + fortR - 1, cy + fortR - 1]
+        ];
+        fortCorners.forEach(([tc, tr]) => { tryPlace(tc, tr, 'wall_tower'); });
+        for (let i = -fortR + 2; i <= fortR - 2; i++) {
+          const skipGate = Math.abs(i) <= 1;
+          if (!skipGate) {
+            const northOk = tryPlace(cx + i, cy - fortR, 'wall_segment');
+            if (northOk && grid[cy - fortR] && grid[cy - fortR][cx + i]) grid[cy - fortR][cx + i].orient = 'h';
+            const southOk = tryPlace(cx + i, cy + fortR, 'wall_segment');
+            if (southOk && grid[cy + fortR] && grid[cy + fortR][cx + i]) grid[cy + fortR][cx + i].orient = 'h';
+            const westOk = tryPlace(cx - fortR, cy + i, 'wall_segment');
+            if (westOk && grid[cy + i] && grid[cy + i][cx - fortR]) grid[cy + i][cx - fortR].orient = 'v';
+            const eastOk = tryPlace(cx + fortR, cy + i, 'wall_segment');
+            if (eastOk && grid[cy + i] && grid[cy + i][cx + fortR]) grid[cy + i][cx + fortR].orient = 'v';
+          }
+        }
+      } else {
+        // 1. CORE: Ziggurat at center (size-driven)
+        try {
+          const zsize = getBuildingSize('ziggurat');
+          const zx = cx - Math.floor(zsize.w / 2);
+          const zy = cy - Math.floor(zsize.h / 2);
+          tryPlace(zx, zy, 'ziggurat');
+        } catch (e) { tryPlace(cx - 2, cy - 2, 'ziggurat'); }
+        // 2. TEMPLE: north of ziggurat, slightly offset
+        tryPlace(cx - 1, cy - 9, 'temple');
+        // 3. MONUMENT ARCH: north city gate (entrance)
+        tryPlace(cx - 1, cy - 12, 'mesopotamian_arch');
+        // 4. MONUMENT ARCH: south city gate
+        tryPlace(cx - 1, cy + 8, 'mesopotamian_arch');
+        // 5. VILLA NOBLE: NW quadrant
+        tryPlace(cx - 9, cy - 7, 'mesopotamian_villa_detailed');
+        // 6. VILLA NOBLE: NE quadrant
+        tryPlace(cx + 6, cy - 7, 'mesopotamian_villa_detailed');
+        // 7. PUBLIC BATHS: west district
+        tryPlace(cx - 9, cy - 1, 'mesopotamian_baths');
+        // 8. PUBLIC BATHS: east district
+        tryPlace(cx + 7, cy - 1, 'mesopotamian_baths');
+        // 9. MARKET: SW corner (commercial hub)
+        tryPlace(cx - 9, cy + 5, 'market');
+        // 10. GRANARY: SE corner
+        tryPlace(cx + 7, cy + 5, 'granary');
+        // 11. GRANARY: NE far edge
+        tryPlace(cx + 11, cy - 4, 'granary');
+      }
+    }
+    if (!isMilitaryBase) {
+      // 12-19. RESIDENTIAL RING — mesopotamian_houses radiating from center
+      const resRing = [
+        [cx - 7, cy + 1], [cx + 5, cy + 1],       // E/W mid
+        [cx - 5, cy + 6], [cx + 4, cy + 6],        // S near
+        [cx - 3, cy - 8], [cx + 3, cy - 8],        // N near
+        [cx - 8, cy - 4], [cx + 7, cy - 4],        // NW/NE
+        [cx - 6, cy + 9], [cx + 5, cy + 9],        // S far
+      ];
+      resRing.forEach(([rc, rr], i) => {
+        if (Math.random() < 0.18) return; // reserve breathing gaps in residential ring
+        const fallback = (epochNow === 'urss') ? 'soviet_block' : 'mesopotamian_house';
+        const variant = pickDistrictBuilding(rc, rr, fallback);
+        tryPlace(rc, rr, variant);
+      });
+      // 20. Additional houses filling gaps
+      const extraSlots = [
+        [cx - 3, cy + 7, 'mesopotamian_house'],
+        [cx + 2, cy + 7, 'mesopotamian_house'],
+        [cx - 3, cy - 10, 'house_small'],
+        [cx + 2, cy - 10, 'house_small'],
+        [cx + 10, cy + 2, 'mesopotamian_house'],
+        [cx - 11, cy + 2, 'house'],
+        [cx + 10, cy - 7, 'hut'],
+        [cx - 11, cy - 7, 'hut'],
+        [cx - 5, cy + 3, 'house_small'],
+        [cx + 4, cy + 3, 'house_small'],
+        [cx - 5, cy - 5, 'house_small'],
+        [cx + 4, cy - 5, 'house_small'],
+        [cx - 8, cy + 8, 'hut'],
+        [cx + 7, cy + 8, 'hut'],
+        [cx - 8, cy - 9, 'hut'],
+        [cx + 7, cy - 9, 'hut'],
+        [cx + 3, cy - 12, 'granary'],
+        [cx - 4, cy + 10, 'house_small'],
+        [cx + 3, cy + 10, 'hut'],
+        [cx - 10, cy + 5, 'hut'],
+        [cx + 9,  cy + 5, 'hut'],
+        [cx + 9,  cy - 5, 'mesopotamian_house'],
+        [cx - 10, cy - 5, 'mesopotamian_house'],
+      ];
+      extraSlots.forEach(([ec, er, et]) => {
+        if (Math.random() < 0.35) return; // reduce overfilling in capitals
+        const variant = (Math.random() < 0.7) ? pickDistrictBuilding(ec, er, et) : et;
+        tryPlace(ec, er, variant);
+      });
+    }
 
     // Carve main N-S road through city
     for (let r = cy - 13; r <= cy + 10; r++) {
@@ -3518,62 +3729,63 @@ function spawnVillage(baseCol, baseRow, opts) {
       for (let i = 1; i < houses.length; i++) carveRoadPath(hub.c, hub.r, houses[i].c, houses[i].r);
     }
 
-    // ── CITY WALLS ──────────────────────────────────────────────
-    // Generate perimeter walls + corner towers around the capital.
-    // Walls run at distance wallR from center; gates at north and south.
-    try {
-      const wallR = ringR + 3; // 14 tiles from center
-      // Corner tower positions (top-left corner of each 2×2 tower)
-      const corners = [
-        [cx - wallR,     cy - wallR],
-        [cx + wallR - 1, cy - wallR],
-        [cx - wallR,     cy + wallR - 1],
-        [cx + wallR - 1, cy + wallR - 1]
-      ];
-      corners.forEach(([tc, tr]) => {
-        if (tc >= 1 && tr >= 1 && tc < COLS - 3 && tr < ROWS - 3) {
-          tryPlace(tc, tr, 'wall_tower');
+    // ── CITY WALLS (Mesopotamia only) ──────────────────────────
+    // URSS capitals use open boulevards + checkpoints instead of full walls.
+    if (epochNow !== 'urss' && !isMilitaryBase) {
+      try {
+        const wallR = ringR + 3; // 14 tiles from center
+        // Corner tower positions (top-left corner of each 2×2 tower)
+        const corners = [
+          [cx - wallR,     cy - wallR],
+          [cx + wallR - 1, cy - wallR],
+          [cx - wallR,     cy + wallR - 1],
+          [cx + wallR - 1, cy + wallR - 1]
+        ];
+        corners.forEach(([tc, tr]) => {
+          if (tc >= 1 && tr >= 1 && tc < COLS - 3 && tr < ROWS - 3) {
+            tryPlace(tc, tr, 'wall_tower');
+          }
+        });
+        // North and south wall rows (leave 3-tile gate gap centered on cx)
+        for (let i = -wallR; i <= wallR; i++) {
+          const isGap = Math.abs(i) <= 1; // gate gap ±1 around center
+          const nc = cx + i, nr = cy - wallR;
+          const sc = cx + i, sr2 = cy + wallR;
+          if (nc >= 1 && nc < COLS - 1 && nr >= 1 && nr < ROWS - 1 && !grid[nr][nc] && !isGap) {
+            const ok = tryPlace(nc, nr, 'wall_segment');
+            if (ok && grid[nr][nc]) grid[nr][nc].orient = 'h';
+          }
+          if (sc >= 1 && sc < COLS - 1 && sr2 >= 1 && sr2 < ROWS - 1 && !grid[sr2][sc] && !isGap) {
+            const okS = tryPlace(sc, sr2, 'wall_segment');
+            if (okS && grid[sr2][sc]) grid[sr2][sc].orient = 'h';
+          }
         }
-      });
-      // North and south wall rows (leave 3-tile gate gap centered on cx)
-      for (let i = -wallR; i <= wallR; i++) {
-        const isGap = Math.abs(i) <= 1; // gate gap ±1 around center
-        const nc = cx + i, nr = cy - wallR;
-        const sc = cx + i, sr2 = cy + wallR;
-        if (nc >= 1 && nc < COLS - 1 && nr >= 1 && nr < ROWS - 1 && !grid[nr][nc] && !isGap) {
-          const ok = tryPlace(nc, nr, 'wall_segment');
-          if (ok && grid[nr][nc]) grid[nr][nc].orient = 'h';
+        // West and east wall columns (skip corner tower footprints)
+        for (let i = -wallR + 1; i < wallR; i++) {
+          const wc = cx - wallR, wr2 = cy + i;
+          const ec = cx + wallR, er2 = cy + i;
+          if (wc >= 1 && wr2 >= 1 && wr2 < ROWS - 1 && !grid[wr2][wc]) {
+            const okW = tryPlace(wc, wr2, 'wall_segment');
+            if (okW && grid[wr2][wc]) grid[wr2][wc].orient = 'v';
+          }
+          if (ec < COLS - 1 && er2 >= 1 && er2 < ROWS - 1 && !grid[er2][ec]) {
+            const okE = tryPlace(ec, er2, 'wall_segment');
+            if (okE && grid[er2][ec]) grid[er2][ec].orient = 'v';
+          }
         }
-        if (sc >= 1 && sc < COLS - 1 && sr2 >= 1 && sr2 < ROWS - 1 && !grid[sr2][sc] && !isGap) {
-          const okS = tryPlace(sc, sr2, 'wall_segment');
-          if (okS && grid[sr2][sc]) grid[sr2][sc].orient = 'h';
+        // Road through gate openings (north + south)
+        for (const gr of [cy - wallR, cy - wallR + 1, cy + wallR, cy + wallR - 1]) {
+          if (gr >= 0 && gr < ROWS) {
+            [-1, 0, 1].forEach(gi => {
+              const gc = cx + gi;
+              if (gc >= 0 && gc < COLS && !grid[gr][gc]) {
+                try { tileBiome[gr][gc] = 'road'; } catch (e) {}
+              }
+            });
+          }
         }
-      }
-      // West and east wall columns (skip corner tower footprints)
-      for (let i = -wallR + 1; i < wallR; i++) {
-        const wc = cx - wallR, wr2 = cy + i;
-        const ec = cx + wallR, er2 = cy + i;
-        if (wc >= 1 && wr2 >= 1 && wr2 < ROWS - 1 && !grid[wr2][wc]) {
-          const okW = tryPlace(wc, wr2, 'wall_segment');
-          if (okW && grid[wr2][wc]) grid[wr2][wc].orient = 'v';
-        }
-        if (ec < COLS - 1 && er2 >= 1 && er2 < ROWS - 1 && !grid[er2][ec]) {
-          const okE = tryPlace(ec, er2, 'wall_segment');
-          if (okE && grid[er2][ec]) grid[er2][ec].orient = 'v';
-        }
-      }
-      // Road through gate openings (north + south)
-      for (const gr of [cy - wallR, cy - wallR + 1, cy + wallR, cy + wallR - 1]) {
-        if (gr >= 0 && gr < ROWS) {
-          [-1, 0, 1].forEach(gi => {
-            const gc = cx + gi;
-            if (gc >= 0 && gc < COLS && !grid[gr][gc]) {
-              try { tileBiome[gr][gc] = 'road'; } catch (e) {}
-            }
-          });
-        }
-      }
-    } catch (e) {}
+      } catch (e) {}
+    }
 
   } else {
 
@@ -3643,7 +3855,9 @@ function spawnVillage(baseCol, baseRow, opts) {
 
   const vName = (villageType === 'capital')
     ? (epochNow === 'urss' ? 'Novozarya' : 'Nínagara')
-    : generateVillageName();
+    : (villageType === 'military_base')
+      ? (epochNow === 'urss' ? 'Base Sever-12' : (epochNow === 'medieval' ? 'Fuerte de la Cresta' : 'Guarnición de Karum'))
+      : generateVillageName();
   const bboxArea = Math.max(1, (maxC - minC + 1) * (maxR - minR + 1));
   const builtArea = houses.reduce((acc, h) => {
     const sz = getBuildingSize(h.variant || 'house');
@@ -3745,7 +3959,7 @@ function spawnVillage(baseCol, baseRow, opts) {
 
   // URSS capitals: ambient military aircraft near fortified sectors (non-interactive)
   try {
-    if (epochNow === 'urss' && villageType === 'capital') {
+    if (epochNow === 'urss' && (villageType === 'capital' || villageType === 'military_base')) {
       const militaryAnchors = houses.filter(h => h && (
         h.variant === 'wall_tower' || h.variant === 'checkpoint_gate' || h.variant === 'party_hq'
       ));
@@ -3826,10 +4040,22 @@ function spawnVillage(baseCol, baseRow, opts) {
       }
 
     } else if (villageType === 'capital') {
-      // Guards flanking the first building (city gate)
-      for (let g = 0; g < 2; g++) {
-        const gn = spawnNPC(epochNow === 'urss' ? 'Guardia de Novozarya' : 'Guardia de Nínagara', houses[0].c + g * 2, houses[0].r - 1);
-        if (gn) gn.npcType = 'guard';
+      // Guards at key access points
+      const checkpointHouses = houses.filter(h => h && h.variant === 'checkpoint_gate');
+      if (checkpointHouses.length > 0) {
+        const maxCheckpoints = Math.min(checkpointHouses.length, epochNow === 'urss' ? 4 : 2);
+        for (let i = 0; i < maxCheckpoints; i++) {
+          const cp = checkpointHouses[i];
+          const g1 = spawnNPC(epochNow === 'urss' ? 'Guardia de Novozarya' : 'Guardia de Nínagara', cp.c, cp.r + 1);
+          if (g1) g1.npcType = 'guard';
+          const g2 = spawnNPC(epochNow === 'urss' ? 'Guardia de Novozarya' : 'Guardia de Nínagara', cp.c + 1, cp.r + 1);
+          if (g2) g2.npcType = 'guard';
+        }
+      } else {
+        for (let g = 0; g < 2; g++) {
+          const gn = spawnNPC(epochNow === 'urss' ? 'Guardia de Novozarya' : 'Guardia de Nínagara', houses[0].c + g * 2, houses[0].r - 1);
+          if (gn) gn.npcType = 'guard';
+        }
       }
       // Priestess at the temple — story NPC
       const templeH = houses.find(h => h.variant === 'temple') || houses[0];
@@ -3897,6 +4123,77 @@ function spawnVillage(baseCol, baseRow, opts) {
           np.npcType = rolesCapital[i % rolesCapital.length];
           assignSovietVillagerProfile(np);
         }
+      }
+
+    } else if (villageType === 'military_base') {
+      const checkpointHouses = houses.filter(h => h && h.variant === 'checkpoint_gate');
+      const towerHouses = houses.filter(h => h && h.variant === 'wall_tower');
+      const hqHouse = houses.find(h => h && (h.variant === 'party_hq' || h.variant === 'temple')) || houses[0] || { c: bc, r: br };
+      const guardName = epochNow === 'urss'
+        ? 'Guardia de Sever-12'
+        : (epochNow === 'medieval' ? 'Guardia del Fuerte' : 'Guardia de la Guarnición');
+      const officerName = epochNow === 'urss'
+        ? 'Comandante Sokolov'
+        : (epochNow === 'medieval' ? 'Capitán de la Cresta' : 'Naram-Sin el Capitán');
+
+      for (const cp of checkpointHouses.slice(0, 4)) {
+        const g1 = spawnNPC(guardName, cp.c, cp.r + 1);
+        if (g1) g1.npcType = 'guard';
+        const g2 = spawnNPC(guardName, cp.c + 1, cp.r + 1);
+        if (g2) g2.npcType = 'guard';
+      }
+
+      const officer = spawnNPC(officerName, hqHouse.c + 1, hqHouse.r + 1);
+      if (officer) {
+        officer.npcType = 'commander';
+        officer.isStoryNPC = true;
+        officer._storyLines = (epochNow === 'urss')
+          ? [
+              'Esta base mantiene abierto el corredor del norte. Nada entra ni sale sin registro.',
+              'Las patrullas doblaron el turno desde que llegaron los avisos sobre la crecida.',
+              'Si vienes del sur, habla. Todo dato sobre puentes, convoyes o saqueadores nos sirve.',
+              'Mantén la cabeza baja y no cruces los puestos armados sin permiso.'
+            ]
+          : (epochNow === 'medieval')
+            ? [
+                'Este fuerte guarda el paso y la ruta del grano. Todo viajero es observado.',
+                'Hemos doblado las rondas desde que los exploradores hablan de hambre y pillaje.',
+                'Si traes noticias del valle, repórtalas antes de cruzar la empalizada.',
+                'Mientras yo mande aquí, ningún bandido tomará esta colina.'
+              ]
+            : [
+                'La guarnición de Karum protege el canal, los almacenes y los escribas del rey.',
+                'Nuestros centinelas vigilan de día y de noche desde las torres del perímetro.',
+                'Si has visto señales en el río o movimientos extraños en los caminos, repórtalos.',
+                'Toda ciudad cae cuando se duerme en la muralla. Aquí no dormimos.'
+              ];
+      }
+
+      const quarterH = houses.find(h => h && (h.variant === 'state_warehouse' || h.variant === 'granary' || h.variant === 'longhouse')) || hqHouse;
+      const quartermaster = spawnNPC(epochNow === 'urss' ? 'Intendente Orlova' : 'Intendente de la guarnición', quarterH.c, quarterH.r + 1);
+      if (quartermaster) quartermaster.npcType = 'merchant';
+
+      const patrolAnchors = [...checkpointHouses, ...towerHouses, hqHouse]
+        .filter(Boolean)
+        .map(h => ({ c: h.c, r: h.r }));
+      const patrolCount = epochNow === 'urss' ? 4 : 3;
+      for (let i = 0; i < patrolCount; i++) {
+        const origin = patrolAnchors[i % patrolAnchors.length] || { c: bc, r: br };
+        const patrol = spawnNPC(guardName, origin.c, origin.r + 1);
+        if (!patrol) continue;
+        patrol.npcType = 'guard';
+        const route = patrolAnchors.filter((_, idx) => ((idx + i) % 2 === 0)).slice(0, 4);
+        if (route.length >= 2) {
+          setNpcPatrol(patrol, route, { startIndex: i % route.length, pauseMs: 900 + i * 120, initialDelayMs: 200 + i * 180 });
+        }
+      }
+
+      const supportCount = Math.max(2, Math.round(2 * npcDensity));
+      const supportRoles = ['guard', 'villager', 'merchant'];
+      for (let i = 0; i < supportCount; i++) {
+        const h = houses[Math.floor(Math.random() * houses.length)] || hqHouse;
+        const np = spawnNPC(epochNow === 'urss' ? 'Técnico de base' : 'Auxiliar de guarnición', h.c + Math.floor(Math.random()*3)-1, h.r + Math.floor(Math.random()*3)-1);
+        if (np) np.npcType = supportRoles[i % supportRoles.length];
       }
 
     } else if (villageType === 'trading_post') {
@@ -4016,7 +4313,26 @@ function tryMovePlayer(dx, dy) {
   player.row = nextRow;
 }
 
-// New canWalkTo: disallow stepping into buildings (sides/front); allow back row to simulate depth
+function isStaticEntityBlockingTile(col, row) {
+  try {
+    const list = Array.isArray(entities) ? entities : [];
+    for (let i = 0; i < list.length; i++) {
+      const ent = list[i];
+      if (!ent) continue;
+      const ec = (typeof ent.col === 'number') ? ent.col : (typeof ent.x === 'number' ? Math.floor(ent.x) : null);
+      const er = (typeof ent.row === 'number') ? ent.row : (typeof ent.y === 'number' ? Math.floor(ent.y) : null);
+      if (ec === null || er === null || ec !== col || er !== row) continue;
+      if (ent.kind === 'tree' || ent.kind === 'resource') return true;
+      if (ent.kind === 'ambient') {
+        const st = String(ent.subtype || '');
+        if (st !== 'soviet_fighter_jet') return true;
+      }
+    }
+  } catch (e) {}
+  return false;
+}
+
+// New canWalkTo: buildings are solid except explicit pass-through tiles like roads
 function canWalkTo(col, row) {
   if (window.currentInterior) {
     const interior = window.currentInterior;
@@ -4031,13 +4347,11 @@ function canWalkTo(col, row) {
   if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return false;
   const cell = grid[row][col];
   if (cell) {
-    if (cell.type === 'wall_segment' || cell.type === 'wall_tower') return false;
-    // Allow passage through the topmost row of a building (its "back" face):
-    // visually the player appears to walk behind the structure.
-    // Sides, front rows, and multi-cell-tall buildings' lower rows all remain solid.
-    if (row === cell.baseRow) return true;
+    const type = (typeof cell === 'string') ? cell : (cell.type || '');
+    if (type === 'road' || type === 'concrete_road') return true;
     return false;
   }
+  if (isStaticEntityBlockingTile(col, row)) return false;
   return true;
 }
 
@@ -4167,28 +4481,64 @@ function generateMap(mapType) {
   } catch(e){}
   // ── 7. Villages (placed on dry alluvial land) ──
   window._VILLAGES=[];
-  const villagesToSpawn=1+Math.floor(Math.random()*3);
-  for (let vi=0;vi<villagesToSpawn;vi++) {
-    let vCol=0,vRow=0,tries=0;
-    do {
-      vCol=Math.floor(8+Math.random()*(COLS-16)); vRow=Math.floor(8+Math.random()*(ROWS-16)); tries++;
-    } while (tries<400&&(rFullMap[vRow]&&rFullMap[vRow][vCol])||grid[vRow]&&grid[vRow][vCol]||
-             tileBiome[vRow][vCol]==='water'||tileBiome[vRow][vCol]==='marsh');
-    try{spawnVillage(vCol,vRow);}catch(e){try{setBuildingCells(vCol,vRow,'house');}catch(ee){}}
+  const isDrySpawnCell = (c, r) => {
+    try {
+      if (c < 1 || r < 1 || c >= COLS - 1 || r >= ROWS - 1) return false;
+      if ((rFullMap[r] && rFullMap[r][c]) || (grid[r] && grid[r][c])) return false;
+      const b = tileBiome[r] && tileBiome[r][c];
+      if (b === 'water' || b === 'marsh') return false;
+      return true;
+    } catch (e) { return false; }
+  };
+  const findSpawnNear = (baseC, baseR, maxRadius = 18) => {
+    const bc = Math.max(8, Math.min(COLS - 9, Math.floor(baseC)));
+    const br = Math.max(8, Math.min(ROWS - 9, Math.floor(baseR)));
+    if (isDrySpawnCell(bc, br)) return { c: bc, r: br };
+    for (let radius = 1; radius <= maxRadius; radius++) {
+      for (let i = 0; i < 14; i++) {
+        const c = Math.max(8, Math.min(COLS - 9, bc + Math.floor(Math.random() * (radius * 2 + 1)) - radius));
+        const r = Math.max(8, Math.min(ROWS - 9, br + Math.floor(Math.random() * (radius * 2 + 1)) - radius));
+        if (isDrySpawnCell(c, r)) return { c, r };
+      }
+    }
+    return null;
+  };
+  const spawnPlan = (window._currentEpoch === 'urss')
+    ? [
+        { type: 'origin', c: Math.round(COLS * 0.20), r: Math.round(ROWS * 0.72) },
+        { type: 'capital', c: Math.round(COLS * 0.56), r: Math.round(ROWS * 0.40) },
+        { type: 'military_base', c: Math.round(COLS * 0.68), r: Math.round(ROWS * 0.28) },
+        { type: 'trading_post', c: Math.round(COLS * 0.80), r: Math.round(ROWS * 0.62) }
+      ]
+    : [
+        { type: 'origin', c: Math.round(COLS * 0.22), r: Math.round(ROWS * 0.74) },
+        { type: 'capital', c: Math.round(COLS * 0.52), r: Math.round(ROWS * 0.36) },
+        { type: 'military_base', c: Math.round(COLS * 0.66), r: Math.round(ROWS * 0.30) },
+        { type: 'trading_post', c: Math.round(COLS * 0.78), r: Math.round(ROWS * 0.60) }
+      ];
+  for (const planned of spawnPlan) {
+    const anchor = findSpawnNear(planned.c, planned.r, 20);
+    if (!anchor) continue;
+    try { spawnVillage(anchor.c, anchor.r, { villageType: planned.type }); } catch (e) {}
   }
-  // Ensure at least one capital (which places a ziggurat) exists per map
+  const extraVillages = (window._currentEpoch === 'urss') ? 1 : (1 + Math.floor(Math.random() * 2));
+  for (let vi = 0; vi < extraVillages; vi++) {
+    let vCol = 0, vRow = 0, tries = 0;
+    do {
+      vCol = Math.floor(8 + Math.random() * (COLS - 16));
+      vRow = Math.floor(8 + Math.random() * (ROWS - 16));
+      tries++;
+    } while (tries < 400 && !isDrySpawnCell(vCol, vRow));
+    if (!isDrySpawnCell(vCol, vRow)) continue;
+    try { spawnVillage(vCol, vRow, { villageType: 'village' }); } catch (e) { try { setBuildingCells(vCol, vRow, 'house'); } catch (ee) {} }
+  }
+  // Ensure at least one capital exists per map
   try {
     const hasCapital = (window._VILLAGES || []).some(v => v.type === 'capital');
     if (!hasCapital) {
-      // try to spawn a capital at several random locations
-      for (let attempt = 0; attempt < 200; attempt++) {
-        const c = Math.floor(8 + Math.random() * (COLS - 16));
-        const r = Math.floor(8 + Math.random() * (ROWS - 16));
-        try {
-          spawnVillage(c, r, { villageType: 'capital' });
-          // stop if a capital was successfully created
-          if ((window._VILLAGES || []).some(v => v.type === 'capital')) break;
-        } catch (e) { /* ignore and retry */ }
+      const fallbackCapital = findSpawnNear(Math.round(COLS * 0.54), Math.round(ROWS * 0.42), 36);
+      if (fallbackCapital) {
+        try { spawnVillage(fallbackCapital.c, fallbackCapital.r, { villageType: 'capital' }); } catch (e) {}
       }
     }
   } catch (e) {}
@@ -4333,7 +4683,11 @@ function drawBuilding(col, row, type, alpha) {
   if (houseTypes.has(type)) {
     // Prefer shaded variants when available
     const shadedAlias = type === 'mesopotamian_house' ? 'mesopotamian_house_shaded' : type;
-    const useKey = hasRegisteredSprite(shadedAlias) ? shadedAlias : spriteKey;
+    let useKey = hasRegisteredSprite(shadedAlias) ? shadedAlias : spriteKey;
+    if (type === 'soviet_block') {
+      const districtVariant = pickSovietBlockVariant(col, row);
+      if (hasRegisteredSprite(districtVariant)) useKey = districtVariant;
+    }
     if (useKey) {
       // If zoomed out, draw a simplified block for performance and to avoid floating look
       if (viewMode === 'iso' && zoom < 0.6) {
@@ -5033,6 +5387,7 @@ function drawPlayer() {
 
 function drawPlayerHealth() {
   // draw a small health bar and stamina bar above the player
+  const now = Date.now();
   const pct = Math.max(0, Math.min(1, char.hp / char.maxHp));
   const { x, y } = worldToScreen(player.x, player.y);
   const tileSize = getTileSize();
@@ -5132,6 +5487,8 @@ function render() {
   } catch (e) {}
   frameCounter++;
   try {
+    const cinematicActive = isCinematicActive();
+    try { syncCinematicUiVisibility(); } catch (e) {}
     // optional console debug logging controlled by Dev menu
     try {
       if (window.DEBUG_LOG_PLAYER_POS && frameCounter % 30 === 0) {
@@ -5155,7 +5512,7 @@ function render() {
     } catch (e) {}
 
     // Debug overlay (opt-in)
-    if (window.DEBUG_HUD) {
+    if (window.DEBUG_HUD && !cinematicActive) {
       try {
         ctx.fillStyle = 'rgba(0,0,0,0.6)';
         ctx.font = '12px sans-serif';
@@ -5168,7 +5525,7 @@ function render() {
 
     // draw selection rectangle (screen space)
     try {
-      if (_selectRect) {
+      if (_selectRect && !cinematicActive) {
         ctx.save();
         // more visible selection marquee: semi-opaque fill + dashed stroke
         ctx.fillStyle = 'rgba(80,140,255,0.18)';
@@ -5515,45 +5872,47 @@ function render() {
 
   // --- Survival HUD (top-right) ---
   try {
-    const hudW = 170; const hudH = 70; const pad = 10;
-    const hx = W - hudW - pad; const hy = pad + 4;
-    // panel background with border
-    ctx.fillStyle   = 'rgba(8,5,2,0.70)'; ctx.fillRect(hx, hy, hudW, hudH);
-    ctx.strokeStyle = '#8B6914'; ctx.lineWidth = 1;
-    ctx.strokeRect(hx, hy, hudW, hudH);
-    // ── Time of day icon + label ──
-    const hh2 = Math.floor(dayHour);
-    const mm2 = Math.floor((dayHour - hh2) * 60);
-    const timeStr = `${String(hh2).padStart(2,'0')}:${String(mm2).padStart(2,'0')}`;
-    const isDaytime = dayHour >= 6 && dayHour < 20;
-    ctx.save();
-    ctx.font = 'bold 11px sans-serif'; ctx.textBaseline = 'top';
-    ctx.fillStyle = isDaytime ? '#FFE090' : '#A0C8FF';
-    ctx.textAlign = 'left';
-    ctx.fillText((isDaytime ? '☀ ' : '☾ ') + timeStr, hx + 8, hy + 6);
-    ctx.restore();
-    // ── Bars ──
-    const bw = hudW - 20; const bh = 7;
-    // HP bar
-    const hpPct = Math.max(0, Math.min(1, (char.hp || 0) / (char.maxHp || 100)));
-    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(hx+10, hy+22, bw, bh);
-    ctx.fillStyle = '#C43030'; ctx.fillRect(hx+10, hy+22, bw, bh);
-    const hpColor = hpPct > 0.5 ? '#40C860' : (hpPct > 0.25 ? '#C8C030' : '#E03030');
-    ctx.fillStyle = hpColor; ctx.fillRect(hx+10, hy+22, bw*hpPct, bh);
-    ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.font = '9px sans-serif'; ctx.textBaseline = 'top';
-    ctx.fillText('♥ Vida', hx+10, hy+21);
-    // Hunger bar
-    const hungerPct = Math.max(0, Math.min(1, (char.hunger || 0) / (char.maxHunger || 100)));
-    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(hx+10, hy+38, bw, bh);
-    ctx.fillStyle = hungerPct < 0.25 ? '#C84010' : '#8B5A2B';
-    ctx.fillRect(hx+10, hy+38, bw*hungerPct, bh);
-    ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.fillText('✦ Hambre', hx+10, hy+37);
-    // Thirst bar
-    const thirstPct = Math.max(0, Math.min(1, (char.thirst || 0) / (char.maxThirst || 100)));
-    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(hx+10, hy+54, bw, bh);
-    ctx.fillStyle = thirstPct < 0.25 ? '#3050C8' : '#2E8BFF';
-    ctx.fillRect(hx+10, hy+54, bw*thirstPct, bh);
-    ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.fillText('≋ Sed', hx+10, hy+53);
+    if (!cinematicActive) {
+      const hudW = 170; const hudH = 70; const pad = 10;
+      const hx = W - hudW - pad; const hy = pad + 4;
+      // panel background with border
+      ctx.fillStyle   = 'rgba(8,5,2,0.70)'; ctx.fillRect(hx, hy, hudW, hudH);
+      ctx.strokeStyle = '#8B6914'; ctx.lineWidth = 1;
+      ctx.strokeRect(hx, hy, hudW, hudH);
+      // ── Time of day icon + label ──
+      const hh2 = Math.floor(dayHour);
+      const mm2 = Math.floor((dayHour - hh2) * 60);
+      const timeStr = `${String(hh2).padStart(2,'0')}:${String(mm2).padStart(2,'0')}`;
+      const isDaytime = dayHour >= 6 && dayHour < 20;
+      ctx.save();
+      ctx.font = 'bold 11px sans-serif'; ctx.textBaseline = 'top';
+      ctx.fillStyle = isDaytime ? '#FFE090' : '#A0C8FF';
+      ctx.textAlign = 'left';
+      ctx.fillText((isDaytime ? '☀ ' : '☾ ') + timeStr, hx + 8, hy + 6);
+      ctx.restore();
+      // ── Bars ──
+      const bw = hudW - 20; const bh = 7;
+      // HP bar
+      const hpPct = Math.max(0, Math.min(1, (char.hp || 0) / (char.maxHp || 100)));
+      ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(hx+10, hy+22, bw, bh);
+      ctx.fillStyle = '#C43030'; ctx.fillRect(hx+10, hy+22, bw, bh);
+      const hpColor = hpPct > 0.5 ? '#40C860' : (hpPct > 0.25 ? '#C8C030' : '#E03030');
+      ctx.fillStyle = hpColor; ctx.fillRect(hx+10, hy+22, bw*hpPct, bh);
+      ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.font = '9px sans-serif'; ctx.textBaseline = 'top';
+      ctx.fillText('♥ Vida', hx+10, hy+21);
+      // Hunger bar
+      const hungerPct = Math.max(0, Math.min(1, (char.hunger || 0) / (char.maxHunger || 100)));
+      ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(hx+10, hy+38, bw, bh);
+      ctx.fillStyle = hungerPct < 0.25 ? '#C84010' : '#8B5A2B';
+      ctx.fillRect(hx+10, hy+38, bw*hungerPct, bh);
+      ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.fillText('✦ Hambre', hx+10, hy+37);
+      // Thirst bar
+      const thirstPct = Math.max(0, Math.min(1, (char.thirst || 0) / (char.maxThirst || 100)));
+      ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(hx+10, hy+54, bw, bh);
+      ctx.fillStyle = thirstPct < 0.25 ? '#3050C8' : '#2E8BFF';
+      ctx.fillRect(hx+10, hy+54, bw*thirstPct, bh);
+      ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.fillText('≋ Sed', hx+10, hy+53);
+    }
   } catch (e) {}
 
   // ── TILES ─────────────────────────────────────────────────-
@@ -6240,6 +6599,29 @@ function render() {
         const jetW = Math.max(tileSize * 1.9, tileSize * (ent.size || 1.9));
         const jetH = Math.max(tileSize * 0.9, jetW * 0.52);
         drawEntitySpriteAt('soviet_fighter_jet', x + tileSize * 0.5, y + tileSize * 0.22 - bob, jetW, jetH);
+      } catch (e) {}
+    } else if (ent.kind === 'ambient') {
+      if (isOffscreen) return;
+      try {
+        const subtype = ent.subtype || '';
+        const scale = ent.size || 1;
+        if (subtype === 'soviet_monument') {
+          const w = Math.max(tileSize * 1.6, tileSize * 1.55 * scale);
+          const h = Math.max(tileSize * 2.0, tileSize * 2.1 * scale);
+          drawEntitySpriteAt(subtype, x + tileSize * 0.5, y + tileSize * 0.95, w, h);
+        } else if (subtype === 'soviet_streetlight') {
+          const w = Math.max(tileSize * 0.55, tileSize * 0.6 * scale);
+          const h = Math.max(tileSize * 1.3, tileSize * 1.35 * scale);
+          drawEntitySpriteAt(subtype, x + tileSize * 0.5, y + tileSize * 0.98, w, h);
+        } else if (subtype === 'guard_booth') {
+          const w = Math.max(tileSize * 0.95, tileSize * 1.0 * scale);
+          const h = Math.max(tileSize * 0.95, tileSize * 1.0 * scale);
+          drawEntitySpriteAt(subtype, x + tileSize * 0.5, y + tileSize * 0.98, w, h);
+        } else if (subtype === 'crate_stack') {
+          const w = Math.max(tileSize * 0.85, tileSize * 0.9 * scale);
+          const h = Math.max(tileSize * 0.72, tileSize * 0.76 * scale);
+          drawEntitySpriteAt(subtype, x + tileSize * 0.5, y + tileSize * 0.98, w, h);
+        }
       } catch (e) {}
     } else if (ent.kind === 'tree') {
       if (isOffscreen) return;
@@ -6964,6 +7346,15 @@ function render() {
         let bestRes = null, bestResDist = 9e9;
         let bestTree = null, bestTreeDist = 9e9;
         let bestNpc = null, bestNpcDist = 9e9;
+        let bestScene = null, bestSceneDist = 9e9;
+        try {
+          const scenes = Array.isArray(window._mapSceneTriggers) ? window._mapSceneTriggers : [];
+          for (const sc of scenes) {
+            if (!isMapSceneAvailable(sc)) continue;
+            const dist = Math.hypot((sc.col + 0.5) - (player.x || 0), (sc.row + 0.5) - (player.y || 0));
+            if (dist < bestSceneDist && dist <= (sc.radius || 1.6)) { bestScene = sc; bestSceneDist = dist; }
+          }
+        } catch (e) {}
         for (let i = 0; i < entities.length; i++) {
           const ent = entities[i];
           if (!ent) continue;
@@ -6981,6 +7372,7 @@ function render() {
         }
         if (bestDoor) _interactionScanCache = { kind: 'door', ref: bestDoor, actionText: 'Entrar', showPrompt: true };
         else if (bestNpc && bestNpc.isStoryNPC) _interactionScanCache = { kind: 'player', ref: bestNpc, actionText: `Hablar con ${bestNpc.name || 'NPC'}`, showPrompt: true };
+        else if (bestScene) _interactionScanCache = { kind: 'map-scene', ref: bestScene, actionText: bestScene.prompt || 'Examinar', showPrompt: true };
         else if (bestNpc) _interactionScanCache = { kind: 'player', ref: bestNpc, actionText: 'Hablar', showPrompt: true };
         else if (bestRes) _interactionScanCache = { kind: 'resource', ref: bestRes, actionText: bestRes.subtype ? ('Recoger ' + bestRes.subtype) : 'Recoger', showPrompt: true };
         else if (bestTree) _interactionScanCache = { kind: 'tree', ref: bestTree, actionText: 'Talar', showPrompt: false };
@@ -7213,6 +7605,27 @@ function render() {
           const v = window._VILLAGES.find(x => x.id === en.villageId);
           if (v) { minC = v.minC; maxC = v.maxC; minR = v.minR; maxR = v.maxR; }
         }
+        if (Array.isArray(en.patrolRoute) && en.patrolRoute.length > 0) {
+          let idx = (typeof en.patrolIndex === 'number') ? en.patrolIndex : 0;
+          idx = Math.max(0, Math.min(en.patrolRoute.length - 1, idx));
+          const ex = (typeof en.x === 'number' ? en.x : en.col) + 0.5;
+          const ey = (typeof en.y === 'number' ? en.y : en.row) + 0.5;
+          let target = en.patrolRoute[idx];
+          if (target) {
+            const distToPatrol = Math.hypot((target.c + 0.5) - ex, (target.r + 0.5) - ey);
+            if (distToPatrol <= 0.65) {
+              if (idx >= en.patrolRoute.length - 1) idx = en.patrolLoop === false ? idx : 0;
+              else idx += 1;
+              en.patrolIndex = idx;
+              target = en.patrolRoute[idx] || target;
+            }
+            if (target && target.c >= minC && target.c <= maxC && target.r >= minR && target.r <= maxR) {
+              en.moveTarget = { x: target.c + 0.5, y: target.r + 0.5 };
+              en.nextMove = nowNpc + Math.max(500, en.patrolPauseMs || 700);
+              continue;
+            }
+          }
+        }
         // NPC house-enter behavior: occasionally enter a nearby house
         if (!window.currentInterior && Math.random() < 0.03 && en.villageId && window.INTERIOR_DOORS) {
           const nearDoor = window.INTERIOR_DOORS.find(d => Math.abs(d.col - en.col) + Math.abs(d.row - en.row) <= 2);
@@ -7286,12 +7699,13 @@ function render() {
     try { drawWorldMapOverlay(W, H); } catch (e) {}
   }
   // Mini-map overlay (bottom-right corner)
-  try { if (!editMode && !worldMapOverlayVisible && window._gameStarted) drawMiniMap(ctx, W, H); } catch (e) {}
+  try { if (!editMode && !worldMapOverlayVisible && window._gameStarted && !cinematicActive) drawMiniMap(ctx, W, H); } catch (e) {}
   // Story objective HUD (top-left, free mode)
-  try { if (window._gameStarted && !worldMapOverlayVisible) drawStoryObjectiveHUD(ctx, W, H); } catch (e) {}
+  try { if (window._gameStarted && !worldMapOverlayVisible && !cinematicActive) drawStoryObjectiveHUD(ctx, W, H); } catch (e) {}
+  try { if (window._gameStarted && !worldMapOverlayVisible && !cinematicActive) drawCompactGuideOverlay(ctx, W, H); } catch (e) {}
   // Time speed indicator on canvas (top-center, only when not ×1 or paused)
   try {
-    if (window._gameStarted && !editMode) {
+    if (window._gameStarted && !editMode && !cinematicActive) {
       const ts = window._timeScale || 1;
       if (ts === 0) {
         ctx.save();
@@ -7315,7 +7729,7 @@ function render() {
   // Story overlays: cinematic intro and NPC dialogue panel (drawn on top of everything)
   try { if (window._introSeq && !window._introSeq.done) drawIntroSequence(ctx, W, H); } catch (e) {}
   try {
-    if (window._activeDialogue && shouldRenderDetailsForEntity((window._activeDialogue && window._activeDialogue.npcRef) || null)) {
+    if (window._activeDialogue && (window._activeDialogue.isCinematic || shouldRenderDetailsForEntity((window._activeDialogue && window._activeDialogue.npcRef) || null))) {
       drawDialoguePanel(ctx, W, H);
     }
   } catch (e) {}
@@ -7430,9 +7844,11 @@ function tickEnemies(now) {
           if (!en._lastAtk || now - en._lastAtk >= eAtkCd) {
             en._lastAtk = now;
             const dmg = en.dmg || 4;
-            char.hp = Math.max(0, (char.hp || 0) - dmg);
-            char._lastHitTime = now;
-            char._flashUntil = now + 280;
+            player.hp = Math.max(0, (player.hp || 0) - dmg);
+            player._lastHitTime = now;
+            player._flashUntil = now + 280;
+            player._shakeUntil = Math.max(player._shakeUntil || 0, now + 240);
+            player._shakeMag = Math.max(player._shakeMag || 0, 4);
             if (window.spawnFloatingText) window.spawnFloatingText(player.x + 0.5, player.y - 0.5, `-${dmg}`, { color: '#FF4040', force: true });
           }
         }
@@ -8833,6 +9249,7 @@ function createOverlayUI() {
       }
     });
   }
+  try { registerClosableUIElements(); } catch (e) {}
 
   // Create top menu bar for window/panel management and settings
   try { createMenuBar(); } catch (err) { /* ignore */ }
@@ -8998,6 +9415,7 @@ function createAbilityBarAndMissions() {
     document.body.appendChild(eh);
     try { enableFloatingBehavior && typeof enableFloatingBehavior === 'function' && enableFloatingBehavior(eh); registerPanel && typeof registerPanel === 'function' && registerPanel(eh); } catch (err) {}
   }
+  try { registerClosableUIElements(); } catch (e) {}
 
   // event history state
   window._eventHistory = window._eventHistory || [];
@@ -9853,6 +10271,7 @@ function showEntityInfo(ent) {
 
 // persistence: save player pos when it changes
 let _lastSavedPos = null;
+let _lastPosTriggeredAppSaveAt = 0;
 function savePlayerPos(force) {
   try {
     const pos = { x: player.x, y: player.y, col: player.col, row: player.row };
@@ -9861,7 +10280,11 @@ function savePlayerPos(force) {
       localStorage.setItem('meso.playerPos', JSON.stringify(pos));
       try { sessionStorage.setItem('meso.playerPos', JSON.stringify(pos)); } catch (e) {}
       _lastSavedPos = key;
-      try { saveAppStateDebounced(); } catch (e) {}
+      const now = Date.now();
+      if (force || (now - _lastPosTriggeredAppSaveAt) > 15000) {
+        _lastPosTriggeredAppSaveAt = now;
+        try { saveAppStateDebounced(1600); } catch (e) {}
+      }
     }
   } catch (err) { /* ignore */ }
 }
@@ -10247,6 +10670,119 @@ function enableFloatingBehavior(el) {
   return el;
 }
 
+function makeUiElementClosable(el, opts = {}) {
+  try {
+    if (!el) return null;
+    const title = opts.title || el.getAttribute('data-title') || el.id || 'Ventana';
+    if (!el.getAttribute('data-title')) el.setAttribute('data-title', title);
+    try { registerPanel(el); } catch (e) {}
+
+    if (el.querySelector('.floating-header')) return el;
+    if (el.dataset.uiClosableReady === '1') return el;
+    el.dataset.uiClosableReady = '1';
+
+    let pos = '';
+    try { pos = window.getComputedStyle(el).position; } catch (e) { pos = el.style.position || ''; }
+    if (!pos || pos === 'static') el.style.position = 'relative';
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'ui-close-btn';
+    btn.title = `Cerrar ${title}`;
+    btn.textContent = '✕';
+    btn.setAttribute('aria-label', `Cerrar ${title}`);
+    if (el.id === 'char-card') {
+      btn.style.right = '4px';
+      btn.style.top = '4px';
+      btn.style.zIndex = '60';
+      btn.style.width = '24px';
+      btn.style.height = '24px';
+    }
+    btn.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      try { if (el.id === 'char-card') el.classList.add('hidden'); } catch (e) {}
+      el.style.display = 'none';
+      try { saveAppStateDebounced(); } catch (e) {}
+    });
+    el.appendChild(btn);
+
+    if (opts.draggable && el.dataset.uiDragReady !== '1') {
+      el.dataset.uiDragReady = '1';
+      el.classList.add('ui-draggable-card');
+      let dragging = false;
+      let startX = 0;
+      let startY = 0;
+      let origX = 0;
+      let origY = 0;
+
+      el.addEventListener('mousedown', (ev) => {
+        if (!ev) return;
+        if (ev.target && (ev.target.tagName === 'BUTTON' || ev.target.closest('button') || ev.target.tagName === 'INPUT' || ev.target.closest('input') || ev.target.closest('select') || ev.target.closest('textarea'))) return;
+        dragging = true;
+        startX = ev.clientX;
+        startY = ev.clientY;
+        const rect = el.getBoundingClientRect();
+        const host = (el.offsetParent && el.offsetParent.getBoundingClientRect)
+          ? el.offsetParent.getBoundingClientRect()
+          : { left: 0, top: 0 };
+        el.style.left = (rect.left - host.left) + 'px';
+        el.style.top = (rect.top - host.top) + 'px';
+        el.style.right = 'auto';
+        el.style.bottom = 'auto';
+        el.style.transform = 'none';
+        origX = parseFloat(el.style.left || 0);
+        origY = parseFloat(el.style.top || 0);
+        document.body.style.userSelect = 'none';
+      });
+
+      document.addEventListener('mousemove', (ev) => {
+        if (!dragging) return;
+        const dx = ev.clientX - startX;
+        const dy = ev.clientY - startY;
+        el.style.left = (origX + dx) + 'px';
+        el.style.top = (origY + dy) + 'px';
+      });
+
+      document.addEventListener('mouseup', () => {
+        if (!dragging) return;
+        dragging = false;
+        document.body.style.userSelect = '';
+        try { saveAppStateDebounced(); } catch (e) {}
+      });
+    }
+
+    return el;
+  } catch (e) { return null; }
+}
+
+function registerClosableUIElements() {
+  const defs = [
+    { id: 'top-menubar', title: 'Menú superior' },
+    { id: 'topbar', title: 'Barra superior' },
+    { id: 'toolbar', title: 'Barra de herramientas' },
+    { id: 'panel', title: 'Panel de construcción' },
+    { id: 'char-card', title: 'Ficha de jugador' },
+    { id: 'zoom-control', title: 'Control de zoom' },
+    { id: 'ability-bar', title: 'Barra de habilidades' },
+    { id: 'event-history', title: 'Historial de eventos' },
+    { id: 'inventory-panel', title: 'Inventario' },
+    { id: 'crafting-panel', title: 'Crafteo' },
+    { id: 'task-panel', title: 'Tareas' },
+    { id: 'entity-info', title: 'Info de entidad' },
+    { id: 'game-guide', title: 'Guía' },
+    { id: 'time-control-widget', title: 'Control de tiempo' },
+    { id: 'engine-status', title: 'Estado del motor' }
+  ];
+  for (const def of defs) {
+    try {
+      const el = document.getElementById(def.id);
+      if (!el) continue;
+      makeUiElementClosable(el, { title: def.title, draggable: def.id === 'char-card' });
+    } catch (e) {}
+  }
+}
+
 // Create a small game guide panel with development reflections
 function createGameGuideUI() {
   if (document.getElementById('game-guide')) return;
@@ -10256,22 +10792,21 @@ function createGameGuideUI() {
   g.style.position = 'fixed'; g.style.left = '12px'; g.style.top = '12px'; g.style.zIndex = 1900;
   stylePanel(g);
   g.style.minWidth = '260px';
+  g.style.display = 'none';
   const guideTips = getEpochText('guideQuickTips', 'Construye casas cerca del río para +25% producción. Usa graneros y mercados para balancear recursos.');
   g.innerHTML = `
     <div style="font-size:13px;line-height:1.3;max-height:280px;overflow:auto">
-      <p><b>Controles:</b> Click izquierdo construir/mover, click derecho inspeccionar/mover (modo libre). Teclas: F seguir cámara, I inventario, Enter turno.</p>
+      <p><b>Controles:</b> WASD o flechas para mover, <b>E</b> para interactuar o continuar escenas, <b>M</b> para el mapa y <b>I</b> para inventario.</p>
       <p><b>Consejos rápidos:</b> ${guideTips}</p>
       <hr>
-      <p><b>Ideas para una base estable de desarrollo:</b></p>
+      <p><b>Qué hacer al empezar:</b></p>
       <ul>
-        <li>Modularizar la lógica (mapa, entidades, UI, render) y definir contratos claros.</li>
-        <li>Agregar pruebas unitarias para pathfinding y generación procedimental.</li>
-        <li>Separar modelo y vista; persistencia serializada y versionada.</li>
-        <li>Pipeline de assets y un sistema simple de configuración (JSON) para tunear parámetros.</li>
-        <li>Instrumentación básica (fps, ent count) y perfiles para detectar cuellos de botella.</li>
+        <li>Sigue la misión principal del acto actual en la esquina superior izquierda.</li>
+        <li>Habla con aldeanos, mandos y puntos del mapa marcados con interacción cercana.</li>
+        <li>Explora el río y los caminos: muchas escenas y asentamientos clave están anclados allí.</li>
+        <li>Si te pierdes, abre el mapa con <b>M</b> y vuelve a centrarte cerca de la capital o el origen.</li>
+        <li>Usa <b>Enter</b> para mostrar u ocultar esta ayuda cuando la necesites.</li>
       </ul>
-      <hr>
-      <p style="font-size:12px;color:#ccc">¿Quieres que convierta esto en un markdown exportable o una pantalla de tutorial paso a paso?</p>
     </div>
   `;
   document.body.appendChild(g);
@@ -10770,6 +11305,8 @@ function createBuildPanelControls() {
 //    3  Completado — epílogo, diluvio contenido
 // ══════════════════════════════════════════════════════════════
 window._storyChapter = window._storyChapter || 0;
+window._storySceneFlags = window._storySceneFlags || {};
+window._mapSceneTriggers = window._mapSceneTriggers || [];
 
 function buildStoryQuestsForEpoch(epochId) {
   if (epochId === 'urss') {
@@ -10956,12 +11493,127 @@ function drawStoryObjectiveHUD(ctx, W, H) {
   ctx.restore();
 }
 
+function drawCompactGuideOverlay(ctx, W, H) {
+  try {
+    if (editMode || !window._gameStarted || worldMapOverlayVisible || isCinematicActive()) return;
+    const tipText = String(getEpochText('guideQuickTips', 'Explora, habla con la gente y sigue el río para orientarte.')).split('. ')[0].trim();
+    const interactionPrompt = (window._interactionTarget && (window._interactionTarget.prompt || window._interactionTarget.name))
+      ? String(window._interactionTarget.prompt || window._interactionTarget.name)
+      : null;
+    const lines = [
+      'WASD/Flechas: mover',
+      'E: interactuar / continuar',
+      'M: mapa   I: inventario   Enter: ayuda'
+    ];
+    if (interactionPrompt) lines.push(`Cerca: ${interactionPrompt}`);
+    else if (tipText) lines.push(`Consejo: ${tipText}`);
+
+    const pad = 12;
+    const boxW = Math.min(360, W - 24);
+    const lineH = 16;
+    const boxH = 34 + lines.length * lineH;
+    const x = 12;
+    const y = H - boxH - 14;
+    ctx.save();
+    ctx.globalAlpha = 0.92;
+    ctx.fillStyle = 'rgba(8,6,3,0.82)';
+    ctx.strokeStyle = 'rgba(210,170,85,0.72)';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.roundRect(x, y, boxW, boxH, 8);
+    ctx.fill();
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#FFD27A';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('Guía rápida', x + pad, y + 18);
+    ctx.fillStyle = 'rgba(240,235,215,0.92)';
+    ctx.font = '11px sans-serif';
+    for (let i = 0; i < lines.length; i++) {
+      let text = lines[i];
+      const maxW = boxW - pad * 2;
+      while (text.length > 8 && ctx.measureText(text).width > maxW) text = text.slice(0, -1);
+      if (text !== lines[i]) text = text.slice(0, -1) + '…';
+      ctx.fillText(text, x + pad, y + 38 + i * lineH);
+    }
+    ctx.restore();
+  } catch (e) {}
+}
+
 // ══════════════════════════════════════════════════════════════
 //  CINEMATIC STORY SYSTEM
 //  Intro title sequence + in-world NPC dialogue panel
 // ══════════════════════════════════════════════════════════════
 window._introSeq = window._introSeq || null;
 window._activeDialogue = window._activeDialogue || null;
+window._cinematicUiHidden = window._cinematicUiHidden || false;
+
+function isCinematicDialogueActive() {
+  try {
+    const dlg = window._activeDialogue;
+    return !!(dlg && (dlg.isCinematic || dlg.npcType === 'cinematic' || dlg.mapTriggerRef));
+  } catch (e) { return false; }
+}
+
+function isCinematicActive() {
+  try {
+    return !!((window._introSeq && !window._introSeq.done) || isCinematicDialogueActive());
+  } catch (e) { return false; }
+}
+
+function syncCinematicUiVisibility() {
+  try {
+    try {
+      const mainEl = document.getElementById('main');
+      if (mainEl && window._gameStarted) mainEl.style.display = '';
+    } catch (e) {}
+    const hideUi = isCinematicActive();
+    if (hideUi) {
+      try { worldMapOverlayVisible = false; } catch (e) {}
+      try { keyState = {}; } catch (e) {}
+    }
+    if (!!window._cinematicUiHidden === hideUi) return;
+    window._cinematicUiHidden = hideUi;
+    const ids = [
+      'topbar',
+      'toolbar',
+      'panel',
+      'char-card',
+      'ability-bar',
+      'event-history',
+      'zoom-control',
+      'time-control-widget',
+      'top-menubar',
+      'inventory-panel',
+      'crafting-panel',
+      'task-panel',
+      'entity-info',
+      'debug-hud',
+      'engine-status',
+      'game-guide',
+      'selection-overlay',
+      'notif',
+      'tooltip'
+    ];
+    for (const id of ids) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+      if (hideUi) {
+        if (el.dataset.prevDisplay === undefined) el.dataset.prevDisplay = el.style.display || '';
+        el.style.display = 'none';
+      } else {
+        const prev = el.dataset.prevDisplay !== undefined ? el.dataset.prevDisplay : '';
+        el.style.display = prev;
+        try { if (id === 'char-card') el.classList.remove('hidden'); } catch (e) {}
+        delete el.dataset.prevDisplay;
+      }
+    }
+    if (!hideUi) {
+      try { worldMapOverlayVisible = false; } catch (e) {}
+    }
+  } catch (e) {}
+}
 
 // Performance: when zoomed out or far from the player, avoid heavy UI/detail work
 // but keep vegetation and lightweight visuals. Tune these thresholds as needed.
@@ -11012,6 +11664,14 @@ function shouldUpdateEntity(ent, opts = {}) {
 function startIntroSequence() {
   window._introSeq = { phase: 0, phaseStart: performance.now(), done: false };
 }
+function advanceIntroSequence() {
+  const seq = window._introSeq;
+  if (!seq || seq.done) return;
+  const PHASES = 4;
+  seq.phase = (seq.phase || 0) + 1;
+  seq.phaseStart = performance.now();
+  if (seq.phase >= PHASES) seq.done = true;
+}
 function skipIntro() {
   if (window._introSeq && !window._introSeq.done) window._introSeq.done = true;
 }
@@ -11021,21 +11681,14 @@ function drawIntroSequence(ctx, W, H) {
   if (!seq || seq.done) return;
   const now = performance.now();
   const t = now - seq.phaseStart;
-  // Duration each phase stays on screen (ms)
-  const DURATIONS = [3400, 5200, 3200, 900];
-  if (t > DURATIONS[seq.phase]) {
-    seq.phase++;
-    seq.phaseStart = now;
-    if (seq.phase >= DURATIONS.length) { seq.done = true; return; }
-  }
-  const dur = DURATIONS[seq.phase];
-  const tN = t / dur;
-  // fade in / fade out within each phase
-  let alpha = tN < 0.16 ? tN / 0.16 : tN > 0.80 ? (1 - tN) / 0.20 : 1;
+  const fadeInMs = 260;
+  const tN = Math.max(0, Math.min(1, t / fadeInMs));
+  // Manual screen progression: fade-in only
+  let alpha = tN;
   alpha = Math.max(0, Math.min(1, alpha));
   ctx.save();
-  // Black backdrop — fades out on last phase
-  const bgA = seq.phase === 3 ? ((1 - tN) * 0.96) : 0.96;
+  // Black backdrop for cinematic readability
+  const bgA = 0.96;
   ctx.fillStyle = `rgba(0,0,0,${bgA.toFixed(3)})`;
   ctx.fillRect(0, 0, W, H);
   ctx.globalAlpha = alpha;
@@ -11055,6 +11708,9 @@ function drawIntroSequence(ctx, W, H) {
     if (epochNow === 'urss') ctx.fillText('Novozarya, un pueblo soviético entre nieve y acero, depende de una red frágil de suministro.', cx, cy + 10);
     else if (epochNow === 'medieval') ctx.fillText('Entre caminos y ríos, toda aldea depende del clima y del comercio.', cx, cy + 10);
     else ctx.fillText('Entre el Río Don y el Río Ob Nord, bajo el hielo perpetuo, solo el trabajo colectivo sostiene la vida.', cx, cy + 10);
+    ctx.font = '11px monospace';
+    ctx.fillStyle = 'rgba(200,200,200,0.6)';
+    ctx.fillText('[ Enter / Espacio / E / Click para continuar ]', cx, cy + 52);
   } else if (seq.phase === 1) {
     ctx.textAlign = 'center';
     ctx.font = '14px serif';
@@ -11094,6 +11750,9 @@ function drawIntroSequence(ctx, W, H) {
     const lh = 22;
     const startY = cy - ((lore.length - 1) * lh) / 2;
     lore.forEach((line, i) => ctx.fillText(line, cx, startY + i * lh));
+    ctx.font = '11px monospace';
+    ctx.fillStyle = 'rgba(200,200,200,0.6)';
+    ctx.fillText('[ Enter / Espacio / E / Click para continuar ]', cx, cy + 128);
   } else if (seq.phase === 2) {
     ctx.textAlign = 'center';
     ctx.shadowColor = 'rgba(200,150,50,0.8)';
@@ -11110,10 +11769,217 @@ function drawIntroSequence(ctx, W, H) {
     else if (epochNow === 'medieval') ctx.fillText('Una crónica del reino medieval', cx, cy + 26);
     else ctx.fillText('Una historia de Mesopotamia', cx, cy + 26);
     ctx.font = '11px monospace';
-    ctx.fillStyle = 'rgba(200,200,200,0.45)';
-    ctx.fillText('[ cualquier tecla para continuar ]', cx, cy + 62);
+    ctx.fillStyle = 'rgba(200,200,200,0.6)';
+    ctx.fillText('[ Enter / Espacio / E / Click para continuar ]', cx, cy + 62);
+  } else if (seq.phase === 3) {
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#FFD27A';
+    ctx.font = 'bold 18px serif';
+    ctx.fillText('Comienza el viaje', cx, cy - 4);
+    ctx.font = '11px monospace';
+    ctx.fillStyle = 'rgba(200,200,200,0.7)';
+    ctx.fillText('[ Enter / Espacio / E / Click para iniciar ]', cx, cy + 28);
   }
   ctx.restore();
+}
+
+function getMapSceneScript(trigger) {
+  try {
+    const epochNow = window._currentEpoch || 'mesopotamia';
+    const name = (trigger && trigger.villageName) || 'el lugar';
+    switch ((trigger && trigger.scriptId) || '') {
+      case 'origin-memory':
+        if (epochNow === 'urss') {
+          return [
+            'Las brasas se han apagado, pero el olor a combustible mojado sigue en el aire.',
+            `Aquí empezó todo: ${name} aún resiste entre nieve, barro y silencio.`,
+            'Las tablas chamuscadas y los sacos rotos recuerdan por qué no puedes detenerte.',
+            'Cada hora que pierdes aquí acerca la crecida a quienes aún dependen de ti.'
+          ];
+        }
+        if (epochNow === 'medieval') {
+          return [
+            'Los cercados rotos y las cenizas hablan por sí solas.',
+            `En ${name}, el saqueo aún parece reciente.`,
+            'No queda gloria aquí: solo la obligación de seguir el camino y avisar al norte.',
+            'Tus pasos pesan, pero la tormenta pesará más si nadie actúa.'
+          ];
+        }
+        return [
+          'La tierra conserva huellas de la incursión y del fuego.',
+          `Las ruinas de ${name} te recuerdan la deuda que has jurado saldar.`,
+          'No puedes reconstruir este lugar todavía, pero sí impedir que el diluvio borre otros.',
+          'Respiras hondo. El camino al norte sigue abierto.'
+        ];
+      case 'capital-arrival':
+        if (epochNow === 'urss') {
+          return [
+            `Los accesos de ${name} están saturados de camiones, centinelas y órdenes gritadas al viento.`,
+            'Detrás de los focos y las garitas, toda la ciudad funciona como una máquina a punto de romperse.',
+            'Aquí se decidirá si la región aguanta la crecida o cae en el desorden.',
+            'Debes entrar, escuchar y convencer a quien todavía conserve mando.'
+          ];
+        }
+        if (epochNow === 'medieval') {
+          return [
+            `Las murallas de ${name} se alzan sobre el camino como una promesa de refugio.`,
+            'Mercaderes, monjes y guardias cruzan las puertas sin saber que la tormenta ya viene.',
+            'Si el prior escucha tu aviso, aún habrá tiempo para preparar graneros y barcas.',
+            'Si no, toda esta villa acabará aislada.'
+          ];
+        }
+        return [
+          `Nínagara — ${name} para sus gentes — respira bajo polvo, bronce y plegarias.`,
+          'Las puertas monumentales y los patios abarrotados esconden una ciudad confiada.',
+          'Nadie aquí imagina todavía la magnitud del diluvio.',
+          'Tu aviso debe llegar al templo antes de que el río hable más alto que tú.'
+        ];
+      case 'trading-post-rumors':
+        if (epochNow === 'urss') {
+          return [
+            'Bajo los toldos se cambian latas, piezas de motor y rumores por igual.',
+            'Un carretero jura haber visto el canal del norte reventar dos compuertas en una sola noche.',
+            'Otro habla de convoyes militares saliendo al amanecer hacia una base del distrito.',
+            'Si necesitas información, este puesto comercial oye antes que nadie el crujido del sistema.'
+          ];
+        }
+        if (epochNow === 'medieval') {
+          return [
+            'Los viajeros regatean pan, hierro y noticias con el mismo gesto cansado.',
+            'Un peregrino habla de puentes anegados río arriba; un carretero menciona un fuerte movilizado.',
+            'Las rutas aún no están cortadas, pero el miedo ya viaja más rápido que las mulas.',
+            'Aquí las historias son advertencias si sabes escuchar.'
+          ];
+        }
+        return [
+          'Las caravanas traen sal, grano y presagios.',
+          'Los mercaderes hablan de niveles extraños en el río y de campamentos reforzando rutas al norte.',
+          'A veces el comercio detecta antes que los reyes cuándo el mundo está a punto de cambiar.',
+          'Quizá convenga seguir esas voces antes de que el camino desaparezca.'
+        ];
+      case 'military-perimeter':
+        if (epochNow === 'urss') {
+          return [
+            `La base de ${name} no parece un barrio: parece una orden convertida en hormigón.`,
+            'Las patrullas siguen rutas precisas, los focos barren el fango y cada garita observa el canal.',
+            'Aquí el distrito guarda combustible, radios y hombres suficientes para sostener una retirada o imponer disciplina.',
+            'Si la situación empeora, este lugar será bisagra entre evacuación y ley marcial.'
+          ];
+        }
+        if (epochNow === 'medieval') {
+          return [
+            `El fuerte de ${name} domina la llanura con una calma áspera.`,
+            'Centinelas recorren almenas y patio interior mientras los establos y almacenes se preparan para un asedio.',
+            'No es una villa: es una frontera armada, lista para cerrar el paso o abrir un corredor de auxilio.',
+            'Si el reino cae en pánico, aquí se decidirá quién cruza y quién queda atrás.'
+          ];
+        }
+        return [
+          `La guarnición de ${name} ha convertido la ribera en un tablero de vigilancia.`,
+          'Arqueros, torres y depósitos protegidos anuncian que el poder también teme al agua.',
+          'No es un mercado ni un templo: es un punto de contención, hecho para resistir y mandar.',
+          'Tal vez, cuando llegue el caos, la salvación pase primero por aquí.'
+        ];
+      case 'river-crossing':
+        if (epochNow === 'urss') {
+          return [
+            'El canal central baja cargado de hielo oscuro, troncos y basura de media región.',
+            'Si esta corriente sube un palmo más, las orillas empezarán a tragarse caminos y depósitos.',
+            'Ahora mismo el mapa aún respira; pronto podría convertirse en una cadena de islas rotas.',
+            'Necesitas aliados antes de que el agua decida por todos.'
+          ];
+        }
+        if (epochNow === 'medieval') {
+          return [
+            'El agua corre más rápida de lo que debería para esta estación.',
+            'Los juncos se inclinan como si ya conocieran la tormenta que viene detrás.',
+            'Cruzar todavía es posible. Mañana, quizá no.',
+            'Memoriza el cauce: pronto será juez del viaje.'
+          ];
+        }
+        return [
+          'El río parece tranquilo solo a distancia.',
+          'De cerca, el barro reciente y la corriente tensa cuentan otra historia.',
+          'Los ancianos tenían razón: las aguas están reuniendo fuerza.',
+          'Cuando vuelvas por aquí, este paso quizá ya no exista.'
+        ];
+      default:
+        return ['El lugar guarda más historia de la que muestra a simple vista.'];
+    }
+  } catch (e) {
+    return ['El lugar guarda más historia de la que muestra a simple vista.'];
+  }
+}
+
+function isMapSceneAvailable(trigger) {
+  try {
+    if (!trigger) return false;
+    if (trigger.oneShot === false) return true;
+    return !window._storySceneFlags[String(trigger.id || '')];
+  } catch (e) { return false; }
+}
+
+function openMapSceneDialogue(trigger) {
+  try {
+    if (!trigger || !isMapSceneAvailable(trigger)) return false;
+    const lines = getMapSceneScript(trigger);
+    if (!Array.isArray(lines) || !lines.length) return false;
+    window._activeDialogue = {
+      lines,
+      idx: 0,
+      npcName: trigger.title || 'Crónica del camino',
+      npcType: 'cinematic',
+      isCinematic: true,
+      mapTriggerRef: trigger,
+      onComplete: function() {
+        try {
+          if (trigger.oneShot !== false) window._storySceneFlags[String(trigger.id || '')] = true;
+          if (trigger.completeNotice) notify(trigger.completeNotice);
+        } catch (e) {}
+      }
+    };
+    document.body.classList.add('dialogue-active');
+    return true;
+  } catch (e) { return false; }
+}
+
+function rebuildMapSceneTriggers() {
+  try {
+    const out = [];
+    const villages = Array.isArray(window._VILLAGES) ? window._VILLAGES : [];
+    const epochNow = window._currentEpoch || 'mesopotamia';
+    const riverMidR = Math.max(8, Math.min(ROWS - 8, Math.floor(ROWS * 0.54)));
+    const riverMidC = Math.max(8, Math.min(COLS - 8, Math.round((RIVER_A_BASE + RIVER_B_BASE) * 0.5)));
+    out.push({
+      id: `scene-river-crossing-${epochNow}`,
+      scriptId: 'river-crossing',
+      title: epochNow === 'urss' ? 'El canal bajo presión' : 'El paso del río',
+      prompt: epochNow === 'urss' ? 'Observar el canal' : 'Observar el río',
+      col: riverMidC,
+      row: riverMidR,
+      radius: 1.6,
+      oneShot: true
+    });
+    for (const v of villages) {
+      if (!v) continue;
+      const centerC = Math.max(1, Math.min(COLS - 2, Math.floor((v.minC + v.maxC) / 2)));
+      const centerR = Math.max(1, Math.min(ROWS - 2, Math.floor((v.minR + v.maxR) / 2)));
+      if (v.type === 'origin') {
+        out.push({ id: `scene-origin-${v.id}`, scriptId: 'origin-memory', title: 'Ecos del asentamiento', prompt: 'Recordar lo ocurrido', villageName: v.name, col: centerC, row: centerR, radius: 1.8, oneShot: true });
+      } else if (v.type === 'capital') {
+        out.push({ id: `scene-capital-${v.id}`, scriptId: 'capital-arrival', title: 'Ante la capital', prompt: 'Contemplar la ciudad', villageName: v.name, col: centerC, row: Math.max(v.minR + 1, centerR - 2), radius: 1.8, oneShot: true });
+      } else if (v.type === 'trading_post') {
+        out.push({ id: `scene-trade-${v.id}`, scriptId: 'trading-post-rumors', title: 'Rumores del camino', prompt: 'Escuchar rumores', villageName: v.name, col: centerC, row: centerR, radius: 1.7, oneShot: false });
+      } else if (v.type === 'military_base') {
+        out.push({ id: `scene-base-${v.id}`, scriptId: 'military-perimeter', title: 'Perímetro militar', prompt: 'Reconocer la base', villageName: v.name, col: centerC, row: Math.max(v.minR + 1, centerR), radius: 1.8, oneShot: true });
+      }
+    }
+    window._mapSceneTriggers = out;
+    return out;
+  } catch (e) {
+    window._mapSceneTriggers = [];
+    return [];
+  }
 }
 
 // ── NPC story/dialogue helpers ────────────────────────────────
@@ -11280,6 +12146,7 @@ function advanceDialogue() {
         }
       }
     } catch (e) {}
+    try { if (typeof dlg.onComplete === 'function') dlg.onComplete(); } catch (e) {}
     window._activeDialogue = null;
     document.body.classList.remove('dialogue-active');
   }
@@ -11837,6 +12704,7 @@ function setAdvStatsVisible(visible) {
   const btn = document.getElementById('btn-advstats');
   if (!card) return;
   card.classList.toggle('hidden', !visible);
+  card.style.display = visible ? '' : 'none';
   if (btn) btn.classList.toggle('active', visible);
 }
 
@@ -11925,11 +12793,41 @@ if (fitMapBtn) {
 }
 if (panBtn) panBtn.addEventListener('click', () => setPanMode(!panMode));
 if (resetCamBtn) resetCamBtn.addEventListener('click', () => centerCamera());
-if (advBtn) advBtn.addEventListener('click', () => setAdvStatsVisible(!document.getElementById('char-card').classList.contains('hidden')));
+if (advBtn) advBtn.addEventListener('click', () => {
+  const card = document.getElementById('char-card');
+  if (!card) return;
+  const hidden = card.classList.contains('hidden') || card.style.display === 'none';
+  setAdvStatsVisible(hidden);
+});
 if (floatBtn) floatBtn.addEventListener('click', () => setFloatingPanels(!document.body.classList.contains('floating-panels')));
 
 // Keyboard shortcuts
 document.addEventListener('keydown', e => {
+  if (e.key === 'F10') {
+    const mb = document.getElementById('top-menubar');
+    if (mb) {
+      const hidden = mb.style.display === 'none';
+      mb.style.display = hidden ? 'flex' : 'none';
+      try { saveAppStateDebounced(); } catch (err) {}
+      e.preventDefault();
+      return;
+    }
+  }
+  if (isCinematicActive() && e.key && e.key.toLowerCase() === 'm') {
+    e.preventDefault();
+    return;
+  }
+  if (isCinematicActive()) {
+    const key = (e.key || '').toLowerCase();
+    if (key === 'enter' || key === ' ' || key === 'spacebar' || key === 'e' || key === 'arrowright' || key === 'escape') {
+      try {
+        if (window._activeDialogue) advanceDialogue();
+        else if (window._introSeq && !window._introSeq.done) advanceIntroSequence();
+      } catch (_) {}
+      e.preventDefault();
+      return;
+    }
+  }
   if (e.key && e.key.toLowerCase() === 'm') {
     worldMapOverlayVisible = !worldMapOverlayVisible;
     notify(worldMapOverlayVisible ? 'Mapa cenital abierto' : 'Mapa cenital cerrado');
@@ -12066,6 +12964,7 @@ document.addEventListener('visibilitychange', () => {
 
 // Toggle inventory with 'I'
 document.addEventListener('keydown', e => {
+  if (isCinematicActive()) return;
   if (e.key && e.key.toLowerCase() === 'i') {
     try { toggleInventory(); } catch (err) {}
     e.preventDefault();
@@ -12166,13 +13065,17 @@ document.addEventListener('keydown', e => {
   try {
     // If dialogue panel is open, E-key advances it and does nothing else
     if (window._activeDialogue) { try { advanceDialogue(); } catch (_) {} e.preventDefault(); return; }
-    // Skip intro title card on any key press
-    if (window._introSeq && !window._introSeq.done) { try { skipIntro(); } catch (_) {} e.preventDefault(); return; }
+    // Intro cinematic advances one screen at a time
+    if (window._introSeq && !window._introSeq.done) { try { advanceIntroSequence(); } catch (_) {} e.preventDefault(); return; }
     const it = window._interactionTarget;
     if (it) {
       // NPC interaction — opens cinematic dialogue panel (story or generic)
       if (it.kind === 'player' && it.ref && it.ref.id && it.ref.id.indexOf('npc-') === 0) {
         try { openNpcDialogue(it.ref); } catch (_) {}
+        e.preventDefault(); return;
+      }
+      if (it.kind === 'map-scene' && it.ref) {
+        try { openMapSceneDialogue(it.ref); } catch (_) {}
         e.preventDefault(); return;
       }
       if (it.kind === 'door' && it.ref && it.ref.interiorId) {
@@ -12222,6 +13125,22 @@ document.addEventListener('keydown', e => {
 // Save player pos on unload/visibility change/blur so it's persisted reliably
 window.addEventListener('beforeunload', () => { try { savePlayerPos(true); } catch (err) {} });
 window.addEventListener('pagehide', () => { try { savePlayerPos(true); } catch (err) {} });
+
+document.addEventListener('pointerdown', e => {
+  try {
+    if (!isCinematicActive()) return;
+    if (window._activeDialogue) {
+      advanceDialogue();
+      e.preventDefault();
+      return;
+    }
+    if (window._introSeq && !window._introSeq.done) {
+      advanceIntroSequence();
+      e.preventDefault();
+      return;
+    }
+  } catch (err) {}
+});
 window.addEventListener('unload', () => { try { savePlayerPos(true); } catch (err) {} });
 window.addEventListener('blur', () => { try { savePlayerPos(true); } catch (err) {} });
 document.addEventListener('visibilitychange', () => { try { if (document.hidden) savePlayerPos(true); } catch (err) {} });
@@ -12293,6 +13212,8 @@ function init() {
   // Create build panel controls (collapse / minimize)
   try { createBuildPanelControls(); } catch (e) {}
   try { createCameraButton(); } catch (e) {}
+  try { registerClosableUIElements(); } catch (e) {}
+  setTimeout(() => { try { registerClosableUIElements(); } catch (e) {} }, 120);
   // Create restore button for minimized panel
   try {
     if (!document.getElementById('panel-restore-btn')) {
@@ -12337,11 +13258,12 @@ function init() {
         // If an external menu handled the startup parameters/character selection,
         // do not open the engine's internal character selector or block the UI.
         if (!window._externalMenu) {
+          try { window._pendingIntro = true; } catch (e) {}
           try { setupCharacterSelection(); openCharacterSelect(); } catch (e) {}
           try { if (!localStorage.getItem('meso.noBuildTut')) showBuildTutorial(); } catch (e) {}
         } else {
           // external menu already provided initial params and won't need the internal modal
-          try { /* skip internal character select when hosted by external menu */ } catch (e) {}
+          try { window._pendingIntro = false; } catch (e) {}
         }
         try { if (window._onEngineProgress) window._onEngineProgress(90, 'Finalizando...'); } catch (e) {}
           try { console.log && console.log('game-engine: finalizing new-game flow, calling postMapInit'); } catch (e) {}
@@ -12357,6 +13279,10 @@ function init() {
             }
           } catch (e) {}
           try { postMapInit(); } catch (e) { console.warn('postMapInit call failed', e); }
+          if (window._externalMenu) {
+            try { startLocked = false; } catch (e) {}
+            try { startIntroSequence(); } catch (e) {}
+          }
       })();
       if (window._externalMenu) return;
     } else if (window._externalMenu && hasSavedAppState) {
@@ -12470,11 +13396,19 @@ function createTimeControlWidget() {
     document.body.appendChild(widget);
     refresh();
     window._refreshTimeWidget = refresh;
+    try { registerClosableUIElements(); } catch (e) {}
   } catch (e) {}
 }
 
 function postMapInit() {
-  try { updateUI(); updateCharCard(); renderActionList(); updateInventory(); setupCharacterSelection(); } catch (e) {}
+  try {
+    updateUI();
+    updateCharCard();
+    renderActionList();
+    updateInventory();
+    if (!window._externalMenu) setupCharacterSelection();
+  } catch (e) {}
+  try { rebuildMapSceneTriggers(); } catch (e) {}
   try { updateBuildMenuFromGrid(); } catch (e) {}
   try { centerCamera(); } catch (e) {}
   try { createTimeControlWidget(); } catch (e) {}
