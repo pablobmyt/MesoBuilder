@@ -63,6 +63,44 @@ body.theme-urss #main-menu-root {
     linear-gradient(180deg, #200609 0%, #360d13 58%, #140608 100%) !important;
 }
 
+body.standalone-editor-preview #topbar,
+body.standalone-editor-preview #toolbar,
+body.standalone-editor-preview #panel,
+body.standalone-editor-preview #char-card,
+body.standalone-editor-preview #tooltip,
+body.standalone-editor-preview #notif,
+body.standalone-editor-preview #main-menu-root,
+body.standalone-editor-preview #ur-modal {
+  display: none !important;
+}
+
+body.standalone-editor-preview #top-menubar,
+body.standalone-editor-preview #zoom-control,
+body.standalone-editor-preview #ability-bar,
+body.standalone-editor-preview #event-history,
+body.standalone-editor-preview #inventory-panel,
+body.standalone-editor-preview #entity-info,
+body.standalone-editor-preview #crafting-panel,
+body.standalone-editor-preview #settings-panel,
+body.standalone-editor-preview #task-panel,
+body.standalone-editor-preview #debug-hud,
+body.standalone-editor-preview #engine-status,
+body.standalone-editor-preview #panel-restore-btn {
+  display: none !important;
+}
+
+body.standalone-editor-preview #main {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+}
+
+body.standalone-editor-preview #gameCanvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
 body.theme-urss #main-menu-box,
 body.theme-urss #menu-startup-modal > div {
   border-color: #c53a3a !important;
@@ -125,6 +163,7 @@ body.theme-urss #btn-endturn {
 #menu-new,
 #menu-load,
 #menu-import,
+#menu-map-editor,
 #menu-options,
 #menu-credits,
 #menu-exit,
@@ -133,7 +172,10 @@ body.theme-urss #btn-endturn {
 #menu-start-cancel,
 #menu-start-confirm,
 #menu-start-tab-character,
-#menu-start-tab-options {
+#menu-start-tab-options,
+#menu-map-design-open-editor,
+#menu-map-design-load,
+#menu-map-design-clear {
   font-family: inherit !important;
   text-transform: uppercase;
   letter-spacing: 1px;
@@ -142,6 +184,7 @@ body.theme-urss #btn-endturn {
 }
 
 #menu-new,
+#menu-map-editor,
 #menu-start-confirm,
 #menu-start-tab-character {
   background: linear-gradient(180deg, var(--sand-mid), var(--sand-dark)) !important;
@@ -158,7 +201,10 @@ body.theme-urss #btn-endturn {
 #menu-char-random,
 #menu-char-reset,
 #menu-start-cancel,
-#menu-start-tab-options {
+#menu-start-tab-options,
+#menu-map-design-open-editor,
+#menu-map-design-load,
+#menu-map-design-clear {
   background: rgba(26,18,8,0.92) !important;
   border: 1px solid #5a4520 !important;
   color: var(--ui-text) !important;
@@ -167,6 +213,7 @@ body.theme-urss #btn-endturn {
 #menu-new:hover,
 #menu-load:hover,
 #menu-import:hover,
+#menu-map-editor:hover,
 #menu-options:hover,
 #menu-credits:hover,
 #menu-exit:hover,
@@ -175,7 +222,10 @@ body.theme-urss #btn-endturn {
 #menu-start-cancel:hover,
 #menu-start-confirm:hover,
 #menu-start-tab-character:hover,
-#menu-start-tab-options:hover {
+#menu-start-tab-options:hover,
+#menu-map-design-open-editor:hover,
+#menu-map-design-load:hover,
+#menu-map-design-clear:hover {
   border-color: var(--sand-light) !important;
   transform: translateY(-1px);
 }

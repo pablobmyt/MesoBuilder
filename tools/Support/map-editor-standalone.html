@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MesoBuilder · Editor procedural</title>
+  <style>
+    :root {
+      --bg: #0d0a05;
+      --panel: #171109;
+      --panel-2: #23190d;
+      --border: rgba(240, 215, 144, 0.16);
+      --accent: #d8b35f;
+      --accent-2: #f0d790;
+      --text: #f5e6c3;
+      --muted: #bfa879;
+      --danger: #b45b4f;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      background:
+        radial-gradient(circle at top, rgba(216,179,95,0.12), transparent 26%),
+        linear-gradient(180deg, #110d07 0%, #0b0905 100%);
+      color: var(--text);
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      overflow: hidden;
+    }
+
+    body {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+    }
+
+    .sidebar {
+      height: 100vh;
+      overflow-y: auto;
+      padding: 18px;
+      border-right: 1px solid var(--border);
+      background: linear-gradient(180deg, rgba(23,17,9,0.98), rgba(12,9,5,0.98));
+    }
+
+    .brand {
+      margin-bottom: 16px;
+    }
+
+    .brand h1 {
+      margin: 0 0 6px;
+      font-size: 28px;
+      color: var(--accent-2);
+      letter-spacing: 0.4px;
+    }
+
+    .brand p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.45;
+      font-size: 14px;
+    }
+
+    .panel {
+      border: 1px solid var(--border);
+      background: rgba(35,25,13,0.84);
+      border-radius: 14px;
+      padding: 14px;
+      margin-bottom: 12px;
+      box-shadow: 0 12px 28px rgba(0,0,0,0.28);
+    }
+
+    .panel h2 {
+      margin: 0 0 10px;
+      font-size: 12px;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 1.4px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+
+    .field label,
+    .hint,
+    .status,
+    .meta-label {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    input[type="text"],
+    select,
+    input[type="range"] {
+      width: 100%;
+    }
+
+    input[type="text"],
+    select {
+      border: 1px solid rgba(240,215,144,0.14);
+      background: rgba(11,8,5,0.92);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 14px;
+    }
+
+    input[type="range"] {
+      accent-color: var(--accent);
+    }
+
+    .button-row,
+    .button-grid {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      appearance: none;
+      border: 1px solid rgba(240,215,144,0.16);
+      background: linear-gradient(180deg, rgba(58,43,23,0.96), rgba(30,22,12,0.96));
+      color: var(--text);
+      border-radius: 10px;
+      padding: 9px 12px;
+      cursor: pointer;
+      font-size: 13px;
+      transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+      border-color: rgba(240,215,144,0.38);
+      background: linear-gradient(180deg, rgba(79,58,31,0.96), rgba(38,28,16,0.96));
+    }
+
+    button.primary {
+      background: linear-gradient(180deg, var(--accent-2), var(--accent));
+      color: #261806;
+      font-weight: 700;
+      border-color: rgba(255,245,220,0.34);
+    }
+
+    button.danger {
+      background: linear-gradient(180deg, rgba(121,52,42,0.96), rgba(73,28,22,0.96));
+      border-color: rgba(180,91,79,0.42);
+      color: #ffe1dc;
+    }
+
+    .terrain-grid,
+    .build-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .terrain-btn,
+    .build-btn {
+      text-align: left;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 42px;
+    }
+
+    .terrain-btn.active,
+    .build-btn.active,
+    .tool-btn.active {
+      border-color: rgba(240,215,144,0.46);
+      box-shadow: inset 0 0 0 1px rgba(240,215,144,0.18);
+      background: linear-gradient(180deg, rgba(90,65,34,0.96), rgba(42,30,17,0.96));
+    }
+
+    .swatch {
+      width: 14px;
+      height: 14px;
+      border-radius: 4px;
+      border: 1px solid rgba(0,0,0,0.34);
+      flex-shrink: 0;
+    }
+
+    .meta {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .meta strong {
+      display: block;
+      margin-top: 4px;
+      font-size: 16px;
+      color: var(--accent-2);
+    }
+
+    .status {
+      line-height: 1.45;
+      min-height: 38px;
+    }
+
+    .workspace {
+      min-width: 0;
+      height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr;
+    }
+
+    .workspace-topbar {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(15,11,7,0.9);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .workspace-topbar h3 {
+      margin: 0;
+      font-size: 15px;
+      color: var(--accent-2);
+    }
+
+    .workspace-topbar p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .iframe-wrap {
+      min-height: 0;
+      padding: 16px;
+    }
+
+    iframe {
+      width: 100%;
+      height: 100%;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: #000;
+      box-shadow: 0 18px 38px rgba(0,0,0,0.34);
+    }
+
+    .loading {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    @media (max-width: 1200px) {
+      body {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto 1fr;
+      }
+
+      .sidebar {
+        height: auto;
+        max-height: 48vh;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+      }
+    }
+  </style>
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand">
+      <h1>Editor procedural</h1>
+      <p>Este editor usa el mismo mundo procedural del juego. Puedes cambiar de época, regenerar el mapa real, pintar terreno y colocar edificios.</p>
+    </div>
+
+    <section class="panel">
+      <h2>Sesión</h2>
+      <div class="field">
+        <label for="epochSelect">Época</label>
+        <select id="epochSelect">
+          <option value="mesopotamia">Mesopotamia</option>
+          <option value="urss">Antigua URSS</option>
+          <option value="medieval">Edad Media</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="designName">Nombre del diseño</label>
+        <input id="designName" type="text" value="Diseño procedural" maxlength="64">
+      </div>
+      <div class="field">
+        <label for="buildingScale">Escala edificios: <strong id="buildingScaleLabel">1.00x</strong></label>
+        <input id="buildingScale" type="range" min="0.5" max="2.5" step="0.05" value="1">
+      </div>
+      <div class="field">
+        <label for="entityScale">Escala entidades/sprites: <strong id="entityScaleLabel">1.00x</strong></label>
+        <input id="entityScale" type="range" min="0.5" max="2.5" step="0.05" value="1">
+      </div>
+      <div class="button-row">
+        <button id="btnRegenerate" class="primary">Generar mapa procedural</button>
+        <button id="btnOpenMain">Abrir juego</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Terreno</h2>
+      <div class="field">
+        <label for="brushSize">Tamaño del pincel: <strong id="brushSizeLabel">2</strong></label>
+        <input id="brushSize" type="range" min="1" max="6" step="1" value="2">
+      </div>
+      <div class="terrain-grid" id="terrainGrid"></div>
+      <div class="button-row" style="margin-top:10px">
+        <button id="btnDisableTerrain" class="tool-btn">Desactivar pincel</button>
+      </div>
+      <div class="hint" style="margin-top:8px">Selecciona un terreno y pinta directamente sobre el mapa del juego dentro del visor.</div>
+    </section>
+
+    <section class="panel">
+      <h2>Edificios</h2>
+      <div class="build-grid" id="buildGrid"></div>
+      <div class="button-row" style="margin-top:10px">
+        <button id="btnDemolish" class="tool-btn danger">Demoler</button>
+        <button id="btnClearTool" class="tool-btn">Quitar herramienta</button>
+      </div>
+      <div class="hint" style="margin-top:8px">Tras elegir un edificio, haz clic en el mapa dentro del visor para colocarlo como en una partida normal.</div>
+    </section>
+
+    <section class="panel">
+      <h2>Diseño</h2>
+      <div class="button-grid">
+        <button id="btnImport">Importar JSON</button>
+        <button id="btnExport">Exportar JSON</button>
+        <button id="btnSavePending" class="primary">Guardar para nueva partida</button>
+        <button id="btnClearPending" class="danger">Limpiar guardado</button>
+      </div>
+      <div class="status" id="pendingStatus" style="margin-top:10px">Sin diseño guardado para nuevas partidas.</div>
+    </section>
+
+    <section class="panel">
+      <h2>Estado</h2>
+      <div class="meta">
+        <div class="meta-label">Época activa<strong id="metaEpoch">Mesopotamia</strong></div>
+        <div class="meta-label">Herramienta<strong id="metaTool">Ninguna</strong></div>
+      </div>
+      <div class="loading" id="statusLine" style="margin-top:10px">Cargando el motor del juego...</div>
+    </section>
+  </aside>
+
+  <main class="workspace">
+    <div class="workspace-topbar">
+      <div>
+        <h3>Visor del mapa real</h3>
+        <p>El mundo se genera con el mismo sistema que la partida. Todo lo que edites aquí puede exportarse o reutilizarse al empezar una nueva partida.</p>
+      </div>
+      <div class="button-row">
+        <button id="btnReloadFrame">Recargar visor</button>
+      </div>
+    </div>
+    <div class="iframe-wrap">
+      <iframe id="editorFrame" title="Editor procedural de MesoBuilder"></iframe>
+    </div>
+  </main>
+
+  <input id="fileInput" type="file" accept=".json,application/json" hidden>
+
+  <script>
+    const STORAGE_KEY = 'meso.pendingMapDesign';
+    const META_KEY = 'meso.pendingMapDesignMeta';
+    const BUILDING_SCALE_KEY = 'meso.standaloneEditorBuildingScale';
+    const ENTITY_SCALE_KEY = 'meso.standaloneEditorEntityScale';
+    const terrainDefs = [
+      { id: 'alluvial', label: 'Aluvial', color: '#D1A86A' },
+      { id: 'riparian', label: 'Ribera', color: '#5A8C38' },
+      { id: 'marsh', label: 'Pantano', color: '#3A6B52' },
+      { id: 'saline', label: 'Salino', color: '#E8D8B8' },
+      { id: 'steppe', label: 'Estepa', color: '#C8A055' },
+      { id: 'hills', label: 'Colinas', color: '#B09060' },
+      { id: 'forest', label: 'Bosque', color: '#4A8A3A' },
+      { id: 'water', label: 'Agua', color: '#2A72C3' },
+      { id: 'road', label: 'Camino', color: '#9E8B6B' }
+    ];
+    const epochLabels = {
+      mesopotamia: 'Mesopotamia',
+      urss: 'Antigua URSS',
+      medieval: 'Edad Media'
+    };
+
+    const frame = document.getElementById('editorFrame');
+    const epochSelect = document.getElementById('epochSelect');
+    const brushSize = document.getElementById('brushSize');
+    const brushSizeLabel = document.getElementById('brushSizeLabel');
+    const buildingScaleInput = document.getElementById('buildingScale');
+    const buildingScaleLabel = document.getElementById('buildingScaleLabel');
+    const entityScaleInput = document.getElementById('entityScale');
+    const entityScaleLabel = document.getElementById('entityScaleLabel');
+    const terrainGrid = document.getElementById('terrainGrid');
+    const buildGrid = document.getElementById('buildGrid');
+    const designNameInput = document.getElementById('designName');
+    const fileInput = document.getElementById('fileInput');
+    const pendingStatus = document.getElementById('pendingStatus');
+    const statusLine = document.getElementById('statusLine');
+    const metaEpoch = document.getElementById('metaEpoch');
+    const metaTool = document.getElementById('metaTool');
+
+    let activeTerrain = null;
+    let activeBuild = null;
+    let frameReady = false;
+    let regenerateAfterLoad = false;
+
+    function clampScale(raw) {
+      if (!Number.isFinite(raw)) return 1;
+      return Math.max(0.5, Math.min(2.5, raw));
+    }
+
+    function getDesiredBuildingScale() {
+      return clampScale(Number(buildingScaleInput && buildingScaleInput.value));
+    }
+
+    function getDesiredEntityScale() {
+      return clampScale(Number(entityScaleInput && entityScaleInput.value));
+    }
+
+    function updateScaleLabels() {
+      buildingScaleLabel.textContent = `${getDesiredBuildingScale().toFixed(2)}x`;
+      entityScaleLabel.textContent = `${getDesiredEntityScale().toFixed(2)}x`;
+    }
+
+    function applyScaleToFrame() {
+      const api = getFrameApi();
+      if (!api) return;
+      if (typeof api.setBuildingScale === 'function') api.setBuildingScale(getDesiredBuildingScale());
+      if (typeof api.setEntityScale === 'function') api.setEntityScale(getDesiredEntityScale());
+    }
+
+    function setStatus(text) {
+      statusLine.textContent = text;
+    }
+
+    function getFrameApi() {
+      try {
+        return frame.contentWindow && frame.contentWindow.MESO_MAP_EDITOR_API;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function getFrameSrc() {
+      const epoch = encodeURIComponent(epochSelect.value || 'mesopotamia');
+      return `../../index.html?editor=1&epoch=${epoch}`;
+    }
+
+    function updatePendingStatus() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) {
+          pendingStatus.textContent = 'Sin diseño guardado para nuevas partidas.';
+          return;
+        }
+        const meta = JSON.parse(localStorage.getItem(META_KEY) || 'null') || {};
+        pendingStatus.textContent = `Diseño guardado: ${meta.name || 'Sin nombre'} · ${meta.savedAt ? new Date(meta.savedAt).toLocaleString() : 'sin fecha'}`;
+      } catch (e) {
+        pendingStatus.textContent = 'No se pudo leer el diseño guardado.';
+      }
+    }
+
+    function setActiveToolLabel(text) {
+      metaTool.textContent = text || 'Ninguna';
+    }
+
+    function renderTerrainButtons() {
+      terrainGrid.innerHTML = '';
+      terrainDefs.forEach(def => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'terrain-btn tool-btn';
+        btn.dataset.terrain = def.id;
+        btn.innerHTML = `<span class="swatch" style="background:${def.color}"></span>${def.label}`;
+        btn.addEventListener('click', () => {
+          const api = getFrameApi();
+          if (!api) return;
+          activeBuild = null;
+          activeTerrain = def.id;
+          api.enableTerrainBrush(def.id, Number(brushSize.value || 2));
+          updateTerrainSelection();
+          updateBuildSelection();
+          setActiveToolLabel(`Terreno · ${def.label}`);
+          setStatus(`Pincel activo: ${def.label}. Pinta directamente sobre el mapa.`);
+        });
+        terrainGrid.appendChild(btn);
+      });
+    }
+
+    function updateTerrainSelection() {
+      terrainGrid.querySelectorAll('.terrain-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.terrain === activeTerrain));
+      document.getElementById('btnDisableTerrain').classList.toggle('active', !activeTerrain && !activeBuild);
+    }
+
+    function updateBuildSelection() {
+      buildGrid.querySelectorAll('.build-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.build === activeBuild));
+      document.getElementById('btnDemolish').classList.toggle('active', activeBuild === 'demolish');
+      document.getElementById('btnClearTool').classList.toggle('active', !activeTerrain && !activeBuild);
+    }
+
+    async function renderBuildButtons() {
+      const api = getFrameApi();
+      if (!api) return;
+      const palette = api.getBuildPalette(epochSelect.value || 'mesopotamia') || [];
+      buildGrid.innerHTML = '';
+      palette.forEach(item => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'build-btn tool-btn';
+        btn.dataset.build = item.id;
+        btn.innerHTML = `<span>${item.name || item.id}</span>`;
+        btn.title = item.desc || '';
+        btn.addEventListener('click', () => {
+          const liveApi = getFrameApi();
+          if (!liveApi) return;
+          activeTerrain = null;
+          activeBuild = item.id;
+          liveApi.selectBuildTool(item.id);
+          updateTerrainSelection();
+          updateBuildSelection();
+          setActiveToolLabel(`Edificio · ${item.name || item.id}`);
+          setStatus(`Herramienta activa: ${item.name || item.id}. Haz clic en el mapa para colocarlo.`);
+        });
+        buildGrid.appendChild(btn);
+      });
+      updateBuildSelection();
+    }
+
+    async function waitForApi(maxMs = 30000) {
+      const start = Date.now();
+      while (Date.now() - start < maxMs) {
+        const api = getFrameApi();
+        if (api && api.ready) return api;
+        await new Promise(resolve => setTimeout(resolve, 250));
+      }
+      throw new Error('El motor no respondió a tiempo.');
+    }
+
+    function initializeFrame(regenerate = false) {
+      frameReady = false;
+      regenerateAfterLoad = !!regenerate;
+      setStatus('Cargando el motor del juego...');
+      metaEpoch.textContent = epochLabels[epochSelect.value] || epochSelect.value;
+      frame.src = getFrameSrc();
+    }
+
+    function normalizeIncomingDesign(obj) {
+      const source = (obj && Array.isArray(obj.tileBiome))
+        ? obj
+        : (obj && obj.mapDesign && Array.isArray(obj.mapDesign.tileBiome) ? obj.mapDesign : null);
+      if (!source) throw new Error('Formato de diseño no válido');
+      return source;
+    }
+
+    function downloadJson(payload) {
+      const safeName = (designNameInput.value.trim() || 'diseno-procedural')
+        .replace(/[^a-z0-9-_]+/gi, '-')
+        .replace(/^-+|-+$/g, '')
+        .toLowerCase() || 'diseno-procedural';
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${safeName}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    async function exportCurrentDesign() {
+      const api = getFrameApi();
+      if (!api) throw new Error('El motor aún no está listo.');
+      const payload = api.exportMapDesignData();
+      payload.meta = payload.meta || {};
+      payload.meta.name = designNameInput.value.trim() || 'Diseño procedural';
+      downloadJson(payload);
+      setStatus('Diseño exportado a JSON.');
+    }
+
+    async function savePendingDesign() {
+      const api = getFrameApi();
+      if (!api) throw new Error('El motor aún no está listo.');
+      const payload = api.exportMapDesignData();
+      payload.meta = payload.meta || {};
+      payload.meta.name = designNameInput.value.trim() || 'Diseño procedural';
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+      localStorage.setItem(META_KEY, JSON.stringify({
+        name: payload.meta.name,
+        savedAt: new Date().toISOString(),
+        epoch: payload.epoch || epochSelect.value,
+        source: 'standalone-procedural-editor'
+      }));
+      updatePendingStatus();
+      try { if (window.opener && !window.opener.closed) window.opener.postMessage({ type: 'meso-map-design-updated' }, '*'); } catch (e) {}
+      setStatus(`Diseño guardado para nuevas partidas: ${payload.meta.name}.`);
+    }
+
+    async function importDesignFile(file) {
+      const api = getFrameApi();
+      if (!api) throw new Error('El motor aún no está listo.');
+      const text = await file.text();
+      const payload = normalizeIncomingDesign(JSON.parse(text));
+      if (payload.epoch) {
+        epochSelect.value = payload.epoch;
+      }
+      if (payload.meta && payload.meta.name) {
+        designNameInput.value = payload.meta.name;
+      }
+      api.importMapDesignData(payload);
+      activeTerrain = null;
+      activeBuild = null;
+      updateTerrainSelection();
+      updateBuildSelection();
+      await renderBuildButtons();
+      metaEpoch.textContent = epochLabels[payload.epoch || epochSelect.value] || (payload.epoch || epochSelect.value);
+      setActiveToolLabel('Ninguna');
+      setStatus('Diseño importado en el mapa real.');
+    }
+
+    epochSelect.addEventListener('change', async () => {
+      metaEpoch.textContent = epochLabels[epochSelect.value] || epochSelect.value;
+      if (!frameReady) return;
+      const api = getFrameApi();
+      if (!api) return;
+      api.regenerateProceduralMap(epochSelect.value);
+      activeTerrain = null;
+      activeBuild = null;
+      updateTerrainSelection();
+      await renderBuildButtons();
+      setActiveToolLabel('Ninguna');
+      setStatus(`Mapa procedural regenerado para ${epochLabels[epochSelect.value] || epochSelect.value}.`);
+    });
+
+    brushSize.addEventListener('input', () => {
+      brushSizeLabel.textContent = String(brushSize.value);
+      const api = getFrameApi();
+      if (api) api.setBrushSize(Number(brushSize.value || 2));
+    });
+
+    buildingScaleInput.addEventListener('input', () => {
+      updateScaleLabels();
+      try { localStorage.setItem(BUILDING_SCALE_KEY, String(getDesiredBuildingScale())); } catch (e) {}
+      applyScaleToFrame();
+    });
+
+    entityScaleInput.addEventListener('input', () => {
+      updateScaleLabels();
+      try { localStorage.setItem(ENTITY_SCALE_KEY, String(getDesiredEntityScale())); } catch (e) {}
+      applyScaleToFrame();
+    });
+
+    document.getElementById('btnDisableTerrain').addEventListener('click', () => {
+      const api = getFrameApi();
+      if (!api) return;
+      api.disableTerrainBrush();
+      activeTerrain = null;
+      updateTerrainSelection();
+      setActiveToolLabel(activeBuild ? metaTool.textContent : 'Ninguna');
+      if (!activeBuild) setStatus('Pincel de terreno desactivado.');
+    });
+
+    document.getElementById('btnDemolish').addEventListener('click', () => {
+      const api = getFrameApi();
+      if (!api) return;
+      activeTerrain = null;
+      activeBuild = 'demolish';
+      api.selectBuildTool('demolish');
+      updateTerrainSelection();
+      updateBuildSelection();
+      setActiveToolLabel('Demoler');
+      setStatus('Herramienta activa: Demoler. Haz clic en el mapa para retirar edificios.');
+    });
+
+    document.getElementById('btnClearTool').addEventListener('click', () => {
+      const api = getFrameApi();
+      if (!api) return;
+      api.clearTool();
+      api.disableTerrainBrush();
+      activeTerrain = null;
+      activeBuild = null;
+      updateTerrainSelection();
+      updateBuildSelection();
+      setActiveToolLabel('Ninguna');
+      setStatus('Sin herramienta activa.');
+    });
+
+    document.getElementById('btnRegenerate').addEventListener('click', async () => {
+      const api = getFrameApi();
+      if (!api) return;
+      api.regenerateProceduralMap(epochSelect.value);
+      activeTerrain = null;
+      activeBuild = null;
+      updateTerrainSelection();
+      updateBuildSelection();
+      await renderBuildButtons();
+      setActiveToolLabel('Ninguna');
+      setStatus(`Mapa procedural regenerado para ${epochLabels[epochSelect.value] || epochSelect.value}.`);
+    });
+
+    document.getElementById('btnReloadFrame').addEventListener('click', () => {
+      initializeFrame(true);
+    });
+
+    document.getElementById('btnOpenMain').addEventListener('click', () => {
+      window.open('../../index.html', '_blank', 'noopener,noreferrer');
+    });
+
+    document.getElementById('btnImport').addEventListener('click', () => {
+      fileInput.value = '';
+      fileInput.click();
+    });
+
+    fileInput.addEventListener('change', async (ev) => {
+      const file = ev.target && ev.target.files && ev.target.files[0];
+      if (!file) return;
+      try {
+        await importDesignFile(file);
+      } catch (e) {
+        setStatus(`No se pudo importar el diseño: ${e && e.message ? e.message : e}`);
+      }
+    });
+
+    document.getElementById('btnExport').addEventListener('click', async () => {
+      try {
+        await exportCurrentDesign();
+      } catch (e) {
+        setStatus(`No se pudo exportar: ${e && e.message ? e.message : e}`);
+      }
+    });
+
+    document.getElementById('btnSavePending').addEventListener('click', async () => {
+      try {
+        await savePendingDesign();
+      } catch (e) {
+        setStatus(`No se pudo guardar el diseño: ${e && e.message ? e.message : e}`);
+      }
+    });
+
+    document.getElementById('btnClearPending').addEventListener('click', () => {
+      try {
+        localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem(META_KEY);
+        updatePendingStatus();
+        setStatus('Diseño pendiente eliminado.');
+      } catch (e) {
+        setStatus('No se pudo limpiar el diseño pendiente.');
+      }
+    });
+
+    window.addEventListener('storage', (ev) => {
+      if (ev.key === STORAGE_KEY || ev.key === META_KEY) updatePendingStatus();
+    });
+
+    frame.addEventListener('load', async () => {
+      try {
+        const api = await waitForApi();
+        frameReady = true;
+        setStatus('Motor cargado. Preparando herramientas del editor...');
+        if (regenerateAfterLoad) api.regenerateProceduralMap(epochSelect.value);
+        regenerateAfterLoad = false;
+        applyScaleToFrame();
+        api.clearTool();
+        activeTerrain = null;
+        activeBuild = null;
+        updateTerrainSelection();
+        await renderBuildButtons();
+        setActiveToolLabel('Ninguna');
+        setStatus('Visor cargado. Ya puedes editar el mapa procedural real.');
+      } catch (e) {
+        setStatus(`Error al inicializar el visor: ${e && e.message ? e.message : e}`);
+      }
+    });
+
+    (function init() {
+      const savedEpoch = localStorage.getItem('meso.currentEpoch') || 'mesopotamia';
+      const savedBuildingScale = Number(localStorage.getItem(BUILDING_SCALE_KEY) || '1');
+      const savedEntityScale = Number(localStorage.getItem(ENTITY_SCALE_KEY) || '1');
+      epochSelect.value = savedEpoch;
+      metaEpoch.textContent = epochLabels[savedEpoch] || savedEpoch;
+      brushSizeLabel.textContent = String(brushSize.value);
+      buildingScaleInput.value = String(clampScale(savedBuildingScale));
+      entityScaleInput.value = String(clampScale(savedEntityScale));
+      updateScaleLabels();
+      renderTerrainButtons();
+      updateTerrainSelection();
+      updateBuildSelection();
+      updatePendingStatus();
+      initializeFrame(true);
+    })();
+  </script>
+</body>
+</html>

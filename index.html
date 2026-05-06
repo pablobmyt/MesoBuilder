@@ -328,6 +328,7 @@
         <button id="menu-new" style="padding:12px 18px;background:#2E6FA3;border:none;border-radius:8px;color:#fff;font-weight:700">Nueva partida</button>
         <button id="menu-load" style="padding:12px 18px;background:transparent;border:1px solid rgba(255,255,255,0.06);border-radius:8px;color:#fff">Cargar partida</button>
         <button id="menu-import" style="padding:12px 18px;background:transparent;border:1px solid rgba(255,255,255,0.06);border-radius:8px;color:#fff">Importar partida</button>
+        <button id="menu-map-editor" style="padding:12px 18px;background:transparent;border:1px solid rgba(255,255,255,0.06);border-radius:8px;color:#fff">Editor de mapas</button>
         <button id="menu-options" style="padding:12px 18px;background:transparent;border:1px solid rgba(255,255,255,0.06);border-radius:8px;color:#fff">Opciones</button>
       </div>
       <div style="margin-top:8px;color:#aab">Consejo: Construye cerca del río para un mejor rendimiento de cultivos.</div>
@@ -424,6 +425,15 @@
           <label style="font-size:13px">Densidad vegetación: <span id="label-veg">1.0</span></label>
           <input id="menu-density-vegetation" type="range" min="0.2" max="3.0" step="0.1" value="1.0" style="width:100%">
         </div>
+        <div id="menu-map-design-box" style="grid-column:1 / span 2;padding:10px 12px;border:1px solid rgba(255,255,255,0.08);border-radius:8px;background:rgba(0,0,0,0.18)">
+          <div style="font-size:13px;font-weight:700;color:#f0d790">Diseño manual del mapa</div>
+          <div id="menu-map-design-status" style="margin-top:6px;font-size:12px;color:#c8b87a">Sin diseño manual activo. Se usará la generación procedural.</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+            <button id="menu-map-design-open-editor" type="button" style="padding:8px 12px;background:transparent;border:1px solid rgba(255,255,255,0.08);border-radius:8px;color:#fff">Abrir editor</button>
+            <button id="menu-map-design-load" type="button" style="padding:8px 12px;background:transparent;border:1px solid rgba(255,255,255,0.08);border-radius:8px;color:#fff">Cargar JSON</button>
+            <button id="menu-map-design-clear" type="button" style="padding:8px 12px;background:transparent;border:1px solid rgba(255,255,255,0.08);border-radius:8px;color:#fff">Limpiar</button>
+          </div>
+        </div>
       </div>
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
         <button id="menu-start-cancel" style="padding:8px 12px;background:transparent;border:1px solid rgba(255,255,255,0.06);border-radius:8px;color:#fff">Cancelar</button>
@@ -431,6 +441,8 @@
       </div>
     </div>
   </div>
+
+  <input type="file" id="menu-map-design-file" accept=".json,application/json" hidden>
 
 <script>
   // External menu host flag so engine won't show its internal menu
@@ -504,6 +516,13 @@
     let t = 0; setInterval(() => { t+=0.08; const ctx2 = c.getContext('2d'); ctx2.imageSmoothingEnabled=false; // animate slight horizontal shift of leaves
       ctx2.save(); ctx2.translate(Math.sin(t)*1.5,0); drawScene(); ctx2.restore(); }, 140);
   })();
+
+  const _mesoPageParams = new URLSearchParams(window.location.search || '');
+  window._standaloneEditorMode = _mesoPageParams.get('editor') === '1';
+  window._standaloneEditorEpoch = _mesoPageParams.get('epoch') || '';
+  if (window._standaloneEditorMode) {
+    try { document.body.classList.add('standalone-editor-preview'); } catch (e) {}
+  }
 
   // helper to dynamically load the engine module and start the game
   function loadEngineAndStart(opts){
@@ -612,6 +631,58 @@
     
   }
 
+  const MAP_DESIGN_STORAGE_KEY = 'meso.pendingMapDesign';
+  const MAP_DESIGN_META_KEY = 'meso.pendingMapDesignMeta';
+
+  function normalizeMapDesignPayload(obj) {
+    const source = (obj && Array.isArray(obj.tileBiome))
+      ? obj
+      : (obj && obj.mapDesign && Array.isArray(obj.mapDesign.tileBiome) ? obj.mapDesign : null);
+    if (!source) throw new Error('Formato de diseño no válido');
+    return {
+      meta: { ...(obj && obj.meta ? obj.meta : {}), ...(source.meta || {}) },
+      cols: Number(source.cols) || 180,
+      rows: Number(source.rows) || 120,
+      tileBiome: source.tileBiome,
+      heightMap: Array.isArray(source.heightMap) ? source.heightMap : []
+    };
+  }
+
+  function getPendingMapDesignMeta() {
+    try {
+      return JSON.parse(localStorage.getItem(MAP_DESIGN_META_KEY) || 'null');
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function updateMapDesignStatus() {
+    try {
+      const statusEl = document.getElementById('menu-map-design-status');
+      if (!statusEl) return;
+      const raw = localStorage.getItem(MAP_DESIGN_STORAGE_KEY);
+      if (!raw) {
+        statusEl.textContent = 'Sin diseño manual activo. Se usará la generación procedural.';
+        return;
+      }
+      const meta = getPendingMapDesignMeta() || {};
+      const name = meta.name || 'Diseño sin nombre';
+      const savedAt = meta.savedAt ? new Date(meta.savedAt).toLocaleString() : 'sin fecha';
+      statusEl.textContent = `Diseño activo: ${name}. Se aplicará al crear una nueva partida hasta que lo limpies. Última actualización: ${savedAt}.`;
+    } catch (e) {}
+  }
+
+  function openStandaloneMapEditor() {
+    const editorUrl = 'tools/Support/map-editor-standalone.html';
+    try {
+      const popup = window.open(editorUrl, '_blank', 'noopener,noreferrer,width=1480,height=980');
+      if (popup && typeof popup.focus === 'function') popup.focus();
+      if (!popup) window.location.href = editorUrl;
+    } catch (e) {
+      try { window.location.href = editorUrl; } catch (err) {}
+    }
+  }
+
   // show startup params when user clicks New
   function showStartupModal(tab) {
     const modal = document.getElementById('menu-startup-modal');
@@ -630,9 +701,11 @@
     optTab.style.border = active === 'options' ? '1px solid rgba(255,255,255,0.12)' : '1px solid rgba(255,255,255,0.08)';
     optTab.style.fontWeight = active === 'options' ? '700' : '400';
     try { if (window._renderMenuCharEditor) window._renderMenuCharEditor(); } catch (e) {}
+    try { updateMapDesignStatus(); } catch (e) {}
     modal.style.display = 'flex';
   }
   document.getElementById('menu-new').addEventListener('click', () => { showStartupModal('character'); });
+  document.getElementById('menu-map-editor').addEventListener('click', () => { openStandaloneMapEditor(); });
   document.getElementById('menu-options').addEventListener('click', () => { showStartupModal('options'); });
   // Load existing save directly
   document.getElementById('menu-load').addEventListener('click', () => {
@@ -682,6 +755,7 @@
   // hide the external menu and start the engine so the player sees the previous state.
   (function() {
     try {
+      if (window._standaloneEditorMode) return;
       const lastMenu = parseInt(localStorage.getItem('meso.lastStartMenu') || '0', 10);
       const lastActive = parseInt(localStorage.getItem('meso.lastActive') || '0', 10);
       const now = Date.now(); const HOUR = 1000 * 60 * 60;
@@ -698,6 +772,20 @@
       }
     } catch (e) { /* ignore */ }
   })();
+  if (window._standaloneEditorMode) {
+    try {
+      if (window._standaloneEditorEpoch) localStorage.setItem('meso.currentEpoch', window._standaloneEditorEpoch);
+      localStorage.setItem('meso.forceNew', '1');
+      localStorage.setItem('meso.skipPendingMapDesign', '1');
+    } catch (e) {}
+    try {
+      const root = document.getElementById('main-menu-root');
+      if (root) root.style.display = 'none';
+    } catch (e) {}
+    setTimeout(() => {
+      try { loadEngineAndStart({ forceNew: true, editorMode: true }); } catch (e) {}
+    }, 40);
+  }
   // Import a save from a JSON file
   try {
     const impBtn = document.getElementById('menu-import');
@@ -725,6 +813,15 @@
       });
     }
   } catch (e) {}
+  window.addEventListener('storage', (ev) => {
+    if (ev.key === MAP_DESIGN_STORAGE_KEY || ev.key === MAP_DESIGN_META_KEY) updateMapDesignStatus();
+  });
+  window.addEventListener('message', (ev) => {
+    try {
+      if (ev && ev.data && ev.data.type === 'meso-map-design-updated') updateMapDesignStatus();
+    } catch (e) {}
+  });
+  window.addEventListener('focus', () => { try { updateMapDesignStatus(); } catch (e) {} });
   document.getElementById('menu-credits').addEventListener('click', () => { alert('MesoBuilder - by VSoftware'); });
   document.getElementById('menu-exit').addEventListener('click', () => { window.close && window.close(); });
 
@@ -1071,6 +1168,10 @@
     const charNameInput = document.getElementById('menu-char-name');
     const randomCharBtn = document.getElementById('menu-char-random');
     const resetCharBtn = document.getElementById('menu-char-reset');
+    const mapDesignFileInput = document.getElementById('menu-map-design-file');
+    const mapDesignLoadBtn = document.getElementById('menu-map-design-load');
+    const mapDesignOpenBtn = document.getElementById('menu-map-design-open-editor');
+    const mapDesignClearBtn = document.getElementById('menu-map-design-clear');
 
     function applyMenuThemeForEpoch(epoch) {
       try {
@@ -1131,9 +1232,47 @@
       } catch (e) {}
     });
     try { if (window._syncMenuCharacterUiForEpoch) window._syncMenuCharacterUiForEpoch(); } catch (e) {}
+    try { updateMapDesignStatus(); } catch (e) {}
 
     if (tabCharacter) tabCharacter.addEventListener('click', () => { showStartupModal('character'); });
     if (tabOptions) tabOptions.addEventListener('click', () => { showStartupModal('options'); });
+
+    if (mapDesignOpenBtn) mapDesignOpenBtn.addEventListener('click', () => { openStandaloneMapEditor(); });
+    if (mapDesignLoadBtn && mapDesignFileInput) {
+      mapDesignLoadBtn.addEventListener('click', () => {
+        try { mapDesignFileInput.value = ''; mapDesignFileInput.click(); } catch (e) {}
+      });
+      mapDesignFileInput.addEventListener('change', (ev) => {
+        const f = ev.target && ev.target.files && ev.target.files[0];
+        if (!f) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            const normalized = normalizeMapDesignPayload(JSON.parse(String(reader.result || '{}')));
+            const name = normalized.meta && normalized.meta.name ? normalized.meta.name : f.name;
+            localStorage.setItem(MAP_DESIGN_STORAGE_KEY, JSON.stringify(normalized));
+            localStorage.setItem(MAP_DESIGN_META_KEY, JSON.stringify({
+              name,
+              savedAt: new Date().toISOString(),
+              cols: normalized.cols,
+              rows: normalized.rows,
+              source: 'menu-import'
+            }));
+            updateMapDesignStatus();
+          } catch (e) {
+            alert('Error cargando diseño de mapa: ' + (e && e.message ? e.message : e));
+          }
+        };
+        reader.readAsText(f);
+      });
+    }
+    if (mapDesignClearBtn) {
+      mapDesignClearBtn.addEventListener('click', () => {
+        try { localStorage.removeItem(MAP_DESIGN_STORAGE_KEY); } catch (e) {}
+        try { localStorage.removeItem(MAP_DESIGN_META_KEY); } catch (e) {}
+        updateMapDesignStatus();
+      });
+    }
 
     try {
       const savedMC = JSON.parse(localStorage.getItem('meso.menuChar') || 'null');

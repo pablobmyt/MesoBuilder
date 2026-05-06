@@ -252,14 +252,44 @@ function _isControllableUnit(ent) {
   } catch (e) { return false; }
 }
 
+function _isEntityReferenceFromCollections(ent) {
+  try {
+    if (!ent) return false;
+    if (Array.isArray(entities) && entities.includes(ent)) return true;
+    if (Array.isArray(rabbits) && rabbits.includes(ent)) return true;
+    if (Array.isArray(foxes) && foxes.includes(ent)) return true;
+    if (Array.isArray(enemies) && enemies.includes(ent)) return true;
+    return false;
+  } catch (e) { return false; }
+}
+
+function _isSelectableEntity(ent) {
+  try {
+    if (!ent || typeof ent !== 'object') return false;
+    if (ent.kind === 'building' || ent.nonInteractive || ent.kind === 'ambient') return false;
+    return _isEntityReferenceFromCollections(ent);
+  } catch (e) { return false; }
+}
+
+function _entitySelectionKey(ent) {
+  try {
+    if (!ent) return 'null';
+    if (ent.id) return String(ent.id);
+    const kind = String(ent.kind || 'entity');
+    const col = (typeof ent.col === 'number') ? ent.col : (typeof ent.x === 'number' ? Math.floor(ent.x) : -1);
+    const row = (typeof ent.row === 'number') ? ent.row : (typeof ent.y === 'number' ? Math.floor(ent.y) : -1);
+    return `${kind}:${col},${row}`;
+  } catch (e) { return 'entity:unknown'; }
+}
+
 function _getSelectedEntities() {
   try {
     const list = Array.isArray(window._selectedEntities) ? window._selectedEntities : [];
     const seen = new Set();
     const out = [];
     for (const ent of list) {
-      if (!ent || !_isControllableUnit(ent)) continue;
-      const key = ent.id || `${ent.kind}:${ent.col},${ent.row}`;
+      if (!ent || !_isSelectableEntity(ent)) continue;
+      const key = _entitySelectionKey(ent);
       if (seen.has(key)) continue;
       seen.add(key);
       out.push(ent);
@@ -277,8 +307,8 @@ function _setSelectedEntities(list, append = false) {
     const seen = new Set();
     const out = [];
     for (const ent of merged) {
-      if (!ent || !_isControllableUnit(ent)) continue;
-      const key = ent.id || `${ent.kind}:${ent.col},${ent.row}`;
+      if (!ent || !_isSelectableEntity(ent)) continue;
+      const key = _entitySelectionKey(ent);
       if (seen.has(key)) continue;
       seen.add(key);
       out.push(ent);
@@ -288,6 +318,35 @@ function _setSelectedEntities(list, append = false) {
     try { if (window.renderNPCList) window.renderNPCList(); } catch (e) {}
     return out;
   } catch (e) { return []; }
+}
+
+function _toggleSelectedEntity(ent) {
+  try {
+    if (!ent || !_isSelectableEntity(ent)) return _getSelectedEntities();
+    const list = _getSelectedEntities();
+    const key = _entitySelectionKey(ent);
+    const exists = list.some(item => _entitySelectionKey(item) === key);
+    if (exists) return _setSelectedEntities(list.filter(item => _entitySelectionKey(item) !== key), false);
+    return _setSelectedEntities(list.concat([ent]), false);
+  } catch (e) { return _getSelectedEntities(); }
+}
+
+function _collectSelectableEntitiesInRect(minX, minY, maxX, maxY) {
+  const selected = [];
+  const pushIfInside = (ent) => {
+    try {
+      if (!ent || !_isSelectableEntity(ent)) return;
+      const ex = (typeof ent.x === 'number') ? ent.x : ent.col;
+      const ey = (typeof ent.y === 'number') ? ent.y : ent.row;
+      if (typeof ex !== 'number' || typeof ey !== 'number') return;
+      if (ex >= minX && ex <= maxX && ey >= minY && ey <= maxY) selected.push(ent);
+    } catch (e) {}
+  };
+  try { for (const ent of (entities || [])) pushIfInside(ent); } catch (e) {}
+  try { for (const ent of (rabbits || [])) pushIfInside(ent); } catch (e) {}
+  try { for (const ent of (foxes || [])) pushIfInside(ent); } catch (e) {}
+  try { for (const ent of (enemies || [])) pushIfInside(ent); } catch (e) {}
+  return selected;
 }
 
 function _getSelectedNPCs() {
@@ -315,7 +374,7 @@ function _assignTaskToNPCs(npcs, actionId) {
 
 function _issueGroupMoveCommand(tx, ty, opts = {}) {
   try {
-    const units = _getSelectedEntities();
+    const units = _getSelectedEntities().filter(_isControllableUnit);
     if (!units.length) return 0;
     const radius = opts.radius || 0.75;
     const n = units.length;
@@ -941,6 +1000,454 @@ function getBiomeFillColor(biome) {
   return '#C4A878';
 }
 
+function withAlpha(hexColor, alpha) {
+  try {
+    const hex = String(hexColor || '').trim();
+    if (!hex.startsWith('#')) return hexColor;
+    const normalized = hex.length === 4
+      ? `#${hex[1]}${hex[1]}${hex[2]}${hex[2]}${hex[3]}${hex[3]}`
+      : hex;
+    const value = normalized.slice(1);
+    const r = parseInt(value.slice(0, 2), 16);
+    const g = parseInt(value.slice(2, 4), 16);
+    const b = parseInt(value.slice(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  } catch (e) {
+    return hexColor;
+  }
+}
+
+function getMapTerrainMeta(terrainId) {
+  return MAP_EDITOR_TERRAINS.find(t => t.id === terrainId) || MAP_EDITOR_TERRAINS[0];
+}
+
+function getMapTerrainLabel(terrainId) {
+  return getMapTerrainMeta(terrainId).label;
+}
+
+function getMapBrushCells(centerCol, centerRow) {
+  const radius = Math.max(0, Number(mapEditorBrushSize || 1) - 1);
+  const cells = [];
+  for (let row = centerRow - radius; row <= centerRow + radius; row++) {
+    for (let col = centerCol - radius; col <= centerCol + radius; col++) {
+      if (col < 0 || col >= COLS || row < 0 || row >= ROWS) continue;
+      if (radius > 0 && Math.hypot(col - centerCol, row - centerRow) > radius + 0.25) continue;
+      cells.push({ col, row });
+    }
+  }
+  return cells;
+}
+
+function updateMapEditorUI() {
+  try {
+    const toggleBtn = document.getElementById('btn-map-editor-toggle');
+    const shortcutBtn = document.getElementById('btn-map-editor-shortcut');
+    const statusEl = document.getElementById('map-editor-status');
+    const sizeInput = document.getElementById('map-editor-brush-size');
+    const sizeLabel = document.getElementById('map-editor-brush-size-label');
+    if (toggleBtn) {
+      toggleBtn.classList.toggle('active', mapEditorEnabled);
+      toggleBtn.textContent = mapEditorEnabled ? 'Desactivar editor' : 'Activar editor';
+    }
+    if (shortcutBtn) shortcutBtn.classList.toggle('active', mapEditorEnabled);
+    if (sizeInput) sizeInput.value = String(mapEditorBrushSize);
+    if (sizeLabel) sizeLabel.textContent = String(mapEditorBrushSize);
+    document.querySelectorAll('.map-editor-terrain').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.terrain === mapEditorBrush);
+    });
+    if (statusEl) {
+      if (!editMode) statusEl.textContent = 'Activa el modo edición para pintar el mapa manualmente.';
+      else if (mapEditorEnabled) statusEl.textContent = `Pincel ${getMapTerrainLabel(mapEditorBrush)} · tamaño ${mapEditorBrushSize}. Arrastra sobre el mapa para pintar.`;
+      else statusEl.textContent = 'Pulsa “Activar editor” para dibujar biomas y caminos a mano.';
+    }
+  } catch (e) {}
+}
+
+function setMapEditorBrush(terrainId) {
+  const meta = getMapTerrainMeta(terrainId);
+  mapEditorBrush = meta.id;
+  updateMapEditorUI();
+}
+
+function setMapEditorEnabled(enabled, options = {}) {
+  const next = !!enabled;
+  mapEditorEnabled = next;
+  if (next) {
+    if (!editMode) setEditMode(true);
+    selectedTool = null;
+    try { document.querySelectorAll('.build-btn, #btn-demolish').forEach(b => b.classList.remove('selected')); } catch (e) {}
+  }
+  mapEditorPainting = false;
+  mapEditorLastPaintKey = null;
+  updateMapEditorUI();
+  if (!options.silent) notify(next ? `Editor de mapa activo: ${getMapTerrainLabel(mapEditorBrush)}.` : 'Editor de mapa desactivado.');
+}
+
+function pruneEditedTerrainEntities(cells, terrainId) {
+  try {
+    const edited = new Set(cells.map(cell => `${cell.col},${cell.row}`));
+    for (let i = entities.length - 1; i >= 0; i--) {
+      const ent = entities[i];
+      if (!ent) continue;
+      const col = (typeof ent.col === 'number') ? ent.col : (typeof ent.x === 'number' ? Math.floor(ent.x) : null);
+      const row = (typeof ent.row === 'number') ? ent.row : (typeof ent.y === 'number' ? Math.floor(ent.y) : null);
+      if (col === null || row === null || !edited.has(`${col},${row}`)) continue;
+      if (ent.kind === 'tree' || ent.kind === 'ambient' || (terrainId === 'water' && ent.kind === 'resource')) entities.splice(i, 1);
+    }
+  } catch (e) {}
+}
+
+function paintTerrainAt(centerCol, centerRow) {
+  if ((startLocked && !window._standaloneEditorMode) || !editMode || !mapEditorEnabled) return 0;
+  if (centerCol < 0 || centerCol >= COLS || centerRow < 0 || centerRow >= ROWS) return 0;
+  const cells = getMapBrushCells(centerCol, centerRow);
+  const targetHeight = MAP_EDITOR_HEIGHT_PRESETS[mapEditorBrush];
+  const changed = [];
+  for (const cell of cells) {
+    const { col, row } = cell;
+    if (grid[row] && grid[row][col]) continue;
+    const currentBiome = (tileBiome[row] && tileBiome[row][col]) || 'alluvial';
+    const currentHeight = (heightMap[row] && typeof heightMap[row][col] === 'number') ? heightMap[row][col] : null;
+    const nextHeight = (typeof targetHeight === 'number') ? targetHeight : currentHeight;
+    if (currentBiome === mapEditorBrush && currentHeight === nextHeight) continue;
+    tileBiome[row][col] = mapEditorBrush;
+    if (typeof nextHeight === 'number') heightMap[row][col] = nextHeight;
+    changed.push(cell);
+  }
+  if (!changed.length) return 0;
+  pruneEditedTerrainEntities(changed, mapEditorBrush);
+  mapCacheDirty = true;
+  try { rebuildMapCacheDebounced(20); } catch (e) {}
+  try { saveAppStateDebounced(500); } catch (e) {}
+  try { render(); } catch (e) {}
+  return changed.length;
+}
+
+function cloneMapDesignValue(value, fallback) {
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch (e) {
+    return fallback;
+  }
+}
+
+function getMapDesignObject() {
+  return {
+    meta: {
+      type: 'mesobuilder-map-design',
+      version: 2,
+      exportedAt: new Date().toISOString(),
+      epoch: window._currentEpoch || 'mesopotamia'
+    },
+    epoch: window._currentEpoch || 'mesopotamia',
+    cols: COLS,
+    rows: ROWS,
+    tileBiome: tileBiome.map(row => row.slice()),
+    heightMap: heightMap.map(row => row.slice()),
+    grid: cloneMapDesignValue(grid, []),
+    entities: cloneMapDesignValue(entities || [], []),
+    villages: cloneMapDesignValue(window._VILLAGES || [], []),
+    player: {
+      col: player.col,
+      row: player.row,
+      x: player.x,
+      y: player.y
+    }
+  };
+}
+
+function exportMapDesign() {
+  try {
+    const data = getMapDesignObject();
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `meso-map-design-${stamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      try { a.remove(); } catch (e) {}
+      try { URL.revokeObjectURL(url); } catch (e) {}
+    }, 300);
+    notify('Diseño de mapa exportado.');
+  } catch (e) {
+    console.error('exportMapDesign', e);
+    notify('No se pudo exportar el diseño del mapa.');
+  }
+}
+
+function importMapDesignFromObject(data, options = {}) {
+  try {
+    const source = (data && data.tileBiome) ? data : (data && data.mapDesign && data.mapDesign.tileBiome ? data.mapDesign : null);
+    if (!source || !Array.isArray(source.tileBiome)) throw new Error('Formato de diseño no válido');
+    if (source.epoch && !options.skipEpochApply && source.epoch !== (window._currentEpoch || 'mesopotamia')) {
+      try { applyEpochProfile(source.epoch, true); } catch (e) {}
+    }
+    const copyRows = Math.min(ROWS, source.tileBiome.length);
+    for (let r = 0; r < copyRows; r++) {
+      const row = Array.isArray(source.tileBiome[r]) ? source.tileBiome[r].slice(0, COLS) : Array(COLS).fill('alluvial');
+      while (row.length < COLS) row.push('alluvial');
+      tileBiome[r] = row;
+    }
+    for (let r = copyRows; r < ROWS; r++) tileBiome[r] = Array(COLS).fill('alluvial');
+    if (Array.isArray(source.heightMap)) {
+      const heightRows = Math.min(ROWS, source.heightMap.length);
+      for (let r = 0; r < heightRows; r++) {
+        const row = Array.isArray(source.heightMap[r]) ? source.heightMap[r].slice(0, COLS) : Array(COLS).fill(0.12);
+        while (row.length < COLS) row.push(0.12);
+        heightMap[r] = row.map(v => (typeof v === 'number' ? Math.max(0, Math.min(1, v)) : 0.12));
+      }
+      for (let r = heightRows; r < ROWS; r++) heightMap[r] = Array(COLS).fill(0.12);
+    }
+    if (Array.isArray(source.grid)) {
+      const gridRows = Math.min(ROWS, source.grid.length);
+      for (let r = 0; r < gridRows; r++) {
+        const row = Array.isArray(source.grid[r]) ? source.grid[r].slice(0, COLS) : Array(COLS).fill(null);
+        while (row.length < COLS) row.push(null);
+        grid[r] = row.map(cell => (cell ? cloneMapDesignValue(cell, null) : null));
+      }
+      for (let r = gridRows; r < ROWS; r++) grid[r] = Array(COLS).fill(null);
+    }
+    if (Object.prototype.hasOwnProperty.call(source, 'entities') && Array.isArray(source.entities)) {
+      try {
+        entities.length = 0;
+        source.entities.forEach(ent => {
+          if (!ent || typeof ent !== 'object') return;
+          const it = cloneMapDesignValue(ent, null);
+          if (!it) return;
+          if (typeof it.col !== 'number') it.col = (typeof it.x === 'number') ? Math.floor(it.x) : 0;
+          if (typeof it.row !== 'number') it.row = (typeof it.y === 'number') ? Math.floor(it.y) : 0;
+          it.x = typeof it.x === 'number' ? it.x : it.col;
+          it.y = typeof it.y === 'number' ? it.y : it.row;
+          entities.push(it);
+        });
+      } catch (e) {}
+    }
+    if (Object.prototype.hasOwnProperty.call(source, 'villages') && Array.isArray(source.villages)) {
+      try { window._VILLAGES = cloneMapDesignValue(source.villages, []); } catch (e) {}
+    }
+    if (source.player && typeof source.player === 'object') {
+      try {
+        const px = typeof source.player.x === 'number' ? source.player.x : source.player.col;
+        const py = typeof source.player.y === 'number' ? source.player.y : source.player.row;
+        if (typeof px === 'number' && typeof py === 'number') {
+          player.x = px;
+          player.y = py;
+          player.col = Math.floor(px);
+          player.row = Math.floor(py);
+        }
+      } catch (e) {}
+    }
+    try { rebuildInteriorDoorsFromGrid(); } catch (e) {}
+    mapCacheDirty = true;
+    try { rebuildMapCacheDebounced(10); } catch (e) {}
+    try { saveAppStateDebounced(10); } catch (e) {}
+    try { updateBuildMenuFromGrid(); } catch (e) {}
+    try { updateUI(); } catch (e) {}
+    try { updateCharCard(); } catch (e) {}
+    try { render(); } catch (e) {}
+    updateMapEditorUI();
+    notify('Diseño de mapa importado.');
+  } catch (e) {
+    console.error('importMapDesignFromObject', e);
+    notify('El archivo de diseño no es válido.');
+  }
+}
+
+function syncSelectedToolButtons() {
+  try {
+    document.querySelectorAll('.build-btn').forEach(btn => btn.classList.toggle('selected', btn.dataset.type === selectedTool));
+    const demolishBtn = document.getElementById('btn-demolish');
+    if (demolishBtn) demolishBtn.classList.toggle('selected', selectedTool === 'demolish');
+  } catch (e) {}
+}
+
+function resetWorldForProceduralEditor() {
+  try { if (grid && grid.length) { for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) grid[r][c] = null; } } catch (e) {}
+  try { if (entities && entities.length >= 0) entities.length = 0; } catch (e) {}
+  try { rabbits.length = 0; foxes.length = 0; } catch (e) {}
+  try { window._VILLAGES = []; } catch (e) {}
+  try { window.MAP_CHUNKS = {}; mapCacheDirty = true; } catch (e) {}
+}
+
+function ensureStandaloneEditorSandboxState() {
+  try { startLocked = false; } catch (e) {}
+  try {
+    res.wheat = Math.max(Number(res.wheat) || 0, 999999);
+    res.brick = Math.max(Number(res.brick) || 0, 999999);
+    res.pop = Math.max(Number(res.pop) || 0, 5000);
+  } catch (e) {}
+  try { setEditMode(true); } catch (e) {}
+  try { updateUI(); } catch (e) {}
+}
+
+function getStandaloneEditorBuildingScale() {
+  if (!window._standaloneEditorMode) return 1;
+  const value = Number(standaloneEditorBuildingScale);
+  if (!Number.isFinite(value)) return 1;
+  return Math.max(0.5, Math.min(2.5, value));
+}
+
+function setStandaloneEditorBuildingScale(scale) {
+  const value = Number(scale);
+  standaloneEditorBuildingScale = Number.isFinite(value) ? Math.max(0.5, Math.min(2.5, value)) : 1;
+  try { render(); } catch (e) {}
+  return standaloneEditorBuildingScale;
+}
+
+function getStandaloneEditorEntityScale() {
+  if (!window._standaloneEditorMode) return 1;
+  const value = Number(standaloneEditorEntityScale);
+  if (!Number.isFinite(value)) return 1;
+  return Math.max(0.5, Math.min(2.5, value));
+}
+
+function setStandaloneEditorEntityScale(scale) {
+  const value = Number(scale);
+  standaloneEditorEntityScale = Number.isFinite(value) ? Math.max(0.5, Math.min(2.5, value)) : 1;
+  try { render(); } catch (e) {}
+  return standaloneEditorEntityScale;
+}
+
+function regenerateProceduralMapForEditor(epochId) {
+  try {
+    if (epochId) applyEpochProfile(epochId, true);
+  } catch (e) {}
+  ensureStandaloneEditorSandboxState();
+  resetWorldForProceduralEditor();
+  generateMap('random');
+  ensureStandaloneEditorSandboxState();
+  try { setMapEditorEnabled(false, { silent: true }); } catch (e) {}
+  try { selectedTool = null; syncSelectedToolButtons(); } catch (e) {}
+  try { updateUI(); } catch (e) {}
+  try { updateCharCard(); } catch (e) {}
+  try { renderActionList(); } catch (e) {}
+  try { updateInventory(); } catch (e) {}
+  try { rebuildMapSceneTriggers(); } catch (e) {}
+  try { updateBuildMenuFromGrid(); } catch (e) {}
+  try { centerCamera(); } catch (e) {}
+  try { rebuildMapCacheDebounced(10); } catch (e) {}
+  try { render(); } catch (e) {}
+  try { saveAppStateDebounced(10); } catch (e) {}
+  return getMapDesignObject();
+}
+
+function setStandaloneBuildTool(type) {
+  ensureStandaloneEditorSandboxState();
+  if (!type) {
+    selectedTool = null;
+  } else if (type === 'demolish') {
+    selectedTool = 'demolish';
+  } else {
+    if (mapEditorEnabled) setMapEditorEnabled(false, { silent: true });
+    selectedTool = type;
+  }
+  syncSelectedToolButtons();
+  return selectedTool;
+}
+
+function getStandaloneBuildPalette(epochId) {
+  const palette = getEpochBuildPalette(epochId || window._currentEpoch || 'mesopotamia');
+  return palette.map(type => ({
+    id: type,
+    resolvedId: resolveEpochBuildingType(type, epochId),
+    ...getBuildingDisplay(type)
+  }));
+}
+
+function refreshStandaloneEditorApi() {
+  try {
+    window.MESO_MAP_EDITOR_API = {
+      ready: true,
+      getEpoch: () => window._currentEpoch || 'mesopotamia',
+      setEpoch: (epochId) => { try { applyEpochProfile(epochId || 'mesopotamia', true); } catch (e) {} return window._currentEpoch || 'mesopotamia'; },
+      regenerateProceduralMap: (epochId) => regenerateProceduralMapForEditor(epochId),
+      enableTerrainBrush: (terrainId, size) => {
+        ensureStandaloneEditorSandboxState();
+        if (terrainId) setMapEditorBrush(terrainId);
+        if (typeof size === 'number') mapEditorBrushSize = Math.max(1, Math.min(6, Math.round(size)));
+        setMapEditorEnabled(true, { silent: true });
+        updateMapEditorUI();
+        return { brush: mapEditorBrush, brushSize: mapEditorBrushSize };
+      },
+      disableTerrainBrush: () => { try { setMapEditorEnabled(false, { silent: true }); } catch (e) {} return true; },
+      setBrushSize: (size) => { mapEditorBrushSize = Math.max(1, Math.min(6, Math.round(size || 1))); updateMapEditorUI(); return mapEditorBrushSize; },
+      setBuildingScale: (scale) => setStandaloneEditorBuildingScale(scale),
+      getBuildingScale: () => getStandaloneEditorBuildingScale(),
+      setEntityScale: (scale) => setStandaloneEditorEntityScale(scale),
+      getEntityScale: () => getStandaloneEditorEntityScale(),
+      selectBuildTool: (type) => setStandaloneBuildTool(type),
+      clearTool: () => setStandaloneBuildTool(null),
+      getBuildPalette: (epochId) => getStandaloneBuildPalette(epochId),
+      exportMapDesignData: () => getMapDesignObject(),
+      importMapDesignData: (data) => { ensureStandaloneEditorSandboxState(); return importMapDesignFromObject(data); },
+      savePendingMapDesign: () => getMapDesignObject()
+    };
+  } catch (e) {}
+}
+
+function setupMapEditorUI() {
+  try {
+    const toggleBtn = document.getElementById('btn-map-editor-toggle');
+    const shortcutBtn = document.getElementById('btn-map-editor-shortcut');
+    const exportBtn = document.getElementById('btn-map-editor-export');
+    const importBtn = document.getElementById('btn-map-editor-import');
+    const importInput = document.getElementById('map-editor-import-input');
+    const sizeInput = document.getElementById('map-editor-brush-size');
+    if (toggleBtn && !toggleBtn.dataset.bound) {
+      toggleBtn.dataset.bound = '1';
+      toggleBtn.addEventListener('click', () => setMapEditorEnabled(!mapEditorEnabled));
+    }
+    if (shortcutBtn && !shortcutBtn.dataset.bound) {
+      shortcutBtn.dataset.bound = '1';
+      shortcutBtn.addEventListener('click', () => setMapEditorEnabled(!mapEditorEnabled));
+    }
+    if (exportBtn && !exportBtn.dataset.bound) {
+      exportBtn.dataset.bound = '1';
+      exportBtn.addEventListener('click', () => exportMapDesign());
+    }
+    if (importBtn && importInput && !importBtn.dataset.bound) {
+      importBtn.dataset.bound = '1';
+      importBtn.addEventListener('click', () => importInput.click());
+    }
+    if (importInput && !importInput.dataset.bound) {
+      importInput.dataset.bound = '1';
+      importInput.addEventListener('change', async (ev) => {
+        try {
+          const file = ev.target && ev.target.files && ev.target.files[0];
+          if (!file) return;
+          const text = await file.text();
+          importMapDesignFromObject(JSON.parse(text));
+        } catch (e) {
+          console.error('map editor import', e);
+          notify('No se pudo leer el archivo del mapa.');
+        } finally {
+          try { importInput.value = ''; } catch (e) {}
+        }
+      });
+    }
+    if (sizeInput && !sizeInput.dataset.bound) {
+      sizeInput.dataset.bound = '1';
+      sizeInput.addEventListener('input', () => {
+        mapEditorBrushSize = Math.max(1, Math.min(6, parseInt(sizeInput.value || '1', 10) || 1));
+        updateMapEditorUI();
+      });
+    }
+    document.querySelectorAll('.map-editor-terrain').forEach(btn => {
+      if (btn.dataset.bound) return;
+      btn.dataset.bound = '1';
+      btn.addEventListener('click', () => {
+        setMapEditorBrush(btn.dataset.terrain || 'alluvial');
+        if (!mapEditorEnabled) setMapEditorEnabled(true, { silent: true });
+        updateMapEditorUI();
+      });
+    });
+    updateMapEditorUI();
+  } catch (e) { console.error('setupMapEditorUI', e); }
+}
+
 // Async chunked terrain cache builder – yields every BATCH rows so the main
 // thread stays responsive. Builds BOTH ortho and iso caches in one call.
 async function rebuildMapCachesAsync() {
@@ -1229,6 +1736,35 @@ const grid = Array.from({length:ROWS}, () => Array(COLS).fill(null));
 let selectedTool = null;   // building type or 'demolish'
 let turn = 1;
 let hoverCell = null;
+const MAP_EDITOR_TERRAINS = [
+  { id: 'alluvial', label: 'Aluvial', desc: 'Llanura fértil para barrios y cultivo.' },
+  { id: 'riparian', label: 'Ribera', desc: 'Franja verde junto al agua.' },
+  { id: 'marsh', label: 'Pantano', desc: 'Suelo húmedo y lento para moverse.' },
+  { id: 'saline', label: 'Salino', desc: 'Terreno seco y blanquecino.' },
+  { id: 'steppe', label: 'Estepa', desc: 'Zona abierta y árida.' },
+  { id: 'hills', label: 'Colinas', desc: 'Relieve elevado para romper la planicie.' },
+  { id: 'forest', label: 'Bosque', desc: 'Cobertura vegetal densa.' },
+  { id: 'water', label: 'Agua', desc: 'Canales, lagunas o brazos de río manuales.' },
+  { id: 'road', label: 'Camino', desc: 'Traza rutas y calles sin colocar edificios.' }
+];
+const MAP_EDITOR_HEIGHT_PRESETS = {
+  alluvial: 0.12,
+  riparian: 0.14,
+  marsh: 0.08,
+  saline: 0.18,
+  steppe: 0.42,
+  hills: 0.78,
+  forest: 0.34,
+  water: 0.02,
+  road: 0.1
+};
+let mapEditorEnabled = false;
+let mapEditorBrush = 'alluvial';
+let mapEditorBrushSize = 2;
+let mapEditorPainting = false;
+let mapEditorLastPaintKey = null;
+let standaloneEditorBuildingScale = 1;
+let standaloneEditorEntityScale = 1;
 // utility globals for effects and NPC villages
 window.floatingTexts = window.floatingTexts || [];
 window.effectParticles = window.effectParticles || [];
@@ -1721,6 +2257,7 @@ function saveAppState() {
       epoch: window._currentEpoch || 'mesopotamia',
       startLocked: !!startLocked,
       editMode: !!editMode,
+      mapEditor: { enabled: !!mapEditorEnabled, brush: mapEditorBrush, brushSize: mapEditorBrushSize },
       camera: { camX: camX, camY: camY, zoom: zoom },
       selectedTool: selectedTool,
       tileBiome,
@@ -1879,7 +2416,15 @@ function loadAppState() {
       try { if (typeof s.turn === 'number') turn = s.turn; } catch (e) {}
       try { startLocked = !!s.startLocked; } catch (e) {}
       try { editMode = (typeof s.editMode !== 'undefined') ? s.editMode : editMode; } catch (e) {}
+      try {
+        if (s.mapEditor && typeof s.mapEditor === 'object') {
+          if (s.mapEditor.brush) mapEditorBrush = getMapTerrainMeta(s.mapEditor.brush).id;
+          if (typeof s.mapEditor.brushSize === 'number') mapEditorBrushSize = Math.max(1, Math.min(6, Math.round(s.mapEditor.brushSize)));
+          mapEditorEnabled = false;
+        }
+      } catch (e) {}
     } catch (e) {}
+    try { updateMapEditorUI(); } catch (e) {}
     return s;
   } catch (err) { return null; }
 }
@@ -1907,6 +2452,7 @@ function exportGameToFile() {
       floatingTexts: window.floatingTexts || [],
       villages: window._VILLAGES || [],
       camera: { camX, camY, zoom },
+      mapEditor: { enabled: mapEditorEnabled, brush: mapEditorBrush, brushSize: mapEditorBrushSize },
       selectedTool,
       epoch: window._currentEpoch || 'mesopotamia',
       FLOATING_PANELS: Object.keys(window.FLOATING_PANELS || {})
@@ -2581,15 +3127,18 @@ function drawRegisteredIcon(ctx, name, w, h) {
 }
 
 // Draw a registered sprite centered at world coords (x,y) using caches or pixel defs
-function drawEntitySpriteAt(name, x, y, w, h) {
+function drawEntitySpriteAt(name, x, y, w, h, options) {
   try {
+    const standaloneScale = (options && options.ignoreEntityScale) ? 1 : getStandaloneEditorEntityScale();
+    const drawW = w * standaloneScale;
+    const drawH = h * standaloneScale;
     const hasLibDef = !!(window.ENTITY_PIXEL_LIBRARY && window.ENTITY_PIXEL_LIBRARY[name]);
     // If this sprite comes from entity-pixels library, prefer live canvases over persisted cache
     let img = null;
     if (hasLibDef) {
       img = (window._ENTITY_BITMAPS && window._ENTITY_BITMAPS[name]) || (window._ICON_BITMAPS && window._ICON_BITMAPS[name]);
       if (!img) {
-        try { img = window.createCanvasFromPixelDef(window.ENTITY_PIXEL_LIBRARY[name], name, Math.min(w, h)); } catch (e) {}
+        try { img = window.createCanvasFromPixelDef(window.ENTITY_PIXEL_LIBRARY[name], name, Math.min(drawW, drawH)); } catch (e) {}
       }
     } else {
       // for non-library assets, keep existing priority
@@ -2602,28 +3151,28 @@ function drawEntitySpriteAt(name, x, y, w, h) {
       // draw a subtle shadow so sprites feel grounded
       try {
         const sx = Math.round(x);
-        const sy = Math.round(y - Math.max(6, h * 0.06));
+        const sy = Math.round(y - Math.max(6, drawH * 0.06));
         ctx.save();
         ctx.fillStyle = 'rgba(0,0,0,0.28)';
         ctx.beginPath();
-        ctx.ellipse(sx, sy, Math.round(w * 0.45), Math.max(4, Math.round(h * 0.08)), 0, 0, Math.PI * 2);
+        ctx.ellipse(sx, sy, Math.round(drawW * 0.45), Math.max(4, Math.round(drawH * 0.08)), 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
       } catch (e) {}
-      const px = Math.round(x - w/2);
-      const py = Math.round(y - h + (h*0.08));
-      ctx.drawImage(img, px, py, w, h);
+      const px = Math.round(x - drawW/2);
+      const py = Math.round(y - drawH + (drawH*0.08));
+      ctx.drawImage(img, px, py, drawW, drawH);
       try { window._entitiesDrawn = (window._entitiesDrawn || 0) + 1; } catch (e) {}
       ctx.restore();
       return;
     }
     // fallback to pixel library rendering into an offscreen canvas
     if (window.ENTITY_PIXEL_LIBRARY && window.ENTITY_PIXEL_LIBRARY[name]) {
-      const c = window.createCanvasFromPixelDef(window.ENTITY_PIXEL_LIBRARY[name], name, Math.min(w,h));
+      const c = window.createCanvasFromPixelDef(window.ENTITY_PIXEL_LIBRARY[name], name, Math.min(drawW,drawH));
         if (c) {
-        const px = Math.round(x - w/2);
-        const py = Math.round(y - h + (h*0.08));
-        ctx.drawImage(c, px, py, w, h);
+        const px = Math.round(x - drawW/2);
+        const py = Math.round(y - drawH + (drawH*0.08));
+        ctx.drawImage(c, px, py, drawW, drawH);
           try { window._entitiesDrawn = (window._entitiesDrawn || 0) + 1; } catch (e) {}
         ctx.restore();
         return;
@@ -2649,6 +3198,7 @@ function hasRegisteredSprite(name) {
 // Debug HUD overlay: shows FPS, ms/frame, draw counts and particle/entity counts
 function createDebugHUD() {
   try {
+    if (window._standaloneEditorMode) return;
     if (document.getElementById('debug-hud')) return;
     const el = document.createElement('div'); el.id = 'debug-hud';
     el.style.position = 'fixed'; el.style.right = '8px'; el.style.top = '8px'; el.style.zIndex = 2147483647;
@@ -2896,6 +3446,7 @@ function drawWheatIcon(ctx, w, h) {
 
 // ── CRAFTING PANEL ───────────────────────────────────────
 function createCraftingPanel() {
+  if (window._standaloneEditorMode) return;
   if (document.getElementById('crafting-panel')) return;
   const panel = document.createElement('div'); panel.id = 'crafting-panel';
   panel.setAttribute('data-title', 'Crafteo');
@@ -4650,15 +5201,16 @@ function drawBuilding(col, row, type, alpha) {
   if (!b) return;
   const { x, y } = worldToScreen(col, row);
   const baseT = getTileSize();
-  const DT = baseT * BUILDING_SCALE; // draw tile size (scaled up)
+  const editorScale = getStandaloneEditorBuildingScale();
+  const DT = baseT * BUILDING_SCALE * editorScale; // draw tile size (scaled up)
   const size = getBuildingSize(type);
   // For isometric view, build width/height in pixels must use iso tile dims
   let W = DT * size.w;
   let H = DT * size.h;
   if (viewMode === 'iso') {
     const iso = getIsoTileSize();
-    W = iso.w * BUILDING_SCALE * size.w;
-    H = iso.h * BUILDING_SCALE * size.h;
+    W = iso.w * BUILDING_SCALE * editorScale * size.w;
+    H = iso.h * BUILDING_SCALE * editorScale * size.h;
   }
 
   // Per-building visual scale tweaks (render-only; does not change footprint/collision)
@@ -4698,7 +5250,7 @@ function drawBuilding(col, row, type, alpha) {
           ctx.restore();
         } catch (e) {}
       } else {
-        drawEntitySpriteAt(useKey, x + W * 0.5, y + H, W, H);
+        drawEntitySpriteAt(useKey, x + W * 0.5, y + H, W, H, { ignoreEntityScale: true });
       }
       ctx.restore();
       return;
@@ -4873,7 +5425,7 @@ function drawBuilding(col, row, type, alpha) {
     if (viewMode === 'iso' && zoom < 0.6) {
       try { ctx.save(); ctx.fillStyle = b.color || '#C8A84B'; ctx.fillRect(Math.round(x - W * 0.5), Math.round(y + (getIsoTileSize().h * 0.2)), Math.round(W), Math.round(H * 0.6)); ctx.restore(); } catch(e) {}
     } else {
-      drawEntitySpriteAt(spriteKey, x + W * 0.5, y + H, W, H);
+      drawEntitySpriteAt(spriteKey, x + W * 0.5, y + H, W, H, { ignoreEntityScale: true });
     }
     ctx.restore();
     return;
@@ -7442,6 +7994,20 @@ function render() {
       }
     }
   }
+  if (editMode && hoverCell && mapEditorEnabled) {
+    const previewFill = withAlpha(getBiomeFillColor(mapEditorBrush), 0.28);
+    const previewStroke = withAlpha(getBiomeFillColor(mapEditorBrush), 0.92);
+    for (const cell of getMapBrushCells(hoverCell.col, hoverCell.row)) {
+      const blocked = !!(grid[cell.row] && grid[cell.row][cell.col]);
+      drawTileHighlight(
+        cell.col,
+        cell.row,
+        blocked ? 'rgba(200,50,50,0.28)' : previewFill,
+        blocked ? 'rgba(200,50,50,0.9)' : previewStroke,
+        2
+      );
+    }
+  }
   if (editMode && hoverCell && selectedTool && selectedTool !== 'demolish') {
     const { col, row } = hoverCell;
     if (col >= 0 && col < COLS && row >= 0 && row < ROWS) {
@@ -7771,6 +8337,7 @@ function render() {
 //  GAME LOGIC
 // ═══════════════════════════════════════════════════════════════
 function canBuild(type) {
+  if (window._standaloneEditorMode) return true;
   const b = BUILDINGS[resolveEpochBuildingType(type)] || BUILDINGS[type];
   if (!b) return false;
   return res.brick >= b.costBrick && res.wheat >= b.costWheat;
@@ -7885,7 +8452,7 @@ function startDefenseMode() {
 try { window.startDefenseMode = startDefenseMode; window.spawnWave = spawnWave; window.spawnEnemy = spawnEnemy; } catch (e) {}
 
 function placeBuild(col, row) {
-  if (startLocked) return;
+  if (startLocked && !window._standaloneEditorMode) return;
   if (!editMode) return;
   if (!selectedTool || selectedTool === 'demolish') return;
   if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return;
@@ -7895,8 +8462,10 @@ function placeBuild(col, row) {
   }
   const effectiveType = resolveEpochBuildingType(selectedTool);
   const b = BUILDINGS[effectiveType] || BUILDINGS[selectedTool];
-  res.brick -= b.costBrick;
-  res.wheat -= b.costWheat;
+  if (!window._standaloneEditorMode) {
+    res.brick -= b.costBrick;
+    res.wheat -= b.costWheat;
+  }
   setBuildingCells(col, row, effectiveType);
   updateUI();
   addLog(`Construido: ${getBuildingDisplay(effectiveType).name} en (${col},${row})`);
@@ -7917,7 +8486,7 @@ function placeBuild(col, row) {
 
 // Place multiple buildings inside a rect (attempts to place as many as resources allow)
 function placeBuildMultiple(rect) {
-  if (startLocked) return;
+  if (startLocked && !window._standaloneEditorMode) return;
   if (!editMode) return;
   if (!selectedTool || selectedTool === 'demolish') return;
   const size = getBuildingSize(selectedTool);
@@ -7931,8 +8500,10 @@ function placeBuildMultiple(rect) {
       // apply cost and set cells
       const effectiveType = resolveEpochBuildingType(selectedTool);
       const b = BUILDINGS[effectiveType] || BUILDINGS[selectedTool];
-      res.brick -= b.costBrick;
-      res.wheat -= b.costWheat;
+      if (!window._standaloneEditorMode) {
+        res.brick -= b.costBrick;
+        res.wheat -= b.costWheat;
+      }
       setBuildingCells(c, r, effectiveType);
       placed.push({c,r});
     }
@@ -7955,15 +8526,17 @@ function placeBuildMultiple(rect) {
 }
 
 function demolishCell(col, row) {
-  if (startLocked) return;
+  if (startLocked && !window._standaloneEditorMode) return;
   if (!editMode) return;
   if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return;
   const info = getCellInfo(col, row);
   if (!info) return;
   const type = info.type;
   const b = BUILDINGS[type];
-  res.brick += Math.floor(b.costBrick * 0.5);
-  res.wheat += Math.floor(b.costWheat * 0.5);
+  if (!window._standaloneEditorMode) {
+    res.brick += Math.floor(b.costBrick * 0.5);
+    res.wheat += Math.floor(b.costWheat * 0.5);
+  }
   clearBuildingCells(info.baseCol, info.baseRow, type);
   updateUI();
   addLog(`Demolido: ${b.name} en (${col},${row})`);
@@ -9182,6 +9755,11 @@ function showTooltip(col, row, mx, my) {
     if (!b) { tip.style.display = 'none'; console.warn('showTooltip: unknown selectedTool', selectedTool); return; }
     tip.innerHTML = `<b>${b.name}</b><br>Costo: 🧱${b.costBrick} 🌾${b.costWheat}<br>${b.desc}`;
     tip.style.display = 'block';
+  } else if (mapEditorEnabled) {
+    const terrain = tileBiome[row] && tileBiome[row][col] ? tileBiome[row][col] : 'alluvial';
+    const activeTerrain = getMapTerrainMeta(mapEditorBrush);
+    tip.innerHTML = `<b>Editor de mapa</b><br>Pincel: ${activeTerrain.label}<br>Zona actual: ${getMapTerrainLabel(terrain)}`;
+    tip.style.display = 'block';
   } else {
     tip.style.display = 'none';
     return;
@@ -9202,6 +9780,7 @@ function showTooltip(col, row, mx, my) {
 // ---------------------- UI helpers & persistence ----------------------
 // Create overlay controls (follow button, inventory panel, settings)
 function createOverlayUI() {
+  if (window._standaloneEditorMode) return;
   // Use the existing "Ir a jugador" button as the follow-toggle and add a zoom slider
   const centerBtn = document.getElementById('btn-center-player');
   if (centerBtn) {
@@ -9308,6 +9887,7 @@ function createOverlayUI() {
 
 // Ability bar and missions UI
 function createAbilityBarAndMissions() {
+  if (window._standaloneEditorMode) return;
   // ability state
   if (window.ABILITIES_INITIALIZED) return;
   window.ABILITIES_INITIALIZED = true;
@@ -9471,6 +10051,7 @@ function createAbilityBarAndMissions() {
 
 // Create a simple top menu bar with 'Ver', 'Ventanas' and 'Ajustes'
 function createMenuBar() {
+  if (window._standaloneEditorMode) return;
   if (document.getElementById('top-menubar')) return;
   const bar = document.createElement('div'); bar.id = 'top-menubar';
   bar.style.position = 'fixed'; bar.style.left = '0'; bar.style.top = '0'; bar.style.right = '0';
@@ -12299,7 +12880,7 @@ function drawCloudOverlay() {
 }
 
 canvas.addEventListener('mousemove', e => {
-  if (startLocked) return;
+  if (startLocked && !window._standaloneEditorMode) return;
   const ptr = getCanvasPointerPosition(e);
   const mx = ptr.x;
   const my = ptr.y;
@@ -12336,11 +12917,7 @@ canvas.addEventListener('mousemove', e => {
         const br = screenToWorldFloat(x + w, y + h);
         const minX = Math.min(tl.x, br.x), maxX = Math.max(tl.x, br.x);
         const minY = Math.min(tl.y, br.y), maxY = Math.max(tl.y, br.y);
-        let cnt = 0;
-        for (const en of (entities || [])) { try { if (en && en.x !== undefined && en.id && en.id.indexOf('npc-') === 0) { if (en.x >= minX && en.x <= maxX && en.y >= minY && en.y <= maxY) cnt++; } } catch (e) {} }
-        for (const rbt of (rabbits || [])) { try { if (rbt && rbt.x !== undefined) { if (rbt.x >= minX && rbt.x <= maxX && rbt.y >= minY && rbt.y <= maxY) cnt++; } } catch (e) {} }
-        for (const fx of (foxes || [])) { try { if (fx && fx.x !== undefined) { if (fx.x >= minX && fx.x <= maxX && fx.y >= minY && fx.y <= maxY) cnt++; } } catch (e) {} }
-        window._selectPreviewCount = cnt;
+        window._selectPreviewCount = _collectSelectableEntitiesInRect(minX, minY, maxX, maxY).length;
         try { _updateSelectionOverlay(_selectRect); } catch (e) {}
       } catch (ee) { window._selectPreviewCount = 0; }
     } catch (ex) {}
@@ -12375,6 +12952,16 @@ canvas.addEventListener('mousemove', e => {
   hoverCell = screenToWorld(mx, my);
   showTooltip(hoverCell.col, hoverCell.row, mxCss, myCss);
 
+  if (mapEditorPainting && editMode && mapEditorEnabled) {
+    const paintCol = Math.floor(hoverCell.col);
+    const paintRow = Math.floor(hoverCell.row);
+    const paintKey = `${paintCol},${paintRow}`;
+    if (paintKey !== mapEditorLastPaintKey) {
+      paintTerrainAt(paintCol, paintRow);
+      mapEditorLastPaintKey = paintKey;
+    }
+  }
+
   // update build drag selection when in edit mode
   if (isBuildDragging && buildDragStart) {
     const cur = screenToWorld(mx, my);
@@ -12389,7 +12976,7 @@ canvas.addEventListener('mousemove', e => {
 });
 
 canvas.addEventListener('mousedown', e => {
-  if (startLocked) return;
+  if (startLocked && !window._standaloneEditorMode) return;
   if (e.button === 1 || (e.button === 0 && panMode)) {
     markCameraInput();
     isPanning = true;
@@ -12415,37 +13002,36 @@ canvas.addEventListener('mousedown', e => {
     if ((e.ctrlKey || e.metaKey) && !isPanning && !isZooming) {
       try {
         _isSelecting = true;
-        _selectStart = { sx: mx, sy: my, sxCss: ptr.cssX, syCss: ptr.cssY };
+        _selectStart = { sx: mx, sy: my, sxCss: ptr.cssX, syCss: ptr.cssY, additive: true };
         _selectRect = { x: mx, y: my, w: 0, h: 0, xCss: ptr.cssX, yCss: ptr.cssY, wCss: 0, hCss: 0 };
         try { _updateSelectionOverlay(_selectRect); } catch (e) {}
         // prevent browser text selection while dragging
         try { document.body.style.userSelect = 'none'; } catch (u) {}
         e.preventDefault();
-        // clear previous selection unless Shift is held
-        if (!e.shiftKey) try { window._selectedEntities = []; } catch (ee) {}
         canvas.style.cursor = 'crosshair';
       } catch (ex) {}
       return;
     }
 
+    if (editMode && mapEditorEnabled) {
+      mapEditorPainting = true;
+      mapEditorLastPaintKey = null;
+      paintTerrainAt(Math.floor(col), Math.floor(row));
+      mapEditorLastPaintKey = `${Math.floor(col)},${Math.floor(row)}`;
+      e.preventDefault();
+      return;
+    }
+
     if (!editMode) {
-      // If there is an active selection, interpret this left-click as a command target
-      if (_getSelectedEntities().length > 0) {
-        try {
-          const pos = screenToWorldFloat(mx, my);
-          _issueGroupMoveCommand(pos.x, pos.y, { radius: 0.5 });
-        } catch (err) {}
-        return;
-      }
       // In free mode, left-click opens context info (auto-move removed)
       try {
         const pos = screenToWorldFloat(mx, my);
         const clicked = findEntityAtWorld(pos.x, pos.y);
-        if (clicked && _isControllableUnit(clicked)) {
+        if (clicked && _isSelectableEntity(clicked)) {
           const selected = _getSelectedEntities();
-          const already = selected.some(en => en && en.id === clicked.id);
-          if (e.shiftKey) {
-            if (already) _setSelectedEntities(selected.filter(en => en.id !== clicked.id), false);
+          const already = selected.some(en => _entitySelectionKey(en) === _entitySelectionKey(clicked));
+          if (e.ctrlKey || e.metaKey || e.shiftKey) {
+            if (already) _setSelectedEntities(selected.filter(en => _entitySelectionKey(en) !== _entitySelectionKey(clicked)), false);
             else _setSelectedEntities(selected.concat([clicked]), false);
           } else {
             _setSelectedEntities([clicked], false);
@@ -12453,12 +13039,31 @@ canvas.addEventListener('mousedown', e => {
           notify(`Seleccionadas: ${_getSelectedEntities().length}`);
         } else if (clicked) {
           showEntityInfo(clicked);
+        } else if (_getSelectedEntities().length > 0) {
+          _issueGroupMoveCommand(pos.x, pos.y, { radius: 0.5 });
         } else {
           notify('No hay entidad en el punto');
         }
       } catch (err) { /* ignore */ }
       return;
     }
+
+    try {
+      const pos = screenToWorldFloat(mx, my);
+      const clicked = findEntityAtWorld(pos.x, pos.y);
+      if (clicked && _isSelectableEntity(clicked)) {
+        const selected = _getSelectedEntities();
+        const already = selected.some(en => _entitySelectionKey(en) === _entitySelectionKey(clicked));
+        if (e.ctrlKey || e.metaKey || e.shiftKey) {
+          if (already) _setSelectedEntities(selected.filter(en => _entitySelectionKey(en) !== _entitySelectionKey(clicked)), false);
+          else _setSelectedEntities(selected.concat([clicked]), false);
+        } else {
+          _setSelectedEntities([clicked], false);
+        }
+        notify(`Seleccionadas: ${_getSelectedEntities().length}`);
+        return;
+      }
+    } catch (err) {}
     // In edit mode allow drag-to-place for repeated building
     if (selectedTool === 'demolish') {
       demolishCell(col, row);
@@ -12473,6 +13078,10 @@ canvas.addEventListener('mousedown', e => {
 
 // ensure mouseup clears panning/zooming even if released outside canvas
 document.addEventListener('mouseup', (e) => {
+  if (mapEditorPainting) {
+    mapEditorPainting = false;
+    mapEditorLastPaintKey = null;
+  }
   if (isPanning) {
     isPanning = false;
     canvas.style.cursor = panMode ? 'grab' : 'crosshair';
@@ -12496,22 +13105,43 @@ document.addEventListener('mouseup', (e) => {
         const br = screenToWorldFloat(r.x + r.w, r.y + r.h);
         const minX = Math.min(tl.x, br.x), maxX = Math.max(tl.x, br.x);
         const minY = Math.min(tl.y, br.y), maxY = Math.max(tl.y, br.y);
-        const sel = [];
+        try { _setSelectedEntities(_collectSelectableEntitiesInRect(minX, minY, maxX, maxY), true); } catch (e) {}
+      } else if (_selectStart) {
         try {
-          // collect NPCs (entities kind player), rabbits and foxes inside rect
-          for (const en of (entities || [])) {
-            try { if (en && en.kind === 'player' && en.x !== undefined) { if (en.x >= minX && en.x <= maxX && en.y >= minY && en.y <= maxY) sel.push(en); } } catch (e) {}
+          const pos = screenToWorldFloat(_selectStart.sx, _selectStart.sy);
+          const clicked = findEntityAtWorld(pos.x, pos.y);
+          if (clicked && _isSelectableEntity(clicked)) {
+            _toggleSelectedEntity(clicked);
+            notify(`Seleccionadas: ${_getSelectedEntities().length}`);
           }
-          for (const rbt of (rabbits || [])) { try { if (rbt && rbt.x !== undefined) { if (rbt.x >= minX && rbt.x <= maxX && rbt.y >= minY && rbt.y <= maxY) sel.push(rbt); } } catch (e) {} }
-          for (const fx of (foxes || [])) { try { if (fx && fx.x !== undefined) { if (fx.x >= minX && fx.x <= maxX && fx.y >= minY && fx.y <= maxY) sel.push(fx); } } catch (e) {} }
         } catch (e) {}
-        try { _setSelectedEntities(sel, !!e.shiftKey); } catch (e) {}
       }
       _selectStart = null; _selectRect = null;
       try { document.body.style.userSelect = ''; } catch (u) {}
       try { window._selectPreviewCount = 0; } catch (u) {}
       try { _updateSelectionOverlay(null); } catch (e) {}
     } catch (ee) {}
+  }
+
+  if (isBuildDragging) {
+    try {
+      if (editMode && buildDragRect) {
+        const isSingleCell = buildDragRect.minC === buildDragRect.maxC && buildDragRect.minR === buildDragRect.maxR;
+        if (selectedTool === 'demolish') {
+          for (let rr = buildDragRect.minR; rr <= buildDragRect.maxR; rr++) {
+            for (let cc = buildDragRect.minC; cc <= buildDragRect.maxC; cc++) {
+              demolishCell(cc, rr);
+            }
+          }
+        } else if (selectedTool) {
+          if (isSingleCell) placeBuild(buildDragRect.minC, buildDragRect.minR);
+          else placeBuildMultiple(buildDragRect);
+        }
+      }
+    } catch (err) {}
+    isBuildDragging = false;
+    buildDragStart = null;
+    buildDragRect = null;
   }
 });
 
@@ -12522,7 +13152,7 @@ let zoomLerpSpeed = 0.18; // higher = faster
 let zoomAnimating = false;
 
 canvas.addEventListener('wheel', (ev) => {
-  if (startLocked) return;
+  if (startLocked && !window._standaloneEditorMode) return;
   ev.preventDefault();
   const ptr = getCanvasPointerPosition(ev);
   const mx = ptr.x;
@@ -12549,7 +13179,7 @@ canvas.addEventListener('wheel', (ev) => {
 
 canvas.addEventListener('contextmenu', e => {
   e.preventDefault();
-  if (startLocked) return;
+  if (startLocked && !window._standaloneEditorMode) return;
   // if user is zooming or panning, don't set move target
   if (isZooming || isPanning) return;
   const ptr = getCanvasPointerPosition(e);
@@ -12573,6 +13203,8 @@ canvas.addEventListener('contextmenu', e => {
 });
 canvas.addEventListener('mouseleave', () => {
   hoverCell = null;
+  mapEditorPainting = false;
+  mapEditorLastPaintKey = null;
   document.getElementById('tooltip').style.display = 'none';
   if (isPanning) { isPanning = false; canvas.style.cursor = panMode ? 'grab' : 'crosshair'; }
   if (isZooming) { isZooming = false; canvas.style.cursor = panMode ? 'grab' : 'crosshair'; }
@@ -12580,6 +13212,7 @@ canvas.addEventListener('mouseleave', () => {
 
 document.getElementById('btn-demolish').addEventListener('click', () => {
   if (!editMode) return;
+  if (mapEditorEnabled) setMapEditorEnabled(false, { silent: true });
   if (selectedTool === 'demolish') {
     selectedTool = null;
     document.getElementById('btn-demolish').classList.remove('selected');
@@ -12679,6 +13312,7 @@ function setEditMode(enabled) {
   if (!panMode) {
     canvas.style.cursor = editMode ? 'crosshair' : 'default';
   }
+  updateMapEditorUI();
 }
 
 function setPanMode(enabled) {
@@ -12858,6 +13492,34 @@ document.addEventListener('keydown', e => {
     }
   }
   if (editMode) {
+    if (e.ctrlKey) {
+      const palette = getEpochBuildPalette(window._currentEpoch || 'mesopotamia');
+      const ctrlMap = {
+        '1': palette[0] || 'house',
+        '2': palette[1] || 'mesopotamian_villa_detailed',
+        '3': palette[2] || 'farm',
+        '4': palette[3] || 'temple',
+        '5': palette[4] || 'market',
+        '6': palette[5] || 'granary',
+        '7': palette[6] || 'ziggurat',
+        '8': 'road',
+        '0': null,
+        d: 'demolish'
+      };
+      const key = String(e.key || '').toLowerCase();
+      if (Object.prototype.hasOwnProperty.call(ctrlMap, key)) {
+        selectedTool = ctrlMap[key];
+        document.querySelectorAll('.build-btn, #btn-demolish').forEach(b => b.classList.remove('selected'));
+        if (selectedTool) {
+          const el = selectedTool === 'demolish'
+            ? document.getElementById('btn-demolish')
+            : document.querySelector(`[data-type="${selectedTool}"]`);
+          if (el) el.classList.add('selected');
+        }
+        e.preventDefault();
+        return;
+      }
+    }
     const map = getEpochKeyBuildMap();
     if (e.key in map) {
       const type = map[e.key];
@@ -13152,16 +13814,21 @@ window.addEventListener('resize', resizeCanvas);
 // ═══════════════════════════════════════════════════════════════
 function init() {
   try { console.log('game-engine: init start'); if (window._onEngineProgress) try { window._onEngineProgress(3, 'Inicializando motor...'); } catch (e) {} } catch (e) {}
+  const isStandaloneEditor = !!window._standaloneEditorMode;
   resizeCanvas();
   setViewMode('ortho');
   setPanMode(false);
   setAdvStatsVisible(true);
-  setEditMode(false);
+  setEditMode(isStandaloneEditor);
   setFloatingPanels(false);
-  // create overlay UI (follow button, inventory panel, settings)
-  try { createOverlayUI(); } catch (err) { /* ignore */ }
-  try { createDebugHUD(); } catch (err) {}
-  try { createAbilityBarAndMissions(); } catch (err) { /* ignore */ }
+  if (!isStandaloneEditor) {
+    try { createOverlayUI(); } catch (err) { /* ignore */ }
+    try { createDebugHUD(); } catch (err) {}
+    try { createAbilityBarAndMissions(); } catch (err) { /* ignore */ }
+  } else {
+    try { ensureStandaloneEditorSandboxState(); } catch (err) {}
+    try { setAdvStatsVisible(false); } catch (err) {}
+  }
   const _activeEpoch = applyEpochProfile(localStorage.getItem(STORAGE_EPOCH_KEY) || window._currentEpoch || 'mesopotamia', false);
 
   // Enhance top icons and create the game guide; make panels floating
@@ -13182,6 +13849,7 @@ function init() {
   drawPopIcon(document.getElementById('icon-pop').getContext('2d'), 18, 18);
 
   try { refreshBuildButtonsFromDefinitions(); } catch (e) {}
+  try { setupMapEditorUI(); } catch (e) {}
 
   // Make the right panel behave like other floating windows (draggable/minimizable)
   try { const mainPanel = document.getElementById('panel'); if (mainPanel) { enableFloatingBehavior(mainPanel); registerPanel(mainPanel); } } catch (e) {}
@@ -13191,6 +13859,7 @@ function init() {
     document.querySelectorAll('.build-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         if (!editMode) { notify('Activa el modo edición para construir.'); return; }
+        if (mapEditorEnabled) setMapEditorEnabled(false, { silent: true });
         const type = btn.dataset.type;
         if (!type) return;
         if (selectedTool === type) {
@@ -13252,7 +13921,22 @@ function init() {
           } catch (e) {}
           try { if (window._onEngineProgress) window._onEngineProgress(60, 'Generando mapa...'); } catch (e) {}
           console.log && console.log('game-engine: generating map');
-          generateMap('random'); saveAppStateDebounced();
+          generateMap('random');
+          try {
+            const skipPendingDesign = !!window._standaloneEditorMode || localStorage.getItem('meso.skipPendingMapDesign') === '1';
+            if (skipPendingDesign) {
+              try { localStorage.removeItem('meso.skipPendingMapDesign'); } catch (e) {}
+            }
+            const pendingMapDesignRaw = skipPendingDesign ? null : localStorage.getItem('meso.pendingMapDesign');
+            if (pendingMapDesignRaw) {
+              try { if (window._onEngineProgress) window._onEngineProgress(72, 'Aplicando diseño manual...'); } catch (e) {}
+              importMapDesignFromObject(JSON.parse(pendingMapDesignRaw));
+              console.log && console.log('game-engine: pending map design applied');
+            }
+          } catch (e) {
+            console.warn('game-engine: could not apply pending map design', e);
+          }
+          saveAppStateDebounced();
           console.log && console.log('game-engine: map generation requested');
           try { if (window._onEngineProgress) window._onEngineProgress(80, 'Cargando entidades...'); } catch (e) {}
         // If an external menu handled the startup parameters/character selection,
@@ -13281,7 +13965,11 @@ function init() {
           try { postMapInit(); } catch (e) { console.warn('postMapInit call failed', e); }
           if (window._externalMenu) {
             try { startLocked = false; } catch (e) {}
-            try { startIntroSequence(); } catch (e) {}
+            if (!window._standaloneEditorMode) {
+              try { startIntroSequence(); } catch (e) {}
+            } else {
+              try { setEditMode(true); } catch (e) {}
+            }
           }
       })();
       if (window._externalMenu) return;
@@ -13412,6 +14100,7 @@ function postMapInit() {
   try { updateBuildMenuFromGrid(); } catch (e) {}
   try { centerCamera(); } catch (e) {}
   try { createTimeControlWidget(); } catch (e) {}
+  try { refreshStandaloneEditorApi(); } catch (e) {}
   addLog(getEpochProfile(window._currentEpoch || 'mesopotamia').foundedLog || 'Novozarya establecida a orillas del Río Ob Nord, bajo protocolo estatal.');
   addLog(getEpochShortcutSummary());
   notify(getEpochProfile(window._currentEpoch || 'mesopotamia').welcomeLog || '¡Bienvenido a Mesopotamia! Construye tu ciudad.');
