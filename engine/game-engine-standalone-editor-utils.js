@@ -128,6 +128,127 @@ export function createStandaloneEditorUtils(deps) {
     }));
   }
 
+  function getCanvasAndRect() {
+    const canvas = (typeof deps.getCanvas === 'function') ? deps.getCanvas() : null;
+    if (!canvas || typeof canvas.getBoundingClientRect !== 'function') return null;
+    const rect = canvas.getBoundingClientRect();
+    if (!rect || rect.width <= 0 || rect.height <= 0) return null;
+    return { canvas, rect };
+  }
+
+  function clampCell(col, row) {
+    const c = Math.max(0, Math.min(deps.COLS - 1, Math.floor(Number(col) || 0)));
+    const r = Math.max(0, Math.min(deps.ROWS - 1, Math.floor(Number(row) || 0)));
+    return { col: c, row: r };
+  }
+
+  function pickEntityAtCell(col, row) {
+    try {
+      const entities = getEntities() || [];
+      for (let i = entities.length - 1; i >= 0; i--) {
+        const ent = entities[i];
+        if (!ent || typeof ent !== 'object') continue;
+        const ec = (typeof ent.col === 'number') ? Math.floor(ent.col) : Math.floor(Number(ent.x) || 0);
+        const er = (typeof ent.row === 'number') ? Math.floor(ent.row) : Math.floor(Number(ent.y) || 0);
+        if (ec !== col || er !== row) continue;
+        return {
+          index: i,
+          id: ent.id || null,
+          kind: ent.kind || 'entity',
+          subtype: ent.subtype || null,
+          col: ec,
+          row: er
+        };
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  function pickBuildingAtCell(col, row) {
+    try {
+      if (col < 0 || row < 0 || col >= deps.COLS || row >= deps.ROWS) return null;
+      const info = (typeof deps.getCellInfo === 'function') ? deps.getCellInfo(col, row) : null;
+      if (!info || !info.type) return null;
+      const size = (typeof deps.getBuildingSize === 'function') ? deps.getBuildingSize(info.type) : { w: 1, h: 1 };
+      return {
+        type: info.type,
+        baseCol: (typeof info.baseCol === 'number') ? info.baseCol : col,
+        baseRow: (typeof info.baseRow === 'number') ? info.baseRow : row,
+        width: Math.max(1, Number(size && size.w) || 1),
+        height: Math.max(1, Number(size && size.h) || 1),
+        isBase: !!info.isBase
+      };
+    } catch (e) {}
+    return null;
+  }
+
+  function getCellClientFrame(col, row) {
+    try {
+      const cr = getCanvasAndRect();
+      if (!cr || typeof deps.worldToScreen !== 'function') return null;
+      const { canvas, rect } = cr;
+      const world = deps.worldToScreen(col, row);
+      if (!world || typeof world.x !== 'number' || typeof world.y !== 'number') return null;
+      const scaleX = rect.width / Math.max(1, canvas.width);
+      const scaleY = rect.height / Math.max(1, canvas.height);
+      const mode = (typeof deps.getViewMode === 'function') ? deps.getViewMode() : 'ortho';
+      if (mode === 'iso' && typeof deps.getIsoTileSize === 'function') {
+        const iso = deps.getIsoTileSize() || { w: 32, h: 18 };
+        return {
+          left: rect.left + (world.x - iso.w / 2) * scaleX,
+          top: rect.top + world.y * scaleY,
+          width: iso.w * scaleX,
+          height: iso.h * scaleY,
+          mode: 'iso'
+        };
+      }
+      const tileSize = (typeof deps.getTileSize === 'function') ? deps.getTileSize() : 32;
+      return {
+        left: rect.left + world.x * scaleX,
+        top: rect.top + world.y * scaleY,
+        width: tileSize * scaleX,
+        height: tileSize * scaleY,
+        mode: 'ortho'
+      };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function pickFromClient(clientX, clientY) {
+    try {
+      const cr = getCanvasAndRect();
+      if (!cr || typeof deps.screenToWorld !== 'function') return null;
+      const { canvas, rect } = cr;
+      const localCssX = Number(clientX) - rect.left;
+      const localCssY = Number(clientY) - rect.top;
+      if (localCssX < 0 || localCssY < 0 || localCssX > rect.width || localCssY > rect.height) return null;
+      const sx = localCssX * (canvas.width / rect.width);
+      const sy = localCssY * (canvas.height / rect.height);
+      const world = deps.screenToWorld(sx, sy);
+      if (!world || typeof world.col !== 'number' || typeof world.row !== 'number') return null;
+      const cell = clampCell(world.col, world.row);
+      const building = pickBuildingAtCell(cell.col, cell.row);
+      const entity = pickEntityAtCell(cell.col, cell.row);
+      let terrain = null;
+      try {
+        if (typeof deps.getTileBiome === 'function') {
+          const map = deps.getTileBiome();
+          terrain = map && map[cell.row] ? (map[cell.row][cell.col] || null) : null;
+        }
+      } catch (e) {}
+      return {
+        col: cell.col,
+        row: cell.row,
+        building,
+        entity,
+        terrain
+      };
+    } catch (e) {
+      return null;
+    }
+  }
+
   function refreshStandaloneEditorApi() {
     try {
       window.MESO_MAP_EDITOR_API = {
@@ -159,7 +280,10 @@ export function createStandaloneEditorUtils(deps) {
         getBuildPalette: (epochId) => getStandaloneBuildPalette(epochId),
         exportMapDesignData: () => deps.getMapDesignObject(),
         importMapDesignData: (data) => { ensureStandaloneEditorSandboxState(); return deps.importMapDesignFromObject(data); },
-        savePendingMapDesign: () => deps.getMapDesignObject()
+        savePendingMapDesign: () => deps.getMapDesignObject(),
+        pickFromClient: (clientX, clientY) => pickFromClient(clientX, clientY),
+        getCellClientFrame: (col, row) => getCellClientFrame(col, row),
+        getMapSize: () => ({ cols: deps.COLS, rows: deps.ROWS })
       };
     } catch (e) {}
   }

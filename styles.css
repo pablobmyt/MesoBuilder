@@ -1448,3 +1448,60 @@ body.dialogue-active #crafting-panel {
   pointer-events: none !important;
 }
 
+/* ── HORIZONTAL ACTION BAR ───────────────────────────────── */
+#action-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 204px; /* leave room for panel */
+  z-index: 1000;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 5px 8px;
+  background: rgba(6,4,1,0.88);
+  border-top: 1px solid #3a2e10;
+  pointer-events: auto;
+}
+
+.action-bar-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  min-width: 64px;
+  padding: 5px 8px;
+  background: #120e04;
+  border: 1px solid #3a2e10;
+  color: var(--ui-text, #D4C49A);
+  font-family: inherit;
+  font-size: 0.62rem;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+  white-space: nowrap;
+}
+.action-bar-btn:hover { border-color: #C8A84B; background: #1e1608; }
+.action-bar-btn:active { background: #2a1e08; }
+.action-bar-name { font-weight: bold; letter-spacing: 0.5px; text-transform: uppercase; color: #C8A84B; }
+.action-bar-cost { color: #7a6840; font-size: 0.58rem; }
+
+/* ── PANEL DRAG HANDLE ───────────────────────────────────── */
+#panel-drag-handle {
+  padding: 4px 8px;
+  background: rgba(30,20,5,0.9);
+  border-bottom: 1px solid #3a2e10;
+  color: #7a6840;
+  font-size: 0.6rem;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  user-select: none;
+  cursor: grab;
+  flex-shrink: 0;
+}
+#panel-drag-handle:hover { color: #C8A84B; background: rgba(40,28,8,0.95); }
+#panel-drag-handle:active { cursor: grabbing; }
+
+/* char-header acts as drag handle */
+.char-header { cursor: grab; user-select: none; }
+.char-header:active { cursor: grabbing; }

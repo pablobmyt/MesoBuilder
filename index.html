@@ -55,10 +55,13 @@
 
   <!-- MAIN -->
   <div id="main">
-    <canvas id="gameCanvas"></canvas>
+    <canvas id="gameCanvas" tabindex="0"></canvas>
+    <!-- HORIZONTAL ACTION BAR (overlays bottom of canvas) -->
+    <div id="action-bar"></div>
 
     <!-- RIGHT PANEL -->
     <div id="panel">
+      <div id="panel-drag-handle">&#9776; Panel</div>
       <div class="panel-section">
         <div class="panel-title" id="panel-title-build">Construir</div>
 
@@ -147,11 +150,6 @@
       <div class="panel-section">
         <div class="panel-title">Inventario</div>
         <div id="inventory-list" style="font-size:0.75rem;color:var(--ui-text);padding-top:6px;"></div>
-      </div>
-
-      <div class="panel-section">
-        <div class="panel-title">Acciones</div>
-        <ul class="actions-list" id="actions-list"></ul>
       </div>
 
       <div id="log">
@@ -1407,5 +1405,7 @@
     } catch (e) {}
   });
 </script>
+<!-- Sound Manager (Web Audio API) -->
+<script src="engine/sound-manager.js"></script>
 </body>
 </html>

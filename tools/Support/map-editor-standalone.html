@@ -6,14 +6,14 @@
   <title>MesoBuilder · Editor procedural</title>
   <style>
     :root {
-      --bg: #0d0a05;
-      --panel: #171109;
-      --panel-2: #23190d;
-      --border: rgba(240, 215, 144, 0.16);
-      --accent: #d8b35f;
-      --accent-2: #f0d790;
-      --text: #f5e6c3;
-      --muted: #bfa879;
+      --bg: #0e131b;
+      --panel: #171f2b;
+      --panel-2: #1f2a3a;
+      --border: rgba(114, 156, 224, 0.24);
+      --accent: #4f86d9;
+      --accent-2: #79a8eb;
+      --text: #e6edf8;
+      --muted: #9caec8;
       --danger: #b45b4f;
     }
 
@@ -24,8 +24,8 @@
       width: 100%;
       height: 100%;
       background:
-        radial-gradient(circle at top, rgba(216,179,95,0.12), transparent 26%),
-        linear-gradient(180deg, #110d07 0%, #0b0905 100%);
+        radial-gradient(circle at top, rgba(79,134,217,0.2), transparent 30%),
+        linear-gradient(180deg, #0c1119 0%, #0a0f16 100%);
       color: var(--text);
       font-family: "Segoe UI", Tahoma, sans-serif;
       overflow: hidden;
@@ -41,7 +41,7 @@
       overflow-y: auto;
       padding: 18px;
       border-right: 1px solid var(--border);
-      background: linear-gradient(180deg, rgba(23,17,9,0.98), rgba(12,9,5,0.98));
+      background: linear-gradient(180deg, rgba(19,26,37,0.98), rgba(14,19,28,0.98));
     }
 
     .brand {
@@ -64,11 +64,11 @@
 
     .panel {
       border: 1px solid var(--border);
-      background: rgba(35,25,13,0.84);
+      background: rgba(28,37,52,0.9);
       border-radius: 14px;
       padding: 14px;
       margin-bottom: 12px;
-      box-shadow: 0 12px 28px rgba(0,0,0,0.28);
+      box-shadow: 0 12px 28px rgba(0,0,0,0.34);
     }
 
     .panel h2 {
@@ -102,8 +102,8 @@
 
     input[type="text"],
     select {
-      border: 1px solid rgba(240,215,144,0.14);
-      background: rgba(11,8,5,0.92);
+      border: 1px solid rgba(121,168,235,0.24);
+      background: rgba(11,16,24,0.92);
       color: var(--text);
       border-radius: 10px;
       padding: 10px 12px;
@@ -121,10 +121,14 @@
       flex-wrap: wrap;
     }
 
+    .button-row.tight {
+      gap: 6px;
+    }
+
     button {
       appearance: none;
-      border: 1px solid rgba(240,215,144,0.16);
-      background: linear-gradient(180deg, rgba(58,43,23,0.96), rgba(30,22,12,0.96));
+      border: 1px solid rgba(121,168,235,0.24);
+      background: linear-gradient(180deg, rgba(36,50,70,0.96), rgba(24,34,48,0.96));
       color: var(--text);
       border-radius: 10px;
       padding: 9px 12px;
@@ -135,15 +139,15 @@
 
     button:hover {
       transform: translateY(-1px);
-      border-color: rgba(240,215,144,0.38);
-      background: linear-gradient(180deg, rgba(79,58,31,0.96), rgba(38,28,16,0.96));
+      border-color: rgba(121,168,235,0.62);
+      background: linear-gradient(180deg, rgba(49,67,93,0.96), rgba(29,40,56,0.96));
     }
 
     button.primary {
       background: linear-gradient(180deg, var(--accent-2), var(--accent));
-      color: #261806;
+      color: #071424;
       font-weight: 700;
-      border-color: rgba(255,245,220,0.34);
+      border-color: rgba(201,225,255,0.4);
     }
 
     button.danger {
@@ -171,9 +175,38 @@
     .terrain-btn.active,
     .build-btn.active,
     .tool-btn.active {
-      border-color: rgba(240,215,144,0.46);
-      box-shadow: inset 0 0 0 1px rgba(240,215,144,0.18);
-      background: linear-gradient(180deg, rgba(90,65,34,0.96), rgba(42,30,17,0.96));
+      border-color: rgba(121,168,235,0.72);
+      box-shadow: inset 0 0 0 1px rgba(121,168,235,0.24);
+      background: linear-gradient(180deg, rgba(52,74,104,0.96), rgba(29,42,60,0.96));
+    }
+
+    .visual-tools {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .precision-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .precision-body.hidden {
+      display: none;
+    }
+
+    .selected-object {
+      margin-top: 10px;
+      font-size: 12px;
+      line-height: 1.45;
+      color: var(--muted);
+      border: 1px dashed rgba(121,168,235,0.25);
+      border-radius: 10px;
+      padding: 8px;
+      background: rgba(10,16,24,0.42);
     }
 
     .swatch {
@@ -202,6 +235,70 @@
       min-height: 38px;
     }
 
+    .selection-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .selection-grid .field {
+      margin-bottom: 0;
+    }
+
+    .selection-summary {
+      margin-top: 8px;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .inline-select {
+      width: auto;
+      min-width: 120px;
+      max-width: 160px;
+      padding: 8px 10px;
+      border-radius: 8px;
+    }
+
+    dialog.meso-dialog {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 0;
+      width: min(540px, 92vw);
+      background: linear-gradient(180deg, rgba(24,34,48,0.98), rgba(16,23,33,0.98));
+      color: var(--text);
+      box-shadow: 0 20px 50px rgba(0,0,0,0.45);
+    }
+
+    dialog.meso-dialog::backdrop {
+      background: rgba(0,0,0,0.56);
+      backdrop-filter: blur(2px);
+    }
+
+    .dialog-body {
+      padding: 16px;
+    }
+
+    .dialog-title {
+      margin: 0 0 8px;
+      color: var(--accent-2);
+      font-size: 16px;
+    }
+
+    .dialog-message {
+      margin: 0;
+      color: var(--text);
+      line-height: 1.45;
+      font-size: 14px;
+    }
+
+    .dialog-actions {
+      margin-top: 14px;
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+
     .workspace {
       min-width: 0;
       height: 100vh;
@@ -212,7 +309,7 @@
     .workspace-topbar {
       padding: 14px 16px;
       border-bottom: 1px solid var(--border);
-      background: rgba(15,11,7,0.9);
+      background: rgba(16,23,33,0.92);
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -234,6 +331,13 @@
     .iframe-wrap {
       min-height: 0;
       padding: 16px;
+      position: relative;
+    }
+
+    .frame-stack {
+      width: 100%;
+      height: 100%;
+      position: relative;
     }
 
     iframe {
@@ -243,6 +347,22 @@
       border-radius: 18px;
       background: #000;
       box-shadow: 0 18px 38px rgba(0,0,0,0.34);
+    }
+
+    #frameOverlay {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 5;
+    }
+
+    #selectedOverlayBox {
+      position: absolute;
+      border: 2px solid rgba(121,168,235,0.95);
+      background: rgba(79,134,217,0.16);
+      box-shadow: 0 0 0 1px rgba(10,16,24,0.8);
+      border-radius: 8px;
+      display: none;
     }
 
     .loading {
@@ -301,6 +421,18 @@
     </section>
 
     <section class="panel">
+      <h2>Herramientas visuales</h2>
+      <div class="visual-tools" id="visualToolGrid">
+        <button id="toolSelect" class="tool-btn active" data-vtool="select">Seleccionar</button>
+        <button id="toolMove" class="tool-btn" data-vtool="move">Mover</button>
+        <button id="toolDelete" class="tool-btn" data-vtool="delete">Eliminar</button>
+        <button id="toolTerrain" class="tool-btn" data-vtool="terrain">Pintar terreno</button>
+      </div>
+      <div class="hint" style="margin-top:8px">Flujo tipo editor 3D: elige herramienta, haz clic en el objeto, y aplica acción en el mapa.</div>
+      <div class="selected-object" id="selectedObjectSummary">Nada seleccionado.</div>
+    </section>
+
+    <section class="panel">
       <h2>Terreno</h2>
       <div class="field">
         <label for="brushSize">Tamaño del pincel: <strong id="brushSizeLabel">2</strong></label>
@@ -311,6 +443,43 @@
         <button id="btnDisableTerrain" class="tool-btn">Desactivar pincel</button>
       </div>
       <div class="hint" style="margin-top:8px">Selecciona un terreno y pinta directamente sobre el mapa del juego dentro del visor.</div>
+    </section>
+
+    <section class="panel">
+      <h2>Selección y transformaciones</h2>
+      <div class="precision-toggle">
+        <div class="hint">Panel de precisión por coordenadas</div>
+        <button id="btnTogglePrecision" class="tool-btn" type="button">Mostrar</button>
+      </div>
+      <div id="precisionPanel" class="precision-body hidden">
+        <div class="selection-grid">
+          <div class="field"><label for="selC1">Col inicio</label><input id="selC1" type="text" value="0"></div>
+          <div class="field"><label for="selR1">Fila inicio</label><input id="selR1" type="text" value="0"></div>
+          <div class="field"><label for="selC2">Col fin</label><input id="selC2" type="text" value="0"></div>
+          <div class="field"><label for="selR2">Fila fin</label><input id="selR2" type="text" value="0"></div>
+        </div>
+        <div class="button-row tight" style="margin-top:10px">
+          <button id="btnApplySelection" class="tool-btn">Aplicar selección</button>
+          <button id="btnSelectAll" class="tool-btn">Seleccionar todo</button>
+        </div>
+        <div class="button-row tight" style="margin-top:8px">
+          <button id="btnFillSelection" class="tool-btn">Rellenar selección (terreno activo)</button>
+          <button id="btnClearSelectionBuildings" class="tool-btn danger">Limpiar edificios en selección</button>
+        </div>
+        <div class="button-row tight" style="margin-top:8px;align-items:center">
+          <button id="btnScaleHalf" class="tool-btn">Escalar selección 0.5x</button>
+          <button id="btnScaleDouble" class="tool-btn">Escalar selección 2x</button>
+        </div>
+        <div class="button-row tight" style="margin-top:8px;align-items:center">
+          <button id="btnCopySelection" class="tool-btn">Copiar selección</button>
+          <button id="btnPasteSelection" class="tool-btn">Pegar con offset</button>
+          <label class="hint" for="pasteOffsetX">dx</label>
+          <input id="pasteOffsetX" class="inline-select" type="text" value="0">
+          <label class="hint" for="pasteOffsetY">dy</label>
+          <input id="pasteOffsetY" class="inline-select" type="text" value="0">
+        </div>
+      </div>
+      <div class="selection-summary" id="selectionSummary">Sin selección activa.</div>
     </section>
 
     <section class="panel">
@@ -330,6 +499,10 @@
         <button id="btnExport">Exportar JSON</button>
         <button id="btnSavePending" class="primary">Guardar para nueva partida</button>
         <button id="btnClearPending" class="danger">Limpiar guardado</button>
+      </div>
+      <div class="button-row" style="margin-top:10px">
+        <button id="btnUndo" class="tool-btn">Deshacer (Ctrl+Z)</button>
+        <button id="btnRedo" class="tool-btn">Rehacer (Ctrl+Y)</button>
       </div>
       <div class="status" id="pendingStatus" style="margin-top:10px">Sin diseño guardado para nuevas partidas.</div>
     </section>
@@ -355,11 +528,26 @@
       </div>
     </div>
     <div class="iframe-wrap">
-      <iframe id="editorFrame" title="Editor procedural de MesoBuilder"></iframe>
+      <div class="frame-stack">
+        <iframe id="editorFrame" title="Editor procedural de MesoBuilder"></iframe>
+        <div id="frameOverlay">
+          <div id="selectedOverlayBox"></div>
+        </div>
+      </div>
     </div>
   </main>
 
   <input id="fileInput" type="file" accept=".json,application/json" hidden>
+  <dialog id="confirmDialog" class="meso-dialog">
+    <form method="dialog" class="dialog-body">
+      <h3 class="dialog-title" id="confirmDialogTitle">Confirmar acción</h3>
+      <p class="dialog-message" id="confirmDialogMessage"></p>
+      <div class="dialog-actions">
+        <button value="cancel">Cancelar</button>
+        <button value="accept" class="primary" id="confirmDialogAccept">Aceptar</button>
+      </div>
+    </form>
+  </dialog>
 
   <script>
     const STORAGE_KEY = 'meso.pendingMapDesign';
@@ -399,11 +587,28 @@
     const statusLine = document.getElementById('statusLine');
     const metaEpoch = document.getElementById('metaEpoch');
     const metaTool = document.getElementById('metaTool');
+    const selectionSummary = document.getElementById('selectionSummary');
+    const confirmDialog = document.getElementById('confirmDialog');
+    const confirmDialogTitle = document.getElementById('confirmDialogTitle');
+    const confirmDialogMessage = document.getElementById('confirmDialogMessage');
+    const confirmDialogAccept = document.getElementById('confirmDialogAccept');
+    const selectedObjectSummary = document.getElementById('selectedObjectSummary');
+    const selectedOverlayBox = document.getElementById('selectedOverlayBox');
+    const precisionPanel = document.getElementById('precisionPanel');
+    const btnTogglePrecision = document.getElementById('btnTogglePrecision');
 
     let activeTerrain = null;
     let activeBuild = null;
+    let visualTool = 'select';
     let frameReady = false;
     let regenerateAfterLoad = false;
+    let activeSelection = null;
+    let selectedObject = null;
+    let frameCanvasInteractionBound = false;
+    let selectionClipboard = null;
+    const undoStack = [];
+    const redoStack = [];
+    const HISTORY_LIMIT = 20;
 
     function clampScale(raw) {
       if (!Number.isFinite(raw)) return 1;
@@ -434,6 +639,64 @@
       statusLine.textContent = text;
     }
 
+    function setSelectedObjectSummary(text) {
+      selectedObjectSummary.textContent = text || 'Nada seleccionado.';
+    }
+
+    function updateVisualToolButtons() {
+      document.querySelectorAll('[data-vtool]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.vtool === visualTool);
+      });
+    }
+
+    function setVisualTool(toolId) {
+      visualTool = toolId || 'select';
+      updateVisualToolButtons();
+      if (visualTool === 'terrain') {
+        setActiveToolLabel(activeTerrain ? `Terreno · ${activeTerrain}` : 'Pintar terreno');
+        setStatus('Modo terreno activo. Usa clic y arrastre sobre el mapa para pintar.');
+      } else if (visualTool === 'move') {
+        setActiveToolLabel('Mover objeto');
+        setStatus('Selecciona un objeto y luego haz clic en el destino para moverlo.');
+      } else if (visualTool === 'delete') {
+        setActiveToolLabel('Eliminar objeto');
+        setStatus('Haz clic en el objeto que quieres eliminar.');
+      } else {
+        setActiveToolLabel('Seleccionar objeto');
+        setStatus('Haz clic en un edificio o entidad para seleccionarlo.');
+      }
+    }
+
+    function clearOverlay() {
+      if (!selectedOverlayBox) return;
+      selectedOverlayBox.style.display = 'none';
+    }
+
+    function clearSelectedObject() {
+      selectedObject = null;
+      setSelectedObjectSummary('Nada seleccionado.');
+      clearOverlay();
+    }
+
+    async function confirmAction(message, options = {}) {
+      const title = options.title || 'Confirmar acción';
+      const acceptText = options.acceptText || 'Aceptar';
+      if (!confirmDialog || typeof confirmDialog.showModal !== 'function') {
+        return window.confirm(message);
+      }
+      confirmDialogTitle.textContent = title;
+      confirmDialogMessage.textContent = message;
+      confirmDialogAccept.textContent = acceptText;
+      return await new Promise(resolve => {
+        const onClose = () => {
+          confirmDialog.removeEventListener('close', onClose);
+          resolve(confirmDialog.returnValue === 'accept');
+        };
+        confirmDialog.addEventListener('close', onClose);
+        confirmDialog.showModal();
+      });
+    }
+
     function getFrameApi() {
       try {
         return frame.contentWindow && frame.contentWindow.MESO_MAP_EDITOR_API;
@@ -445,6 +708,275 @@
     function getFrameSrc() {
       const epoch = encodeURIComponent(epochSelect.value || 'mesopotamia');
       return `../../index.html?editor=1&epoch=${epoch}`;
+    }
+
+    function describeSelectedObject(obj) {
+      if (!obj) return 'Nada seleccionado.';
+      if (obj.kind === 'building') {
+        return `Edificio: ${obj.type} en (${obj.baseCol}, ${obj.baseRow}) · ${obj.width}x${obj.height}`;
+      }
+      if (obj.kind === 'entity') {
+        const label = obj.subtype ? `${obj.kindName}:${obj.subtype}` : obj.kindName;
+        return `Entidad: ${label} en (${obj.col}, ${obj.row})`;
+      }
+      return `Terreno en (${obj.col}, ${obj.row})`;
+    }
+
+    function getSelectedCells(obj) {
+      if (!obj) return [];
+      const cells = [];
+      if (obj.kind === 'building') {
+        for (let r = 0; r < obj.height; r++) {
+          for (let c = 0; c < obj.width; c++) cells.push({ col: obj.baseCol + c, row: obj.baseRow + r });
+        }
+        return cells;
+      }
+      if (obj.kind === 'entity' || obj.kind === 'terrain') return [{ col: obj.col, row: obj.row }];
+      return cells;
+    }
+
+    function updateSelectedOverlay() {
+      const api = getFrameApi();
+      if (!api || !selectedObject) {
+        clearOverlay();
+        return;
+      }
+      const cells = getSelectedCells(selectedObject);
+      if (!cells.length) {
+        clearOverlay();
+        return;
+      }
+      let minL = Number.POSITIVE_INFINITY;
+      let minT = Number.POSITIVE_INFINITY;
+      let maxR = Number.NEGATIVE_INFINITY;
+      let maxB = Number.NEGATIVE_INFINITY;
+      for (const cell of cells) {
+        const frameRect = api.getCellClientFrame(cell.col, cell.row);
+        if (!frameRect) continue;
+        minL = Math.min(minL, frameRect.left);
+        minT = Math.min(minT, frameRect.top);
+        maxR = Math.max(maxR, frameRect.left + frameRect.width);
+        maxB = Math.max(maxB, frameRect.top + frameRect.height);
+      }
+      if (!Number.isFinite(minL) || !Number.isFinite(minT)) {
+        clearOverlay();
+        return;
+      }
+      const stackRect = document.querySelector('.frame-stack').getBoundingClientRect();
+      selectedOverlayBox.style.display = 'block';
+      selectedOverlayBox.style.left = `${Math.round(minL - stackRect.left)}px`;
+      selectedOverlayBox.style.top = `${Math.round(minT - stackRect.top)}px`;
+      selectedOverlayBox.style.width = `${Math.max(2, Math.round(maxR - minL))}px`;
+      selectedOverlayBox.style.height = `${Math.max(2, Math.round(maxB - minT))}px`;
+    }
+
+    function selectFromPick(pick) {
+      if (!pick) {
+        clearSelectedObject();
+        return;
+      }
+      if (pick.building) {
+        selectedObject = {
+          kind: 'building',
+          type: pick.building.type,
+          baseCol: pick.building.baseCol,
+          baseRow: pick.building.baseRow,
+          width: pick.building.width,
+          height: pick.building.height
+        };
+        activeSelection = {
+          minC: selectedObject.baseCol,
+          minR: selectedObject.baseRow,
+          maxC: selectedObject.baseCol + selectedObject.width - 1,
+          maxR: selectedObject.baseRow + selectedObject.height - 1
+        };
+      } else if (pick.entity) {
+        selectedObject = {
+          kind: 'entity',
+          id: pick.entity.id || null,
+          index: pick.entity.index,
+          kindName: pick.entity.kind || 'entity',
+          subtype: pick.entity.subtype || null,
+          col: pick.entity.col,
+          row: pick.entity.row
+        };
+        activeSelection = { minC: selectedObject.col, minR: selectedObject.row, maxC: selectedObject.col, maxR: selectedObject.row };
+      } else {
+        selectedObject = { kind: 'terrain', col: pick.col, row: pick.row, terrain: pick.terrain || null };
+        activeSelection = { minC: pick.col, minR: pick.row, maxC: pick.col, maxR: pick.row };
+      }
+      setSelectionInputs(activeSelection);
+      updateSelectionSummary();
+      setSelectedObjectSummary(describeSelectedObject(selectedObject));
+      updateSelectedOverlay();
+    }
+
+    function setBuildingFootprintAt(design, baseCol, baseRow, type, width, height) {
+      for (let r = 0; r < height; r++) {
+        for (let c = 0; c < width; c++) {
+          const col = baseCol + c;
+          const row = baseRow + r;
+          if (!design.grid[row]) continue;
+          if (r === 0 && c === 0) design.grid[row][col] = type;
+          else design.grid[row][col] = { type, baseCol, baseRow };
+        }
+      }
+    }
+
+    function clearBuildingAt(design, building) {
+      let changed = false;
+      for (let r = 0; r < building.height; r++) {
+        for (let c = 0; c < building.width; c++) {
+          const col = building.baseCol + c;
+          const row = building.baseRow + r;
+          if (!design.grid[row]) continue;
+          const cell = design.grid[row][col];
+          if (!cell) continue;
+          if (typeof cell === 'string') {
+            if (row === building.baseRow && col === building.baseCol && cell === building.type) {
+              design.grid[row][col] = null;
+              changed = true;
+            }
+            continue;
+          }
+          if (cell.type === building.type && cell.baseCol === building.baseCol && cell.baseRow === building.baseRow) {
+            design.grid[row][col] = null;
+            changed = true;
+          }
+        }
+      }
+      return changed;
+    }
+
+    function moveSelectedObjectToCell(targetCol, targetRow) {
+      if (!selectedObject) throw new Error('No hay objeto seleccionado.');
+      if (selectedObject.kind === 'terrain') throw new Error('El terreno no se mueve.');
+      runDesignMutation('Mover objeto seleccionado', design => {
+        if (selectedObject.kind === 'entity') {
+          if (!Array.isArray(design.entities)) return false;
+          const idx = design.entities.findIndex((ent, i) => {
+            if (!ent) return false;
+            if (selectedObject.id && ent.id) return ent.id === selectedObject.id;
+            if (i === selectedObject.index) return true;
+            const ec = typeof ent.col === 'number' ? ent.col : Math.floor(Number(ent.x) || 0);
+            const er = typeof ent.row === 'number' ? ent.row : Math.floor(Number(ent.y) || 0);
+            return ec === selectedObject.col && er === selectedObject.row && String(ent.kind || '') === String(selectedObject.kindName || '');
+          });
+          if (idx < 0) return false;
+          design.entities[idx].col = targetCol;
+          design.entities[idx].row = targetRow;
+          design.entities[idx].x = targetCol;
+          design.entities[idx].y = targetRow;
+          selectedObject.col = targetCol;
+          selectedObject.row = targetRow;
+          return true;
+        }
+        if (selectedObject.kind === 'building') {
+          if (!Array.isArray(design.grid)) return false;
+          const width = selectedObject.width;
+          const height = selectedObject.height;
+          if (targetCol < 0 || targetRow < 0 || (targetCol + width - 1) >= design.cols || (targetRow + height - 1) >= design.rows) {
+            throw new Error('Destino fuera del mapa.');
+          }
+          for (let r = 0; r < height; r++) {
+            for (let c = 0; c < width; c++) {
+              const col = targetCol + c;
+              const row = targetRow + r;
+              const insideOld = col >= selectedObject.baseCol && col < selectedObject.baseCol + width && row >= selectedObject.baseRow && row < selectedObject.baseRow + height;
+              if (insideOld) continue;
+              if (design.grid[row] && design.grid[row][col]) throw new Error('Destino ocupado por otro edificio.');
+            }
+          }
+          clearBuildingAt(design, selectedObject);
+          setBuildingFootprintAt(design, targetCol, targetRow, selectedObject.type, width, height);
+          selectedObject.baseCol = targetCol;
+          selectedObject.baseRow = targetRow;
+          return true;
+        }
+        return false;
+      });
+      selectFromPick({
+        col: targetCol,
+        row: targetRow,
+        building: selectedObject.kind === 'building' ? {
+          type: selectedObject.type,
+          baseCol: selectedObject.baseCol,
+          baseRow: selectedObject.baseRow,
+          width: selectedObject.width,
+          height: selectedObject.height
+        } : null,
+        entity: selectedObject.kind === 'entity' ? {
+          id: selectedObject.id,
+          index: selectedObject.index,
+          kind: selectedObject.kindName,
+          subtype: selectedObject.subtype,
+          col: selectedObject.col,
+          row: selectedObject.row
+        } : null
+      });
+    }
+
+    function deleteFromPick(pick) {
+      if (!pick) return;
+      runDesignMutation('Eliminar objeto', design => {
+        if (pick.building) return clearBuildingAt(design, {
+          type: pick.building.type,
+          baseCol: pick.building.baseCol,
+          baseRow: pick.building.baseRow,
+          width: pick.building.width,
+          height: pick.building.height
+        });
+        if (pick.entity && Array.isArray(design.entities)) {
+          const before = design.entities.length;
+          design.entities = design.entities.filter((ent, i) => {
+            if (!ent) return true;
+            if (pick.entity.id && ent.id) return ent.id !== pick.entity.id;
+            if (i === pick.entity.index) return false;
+            const ec = typeof ent.col === 'number' ? ent.col : Math.floor(Number(ent.x) || 0);
+            const er = typeof ent.row === 'number' ? ent.row : Math.floor(Number(ent.y) || 0);
+            return !(ec === pick.entity.col && er === pick.entity.row && String(ent.kind || '') === String(pick.entity.kind || ''));
+          });
+          return design.entities.length !== before;
+        }
+        return false;
+      });
+      clearSelectedObject();
+      updateSelectionSummary();
+    }
+
+    function bindFrameCanvasInteractions() {
+      if (frameCanvasInteractionBound) return;
+      const canvasInFrame = frame.contentWindow && frame.contentWindow.document && frame.contentWindow.document.getElementById('gameCanvas');
+      if (!canvasInFrame) return;
+      const handler = (ev) => {
+        if (!frameReady) return;
+        const api = getFrameApi();
+        if (!api || typeof api.pickFromClient !== 'function') return;
+        const pick = api.pickFromClient(ev.clientX, ev.clientY);
+        if (!pick) return;
+        if (visualTool === 'terrain') return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (typeof ev.stopImmediatePropagation === 'function') ev.stopImmediatePropagation();
+        try {
+          if (visualTool === 'select') {
+            selectFromPick(pick);
+            setStatus('Objeto seleccionado desde el visor.');
+          } else if (visualTool === 'move') {
+            moveSelectedObjectToCell(pick.col, pick.row);
+            setStatus(`Objeto movido a (${pick.col}, ${pick.row}).`);
+          } else if (visualTool === 'delete') {
+            deleteFromPick(pick);
+            setStatus('Objeto eliminado desde el visor.');
+          }
+        } catch (error) {
+          setStatus(`Acción visual no aplicada: ${error && error.message ? error.message : error}`);
+        } finally {
+          updateSelectedOverlay();
+        }
+      };
+      canvasInFrame.addEventListener('click', handler, true);
+      frameCanvasInteractionBound = true;
     }
 
     function updatePendingStatus() {
@@ -459,6 +991,328 @@
       } catch (e) {
         pendingStatus.textContent = 'No se pudo leer el diseño guardado.';
       }
+    }
+
+    function toInt(value, fallback = 0) {
+      const parsed = parseInt(String(value || '').trim(), 10);
+      return Number.isFinite(parsed) ? parsed : fallback;
+    }
+
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function getSelectionInputs() {
+      return {
+        c1: document.getElementById('selC1'),
+        r1: document.getElementById('selR1'),
+        c2: document.getElementById('selC2'),
+        r2: document.getElementById('selR2')
+      };
+    }
+
+    function getCurrentDesign() {
+      const api = getFrameApi();
+      if (!api) throw new Error('El motor aún no está listo.');
+      const design = api.exportMapDesignData();
+      if (!design || !Array.isArray(design.tileBiome) || !Array.isArray(design.heightMap)) {
+        throw new Error('El diseño actual no es válido.');
+      }
+      return design;
+    }
+
+    function cloneDesign(design) {
+      return JSON.parse(JSON.stringify(design));
+    }
+
+    function pushUndoSnapshot(snapshot) {
+      undoStack.push(cloneDesign(snapshot));
+      while (undoStack.length > HISTORY_LIMIT) undoStack.shift();
+      redoStack.length = 0;
+    }
+
+    function updateHistoryButtons() {
+      document.getElementById('btnUndo').disabled = undoStack.length === 0;
+      document.getElementById('btnRedo').disabled = redoStack.length === 0;
+    }
+
+    function normalizeSelection(raw, cols, rows) {
+      const minC = clamp(Math.min(raw.c1, raw.c2), 0, Math.max(0, cols - 1));
+      const maxC = clamp(Math.max(raw.c1, raw.c2), 0, Math.max(0, cols - 1));
+      const minR = clamp(Math.min(raw.r1, raw.r2), 0, Math.max(0, rows - 1));
+      const maxR = clamp(Math.max(raw.r1, raw.r2), 0, Math.max(0, rows - 1));
+      return { minC, maxC, minR, maxR };
+    }
+
+    function setSelectionInputs(sel) {
+      const { c1, r1, c2, r2 } = getSelectionInputs();
+      c1.value = String(sel.minC);
+      r1.value = String(sel.minR);
+      c2.value = String(sel.maxC);
+      r2.value = String(sel.maxR);
+    }
+
+    function selectionToText(sel) {
+      if (!sel) return 'Sin selección activa.';
+      const width = (sel.maxC - sel.minC + 1);
+      const height = (sel.maxR - sel.minR + 1);
+      return `Selección activa: (${sel.minC}, ${sel.minR}) → (${sel.maxC}, ${sel.maxR}) · ${width}x${height} celdas.`;
+    }
+
+    function updateSelectionSummary() {
+      selectionSummary.textContent = selectionToText(activeSelection);
+      updateSelectedOverlay();
+    }
+
+    function getActiveSelectionOrThrow() {
+      if (!activeSelection) throw new Error('Primero aplica una selección.');
+      return activeSelection;
+    }
+
+    function applySelectionFromInputs() {
+      const design = getCurrentDesign();
+      const cols = Number(design.cols || (design.tileBiome[0] && design.tileBiome[0].length) || 0);
+      const rows = Number(design.rows || design.tileBiome.length || 0);
+      if (!cols || !rows) throw new Error('No se pudo leer el tamaño del mapa.');
+      const { c1, r1, c2, r2 } = getSelectionInputs();
+      activeSelection = normalizeSelection({
+        c1: toInt(c1.value, 0),
+        r1: toInt(r1.value, 0),
+        c2: toInt(c2.value, cols - 1),
+        r2: toInt(r2.value, rows - 1)
+      }, cols, rows);
+      setSelectionInputs(activeSelection);
+      updateSelectionSummary();
+      setStatus('Selección aplicada. Ya puedes usar operaciones de región.');
+    }
+
+    function iterateSelectionCells(sel, fn) {
+      for (let r = sel.minR; r <= sel.maxR; r++) {
+        for (let c = sel.minC; c <= sel.maxC; c++) fn(c, r);
+      }
+    }
+
+    function isCellInsideSelection(c, r, sel) {
+      return c >= sel.minC && c <= sel.maxC && r >= sel.minR && r <= sel.maxR;
+    }
+
+    function importDesignBack(payload) {
+      const api = getFrameApi();
+      if (!api) throw new Error('El motor aún no está listo.');
+      api.importMapDesignData(payload);
+    }
+
+    function runDesignMutation(label, mutateFn) {
+      const original = getCurrentDesign();
+      const working = cloneDesign(original);
+      const changed = mutateFn(working) === true;
+      if (!changed) {
+        setStatus(`Sin cambios: ${label}.`);
+        return false;
+      }
+      pushUndoSnapshot(original);
+      importDesignBack(working);
+      updateHistoryButtons();
+      setStatus(`Aplicado: ${label}.`);
+      return true;
+    }
+
+    function fillTerrainInSelection() {
+      const terrain = activeTerrain;
+      if (!terrain) throw new Error('Selecciona primero un terreno activo.');
+      const targetHeight = {
+        alluvial: 0.12,
+        riparian: 0.14,
+        marsh: 0.08,
+        saline: 0.18,
+        steppe: 0.42,
+        hills: 0.78,
+        forest: 0.34,
+        water: 0.02,
+        road: 0.1
+      }[terrain];
+      const sel = getActiveSelectionOrThrow();
+      runDesignMutation(`Rellenar selección con ${terrain}`, design => {
+        let changed = false;
+        iterateSelectionCells(sel, (c, r) => {
+          if (design.tileBiome[r][c] !== terrain) {
+            design.tileBiome[r][c] = terrain;
+            changed = true;
+          }
+          if (typeof targetHeight === 'number' && design.heightMap[r][c] !== targetHeight) {
+            design.heightMap[r][c] = targetHeight;
+            changed = true;
+          }
+        });
+        return changed;
+      });
+    }
+
+    async function clearBuildingsInSelection() {
+      const sel = getActiveSelectionOrThrow();
+      const accepted = await confirmAction('Se eliminarán edificios y entidades dentro de la selección. ¿Continuar?', {
+        title: 'Limpiar selección',
+        acceptText: 'Limpiar'
+      });
+      if (!accepted) return;
+      runDesignMutation('Limpiar edificios en selección', design => {
+        let changed = false;
+        if (Array.isArray(design.grid)) {
+          iterateSelectionCells(sel, (c, r) => {
+            if (design.grid[r] && design.grid[r][c]) {
+              design.grid[r][c] = null;
+              changed = true;
+            }
+          });
+        }
+        if (Array.isArray(design.entities)) {
+          const before = design.entities.length;
+          design.entities = design.entities.filter(ent => {
+            const col = typeof ent.col === 'number' ? ent.col : Math.floor(Number(ent.x) || 0);
+            const row = typeof ent.row === 'number' ? ent.row : Math.floor(Number(ent.y) || 0);
+            return !isCellInsideSelection(col, row, sel);
+          });
+          if (design.entities.length !== before) changed = true;
+        }
+        return changed;
+      });
+    }
+
+    function scaleSelectionTerrain(factor) {
+      const sel = getActiveSelectionOrThrow();
+      const safeFactor = Number(factor);
+      if (!Number.isFinite(safeFactor) || safeFactor <= 0) throw new Error('Factor de escala inválido.');
+      runDesignMutation(`Escalar selección ${safeFactor.toFixed(2)}x`, design => {
+        const width = sel.maxC - sel.minC + 1;
+        const height = sel.maxR - sel.minR + 1;
+        const srcBiome = [];
+        const srcHeight = [];
+        for (let y = 0; y < height; y++) {
+          const biomeRow = [];
+          const heightRow = [];
+          for (let x = 0; x < width; x++) {
+            biomeRow.push(design.tileBiome[sel.minR + y][sel.minC + x]);
+            heightRow.push(design.heightMap[sel.minR + y][sel.minC + x]);
+          }
+          srcBiome.push(biomeRow);
+          srcHeight.push(heightRow);
+        }
+        let changed = false;
+        for (let y = 0; y < height; y++) {
+          for (let x = 0; x < width; x++) {
+            const srcX = clamp(Math.floor(x / safeFactor), 0, width - 1);
+            const srcY = clamp(Math.floor(y / safeFactor), 0, height - 1);
+            const nextBiome = srcBiome[srcY][srcX];
+            const nextHeight = srcHeight[srcY][srcX];
+            const rr = sel.minR + y;
+            const cc = sel.minC + x;
+            if (design.tileBiome[rr][cc] !== nextBiome) {
+              design.tileBiome[rr][cc] = nextBiome;
+              changed = true;
+            }
+            if (design.heightMap[rr][cc] !== nextHeight) {
+              design.heightMap[rr][cc] = nextHeight;
+              changed = true;
+            }
+          }
+        }
+        return changed;
+      });
+    }
+
+    function copySelection() {
+      const sel = getActiveSelectionOrThrow();
+      const design = getCurrentDesign();
+      const width = sel.maxC - sel.minC + 1;
+      const height = sel.maxR - sel.minR + 1;
+      const tileBiome = [];
+      const heightMap = [];
+      const grid = [];
+      for (let r = sel.minR; r <= sel.maxR; r++) {
+        tileBiome.push(design.tileBiome[r].slice(sel.minC, sel.maxC + 1));
+        heightMap.push(design.heightMap[r].slice(sel.minC, sel.maxC + 1));
+        grid.push((design.grid[r] || []).slice(sel.minC, sel.maxC + 1));
+      }
+      const entities = (Array.isArray(design.entities) ? design.entities : []).filter(ent => {
+        const col = typeof ent.col === 'number' ? ent.col : Math.floor(Number(ent.x) || 0);
+        const row = typeof ent.row === 'number' ? ent.row : Math.floor(Number(ent.y) || 0);
+        return isCellInsideSelection(col, row, sel);
+      }).map(ent => {
+        const out = cloneDesign(ent);
+        out.col = (typeof out.col === 'number' ? out.col : Math.floor(Number(out.x) || 0)) - sel.minC;
+        out.row = (typeof out.row === 'number' ? out.row : Math.floor(Number(out.y) || 0)) - sel.minR;
+        out.x = out.col;
+        out.y = out.row;
+        return out;
+      });
+      selectionClipboard = { width, height, tileBiome, heightMap, grid, entities };
+      setStatus(`Selección copiada (${width}x${height}).`);
+    }
+
+    function pasteSelectionWithOffset() {
+      if (!selectionClipboard) throw new Error('No hay selección copiada.');
+      const offsetX = toInt(document.getElementById('pasteOffsetX').value, 0);
+      const offsetY = toInt(document.getElementById('pasteOffsetY').value, 0);
+      runDesignMutation(`Pegar selección (dx=${offsetX}, dy=${offsetY})`, design => {
+        let changed = false;
+        for (let r = 0; r < selectionClipboard.height; r++) {
+          for (let c = 0; c < selectionClipboard.width; c++) {
+            const tr = r + offsetY;
+            const tc = c + offsetX;
+            if (tr < 0 || tc < 0 || tr >= design.rows || tc >= design.cols) continue;
+            const b = selectionClipboard.tileBiome[r][c];
+            const h = selectionClipboard.heightMap[r][c];
+            const g = selectionClipboard.grid[r][c] || null;
+            if (design.tileBiome[tr][tc] !== b) {
+              design.tileBiome[tr][tc] = b;
+              changed = true;
+            }
+            if (design.heightMap[tr][tc] !== h) {
+              design.heightMap[tr][tc] = h;
+              changed = true;
+            }
+            if (Array.isArray(design.grid) && design.grid[tr] && design.grid[tr][tc] !== g) {
+              design.grid[tr][tc] = g ? cloneDesign(g) : null;
+              changed = true;
+            }
+          }
+        }
+        if (selectionClipboard.entities && Array.isArray(design.entities)) {
+          selectionClipboard.entities.forEach(src => {
+            const ent = cloneDesign(src);
+            ent.col = ent.col + offsetX;
+            ent.row = ent.row + offsetY;
+            if (ent.col < 0 || ent.row < 0 || ent.col >= design.cols || ent.row >= design.rows) return;
+            ent.x = ent.col;
+            ent.y = ent.row;
+            design.entities.push(ent);
+            changed = true;
+          });
+        }
+        return changed;
+      });
+    }
+
+    function undoDesignChange() {
+      if (!undoStack.length) return;
+      const current = getCurrentDesign();
+      const prev = undoStack.pop();
+      redoStack.push(cloneDesign(current));
+      while (redoStack.length > HISTORY_LIMIT) redoStack.shift();
+      importDesignBack(prev);
+      updateHistoryButtons();
+      setStatus('Cambio deshecho.');
+    }
+
+    function redoDesignChange() {
+      if (!redoStack.length) return;
+      const current = getCurrentDesign();
+      const next = redoStack.pop();
+      undoStack.push(cloneDesign(current));
+      while (undoStack.length > HISTORY_LIMIT) undoStack.shift();
+      importDesignBack(next);
+      updateHistoryButtons();
+      setStatus('Cambio rehecho.');
     }
 
     function setActiveToolLabel(text) {
@@ -479,6 +1333,7 @@
           activeBuild = null;
           activeTerrain = def.id;
           api.enableTerrainBrush(def.id, Number(brushSize.value || 2));
+          setVisualTool('terrain');
           updateTerrainSelection();
           updateBuildSelection();
           setActiveToolLabel(`Terreno · ${def.label}`);
@@ -517,6 +1372,7 @@
           activeTerrain = null;
           activeBuild = item.id;
           liveApi.selectBuildTool(item.id);
+          setVisualTool('select');
           updateTerrainSelection();
           updateBuildSelection();
           setActiveToolLabel(`Edificio · ${item.name || item.id}`);
@@ -609,6 +1465,9 @@
         designNameInput.value = payload.meta.name;
       }
       api.importMapDesignData(payload);
+      undoStack.length = 0;
+      redoStack.length = 0;
+      updateHistoryButtons();
       activeTerrain = null;
       activeBuild = null;
       updateTerrainSelection();
@@ -656,6 +1515,7 @@
       if (!api) return;
       api.disableTerrainBrush();
       activeTerrain = null;
+      if (visualTool === 'terrain') setVisualTool('select');
       updateTerrainSelection();
       setActiveToolLabel(activeBuild ? metaTool.textContent : 'Ninguna');
       if (!activeBuild) setStatus('Pincel de terreno desactivado.');
@@ -667,6 +1527,7 @@
       activeTerrain = null;
       activeBuild = 'demolish';
       api.selectBuildTool('demolish');
+      setVisualTool('select');
       updateTerrainSelection();
       updateBuildSelection();
       setActiveToolLabel('Demoler');
@@ -680,6 +1541,7 @@
       api.disableTerrainBrush();
       activeTerrain = null;
       activeBuild = null;
+      setVisualTool('select');
       updateTerrainSelection();
       updateBuildSelection();
       setActiveToolLabel('Ninguna');
@@ -689,14 +1551,43 @@
     document.getElementById('btnRegenerate').addEventListener('click', async () => {
       const api = getFrameApi();
       if (!api) return;
+      const accepted = await confirmAction('Se regenerará el mundo procedural y se perderán cambios no exportados. ¿Continuar?', {
+        title: 'Regenerar mapa',
+        acceptText: 'Regenerar'
+      });
+      if (!accepted) return;
       api.regenerateProceduralMap(epochSelect.value);
+      undoStack.length = 0;
+      redoStack.length = 0;
+      updateHistoryButtons();
       activeTerrain = null;
       activeBuild = null;
       updateTerrainSelection();
       updateBuildSelection();
       await renderBuildButtons();
+      clearSelectedObject();
       setActiveToolLabel('Ninguna');
       setStatus(`Mapa procedural regenerado para ${epochLabels[epochSelect.value] || epochSelect.value}.`);
+    });
+
+    document.getElementById('visualToolGrid').addEventListener('click', (ev) => {
+      const btn = ev.target && ev.target.closest && ev.target.closest('[data-vtool]');
+      if (!btn) return;
+      const tool = btn.dataset.vtool || 'select';
+      setVisualTool(tool);
+      const api = getFrameApi();
+      if (!api) return;
+      if (tool === 'terrain') {
+        if (activeTerrain) api.enableTerrainBrush(activeTerrain, Number(brushSize.value || 2));
+      } else {
+        api.disableTerrainBrush();
+      }
+      updateTerrainSelection();
+    });
+
+    btnTogglePrecision.addEventListener('click', () => {
+      const hidden = precisionPanel.classList.toggle('hidden');
+      btnTogglePrecision.textContent = hidden ? 'Mostrar' : 'Ocultar';
     });
 
     document.getElementById('btnReloadFrame').addEventListener('click', () => {
@@ -739,7 +1630,13 @@
     });
 
     document.getElementById('btnClearPending').addEventListener('click', () => {
+      (async () => {
       try {
+        const accepted = await confirmAction('Se eliminará el diseño pendiente para nuevas partidas. ¿Continuar?', {
+          title: 'Limpiar guardado',
+          acceptText: 'Eliminar'
+        });
+        if (!accepted) return;
         localStorage.removeItem(STORAGE_KEY);
         localStorage.removeItem(META_KEY);
         updatePendingStatus();
@@ -747,6 +1644,129 @@
       } catch (e) {
         setStatus('No se pudo limpiar el diseño pendiente.');
       }
+      })();
+    });
+
+    document.getElementById('btnApplySelection').addEventListener('click', () => {
+      try {
+        applySelectionFromInputs();
+      } catch (e) {
+        setStatus(`No se pudo aplicar la selección: ${e && e.message ? e.message : e}`);
+      }
+    });
+
+    document.getElementById('btnSelectAll').addEventListener('click', () => {
+      try {
+        const design = getCurrentDesign();
+        activeSelection = {
+          minC: 0,
+          minR: 0,
+          maxC: Math.max(0, Number(design.cols || 1) - 1),
+          maxR: Math.max(0, Number(design.rows || 1) - 1)
+        };
+        setSelectionInputs(activeSelection);
+        updateSelectionSummary();
+        setStatus('Selección aplicada a todo el mapa.');
+      } catch (e) {
+        setStatus(`No se pudo seleccionar todo: ${e && e.message ? e.message : e}`);
+      }
+    });
+
+    document.getElementById('btnFillSelection').addEventListener('click', () => {
+      try {
+        fillTerrainInSelection();
+      } catch (e) {
+        setStatus(`No se pudo rellenar la selección: ${e && e.message ? e.message : e}`);
+      }
+    });
+
+    document.getElementById('btnClearSelectionBuildings').addEventListener('click', async () => {
+      try {
+        await clearBuildingsInSelection();
+      } catch (e) {
+        setStatus(`No se pudo limpiar la selección: ${e && e.message ? e.message : e}`);
+      }
+    });
+
+    document.getElementById('btnScaleHalf').addEventListener('click', () => {
+      try {
+        scaleSelectionTerrain(0.5);
+      } catch (e) {
+        setStatus(`No se pudo escalar selección: ${e && e.message ? e.message : e}`);
+      }
+    });
+
+    document.getElementById('btnScaleDouble').addEventListener('click', () => {
+      try {
+        scaleSelectionTerrain(2);
+      } catch (e) {
+        setStatus(`No se pudo escalar selección: ${e && e.message ? e.message : e}`);
+      }
+    });
+
+    document.getElementById('btnCopySelection').addEventListener('click', () => {
+      try {
+        copySelection();
+      } catch (e) {
+        setStatus(`No se pudo copiar la selección: ${e && e.message ? e.message : e}`);
+      }
+    });
+
+    document.getElementById('btnPasteSelection').addEventListener('click', () => {
+      try {
+        pasteSelectionWithOffset();
+      } catch (e) {
+        setStatus(`No se pudo pegar la selección: ${e && e.message ? e.message : e}`);
+      }
+    });
+
+    document.getElementById('btnUndo').addEventListener('click', () => {
+      try {
+        undoDesignChange();
+      } catch (e) {
+        setStatus(`No se pudo deshacer: ${e && e.message ? e.message : e}`);
+      }
+    });
+
+    document.getElementById('btnRedo').addEventListener('click', () => {
+      try {
+        redoDesignChange();
+      } catch (e) {
+        setStatus(`No se pudo rehacer: ${e && e.message ? e.message : e}`);
+      }
+    });
+
+    document.addEventListener('keydown', (ev) => {
+      if (!frameReady) return;
+      const key = String(ev.key || '').toLowerCase();
+      const ctrl = ev.ctrlKey || ev.metaKey;
+      if (ctrl && !ev.shiftKey && key === 'z') {
+        ev.preventDefault();
+        try { undoDesignChange(); } catch (e) {}
+        return;
+      }
+      if ((ctrl && key === 'y') || (ctrl && ev.shiftKey && key === 'z')) {
+        ev.preventDefault();
+        try { redoDesignChange(); } catch (e) {}
+        return;
+      }
+      if (key === '[' || key === ']') {
+        ev.preventDefault();
+        const delta = key === ']' ? 1 : -1;
+        const current = toInt(brushSize.value, 2);
+        const next = clamp(current + delta, 1, 6);
+        brushSize.value = String(next);
+        brushSizeLabel.textContent = String(next);
+        const api = getFrameApi();
+        if (api) api.setBrushSize(next);
+      }
+      if (key === 'q') setVisualTool('select');
+      if (key === 'w') setVisualTool('move');
+      if (key === 'x') setVisualTool('delete');
+    });
+
+    window.addEventListener('resize', () => {
+      updateSelectedOverlay();
     });
 
     window.addEventListener('storage', (ev) => {
@@ -757,16 +1777,23 @@
       try {
         const api = await waitForApi();
         frameReady = true;
+        frameCanvasInteractionBound = false;
         setStatus('Motor cargado. Preparando herramientas del editor...');
         if (regenerateAfterLoad) api.regenerateProceduralMap(epochSelect.value);
         regenerateAfterLoad = false;
         applyScaleToFrame();
         api.clearTool();
+        api.disableTerrainBrush();
         activeTerrain = null;
         activeBuild = null;
+        undoStack.length = 0;
+        redoStack.length = 0;
+        updateHistoryButtons();
         updateTerrainSelection();
         await renderBuildButtons();
-        setActiveToolLabel('Ninguna');
+        bindFrameCanvasInteractions();
+        clearSelectedObject();
+        setVisualTool('select');
         setStatus('Visor cargado. Ya puedes editar el mapa procedural real.');
       } catch (e) {
         setStatus(`Error al inicializar el visor: ${e && e.message ? e.message : e}`);
@@ -784,8 +1811,12 @@
       entityScaleInput.value = String(clampScale(savedEntityScale));
       updateScaleLabels();
       renderTerrainButtons();
+      updateVisualToolButtons();
       updateTerrainSelection();
       updateBuildSelection();
+      updateSelectionSummary();
+      updateHistoryButtons();
+      setSelectedObjectSummary('Nada seleccionado.');
       updatePendingStatus();
       initializeFrame(true);
     })();

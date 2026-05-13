@@ -1592,7 +1592,16 @@ const standaloneEditorUtils = createStandaloneEditorUtils({
   getBuildingDisplay,
   importMapDesignFromObject,
   exportMapDesign,
-  notify
+  notify,
+  getCanvas: () => canvas,
+  screenToWorld: (sx, sy) => screenToWorld(sx, sy),
+  worldToScreen: (col, row) => worldToScreen(col, row),
+  getTileSize: () => getTileSize(),
+  getIsoTileSize: () => getIsoTileSize(),
+  getViewMode: () => viewMode,
+  getCellInfo: (col, row) => getCellInfo(col, row),
+  getBuildingSize: (type) => getBuildingSize(type),
+  getTileBiome: () => tileBiome
 });
 
 // Input & movement state (missing globals causing runtime errors)
@@ -2040,6 +2049,8 @@ function createDebugHUD() {
     let prevTime = Date.now();
     setInterval(() => {
       try {
+        el.style.display = window._hudVisible ? 'block' : 'none';
+        if (!window._hudVisible) return;
         const now = Date.now();
         const df = (typeof frameCounter === 'number' ? frameCounter : 0) - prevFrame;
         const dt = Math.max(1, now - prevTime);
@@ -3712,6 +3723,24 @@ function isStaticEntityBlockingTile(col, row) {
 }
 
 // New canWalkTo: buildings are solid except explicit pass-through tiles like roads
+
+// Find the nearest walkable tile within a search radius (BFS-style spiral)
+function findNearestWalkable(col, row, maxRadius = 12) {
+  col = Math.round(col); row = Math.round(row);
+  if (canWalkTo(col, row)) return { col, row };
+  for (let r = 1; r <= maxRadius; r++) {
+    for (let dc = -r; dc <= r; dc++) {
+      for (let dr = -r; dr <= r; dr++) {
+        if (Math.abs(dc) !== r && Math.abs(dr) !== r) continue; // only shell
+        const c2 = col + dc, r2 = row + dr;
+        if (c2 < 0 || r2 < 0 || c2 >= COLS || r2 >= ROWS) continue;
+        if (canWalkTo(c2, r2)) return { col: c2, row: r2 };
+      }
+    }
+  }
+  return { col, row }; // fallback: original position
+}
+
 function canWalkTo(col, row) {
   if (window.currentInterior) {
     const interior = window.currentInterior;
@@ -3923,11 +3952,15 @@ function generateMap(mapType) {
   } catch (e) {}
   // ── 8. Player spawn near first village ──
   try {
+    let spawnC, spawnR;
     if (window._VILLAGES&&window._VILLAGES.length>0) {
       const v=window._VILLAGES[0];
-      player.col=Math.max(0,Math.min(COLS-1,Math.floor((v.minC+v.maxC)/2)));
-      player.row=Math.max(0,Math.min(ROWS-1,Math.floor((v.minR+v.maxR)/2)));
-    } else { player.col=Math.floor(COLS/2); player.row=Math.floor(ROWS/2); }
+      spawnC=Math.max(0,Math.min(COLS-1,Math.floor((v.minC+v.maxC)/2)));
+      spawnR=Math.max(0,Math.min(ROWS-1,Math.floor((v.minR+v.maxR)/2)));
+    } else { spawnC=Math.floor(COLS/2); spawnR=Math.floor(ROWS/2); }
+    // ensure the player does not start on a blocked tile (building, wall, etc.)
+    try { const safe = findNearestWalkable(spawnC, spawnR); spawnC = safe.col; spawnR = safe.row; } catch(e2) {}
+    player.col=spawnC; player.row=spawnR;
     player.x=player.col; player.y=player.row;
   } catch(e){}
   // ── 9. Resource nodes ──
@@ -5252,7 +5285,7 @@ function render() {
 
   // --- Survival HUD (top-right) ---
   try {
-    if (!cinematicActive) {
+    if (!cinematicActive && window._hudVisible) {
       const hudW = 170; const hudH = 70; const pad = 10;
       const hx = W - hudW - pad; const hy = pad + 4;
       // panel background with border
@@ -7093,10 +7126,10 @@ function render() {
     try { drawWorldMapOverlay(W, H); } catch (e) {}
   }
   // Mini-map overlay (bottom-right corner)
-  try { if (!editMode && !worldMapOverlayVisible && window._gameStarted && !cinematicActive) drawMiniMap(ctx, W, H); } catch (e) {}
+  try { if (!editMode && !worldMapOverlayVisible && window._gameStarted && !cinematicActive && window._hudVisible) drawMiniMap(ctx, W, H); } catch (e) {}
   // Story objective HUD (top-left, free mode)
-  try { if (window._gameStarted && !worldMapOverlayVisible && !cinematicActive) drawStoryObjectiveHUD(ctx, W, H); } catch (e) {}
-  try { if (window._gameStarted && !worldMapOverlayVisible && !cinematicActive) drawCompactGuideOverlay(ctx, W, H); } catch (e) {}
+  try { if (window._gameStarted && !worldMapOverlayVisible && !cinematicActive && window._hudVisible) drawStoryObjectiveHUD(ctx, W, H); } catch (e) {}
+  try { if (window._gameStarted && !worldMapOverlayVisible && !cinematicActive && window._hudVisible) drawCompactGuideOverlay(ctx, W, H); } catch (e) {}
   // Time speed indicator on canvas (top-center, only when not ×1 or paused)
   try {
     if (window._gameStarted && !editMode && !cinematicActive) {
@@ -7299,6 +7332,8 @@ function placeBuild(col, row) {
   addLog(`Construido: ${getBuildingDisplay(effectiveType).name} en (${col},${row})`);
   gainXP(10);
   notify(`${getBuildingDisplay(effectiveType).name} construida.`);
+  // Play build sound
+  try { if (SoundManager) SoundManager.playSFX('build'); } catch (e) {}
   // mission progress: building events
   try {
     if (window._missions && window._missions.length > 0) {
@@ -7307,6 +7342,11 @@ function placeBuild(col, row) {
           m.progress = (m.progress || 0) + 1;
         }
       });
+      // Check if first mission (story mission) is complete
+      const firstMission = window._missions[0];
+      if (firstMission && firstMission.isStory && firstMission.progress >= firstMission.target && !firstMission.done) {
+        try { completeMission(firstMission.id); } catch (e) { console.warn('completeMission failed:', e); }
+      }
       if (window.renderMissions) window.renderMissions();
     }
   } catch (err) {}
@@ -7346,6 +7386,11 @@ function placeBuildMultiple(rect) {
             m.progress = (m.progress || 0) + placed.length;
           }
         });
+        // Check if first mission (story mission) is complete
+        const firstMission = window._missions[0];
+        if (firstMission && firstMission.isStory && firstMission.progress >= firstMission.target && !firstMission.done) {
+          try { completeMission(firstMission.id); } catch (e) { console.warn('completeMission failed:', e); }
+        }
         if (window.renderMissions) window.renderMissions();
       }
     } catch (err) {}
@@ -7876,30 +7921,20 @@ function updateCharCard() {
 }
 
 function renderActionList() {
+  // Render to horizontal action bar if it exists, fallback to old list
+  const bar = document.getElementById('action-bar');
   const list = document.getElementById('actions-list');
-  if (!list) return;
-  list.innerHTML = '';
+  const target = bar || list;
+  if (!target) return;
+  target.innerHTML = '';
   ACTIONS.forEach(action => {
-    const li = document.createElement('li');
-    li.className = 'actions-item';
-    li.innerHTML = `
-      <div class="actions-row">
-        <div>
-          <div class="actions-name">${action.name}</div>
-          <div class="actions-desc">${action.desc}</div>
-        </div>
-        <button class="tool-btn actions-btn" data-action="${action.id}">-${action.cost} AP</button>
-      </div>
-    `;
-    list.appendChild(li);
-  });
-
-  list.querySelectorAll('.actions-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const actionId = btn.dataset.action;
-      if (!actionId) return;
-      performAction(actionId);
-    });
+    const btn = document.createElement('button');
+    btn.className = 'action-bar-btn';
+    btn.dataset.action = action.id;
+    btn.title = action.desc;
+    btn.innerHTML = `<span class="action-bar-name">${action.name}</span><span class="action-bar-cost">-${action.cost} AP</span>`;
+    btn.addEventListener('click', () => { if (action.id) performAction(action.id); });
+    target.appendChild(btn);
   });
 }
 
@@ -9765,8 +9800,18 @@ function loadPlayerPos() {
     try { p = JSON.parse(raw); } catch (e) { p = null; }
     if (p && typeof p.x === 'number' && typeof p.y === 'number') {
       // clamp coordinates to valid world bounds
-      const nx = Math.max(0, Math.min(COLS-1, p.x));
-      const ny = Math.max(0, Math.min(ROWS-1, p.y));
+      let nx = Math.max(0, Math.min(COLS-1, p.x));
+      let ny = Math.max(0, Math.min(ROWS-1, p.y));
+      // if saved position is on a blocked tile, find nearest walkable
+      if (!window.currentInterior) {
+        try {
+          const sc = Math.floor(nx), sr = Math.floor(ny);
+          if (!canWalkTo(sc, sr)) {
+            const safe = findNearestWalkable(sc, sr);
+            nx = safe.col; ny = safe.row;
+          }
+        } catch (e2) {}
+      }
       console.debug('loadPlayerPos -> restored pos raw=', p, 'clamped=', { x: nx, y: ny });
       player.x = nx; player.y = ny; player.col = Math.floor(nx); player.row = Math.floor(ny);
       try { centerCameraOnPlayer(); } catch (e) {}
@@ -10401,9 +10446,17 @@ function showStartMenu(force) {
         try { if (window._showPanels) { const top = document.getElementById('topbar'); if (top) top.style.display = ''; const toolbar = document.getElementById('toolbar'); if (toolbar) toolbar.style.display = ''; const mainEl = document.getElementById('main'); if (mainEl) mainEl.style.display = ''; } } catch (e) {}
         mapCacheDirty = true; rebuildMapCachesAsync();
         updateUI();
+        window._hudVisible = false;
         try { window._gameStarted = true; startRenderLoop(); } catch (e) {}
         try { createTimeControlWidget(); } catch (e) {}
         try { startLocked = false; targetZoom = zoom; ensureBottomHudDock(); canvas.focus({ preventScroll: true }); } catch (e) {}
+        try { initDraggablePanels(); } catch (e) {}
+        // Show HUD after 2 seconds or on first input
+        setTimeout(() => { window._hudVisible = true; }, 2000);
+        const showHudOnInput = () => { window._hudVisible = true; document.removeEventListener('keydown', showHudOnInput); document.removeEventListener('mousemove', showHudOnInput); canvas.removeEventListener('click', showHudOnInput); };
+        document.addEventListener('keydown', showHudOnInput);
+        document.addEventListener('mousemove', showHudOnInput);
+        canvas.addEventListener('click', showHudOnInput);
       } catch (e) { console.error(e); try { prog && prog.hide(); } catch (er) {} notify('Error cargando partida'); }
     });
 
@@ -10587,7 +10640,19 @@ function showStartupParams() {
         try { window._showPanels = true; } catch (e) {}
         try { if (window._showPanels) { const top = document.getElementById('topbar'); if (top) top.style.display = ''; const toolbar = document.getElementById('toolbar'); if (toolbar) toolbar.style.display = ''; const mainEl = document.getElementById('main'); if (mainEl) mainEl.style.display = ''; } } catch (e) {}
         // start the main game loop now that generation and UI restore are complete
+        window._hudVisible = false;
         try { window._gameStarted = true; startRenderLoop(); } catch (e) {}
+        // Always start in free mode so the character can move immediately
+        try { setEditMode(false); } catch (e) {}
+        try { initDraggablePanels(); } catch (e) {}
+        // Always start in free mode so the character can move
+        try { setEditMode(false); } catch (e) {}
+        // Show HUD after 2 seconds or on first input
+        setTimeout(() => { window._hudVisible = true; }, 2000);
+        const showHudOnInput = () => { window._hudVisible = true; document.removeEventListener('keydown', showHudOnInput); document.removeEventListener('mousemove', showHudOnInput); canvas.removeEventListener('click', showHudOnInput); };
+        document.addEventListener('keydown', showHudOnInput);
+        document.addEventListener('mousemove', showHudOnInput);
+        canvas.addEventListener('click', showHudOnInput);
         // Set a closer default zoom so the player is clearly visible at start
         try { zoom = 2.0; centerCamera(); } catch (e) {}
         try { addLog(ep.foundedLog || 'Asentamiento fundado.'); } catch (e) {}
@@ -10873,6 +10938,49 @@ function advanceStoryChapter(chapter) {
   try { notify(titles[chapter] || 'Nueva misión de historia'); } catch (e) {}
 }
 
+// Complete current mission and display cinematic, then advance story
+function completeMission(missionId) {
+  try {
+    if (!window._missions || window._missions.length === 0) return;
+    const currentMission = window._missions[0];
+    if (!currentMission || !currentMission.isStory) return; // only story missions trigger cinematics
+    
+    // Mark mission as complete
+    currentMission.done = true;
+    currentMission.progress = currentMission.target;
+    
+    // Trigger cinematic sequence
+    const epochId = window._currentEpoch || 'mesopotamia';
+    const chapter = window._storyChapter || 1;
+    const chapters = getStoryChapterTitles(epochId);
+    const chapterTitle = chapters[chapter] || '...';
+    
+    // Play mission complete sound
+    try { if (SoundManager) SoundManager.playSFX('missionComplete'); } catch (e) {}
+    
+    // Show completion backdrop + message
+    window._cinematicBackdrop = {
+      alpha: 0,
+      startTime: Date.now(),
+      duration: 3500,
+      missionTitle: currentMission.title,
+      missionDesc: currentMission.desc,
+      chapterTitle: chapterTitle,
+      chapter: chapter
+    };
+    cinematicActive = true;
+    
+    // Advance to next chapter after cinematic
+    setTimeout(() => {
+      advanceStoryChapter(chapter + 1);
+      cinematicActive = false;
+      window._cinematicBackdrop = null;
+    }, 3500);
+    
+    if (window.renderMissions) window.renderMissions();
+  } catch (e) { console.warn('completeMission error:', e); }
+}
+
 function checkChapter2Completion() {
   if (window._storyChapter !== 2) return;
   const food  = inventory['food']  || 0;
@@ -10901,6 +11009,36 @@ function drawStoryObjectiveHUD(ctx, W, H) {
     try { const panel = document.getElementById('story-objective-overlay'); if (panel) panel.style.display = 'none'; } catch (e) {}
     return;
   }
+  
+  // Render mission completion cinematic
+  if (window._cinematicBackdrop) {
+    const backdrop = window._cinematicBackdrop;
+    const elapsed = Date.now() - backdrop.startTime;
+    const dur = backdrop.duration || 3500;
+    if (elapsed < dur) {
+      const alpha = elapsed < 400 ? elapsed / 400 : elapsed > dur - 400 ? (dur - elapsed) / 400 : 1;
+      ctx.save();
+      ctx.globalAlpha = alpha * 0.82;
+      ctx.fillStyle = 'rgba(0,0,0,0.68)';
+      ctx.fillRect(0, 0, W, H);
+      ctx.globalAlpha = alpha;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#FFD700';
+      ctx.font = 'bold 22px serif';
+      ctx.shadowColor = 'rgba(200,150,40,0.85)';
+      ctx.shadowBlur = 20;
+      ctx.fillText('✓ ' + (backdrop.missionTitle || 'Misión completada'), W / 2, H / 2 - 30);
+      ctx.shadowBlur = 0;
+      ctx.font = 'italic 13px serif';
+      ctx.fillStyle = 'rgba(255,240,200,0.8)';
+      ctx.fillText(backdrop.missionDesc || '', W / 2, H / 2 + 10);
+      ctx.font = '11px serif';
+      ctx.fillStyle = 'rgba(180,180,180,0.6)';
+      ctx.fillText('Procediendo al siguiente acto...', W / 2, H / 2 + 50);
+      ctx.restore();
+    }
+  }
+  
   if (window._storyComplete) {
     const elapsed = Date.now() - window._storyComplete.start;
     const dur = 3200;
@@ -11057,7 +11195,11 @@ function syncCinematicUiVisibility() {
     const hideUi = isCinematicActive();
     if (hideUi) {
       try { worldMapOverlayVisible = false; } catch (e) {}
-      try { keyState = {}; } catch (e) {}
+      // Only wipe keyState during real dialogue cinematics, NOT during intro sequence
+      // (during intro the player should still be able to press WASD)
+      if (!window._introSeq || window._introSeq.done) {
+        try { keyState = {}; } catch (e) {}
+      }
     }
     if (!!window._cinematicUiHidden === hideUi) return;
     window._cinematicUiHidden = hideUi;
@@ -11147,6 +11289,56 @@ function shouldUpdateEntity(ent, opts = {}) {
   } catch (e) { return true; }
 }
 
+// Initialize draggable panels (call once after game starts)
+function initDraggablePanels() {
+  try {
+    const panel = document.getElementById('panel');
+    const panelHandle = document.getElementById('panel-drag-handle');
+    if (panel && panelHandle) makeDraggable(panel, panelHandle);
+  } catch (e) {}
+  try {
+    const charCard = document.getElementById('char-card');
+    const charHeader = charCard && charCard.querySelector('.char-header');
+    if (charCard && charHeader) makeDraggable(charCard, charHeader);
+  } catch (e) {}
+}
+
+// Make any element draggable by holding its handle
+function makeDraggable(el, handle) {
+  if (!el || !handle) return;
+  handle.style.cursor = 'grab';
+  handle.title = 'Arrastrar';
+  handle.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    const rect = el.getBoundingClientRect();
+    // Convert to fixed positioning preserving current position
+    el.style.position = 'fixed';
+    el.style.left = rect.left + 'px';
+    el.style.top = rect.top + 'px';
+    el.style.right = 'auto';
+    el.style.bottom = 'auto';
+    el.style.margin = '0';
+    el.style.zIndex = '20000';
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startLeft = rect.left;
+    const startTop = rect.top;
+    handle.style.cursor = 'grabbing';
+    function onMove(e) {
+      el.style.left = Math.max(0, Math.min(window.innerWidth - 60, startLeft + e.clientX - startX)) + 'px';
+      el.style.top  = Math.max(0, Math.min(window.innerHeight - 40, startTop  + e.clientY - startY)) + 'px';
+    }
+    function onUp() {
+      handle.style.cursor = 'grab';
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    e.preventDefault();
+  });
+}
+
 function startIntroSequence() {
   window._introSeq = { phase: 0, phaseStart: performance.now(), done: false };
 }
@@ -11156,7 +11348,21 @@ function advanceIntroSequence() {
   const PHASES = 4;
   seq.phase = (seq.phase || 0) + 1;
   seq.phaseStart = performance.now();
-  if (seq.phase >= PHASES) seq.done = true;
+  if (seq.phase >= PHASES) {
+    seq.done = true;
+    // When the intro ends ensure the player is not stuck on a building tile
+    if (!window.currentInterior) {
+      try {
+        const sc = Math.floor(player.x), sr = Math.floor(player.y);
+        if (!canWalkTo(sc, sr)) {
+          const safe = findNearestWalkable(sc, sr);
+          player.col = safe.col; player.row = safe.row;
+          player.x = safe.col; player.y = safe.row;
+          try { centerCameraOnPlayer(); } catch (e2) {}
+        }
+      } catch (e) {}
+    }
+  }
 }
 function skipIntro() {
   if (window._introSeq && !window._introSeq.done) window._introSeq.done = true;
@@ -12780,6 +12986,8 @@ function init() {
           document.querySelectorAll('.build-btn').forEach(b => b.classList.remove('selected'));
           try { document.getElementById('btn-demolish').classList.remove('selected'); } catch (e) {}
           btn.classList.add('selected');
+          // Play selection click sound
+          try { if (SoundManager) SoundManager.playSFX('click'); } catch (e) {}
         }
       });
     });
