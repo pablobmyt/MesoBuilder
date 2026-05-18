@@ -1505,3 +1505,272 @@ body.dialogue-active #crafting-panel {
 /* char-header acts as drag handle */
 .char-header { cursor: grab; user-select: none; }
 .char-header:active { cursor: grabbing; }
+
+/* ── THEME: UNREAL WORLD INSPIRED ─────────────────────── */
+body.theme-urw {
+  --ui-bg: #121212;
+  --ui-border: #7d7a74;
+  --ui-text: #d6d2c9;
+  --ui-dim: #9b968a;
+  --sand-mid: #cec28d;
+  --sand-light: #ece3bc;
+  --sand-dark: #4f4b3f;
+  --river: #4a6377;
+  --wheat: #b8a76a;
+  background:
+    radial-gradient(circle at 20% 15%, rgba(255, 255, 255, 0.05), transparent 26%),
+    radial-gradient(circle at 80% 75%, rgba(255, 255, 255, 0.04), transparent 22%),
+    repeating-linear-gradient(135deg, #242320 0px, #242320 6px, #1f1e1b 6px, #1f1e1b 12px);
+  font-family: 'Lucida Console', 'Trebuchet MS', 'Courier New', monospace;
+}
+
+body.theme-urw #app {
+  padding: 8px;
+  gap: 8px;
+}
+
+body.theme-urw #topbar,
+body.theme-urw #toolbar,
+body.theme-urw #main,
+body.theme-urw #panel,
+body.theme-urw #char-card,
+body.theme-urw #action-bar,
+body.theme-urw #tooltip,
+body.theme-urw #notif {
+  border: 2px solid #7b7870;
+  box-shadow: inset 0 0 0 1px rgba(242, 236, 214, 0.1), 0 8px 22px rgba(0, 0, 0, 0.4);
+}
+
+body.theme-urw #topbar {
+  background: linear-gradient(180deg, #3b4249 0%, #272d32 100%);
+  border-color: #8f96a0;
+  border-bottom-width: 3px;
+  border-radius: 2px;
+  padding: 8px 12px;
+  gap: 16px;
+}
+
+body.theme-urw #topbar h1 {
+  color: #e2dbb5;
+  text-shadow: 0 1px 0 #000;
+  letter-spacing: 2px;
+  font-size: 0.92rem;
+}
+
+body.theme-urw .res-group {
+  gap: 10px;
+  padding: 4px 8px;
+  background: rgba(15, 15, 15, 0.48);
+  border: 1px solid #5e5a51;
+}
+
+body.theme-urw .res-item {
+  font-size: 0.75rem;
+  gap: 5px;
+}
+
+body.theme-urw .res-val {
+  color: #efe5b9;
+}
+
+body.theme-urw .topbar-turn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  background: rgba(14, 14, 14, 0.55);
+  border: 1px solid #646156;
+  padding: 4px 8px;
+}
+
+body.theme-urw #turn-info {
+  color: #c9c3b2;
+  font-size: 0.72rem;
+}
+
+body.theme-urw #btn-endturn {
+  background: linear-gradient(180deg, #8f8255 0%, #5d553a 100%);
+  border-color: #d9cd99;
+  color: #12100b;
+  font-weight: bold;
+}
+
+body.theme-urw #btn-endturn:hover {
+  background: linear-gradient(180deg, #ac9d68 0%, #7c734f 100%);
+  color: #050505;
+}
+
+body.theme-urw #toolbar {
+  background: linear-gradient(180deg, #2a2a28 0%, #1c1c1a 100%);
+  border-color: #6b675f;
+  border-radius: 2px;
+  padding: 6px 10px;
+  gap: 18px;
+}
+
+body.theme-urw .tool-label {
+  color: #b9b39f;
+  letter-spacing: 1.4px;
+}
+
+body.theme-urw .tool-btn {
+  background: linear-gradient(180deg, #3a3934 0%, #23221e 100%);
+  border-color: #676257;
+  color: #ddd8cc;
+}
+
+body.theme-urw .tool-btn:hover,
+body.theme-urw .tool-btn.active {
+  border-color: #d9ca93;
+  color: #f4eecf;
+  background: linear-gradient(180deg, #4c4a44 0%, #2d2b26 100%);
+}
+
+body.theme-urw #main {
+  background: #141412;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+body.theme-urw #gameCanvas {
+  background: linear-gradient(180deg, #ece8d6 0%, #cfcab6 100%);
+  image-rendering: pixelated;
+}
+
+body.theme-urw #panel {
+  width: 328px;
+  min-width: 328px;
+  background:
+    radial-gradient(circle at top right, rgba(198, 188, 157, 0.1), transparent 28%),
+    repeating-linear-gradient(90deg, #211f1b 0px, #211f1b 7px, #25231f 7px, #25231f 14px);
+  border-left: 3px solid #9a927f;
+  padding-top: 254px;
+}
+
+body.theme-urw #panel-drag-handle {
+  background: linear-gradient(180deg, #414952 0%, #2c333a 100%);
+  border-bottom: 1px solid #8a8f99;
+  color: #ddd7be;
+  font-size: 0.68rem;
+}
+
+body.theme-urw .panel-section {
+  border-bottom: 1px solid #3f3b31;
+  padding: 10px;
+}
+
+body.theme-urw .panel-title {
+  color: #d9cd99;
+  border-bottom-color: #67604d;
+  font-size: 0.69rem;
+  letter-spacing: 1.6px;
+}
+
+body.theme-urw .build-btn,
+body.theme-urw #btn-demolish {
+  border-width: 1px;
+  border-radius: 0;
+  margin-bottom: 4px;
+}
+
+body.theme-urw .build-btn {
+  background: linear-gradient(180deg, #262420 0%, #1a1916 100%);
+  border-color: #514c40;
+}
+
+body.theme-urw .build-btn:hover,
+body.theme-urw .build-btn.selected {
+  background: linear-gradient(180deg, #3b3730 0%, #24211d 100%);
+  border-color: #d6c893;
+}
+
+body.theme-urw #btn-demolish {
+  background: linear-gradient(180deg, #3f1f1f 0%, #2b1515 100%);
+  border-color: #744444;
+}
+
+body.theme-urw #btn-demolish:hover,
+body.theme-urw #btn-demolish.selected {
+  border-color: #b66f6f;
+}
+
+body.theme-urw #char-card {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  left: auto;
+  bottom: auto;
+  width: 306px;
+  background: linear-gradient(180deg, #22201c 0%, #171612 100%);
+  border: 2px solid #878270;
+  pointer-events: auto;
+  z-index: 13;
+}
+
+body.theme-urw #char-card::before {
+  border-color: rgba(228, 222, 197, 0.14);
+}
+
+body.theme-urw .char-name {
+  color: #efe2aa;
+}
+
+body.theme-urw .stat-bar-track {
+  background: #0f0f0e;
+  border-color: #575247;
+}
+
+body.theme-urw #log {
+  background: rgba(10, 10, 10, 0.38);
+  border-top: 1px solid #4d4738;
+  color: #a59f8e;
+}
+
+body.theme-urw #log p.new {
+  color: #e4d7a3;
+}
+
+body.theme-urw #action-bar {
+  left: 8px;
+  right: 336px;
+  bottom: 8px;
+  background: linear-gradient(180deg, rgba(15, 15, 15, 0.95) 0%, rgba(10, 10, 10, 0.95) 100%);
+  border-color: #6d695f;
+  border-top-width: 2px;
+}
+
+body.theme-urw .action-bar-btn {
+  background: linear-gradient(180deg, #35332d 0%, #22211d 100%);
+  border-color: #595446;
+}
+
+body.theme-urw .action-bar-btn:hover {
+  border-color: #d7ca95;
+  background: linear-gradient(180deg, #46433b 0%, #2d2b25 100%);
+}
+
+body.theme-urw .action-bar-name {
+  color: #ddd09d;
+}
+
+body.theme-urw #tooltip,
+body.theme-urw #notif {
+  background: rgba(20, 20, 18, 0.95);
+  border-color: #7b7564;
+  color: #e2ddcd;
+}
+
+@media (max-width: 1280px) {
+  body.theme-urw #panel {
+    width: 292px;
+    min-width: 292px;
+  }
+
+  body.theme-urw #char-card {
+    width: 272px;
+  }
+
+  body.theme-urw #action-bar {
+    right: 300px;
+  }
+}
