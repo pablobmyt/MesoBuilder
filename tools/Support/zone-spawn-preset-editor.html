@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MesoBuilder · Editor de plantillas de zona</title>
+  <style>
+    :root {
+      --bg: #0f1520;
+      --panel: #182233;
+      --line: rgba(121,168,235,0.26);
+      --text: #eaf1fb;
+      --muted: #a9b9cf;
+      --accent: #4f86d9;
+      --accent-2: #7daef0;
+      --danger: #b45b4f;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      background: radial-gradient(circle at top, rgba(79,134,217,0.2), transparent 35%), var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", Tahoma, sans-serif;
+    }
+    body {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 10px;
+      padding: 14px;
+    }
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(24,34,51,0.92);
+      padding: 12px;
+    }
+    .top {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: end;
+    }
+    .field { display: grid; gap: 6px; }
+    label { font-size: 12px; color: var(--muted); }
+    select, textarea {
+      width: 100%;
+      border: 1px solid rgba(121,168,235,0.28);
+      border-radius: 10px;
+      background: rgba(12,18,28,0.94);
+      color: var(--text);
+      padding: 10px;
+      font-size: 13px;
+    }
+    textarea {
+      min-height: 420px;
+      resize: vertical;
+      font-family: Consolas, "Courier New", monospace;
+      line-height: 1.4;
+    }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; }
+    button {
+      border: 1px solid rgba(121,168,235,0.28);
+      border-radius: 10px;
+      background: linear-gradient(180deg, rgba(44,60,84,0.95), rgba(28,40,58,0.95));
+      color: var(--text);
+      padding: 9px 12px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    button.primary {
+      background: linear-gradient(180deg, var(--accent-2), var(--accent));
+      color: #071423;
+      font-weight: 700;
+    }
+    button.danger {
+      background: linear-gradient(180deg, rgba(121,52,42,0.95), rgba(73,28,22,0.95));
+      border-color: rgba(180,91,79,0.5);
+      color: #ffe1dc;
+    }
+    .hint { color: var(--muted); font-size: 12px; line-height: 1.45; }
+    .status { font-size: 13px; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <section class="panel top">
+    <div class="field">
+      <label for="zoneType">Tipo de zona</label>
+      <select id="zoneType">
+        <option value="military_base">Base militar</option>
+        <option value="capital">Capital</option>
+        <option value="trading_post">Puesto comercial</option>
+        <option value="origin">Aldea origen</option>
+        <option value="village">Aldea</option>
+      </select>
+    </div>
+    <div class="row">
+      <button id="btnReload">Recargar</button>
+      <button id="btnFormat">Formatear JSON</button>
+      <button id="btnExportAll">Exportar JSON</button>
+      <button id="btnImportAll">Importar JSON</button>
+      <button id="btnDelete" class="danger">Borrar zona</button>
+      <button id="btnSave" class="primary">Guardar zona</button>
+    </div>
+  </section>
+
+  <section class="panel" style="min-height:0;display:grid;grid-template-rows:auto 1fr;gap:8px;">
+    <div class="hint">Edita solo el objeto de una zona (sin el wrapper completo). Estructura esperada: <b>terrain</b>, <b>buildings</b>, <b>entities</b>, opcional <b>anchor</b>/<b>selection</b>.</div>
+    <textarea id="zoneJson" spellcheck="false"></textarea>
+  </section>
+
+  <section class="panel" style="display:grid;gap:6px;">
+    <div class="status" id="status">Listo.</div>
+    <div class="hint">Los cambios se guardan en localStorage (clave: meso.zoneSpawnPresets) y se usan en la siguiente generación de mapa.</div>
+  </section>
+  <input id="fileInputAll" type="file" accept=".json,application/json" hidden>
+
+  <script>
+    const STORAGE_KEY = 'meso.zoneSpawnPresets';
+    const zoneType = document.getElementById('zoneType');
+    const zoneJson = document.getElementById('zoneJson');
+    const statusEl = document.getElementById('status');
+
+    function setStatus(text) {
+      statusEl.textContent = text || 'Listo.';
+    }
+
+    function loadAll() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        const parsed = raw ? JSON.parse(raw) : {};
+        return (parsed && typeof parsed === 'object') ? parsed : {};
+      } catch (e) {
+        return {};
+      }
+    }
+
+    function downloadJson(filename, payload) {
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function normalizeImportedPresetPayload(parsed) {
+      if (!parsed || typeof parsed !== 'object') throw new Error('Archivo JSON inválido.');
+      const src = (parsed.zoneSpawnPresets && typeof parsed.zoneSpawnPresets === 'object')
+        ? parsed.zoneSpawnPresets
+        : parsed;
+      if (!src || typeof src !== 'object') throw new Error('No contiene plantillas de zona válidas.');
+      return src;
+    }
+
+    function saveAll(obj) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(obj || {}));
+      try {
+        if (window.opener && !window.opener.closed) {
+          window.opener.postMessage({ type: 'meso-zone-presets-updated' }, '*');
+        }
+      } catch (e) {}
+    }
+
+    function loadZoneIntoEditor() {
+      const all = loadAll();
+      const key = zoneType.value;
+      const data = all[key] || { type: key, terrain: [], buildings: [], entities: [] };
+      zoneJson.value = JSON.stringify(data, null, 2);
+      const buildings = Array.isArray(data.buildings) ? data.buildings.length : 0;
+      const terrain = Array.isArray(data.terrain) ? data.terrain.length : 0;
+      const entities = Array.isArray(data.entities) ? data.entities.length : 0;
+      setStatus(`Zona ${key}: ${buildings} edificios, ${entities} ambient, ${terrain} celdas de terreno.`);
+    }
+
+    function ensureValidZonePresetObject(obj, key) {
+      if (!obj || typeof obj !== 'object' || Array.isArray(obj)) throw new Error('Debe ser un objeto JSON.');
+      const out = { ...obj };
+      out.type = key;
+      if (!Array.isArray(out.terrain)) out.terrain = [];
+      if (!Array.isArray(out.buildings)) out.buildings = [];
+      if (!Array.isArray(out.entities)) out.entities = [];
+      return out;
+    }
+
+    function saveCurrentZone() {
+      const key = zoneType.value;
+      let parsed;
+      try {
+        parsed = JSON.parse(String(zoneJson.value || '{}'));
+      } catch (e) {
+        throw new Error('JSON inválido. Revisa comas y llaves.');
+      }
+      const normalized = ensureValidZonePresetObject(parsed, key);
+      const all = loadAll();
+      all[key] = normalized;
+      saveAll(all);
+      zoneJson.value = JSON.stringify(normalized, null, 2);
+      setStatus(`Plantilla de ${key} guardada.`);
+    }
+
+    function deleteCurrentZone() {
+      const key = zoneType.value;
+      const all = loadAll();
+      if (!Object.prototype.hasOwnProperty.call(all, key)) {
+        setStatus(`No había plantilla para ${key}.`);
+        return;
+      }
+      delete all[key];
+      saveAll(all);
+      loadZoneIntoEditor();
+      setStatus(`Plantilla de ${key} eliminada.`);
+    }
+
+    document.getElementById('btnReload').addEventListener('click', () => {
+      loadZoneIntoEditor();
+    });
+
+    document.getElementById('btnFormat').addEventListener('click', () => {
+      try {
+        const parsed = JSON.parse(String(zoneJson.value || '{}'));
+        zoneJson.value = JSON.stringify(parsed, null, 2);
+        setStatus('JSON formateado.');
+      } catch (e) {
+        setStatus('No se pudo formatear: JSON inválido.');
+      }
+    });
+
+    document.getElementById('btnSave').addEventListener('click', () => {
+      try {
+        saveCurrentZone();
+      } catch (e) {
+        setStatus(`No se pudo guardar: ${e && e.message ? e.message : e}`);
+      }
+    });
+
+    document.getElementById('btnExportAll').addEventListener('click', () => {
+      try {
+        const all = loadAll();
+        const payload = {
+          meta: {
+            type: 'mesobuilder-zone-spawn-presets',
+            version: 1,
+            exportedAt: new Date().toISOString()
+          },
+          zoneSpawnPresets: all
+        };
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+        downloadJson(`meso-zone-spawn-presets-${stamp}.json`, payload);
+        setStatus('Plantillas exportadas a JSON independiente.');
+      } catch (e) {
+        setStatus(`No se pudo exportar: ${e && e.message ? e.message : e}`);
+      }
+    });
+
+    document.getElementById('btnImportAll').addEventListener('click', () => {
+      try {
+        const input = document.getElementById('fileInputAll');
+        input.value = '';
+        input.click();
+      } catch (e) {
+        setStatus('No se pudo abrir selector de archivo.');
+      }
+    });
+
+    document.getElementById('fileInputAll').addEventListener('change', async (ev) => {
+      const file = ev.target && ev.target.files && ev.target.files[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const parsed = JSON.parse(text);
+        const normalized = normalizeImportedPresetPayload(parsed);
+        saveAll(normalized);
+        loadZoneIntoEditor();
+        setStatus('Plantillas importadas desde JSON independiente.');
+      } catch (e) {
+        setStatus(`No se pudo importar: ${e && e.message ? e.message : e}`);
+      } finally {
+        try { ev.target.value = ''; } catch (err) {}
+      }
+    });
+
+    document.getElementById('btnDelete').addEventListener('click', () => {
+      if (!window.confirm(`¿Borrar la plantilla de ${zoneType.value}?`)) return;
+      deleteCurrentZone();
+    });
+
+    zoneType.addEventListener('change', () => {
+      loadZoneIntoEditor();
+    });
+
+    window.addEventListener('storage', (ev) => {
+      if (ev.key === STORAGE_KEY) loadZoneIntoEditor();
+    });
+
+    loadZoneIntoEditor();
+  </script>
+</body>
+</html>

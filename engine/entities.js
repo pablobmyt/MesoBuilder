@@ -2,6 +2,7 @@
 export const entities = [];
 export const rabbits = [];
 export const foxes = [];
+export const graves = [];
 
 // NPC dialogue configuration (type -> { phrases: [], mood?: string })
 window.NPC_DIALOGUES = window.NPC_DIALOGUES || {};
@@ -153,4 +154,55 @@ export function randomizeNpcAppearance(npc) {
     npc.palette = palettes[idx];
     npc.presetId = presets[Math.floor(Math.random() * presets.length)];
   } catch (e) {}
+}
+
+export function createGrave(deadEntity, col, row) {
+  const epitaph = generateEpitaph(deadEntity);
+  const grave = {
+    id: 'grave-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+    kind: 'grave',
+    col,
+    row,
+    x: col + 0.5,
+    y: row + 0.5,
+    name: deadEntity.name || 'Desconocido',
+    epitaph: epitaph,
+    deadEntityKind: deadEntity.kind || 'unknown',
+    createdAt: Date.now()
+  };
+  graves.push(grave);
+  return grave;
+}
+
+function generateEpitaph(entity) {
+  const name = entity.name || 'Alguien';
+  const kind = entity.kind || 'unknown';
+  
+  const epitaphs = {
+    player: [
+      `Aquí yace ${name}\nUn líder valiente que construyó civilizaciones.`,
+      `${name}\nSiempre recordado por su coraje.`,
+      `En memoria de ${name}\nQue descanse en paz.`
+    ],
+    pet: [
+      `Aquí yace ${name}\nUn fiel compañero.\nFue un buen perro.`,
+      `${name}\nNuestro mejor amigo.\nSiempre en nuestros corazones.`,
+      `En memoria de ${name}\nUn perro leal y verdadero.`
+    ],
+    rabbit: [
+      `Aquí yace un conejo\nRápido y pequeño.\nDescansa ahora.`,
+      `Un conejo inocente\nVictima del destino.`
+    ],
+    fox: [
+      `Aquí yace un zorro\nHermoso y salvaje.\nDescansa en paz.`,
+      `Un zorro astuto\nQue ya no cazará más.`
+    ],
+    enemy: [
+      `Aquí yace un enemigo\nDerrotado en batalla.`,
+      `Un rival caído\nSu lucha terminó.`
+    ]
+  };
+  
+  const options = epitaphs[kind] || epitaphs.enemy;
+  return options[Math.floor(Math.random() * options.length)];
 }

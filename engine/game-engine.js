@@ -103,7 +103,7 @@ const clearRuntimeCaches = () => clearRuntimeCachesImpl({
 //  MESOPOTAMIA CITY BUILDER  —  Core engine module (moved from game.js)
 // This file is now loaded as an ES module from index.html
 
-import { entities, rabbits, foxes, placeResource, placeRabbit, placeFox, spawnNPC, placeTree } from './entities.js';
+import { entities, rabbits, foxes, graves, placeResource, placeRabbit, placeFox, spawnNPC, placeTree, createGrave } from './entities.js';
 
 const canvas  = document.getElementById('gameCanvas');
 const ctx     = canvas.getContext('2d');
@@ -627,6 +627,7 @@ BUILDINGS.mesopotamian_villa_detailed = { name: 'Villa mesopotámica', costBrick
 BUILDINGS.mesopotamian_house = { name: 'Casa mesopotámica', costBrick: 10, costWheat: 2, prodPop: 6, prodWheat:0, prodBrick:0, color:'#C9A058', roofColor:'#8B5A28', desc:'Vivienda tradicional de ladrillo cocido.', size: { w:3, h:3 } };
 BUILDINGS.mesopotamian_arch  = { name: 'Arco monumental', costBrick: 8, costWheat: 0, prodPop: 0, prodWheat:0, prodBrick:0, color:'#C8A84B', roofColor:'#8B6914', desc:'Arco de entrada a la ciudad.', size: { w:2, h:1 } };
 BUILDINGS.mesopotamian_baths = { name: 'Baños públicos', costBrick: 16, costWheat: 4, prodPop: 3, prodWheat:0, prodBrick:0, color:'#6B9EC8', roofColor:'#3A6B8A', desc:'Instalación de baños para la comunidad.', size: { w:3, h:2 } };
+BUILDINGS.house_isolated = { name:'Casa aislada', costBrick:0, costWheat:0, prodPop:0, prodWheat:0, prodBrick:0, color:'#C19A6B', roofColor:'#6F4D2A', desc:'Refugio personal del protagonista.', size:{ w:5, h:2 } };
 
 // Road definition: small footprint, player-can-build
 BUILDINGS.road = { name: 'Camino', costBrick:0, costWheat:0, prodPop:0, prodWheat:0, prodBrick:0, color:'#8B7B5B', roofColor:'#8B7B5B', desc:'Conecta edificios.', size: { w:1, h:1 } };
@@ -641,6 +642,8 @@ BUILDINGS.wall_tower  = { name: 'Torre de muralla', costBrick:10, costWheat:0, p
 
 // Soviet-era buildings (epoch pack)
 BUILDINGS.soviet_block = { name:'Bloque residencial', costBrick:10, costWheat:3, prodPop:6, prodWheat:0, prodBrick:0, color:'#8A8F97', roofColor:'#6A6F77', desc:'Alojamiento denso para trabajadores.', size:{ w:3, h:3 } };
+BUILDINGS.soviet_superblock = { name:'Superbloque residencial', costBrick:16, costWheat:5, prodPop:10, prodWheat:0, prodBrick:0, color:'#7D838C', roofColor:'#4A5D6B', desc:'Gran bloque residencial de alta densidad.', size:{ w:5, h:5 } };
+BUILDINGS.soviet_superblock_b = { name:'Superbloque residencial B', costBrick:15, costWheat:5, prodPop:9, prodWheat:0, prodBrick:0, color:'#5E6570', roofColor:'#4A4E54', desc:'Variante de superbloque residencial de alta densidad.', size:{ w:5, h:5 } };
 BUILDINGS.party_hq = { name:'Casa del Soviet', costBrick:24, costWheat:8, prodPop:12, prodWheat:0, prodBrick:0, color:'#9A3A3F', roofColor:'#5D1F24', desc:'Centro administrativo del distrito.', size:{ w:5, h:5 } };
 BUILDINGS.collective_farm = { name:'Granja colectiva', costBrick:1, costWheat:3, prodPop:0, prodWheat:4, prodBrick:0, color:'#5E7E52', roofColor:'#415B3A', desc:'Produce 4 comida/turno.' };
 BUILDINGS.factory = { name:'Fábrica', costBrick:15, costWheat:5, prodPop:4, prodWheat:1, prodBrick:2, color:'#6D7078', roofColor:'#4F525A', desc:'+4 población, +1 comida, +2 suministros.' };
@@ -721,7 +724,17 @@ window.effectParticles = window.effectParticles || [];
 window.smokeParticles = window.smokeParticles || [];
 window._VILLAGES = window._VILLAGES || [];
 window._LAST_VILLAGE_ID = window._LAST_VILLAGE_ID || null;
+window._ZONE_SPAWN_PRESETS = window._ZONE_SPAWN_PRESETS || {};
 window._missions = window._missions || [];
+try {
+  const rawZonePresets = localStorage.getItem('meso.zoneSpawnPresets');
+  if (rawZonePresets) {
+    const parsedZonePresets = JSON.parse(rawZonePresets);
+    if (parsedZonePresets && typeof parsedZonePresets === 'object') {
+      window._ZONE_SPAWN_PRESETS = parsedZonePresets;
+    }
+  }
+} catch (e) {}
 
 window.spawnFloatingText = function(worldX, worldY, text, colorOrOpts) {
   try {
@@ -823,6 +836,7 @@ let editMode = false;
 // App-wide state persistence key
 const APP_STATE_KEY = 'meso.appState';
 const STORAGE_EPOCH_KEY = 'meso.currentEpoch';
+const DEFAULT_PET_DOG_NAME = 'Kidu';
 
 const EPOCH_PROFILES = {
   mesopotamia: {
@@ -1052,7 +1066,7 @@ function getBuildingDisplay(type) {
 function getEpochBuildPalette(epochId) {
   const key = epochId || window._currentEpoch || 'mesopotamia';
   if (key === 'urss') {
-    return ['soviet_block', 'party_hq', 'collective_farm', 'factory', 'state_warehouse', 'state_warehouse', 'steel_foundry', 'concrete_road'];
+    return ['soviet_block', 'party_hq', 'collective_farm', 'factory', 'state_warehouse', 'soviet_superblock', 'steel_foundry', 'concrete_road'];
   }
   return ['house', 'mesopotamian_villa_detailed', 'farm', 'temple', 'market', 'granary', 'ziggurat', 'road'];
 }
@@ -1227,6 +1241,7 @@ function saveAppState() {
       foxes: (window._savedExterior && Array.isArray(window._savedExterior.foxes))
         ? window._savedExterior.foxes.map(f => ({ ...f }))
         : (Array.isArray(foxes) ? foxes.map(f => ({ ...f })) : []),
+      graves: (Array.isArray(graves) ? graves.map(g => ({ ...g })) : []),
       enemies: (typeof enemies !== 'undefined' && Array.isArray(enemies)) ? enemies.map(en => ({ ...en })) : [],
       effectParticles: (typeof effectParticles !== 'undefined' && Array.isArray(effectParticles)) ? effectParticles.map(p => ({ ...p })) : [],
       floatingTexts: (typeof window.floatingTexts !== 'undefined' && Array.isArray(window.floatingTexts)) ? window.floatingTexts.map(t => ({ ...t })) : [],
@@ -1332,6 +1347,9 @@ function loadAppState() {
       }
       if (s.enemies && Array.isArray(s.enemies)) {
         try { enemies.length = 0; s.enemies.forEach(en => { if (!en || typeof en !== 'object') return; enemies.push({ ...en }); }); } catch (e) { console.warn('enemies restore error', e); }
+      }
+      if (s.graves && Array.isArray(s.graves)) {
+        try { graves.length = 0; s.graves.forEach(g => { if (!g || typeof g !== 'object') return; graves.push({ ...g }); }); } catch (e) { console.warn('graves restore error', e); }
       }
       if (s.effectParticles && Array.isArray(s.effectParticles)) {
         try { effectParticles.length = 0; s.effectParticles.forEach(p => effectParticles.push({ ...p })); } catch (e) {}
@@ -1575,6 +1593,165 @@ player._walkFrame = 0;
 player._shakeUntil = 0;
 player._shakeMag = 0;
 
+function getPetDialogueLine(context, pet) {
+  const dogName = (pet && pet.name) || DEFAULT_PET_DOG_NAME;
+  const linesByContext = {
+    pet: [
+      `${dogName}, eres el mejor compañero.`,
+      `Buen chico, ${dogName}. Quédate conmigo.`,
+      `Tranquilo, ${dogName}. Todo está bien.`
+    ],
+    feed: [
+      `Come, ${dogName}. Te lo has ganado.`,
+      `${dogName}, hay comida para ti.`,
+      `Despacio, ${dogName}. Hay de sobra.`
+    ],
+    call: [
+      `${dogName}, ven aquí.`,
+      `¡Conmigo, ${dogName}!`,
+      `${dogName}, te necesito a mi lado.`
+    ],
+    alone: [
+      `${dogName}, solo te tengo a ti en este lugar.`,
+      `Qué silencio... menos mal que estás aquí, ${dogName}.`,
+      `${dogName}, contigo no me siento solo.`
+    ]
+  };
+  const lines = linesByContext[context] || linesByContext.alone;
+  return lines[Math.floor(Math.random() * lines.length)] || `${dogName}, vamos.`;
+}
+
+function speakToPet(context, pet, opts = {}) {
+  try {
+    const line = getPetDialogueLine(context, pet);
+    if (!line) return;
+    notify(line);
+    if (opts.forceBubble && window.spawnFloatingText && pet) {
+      window.spawnFloatingText((pet.x || pet.col) + 0.2, (pet.y || pet.row) - 0.3, '🐾', { color: '#FFD27A', force: true });
+    }
+  } catch (e) {}
+}
+
+function callPetDogToPlayer() {
+  try {
+    const pet = getActivePetDog();
+    if (!pet) {
+      notify('No tienes perro compañero activo.');
+      return false;
+    }
+    pet.behavior = 'follow';
+    const distToPlayer = Math.hypot((player.x + 0.5) - (pet.x || pet.col), (player.y + 0.5) - (pet.y || pet.row));
+    const safe = findNearestWalkable(Math.floor(player.x + 1), Math.floor(player.y + 1), 5);
+    pet.moveTarget = { x: safe.col + 0.5, y: safe.row + 0.5 };
+    pet._baseSpeed = typeof pet._baseSpeed === 'number' ? pet._baseSpeed : (pet.speed || 1.8);
+    pet.speed = Math.max(pet._baseSpeed, distToPlayer > 8 ? 3.3 : 2.6);
+    pet._recallSprintUntil = Date.now() + (distToPlayer > 8 ? 5200 : 2600);
+    pet._petJumpUntil = Date.now() + 420;
+    pet._lastInteractionAt = Date.now();
+    speakToPet('call', pet, { forceBubble: true });
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function getActivePetDog() {
+  try {
+    return entities.find(ent => ent && ent.kind === 'pet' && ent.petType === 'dog') || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function ensurePetDogCompanion(opts = {}) {
+  try {
+    const existing = getActivePetDog();
+    if (existing && !opts.force) return existing;
+    const name = DEFAULT_PET_DOG_NAME;
+    if (existing) {
+      existing.name = name;
+      if (!existing.behavior) existing.behavior = 'follow';
+      if (typeof existing.x !== 'number') existing.x = (typeof existing.col === 'number') ? existing.col : player.x;
+      if (typeof existing.y !== 'number') existing.y = (typeof existing.row === 'number') ? existing.row : player.y;
+      return existing;
+    }
+    const c = Math.max(0, Math.min(COLS - 1, Math.floor((player.col || 0) + 1)));
+    const r = Math.max(0, Math.min(ROWS - 1, Math.floor((player.row || 0) + 1)));
+    const safe = canWalkTo(c, r) ? { col: c, row: r } : findNearestWalkable(c, r, 6);
+    const dog = {
+      id: 'pet-dog-main',
+      kind: 'pet',
+      petType: 'dog',
+      name,
+      col: safe.col,
+      row: safe.row,
+      x: safe.col + 0.5,
+      y: safe.row + 0.5,
+      hp: 24,
+      maxHp: 24,
+      speed: 1.8,
+      size: 0.7,
+      behavior: 'follow',
+      combatMode: false,
+      loyalty: 60,
+      _lastInteractionAt: 0
+    };
+    entities.push(dog);
+    return dog;
+  } catch (e) {
+    return null;
+  }
+}
+
+function interactWithPetDog(action, dog) {
+  try {
+    const pet = dog || getActivePetDog();
+    if (!pet) return;
+    if (action === 'toggle-follow') {
+      pet.behavior = pet.behavior === 'stay' ? 'follow' : 'stay';
+      if (pet.behavior === 'stay' && pet.moveTarget) delete pet.moveTarget;
+      notify(pet.behavior === 'stay' ? `${pet.name} se queda aquí.` : `${pet.name} te sigue.`);
+      return;
+    }
+    if (action === 'toggle-attack') {
+      pet.combatMode = !pet.combatMode;
+      if (pet.combatMode) {
+        pet.behavior = 'follow';
+        notify(`${pet.name} protegerá y atacará enemigos cercanos.`);
+      } else {
+        notify(`${pet.name} deja el modo ataque.`);
+      }
+      return;
+    }
+    if (action === 'pet') {
+      pet._lastInteractionAt = Date.now();
+      pet.loyalty = Math.min(100, (pet.loyalty || 60) + 6);
+      pet._petJumpUntil = Date.now() + 520;
+      try { if (window.spawnFloatingText) window.spawnFloatingText((pet.x || pet.col) + 0.2, (pet.y || pet.row) - 0.1, '❤', { color: '#FFD27A', force: true }); } catch (e) {}
+      notify(`Acaricias a ${pet.name}.`);
+      speakToPet('pet', pet);
+      return;
+    }
+    if (action === 'feed') {
+      const foodKey = (inventory && inventory.food > 0) ? 'food' : ((inventory && inventory.wheat > 0) ? 'wheat' : null);
+      if (!foodKey) {
+        notify(`No tienes comida para ${pet.name}.`);
+        return;
+      }
+      inventory[foodKey] = Math.max(0, (inventory[foodKey] || 0) - 1);
+      if (inventory[foodKey] <= 0) delete inventory[foodKey];
+      pet.hp = Math.min(pet.maxHp || 24, (pet.hp || 0) + 5);
+      pet.loyalty = Math.min(100, (pet.loyalty || 60) + 10);
+      pet._lastInteractionAt = Date.now();
+      notify(`${pet.name} come feliz.`);
+      speakToPet('feed', pet);
+      try { if (window.spawnFloatingText) window.spawnFloatingText((pet.x || pet.col) + 0.2, (pet.y || pet.row) - 0.1, '+5', { color: '#9BE26F', force: true }); } catch (e) {}
+      try { updateInventory(); } catch (e) {}
+      try { saveAppStateDebounced(); } catch (e) {}
+    }
+  } catch (e) {}
+}
+
 const mapEditorCore = createMapEditorCore({
   MAP_EDITOR_TERRAINS,
   MAP_EDITOR_HEIGHT_PRESETS,
@@ -1701,6 +1878,7 @@ const ACTIONS = [
 
 // add attack action for PvP/hostile interactions
 ACTIONS.push({ id:'attack', name:'Atacar', cost:1, desc:'Ataca jugador o animal cercano.' });
+ACTIONS.push({ id:'call_dog', name:'Llamar perro', cost:1, desc:'Llama a tu perro para que vuelva contigo.' });
 
 const BASE_CHARACTER_PRESETS = CHARACTER_PRESETS.map(p => ({ ...p }));
 const BASE_ACTIONS = ACTIONS.map(a => ({ ...a }));
@@ -2080,19 +2258,34 @@ function cleanupExpiredCorpses(now = Date.now()) {
   try {
     for (let i = entities.length - 1; i >= 0; i--) {
       const ent = entities[i];
-      if (ent && ent._deadUntil && now >= ent._deadUntil) entities.splice(i, 1);
+      if (ent && ent._deadUntil && now >= ent._deadUntil) {
+        // Create grave before removing corpse
+        if (ent.kind === 'player' || ent.kind === 'pet') {
+          createGrave(ent, ent.col || Math.floor(ent.x || 0), ent.row || Math.floor(ent.y || 0));
+        }
+        entities.splice(i, 1);
+      }
     }
     for (let i = rabbits.length - 1; i >= 0; i--) {
       const rab = rabbits[i];
-      if (rab && rab._deadUntil && now >= rab._deadUntil) rabbits.splice(i, 1);
+      if (rab && rab._deadUntil && now >= rab._deadUntil) {
+        createGrave(rab, rab.col || Math.floor(rab.x || 0), rab.row || Math.floor(rab.y || 0));
+        rabbits.splice(i, 1);
+      }
     }
     for (let i = foxes.length - 1; i >= 0; i--) {
       const fox = foxes[i];
-      if (fox && fox._deadUntil && now >= fox._deadUntil) foxes.splice(i, 1);
+      if (fox && fox._deadUntil && now >= fox._deadUntil) {
+        createGrave(fox, fox.col || Math.floor(fox.x || 0), fox.row || Math.floor(fox.y || 0));
+        foxes.splice(i, 1);
+      }
     }
     for (let i = enemies.length - 1; i >= 0; i--) {
       const en = enemies[i];
-      if (en && en._deadUntil && now >= en._deadUntil) enemies.splice(i, 1);
+      if (en && en._deadUntil && now >= en._deadUntil) {
+        createGrave(en, en.col || Math.floor(en.x || 0), en.row || Math.floor(en.y || 0));
+        enemies.splice(i, 1);
+      }
     }
     if (window._playerDownedUntil && now >= window._playerDownedUntil) {
       window._playerDownedUntil = 0;
@@ -2361,6 +2554,7 @@ function resolveBuildingSpriteKey(type) {
     house_small: 'house',
     house_large: 'house',
     house_garden: 'house_garden',
+    house_isolated: 'pixel_building_isolated',
     longhouse: 'longhouse',
     stone_house: 'stone_house'
     ,soviet_block: 'stone_house'
@@ -2919,9 +3113,12 @@ function rebuildInteriorDoorsFromGrid() {
         else if (type === 'longhouse') intId = 'house_large';
         else if (type === 'mesopotamian_villa_detailed') intId = 'house_large';
         else if (type === 'mesopotamian_house') intId = 'house';
+        else if (type === 'house_isolated') intId = 'house_player_home';
         else if (type === 'mesopotamian_baths') intId = 'house_large';
         else if (type === 'soviet_block') intId = 'house';
         else if (type === 'party_hq') intId = 'house_large';
+        else if (type === 'soviet_superblock') intId = 'house_large';
+        else if (type === 'soviet_superblock_b') intId = 'house_large';
         else if (type === 'state_clinic') intId = 'house_large';
         else if (type === 'checkpoint_gate') intId = 'house-small';
         else if (type === 'stone_house') intId = 'house';
@@ -2947,6 +3144,69 @@ function setBuildingCells(baseCol, baseRow, type, orient) {
   try { rebuildInteriorDoorsFromGrid(); } catch (e) {}
   try { saveAppStateDebounced(); } catch (e) {}
   try { mapCacheDirty = true; rebuildMapCacheDebounced(); } catch (e) {}
+}
+
+function setupHomePrologueSpawn(anchorCol, anchorRow) {
+  try {
+    const spawnC = Math.max(2, Math.min(COLS - 3, Math.floor(anchorCol)));
+    const spawnR = Math.max(2, Math.min(ROWS - 3, Math.floor(anchorRow)));
+    const homeW = (BUILDINGS.house_isolated && BUILDINGS.house_isolated.size && BUILDINGS.house_isolated.size.w) || 5;
+    const homeH = (BUILDINGS.house_isolated && BUILDINGS.house_isolated.size && BUILDINGS.house_isolated.size.h) || 2;
+    const rawHomeCol = Math.floor(spawnC - Math.floor(homeW / 2));
+    const rawHomeRow = Math.floor(spawnR - homeH - 1);
+    const homeCol = Math.max(2, Math.min(COLS - homeW - 3, rawHomeCol));
+    const homeRow = Math.max(2, Math.min(ROWS - homeH - 3, rawHomeRow));
+    const homeDoorCol = homeCol + Math.floor((homeW - 1) / 2);
+    const homeDoorRow = homeRow + homeH - 1;
+
+    for (let rr = homeRow - 1; rr <= homeRow + homeH + 1; rr++) {
+      if (rr < 0 || rr >= ROWS) continue;
+      for (let cc = homeCol - 1; cc <= homeCol + homeW + 1; cc++) {
+        if (cc < 0 || cc >= COLS) continue;
+        try {
+          if (grid[rr][cc]) grid[rr][cc] = null;
+          if (tileBiome[rr] && tileBiome[rr][cc] !== 'water') tileBiome[rr][cc] = 'road';
+        } catch (e) {}
+      }
+    }
+
+    setBuildingCells(homeCol, homeRow, 'house_isolated');
+    window.INTERIOR_DOORS = Array.isArray(window.INTERIOR_DOORS) ? window.INTERIOR_DOORS : [];
+    window.INTERIOR_DOORS = window.INTERIOR_DOORS.filter(d => !(d && d.buildingType === 'house_isolated'));
+    window.INTERIOR_DOORS.push({
+      col: homeDoorCol,
+      row: homeDoorRow,
+      interiorId: 'house_player_home',
+      buildingType: 'house_isolated',
+      buildingBase: { col: homeCol, row: homeRow }
+    });
+
+    const safePlayer = findNearestWalkable(homeDoorCol, homeDoorRow + 1, 6);
+    player.col = safePlayer.col;
+    player.row = safePlayer.row;
+    player.x = player.col;
+    player.y = player.row;
+
+    window._homePrologue = {
+      active: true,
+      enteredInterior: false,
+      enteringInterior: false,
+      guardsSpawned: false,
+      homeCol,
+      homeRow,
+      homeDoorCol,
+      homeDoorRow,
+      military: [
+        { name: 'Teniente Sargón', col: Math.max(0, homeDoorCol - 2), row: Math.min(ROWS - 1, homeDoorRow + 1) },
+        { name: 'Cabo Naram', col: Math.min(COLS - 1, homeDoorCol + 2), row: Math.min(ROWS - 1, homeDoorRow + 1) }
+      ]
+    };
+    window._homePrologueIntro = true;
+    try { mapCacheDirty = true; rebuildMapCacheDebounced(); } catch (e) {}
+    return true;
+  } catch (e) {
+    return false;
+  }
 }
 
 // Carve a simple Manhattan road between two tiles (inclusive)
@@ -3092,10 +3352,10 @@ function spawnVillage(baseCol, baseRow, opts) {
 
     const districtPools = (epochNow === 'urss')
       ? {
-          core: ['party_hq', 'state_clinic', 'soviet_block'],
-          civic: ['state_clinic', 'party_hq', 'soviet_block', 'checkpoint_gate'],
-          industrial: ['state_warehouse', 'factory', 'collective_farm', 'soviet_block'],
-          residential: ['soviet_block', 'soviet_block', 'soviet_block', 'house_small', 'house_garden']
+          core: ['party_hq', 'state_clinic', 'soviet_block', 'soviet_superblock', 'soviet_superblock_b'],
+          civic: ['state_clinic', 'party_hq', 'soviet_block', 'soviet_superblock', 'soviet_superblock_b', 'checkpoint_gate'],
+          industrial: ['state_warehouse', 'factory', 'collective_farm', 'soviet_block', 'soviet_superblock', 'soviet_superblock_b'],
+          residential: ['soviet_block', 'soviet_superblock', 'soviet_superblock_b', 'soviet_block', 'soviet_superblock', 'house_small', 'house_garden']
         }
       : {
           core: ['mesopotamian_villa_detailed', 'temple', 'mesopotamian_house'],
@@ -3174,30 +3434,157 @@ function spawnVillage(baseCol, baseRow, opts) {
       return true;
     };
 
-    if (epochNow === 'urss') {
+    const customZonePreset = (() => {
+      try {
+        const all = window._ZONE_SPAWN_PRESETS || {};
+        const item = all[villageType];
+        return (item && typeof item === 'object') ? item : null;
+      } catch (e) {
+        return null;
+      }
+    })();
+
+    const applyCustomZonePreset = () => {
+      if (!customZonePreset) return false;
+      const terrainList = Array.isArray(customZonePreset.terrain) ? customZonePreset.terrain : [];
+      const buildingList = Array.isArray(customZonePreset.buildings) ? customZonePreset.buildings : [];
+      const ambientList = Array.isArray(customZonePreset.entities) ? customZonePreset.entities : [];
+      if (!terrainList.length && !buildingList.length && !ambientList.length) return false;
+
+      const extent = { minC: Infinity, maxC: -Infinity, minR: Infinity, maxR: -Infinity };
+      const touchExtent = (c, r) => {
+        extent.minC = Math.min(extent.minC, c);
+        extent.maxC = Math.max(extent.maxC, c);
+        extent.minR = Math.min(extent.minR, r);
+        extent.maxR = Math.max(extent.maxR, r);
+      };
+
+      terrainList.forEach(t => {
+        const dc = Math.round(Number(t.dc) || 0);
+        const dr = Math.round(Number(t.dr) || 0);
+        touchExtent(bc + dc, br + dr);
+      });
+      buildingList.forEach(b => {
+        const btype = String(b.type || 'house_small');
+        const dc = Math.round(Number(b.dc) || 0);
+        const dr = Math.round(Number(b.dr) || 0);
+        const sz = getBuildingSize(btype);
+        touchExtent(bc + dc, br + dr);
+        touchExtent(bc + dc + Math.max(0, sz.w - 1), br + dr + Math.max(0, sz.h - 1));
+      });
+      ambientList.forEach(a => {
+        const dc = Math.round(Number(a.dc) || 0);
+        const dr = Math.round(Number(a.dr) || 0);
+        touchExtent(bc + dc, br + dr);
+      });
+
+      if (Number.isFinite(extent.minC) && Number.isFinite(extent.minR)) {
+        const pad = 2;
+        const minC = Math.max(0, extent.minC - pad);
+        const maxC = Math.min(COLS - 1, extent.maxC + pad);
+        const minR = Math.max(0, extent.minR - pad);
+        const maxR = Math.min(ROWS - 1, extent.maxR + pad);
+        for (let rr = minR; rr <= maxR; rr++) {
+          for (let cc = minC; cc <= maxC; cc++) {
+            if (!grid[rr][cc]) {
+              try { if (tileBiome[rr][cc] === 'forest' || tileBiome[rr][cc] === 'water') tileBiome[rr][cc] = 'alluvial'; } catch (e) {}
+            }
+          }
+        }
+        for (let i = entities.length - 1; i >= 0; i--) {
+          const ent = entities[i];
+          if (!ent || (ent.kind !== 'tree' && ent.kind !== 'resource')) continue;
+          const ec = (typeof ent.col === 'number') ? ent.col : Math.floor(Number(ent.x) || -9999);
+          const er = (typeof ent.row === 'number') ? ent.row : Math.floor(Number(ent.y) || -9999);
+          if (ec >= minC && ec <= maxC && er >= minR && er <= maxR) entities.splice(i, 1);
+        }
+      }
+
+      terrainList.forEach(t => {
+        const col = bc + Math.round(Number(t.dc) || 0);
+        const row = br + Math.round(Number(t.dr) || 0);
+        if (col < 0 || row < 0 || col >= COLS || row >= ROWS) return;
+        if (grid[row] && grid[row][col]) return;
+        const biome = String(t.biome || 'alluvial');
+        try { tileBiome[row][col] = biome; } catch (e) {}
+        if (typeof t.height === 'number') {
+          try { heightMap[row][col] = Math.max(0, Math.min(1, t.height)); } catch (e) {}
+        }
+      });
+
+      const sortedBuildings = buildingList.slice().sort((a, b) => {
+        const as = getBuildingSize(String(a.type || 'house_small'));
+        const bs = getBuildingSize(String(b.type || 'house_small'));
+        return (bs.w * bs.h) - (as.w * as.h);
+      });
+      for (const b of sortedBuildings) {
+        const btype = String(b.type || 'house_small');
+        const c = bc + Math.round(Number(b.dc) || 0);
+        const r = br + Math.round(Number(b.dr) || 0);
+        const sz = getBuildingSize(btype);
+        if (c < 1 || r < 1 || c + sz.w >= COLS || r + sz.h >= ROWS) continue;
+        let blocked = false;
+        for (let dr = 0; dr < sz.h && !blocked; dr++) {
+          for (let dc = 0; dc < sz.w; dc++) {
+            if (grid[r + dr] && grid[r + dr][c + dc]) { blocked = true; break; }
+          }
+        }
+        if (blocked) continue;
+        try {
+          setBuildingCells(c, r, btype);
+          houses.push({ c, r, variant: btype });
+        } catch (e) {}
+      }
+
+      for (const src of ambientList) {
+        const col = bc + Math.round(Number(src.dc) || 0);
+        const row = br + Math.round(Number(src.dr) || 0);
+        if (col < 1 || row < 1 || col >= COLS - 1 || row >= ROWS - 1) continue;
+        if (grid[row] && grid[row][col]) continue;
+        const ent = {
+          ...src,
+          id: `ambient-custom-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          col,
+          row,
+          x: col,
+          y: row,
+          kind: src.kind || 'ambient'
+        };
+        entities.push(ent);
+      }
+
+      return houses.length > 0;
+    };
+    const useCustomZonePreset = applyCustomZonePreset();
+
+    if (!useCustomZonePreset && epochNow === 'urss') {
       if (isMilitaryBase) {
-        const baseR = 8;
+        const baseR = 9;
         capitalRingR = baseR;
+
+        // ── Phase 1: clear entire base interior of forest/vegetation ──
+        for (let rr = cy - baseR; rr <= cy + baseR; rr++) {
+          for (let cc = cx - baseR; cc <= cx + baseR; cc++) {
+            if (rr < 0 || cc < 0 || rr >= ROWS || cc >= COLS) continue;
+            if (!grid[rr][cc]) try { tileBiome[rr][cc] = 'alluvial'; } catch (e) {}
+          }
+        }
+        // Remove trees and vegetation entities inside base perimeter
+        for (let i = entities.length - 1; i >= 0; i--) {
+          const ei = entities[i];
+          if (!ei || (ei.kind !== 'tree' && ei.kind !== 'resource')) continue;
+          const ec = ei.col ?? ei.x; const er = ei.row ?? ei.y;
+          if (ec >= cx - baseR && ec <= cx + baseR && er >= cy - baseR && er <= cy + baseR) entities.splice(i, 1);
+        }
+
+        // ── Reserve central avenues ──
         reserveRect(cx - 1, cy - baseR, cx + 1, cy + baseR);
         reserveRect(cx - baseR, cy - 1, cx + baseR, cy + 1);
 
-        tryPlace(cx - 2, cy - 2, 'party_hq');
-        tryPlace(cx - 8, cy - 4, 'soviet_block');
-        tryPlace(cx + 5, cy - 4, 'soviet_block');
-        tryPlace(cx - 8, cy + 3, 'state_warehouse');
-        tryPlace(cx + 5, cy + 3, 'state_warehouse');
-        tryPlace(cx - 1, cy - 8, 'state_clinic');
-        tryPlace(cx + 5, cy - 1, 'factory');
-
-        [[cx - 1, cy - 10], [cx - 1, cy + 8], [cx - 10, cy], [cx + 8, cy]].forEach(([gc, gr]) => {
-          tryPlace(gc, gr, 'checkpoint_gate');
-        });
-
+        // ── Perimeter: corner towers + wall segments with single gate gap ──
         const baseCorners = [
-          [cx - baseR, cy - baseR],
-          [cx + baseR - 1, cy - baseR],
-          [cx - baseR, cy + baseR - 1],
-          [cx + baseR - 1, cy + baseR - 1]
+          [cx - baseR, cy - baseR], [cx + baseR - 1, cy - baseR],
+          [cx - baseR, cy + baseR - 1], [cx + baseR - 1, cy + baseR - 1]
         ];
         baseCorners.forEach(([tc, tr]) => { tryPlace(tc, tr, 'wall_tower'); });
         for (let i = -baseR + 2; i <= baseR - 2; i++) {
@@ -3213,15 +3600,77 @@ function spawnVillage(baseCol, baseRow, opts) {
             if (eastOk && grid[cy + i] && grid[cy + i][cx + baseR]) grid[cy + i][cx + baseR].orient = 'v';
           }
         }
-        for (let r = cy - baseR; r <= cy + baseR; r++) {
-          if (r >= 0 && r < ROWS && !grid[r][cx]) tileBiome[r][cx] = 'concrete_road';
+        // Checkpoint gates just outside each cardinal opening
+        tryPlace(cx - 1, cy - baseR - 1, 'checkpoint_gate');
+        tryPlace(cx - 1, cy + baseR,     'checkpoint_gate');
+        tryPlace(cx - baseR - 1, cy,     'checkpoint_gate');
+        tryPlace(cx + baseR,     cy,     'checkpoint_gate');
+
+        // ── Cross avenues (concrete road) ──
+        for (let r = cy - baseR + 1; r <= cy + baseR - 1; r++) {
+          if (r >= 0 && r < ROWS && !grid[r][cx])     try { tileBiome[r][cx]     = 'concrete_road'; } catch (e) {}
+          if (r >= 0 && r < ROWS && !grid[r][cx - 1]) try { tileBiome[r][cx - 1] = 'concrete_road'; } catch (e) {}
         }
-        for (let c = cx - baseR; c <= cx + baseR; c++) {
-          if (c >= 0 && c < COLS && !grid[cy][c]) tileBiome[cy][c] = 'concrete_road';
+        for (let c = cx - baseR + 1; c <= cx + baseR - 1; c++) {
+          if (c >= 0 && c < COLS && !grid[cy][c]) try { tileBiome[cy][c] = 'concrete_road'; } catch (e) {}
         }
-        [[cx - 3, cy - 10], [cx + 3, cy - 10], [cx - 3, cy + 8], [cx + 3, cy + 8], [cx - 10, cy - 2], [cx - 10, cy + 2], [cx + 8, cy - 2], [cx + 8, cy + 2]].forEach(([ac, ar]) => pushAmbient('guard_booth', ac, ar, 0.95));
-        [[cx - 6, cy - 6], [cx + 6, cy - 6], [cx - 6, cy + 5], [cx + 6, cy + 5]].forEach(([ac, ar]) => pushAmbient('soviet_streetlight', ac, ar, 1.0));
-        [[cx - 4, cy + 3], [cx + 4, cy + 3], [cx - 5, cy - 3], [cx + 5, cy - 3], [cx, cy + 5]].forEach(([ac, ar]) => pushAmbient('crate_stack', ac, ar, 0.95));
+
+        // ── Runway: E-W concrete strip (3 tiles tall) in northern sector ──
+        const runwayRow = cy - 5;
+        for (let dr = 0; dr <= 2; dr++) {
+          for (let c = cx - baseR + 2; c <= cx + baseR - 2; c++) {
+            if (c >= 0 && c < COLS && runwayRow + dr >= 0 && runwayRow + dr < ROWS && !grid[runwayRow + dr][c])
+              try { tileBiome[runwayRow + dr][c] = 'concrete_road'; } catch (e) {}
+          }
+        }
+        // Apron (taxiway row just south of runway)
+        const apronRow = runwayRow + 3;
+        for (let c = cx - baseR + 2; c <= cx + baseR - 2; c++) {
+          if (c >= 0 && c < COLS && !grid[apronRow][c])
+            try { tileBiome[apronRow][c] = 'concrete_road'; } catch (e) {}
+        }
+
+        // ── Buildings: command, barracks, warehouses, depot ──
+        tryPlace(cx - 2, cy + 2, 'party_hq');
+        tryPlace(cx - 8, cy + 2, 'soviet_block');   // west barracks
+        tryPlace(cx + 4, cy + 2, 'soviet_block');   // east barracks
+        tryPlace(cx - 8, cy + 5, 'state_warehouse');
+        tryPlace(cx + 4, cy + 5, 'state_warehouse');
+        tryPlace(cx - 1, cy + 6, 'state_clinic');
+        tryPlace(cx - 1, cy - 8, 'factory');        // maintenance hangar
+
+        // ── Parked jets: ordered line on the apron ──
+        const jetCols = [cx - 6, cx - 4, cx - 2, cx, cx + 2, cx + 4];
+        jetCols.forEach((jc, ji) => {
+          if (jc < 1 || apronRow < 1 || jc >= COLS - 1 || apronRow >= ROWS - 1) return;
+          if (grid[apronRow] && grid[apronRow][jc]) return;
+          entities.push({
+            id: 'ambient-jet-parked-' + Date.now() + '-' + ji,
+            kind: 'ambient', subtype: 'soviet_fighter_jet',
+            name: 'Caza en tierra', col: jc, row: apronRow,
+            x: jc, y: apronRow, size: 1.85, nonInteractive: true
+          });
+        });
+
+        // ── 2 flying patrol jets circling the base ──
+        [0, 1].forEach(fi => {
+          const phase = fi * Math.PI;
+          entities.push({
+            id: 'ambient-jet-fly-' + Date.now() + '-' + fi,
+            kind: 'ambient', subtype: 'soviet_fighter_jet',
+            name: 'Caza en patrulla', col: cx, row: cy,
+            x: cx, y: cy,
+            _flyLoop: true, _baseX: cx, _baseY: cy,
+            _flyRadius: baseR + 4, _flyPhase: phase,
+            size: 2.0, nonInteractive: true
+          });
+        });
+
+        // ── Guard booths, streetlights and crates ──
+        [[cx - 3, cy - baseR - 1], [cx + 3, cy - baseR - 1], [cx - 3, cy + baseR], [cx + 3, cy + baseR],
+         [cx - baseR - 1, cy - 2], [cx - baseR - 1, cy + 2], [cx + baseR, cy - 2], [cx + baseR, cy + 2]].forEach(([ac, ar]) => pushAmbient('guard_booth', ac, ar, 0.95));
+        [[cx - 7, cy - 7], [cx + 6, cy - 7], [cx - 7, cy + 6], [cx + 6, cy + 6]].forEach(([ac, ar]) => pushAmbient('soviet_streetlight', ac, ar, 1.0));
+        [[cx - 4, cy + 5], [cx + 3, cy + 5], [cx - 5, cy - 2], [cx + 4, cy - 2]].forEach(([ac, ar]) => pushAmbient('crate_stack', ac, ar, 0.95));
       } else {
         // URSS capital: ordered administrative core + industrial south belt + clear access controls
         reserveRect(cx - 1, cy - 12, cx + 1, cy + 12); // main avenue
@@ -3242,7 +3691,7 @@ function spawnVillage(baseCol, baseRow, opts) {
         ];
         sovietResidentialBands.forEach(([rc, rr], idx) => {
           if (Math.random() < (idx < 8 ? 0.08 : 0.18)) return;
-          tryPlace(rc, rr, 'soviet_block');
+          tryPlace(rc, rr, pickDistrictBuilding(rc, rr, 'soviet_block'));
         });
 
         // Visible checkpoints on the four main entries
@@ -3263,7 +3712,7 @@ function spawnVillage(baseCol, baseRow, opts) {
           pushAmbient('crate_stack', ac, ar, 0.95);
         });
       }
-    } else {
+    } else if (!useCustomZonePreset) {
       if (isMilitaryBase) {
         const fortR = 7;
         capitalRingR = fortR;
@@ -3324,7 +3773,7 @@ function spawnVillage(baseCol, baseRow, opts) {
         tryPlace(cx + 11, cy - 4, 'granary');
       }
     }
-    if (!isMilitaryBase) {
+    if (!useCustomZonePreset && !isMilitaryBase) {
       // 12-19. RESIDENTIAL RING — mesopotamian_houses radiating from center
       const resRing = [
         [cx - 7, cy + 1], [cx + 5, cy + 1],       // E/W mid
@@ -4039,6 +4488,11 @@ function canWalkTo(col, row) {
     return !blocked.has(tile);
   }
   if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return false;
+  const biome = (tileBiome[row] && tileBiome[row][col]) || null;
+  // Logistics corridors and roads are always pass-through ground.
+  if (biome === 'canal_road' || biome === 'road' || biome === 'concrete_road') return true;
+  // Water remains non-walkable (except explicit corridor override above).
+  if (biome === 'water' || isRiver(col, row)) return false;
   const cell = grid[row][col];
   if (cell) {
     const type = (typeof cell === 'string') ? cell : (cell.type || '');
@@ -4149,7 +4603,7 @@ function generateMap(mapType) {
   // Vegetation is STRICTLY confined to riparian zones (next to rivers) and marshes.
   // Alluvial plains, steppe, saline flats and hills are bare desert — true Mesopotamia.
   try {
-    const vegDensity=(window._DEFAULT_DENSITIES&&window._DEFAULT_DENSITIES.vegetation)||1.0;
+    const vegDensity=((window._DEFAULT_DENSITIES&&window._DEFAULT_DENSITIES.vegetation)||1.0) * 0.65;
     for (let r=0;r<ROWS;r++) {
       for (let c=0;c<COLS;c++) {
         if (grid[r][c]||rFullMap[r][c]) continue;
@@ -4157,7 +4611,7 @@ function generateMap(mapType) {
         const roll=Math.random();
         if (b==='riparian') {
           // Dense riparian belt: birch, pine, aspen, willows, sedge - northern boreal forest
-          if (roll<0.42*vegDensity) {
+          if (roll<0.28*vegDensity) {
             let v;
             if (roll<0.13) v='birch';
             else if (roll<0.22) v='fir';
@@ -4168,7 +4622,7 @@ function generateMap(mapType) {
           }
         } else if (b==='marsh') {
           // Wetland: phragmites reeds and typha dominate
-          if (roll<0.44*vegDensity) placeTree(c,r,roll<0.28?'willow':'sedge');
+          if (roll<0.28*vegDensity) placeTree(c,r,roll<0.32?'willow':'sedge');
         }
         // alluvial, steppe, saline, hills → bare desert, no vegetation
       }
@@ -4249,6 +4703,8 @@ function generateMap(mapType) {
     try { const safe = findNearestWalkable(spawnC, spawnR); spawnC = safe.col; spawnR = safe.row; } catch(e2) {}
     player.col=spawnC; player.row=spawnR;
     player.x=player.col; player.y=player.row;
+
+    try { setupHomePrologueSpawn(spawnC, spawnR); } catch (e) {}
   } catch(e){}
   // ── 9. Resource nodes ──
   for (let i=0;i<70;i++) {
@@ -4378,6 +4834,7 @@ function drawBuilding(col, row, type, alpha) {
   // represented by sprite artwork in data/entity-pixels.json instead.)
 
   const houseTypes = new Set(['house', 'house_small', 'house_large', 'house_garden', 'longhouse', 'stone_house', 'soviet_block', 'mesopotamian_villa_detailed', 'mesopotamian_house', 'mesopotamian_arch', 'mesopotamian_baths']);
+  houseTypes.add('house_isolated');
   const spriteKey = resolveBuildingSpriteKey(type);
 
   if (houseTypes.has(type)) {
@@ -4837,8 +5294,8 @@ function drawTileHighlight(col, row, fillStyle, strokeStyle, lineWidth) {
 function getWorldMapBiomeColor(col, row) {
   try {
     const isUrss = (window._currentEpoch || 'mesopotamia') === 'urss';
-    if (tileBiome[row][col] === 'water' || isRiver(col)) return isUrss ? '#6A7686' : '#2E6FA3';
     const biome = tileBiome[row][col] || 'sand';
+    if (biome === 'water' || (biome !== 'canal_road' && isRiver(col, row))) return isUrss ? '#6A7686' : '#2E6FA3';
     if (isUrss) {
       if (biome === 'road') return '#898D95';
       if (biome === 'forest') return '#5A665F';
@@ -5155,6 +5612,18 @@ function drawPlayerHealth() {
     ctx.fillStyle = `rgba(220,20,20,${(ft * 0.35).toFixed(3)})`;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   }
+}
+
+function shouldShowEntityHealthBar(entity, nowTs) {
+  if (!entity) return false;
+  const hp = Number(entity.hp || 0);
+  const maxHp = Math.max(1, Number(entity.maxHp || 1));
+  if (!Number.isFinite(hp) || !Number.isFinite(maxHp)) return false;
+  if (entity._uiLastHp !== hp) {
+    entity._uiLastHp = hp;
+    entity._uiHealthUntil = nowTs + 2200;
+  }
+  return hp < maxHp || (entity._uiHealthUntil && nowTs < entity._uiHealthUntil);
 }
 
 // ── MAIN RENDER ─────────────────────────────────────────────--
@@ -5868,7 +6337,7 @@ function render() {
         const w = isoSize.w;
         const h = isoSize.h;
         if (x + w / 2 < 0 || x - w / 2 > W || y + h < 0 || y > H) continue;
-        if (tileBiome[r][c] === 'water' || isRiver(c)) {
+        if (tileBiome[r][c] === 'water' || (tileBiome[r][c] !== 'canal_road' && isRiver(c, r))) {
           // cheaper water rendering: single color + occasional streaks
           const base = `hsl(205,60%,${40 + Math.sin((now)*0.002 + r*0.4 + c*0.3) * 2}%)`;
           drawDiamond(x, y, w, h, base, null, null);
@@ -5908,14 +6377,14 @@ function render() {
               drawDiamond(x, y, w, h, sand, null, null);
             }
           }
-          if (isNearRiver(c)) drawDiamond(x, y, w, h, isUrss ? 'rgba(220,232,245,0.10)' : 'rgba(74,124,63,0.15)', null, null);
+          if (isNearRiver(c, r)) drawDiamond(x, y, w, h, isUrss ? 'rgba(220,232,245,0.10)' : 'rgba(74,124,63,0.15)', null, null);
         }
         
         // only draw grid stroke when in edit mode
         if (editMode) drawDiamond(x, y, w, h, null, 'rgba(0,0,0,0.1)', 0.5);
       } else {
         if (x + tileSize < 0 || x > W || y + tileSize < 0 || y > H) continue;
-        if (tileBiome[r][c] === 'water' || isRiver(c)) {
+        if (tileBiome[r][c] === 'water' || (tileBiome[r][c] !== 'canal_road' && isRiver(c, r))) {
           const base = `hsl(205,60%,${40 + Math.sin((now)*0.002 + r*0.4 + c*0.3) * 2}%)`;
           ctx.fillStyle = base;
           ctx.fillRect(x, y, tileSize, tileSize);
@@ -6036,7 +6505,7 @@ function render() {
               ctx.fillRect(x, y, tileSize, tileSize);
             }
           }
-          if (isNearRiver(c)) {
+          if (isNearRiver(c, r)) {
             ctx.fillStyle = (window._currentEpoch || 'mesopotamia') === 'urss' ? 'rgba(220,232,245,0.10)' : 'rgba(74,124,63,0.15)';
             ctx.fillRect(x, y, tileSize, tileSize);
           }
@@ -6051,6 +6520,14 @@ function render() {
       }
     }
   }
+
+  try {
+    let hasTreeEntities = false;
+    for (let i = 0; i < entities.length; i++) {
+      if (entities[i] && entities[i].kind === 'tree') { hasTreeEntities = true; break; }
+    }
+    if (!hasTreeEntities) drawTreesVisible();
+  } catch (e) {}
 
   // ── BUILDINGS ─────────────────────────────────────────────
   // Depth-sorted: buildings "behind" the player draw first; buildings "in front"
@@ -6093,6 +6570,12 @@ function render() {
   });
   _entityList.forEach(ent => {
     if (!ent) return;
+    // update flying jet patrol paths each frame
+    if (ent._flyLoop) {
+      const t = now / 3500;
+      ent.x = (ent._baseX ?? ent.col) + Math.cos(t + (ent._flyPhase || 0)) * (ent._flyRadius || 8);
+      ent.y = (ent._baseY ?? ent.row) + Math.sin(t + (ent._flyPhase || 0)) * (ent._flyRadius || 8) * 0.55;
+    }
     // ensure continuous position fields for smooth movement
     if (typeof ent.x !== 'number') ent.x = ent.col;
     if (typeof ent.y !== 'number') ent.y = ent.row;
@@ -6306,7 +6789,7 @@ function render() {
         }
         // draw hp bar above the tile
         const hpPct = Math.max(0, (ent.hp || 0) / (ent.maxHp || 1));
-        if (!downedEnt) {
+        if (!downedEnt && shouldShowEntityHealthBar(ent, now)) {
           ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(x + tileSize*0.15, y + tileSize*0.08, tileSize*0.7, 6);
           ctx.fillStyle = 'rgba(60,200,80,0.95)'; ctx.fillRect(x + tileSize*0.15, y + tileSize*0.08, tileSize*0.7 * hpPct, 6);
         }
@@ -6322,10 +6805,9 @@ function render() {
       }
       // draw NPC name above head when nearby and zoomed in
       try {
-        const NAME_ZOOM_THRESHOLD = 0.6;
-        const NAME_MAX_DIST = 5.0; // world units
+        const NAME_MAX_DIST = 3.5; // world units
         const dist = Math.hypot(ent.x - player.x, ent.y - player.y);
-        if (zoom >= NAME_ZOOM_THRESHOLD && dist <= NAME_MAX_DIST && ent.name) {
+        if (dist <= NAME_MAX_DIST && ent.name) {
           const p = worldToScreen(ent.x + 0.5, ent.y - 0.2);
           ctx.save(); ctx.font = '12px sans-serif';
           const w = ctx.measureText(ent.name).width;
@@ -6349,6 +6831,69 @@ function render() {
             ctx.fillStyle = 'rgba(60,140,255,0.98)'; ctx.beginPath(); ctx.arc(p.x, p.y - 18, Math.max(4, tileSize*0.08), 0, Math.PI*2); ctx.fill();
             ctx.fillStyle = '#FFF'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('✓', p.x, p.y - 18);
           } catch (ee) {}
+          ctx.restore();
+        }
+      } catch (e) {}
+    } else if (ent.kind === 'pet' && ent.petType === 'dog') {
+      if (typeof ent.x !== 'number') ent.x = (typeof ent.col === 'number' ? ent.col : 0) + 0.5;
+      if (typeof ent.y !== 'number') ent.y = (typeof ent.row === 'number' ? ent.row : 0) + 0.5;
+      const { x, y } = worldToScreen(ent.x, ent.y);
+      const tileSize = getTileSize();
+      const offPad = viewMode === 'iso' ? Math.max(24, isoSize.w) : Math.max(24, tileSize);
+      if (x < -offPad || x > W + offPad || y < -offPad || y > H + offPad) return;
+      if (lowDetail) {
+        try {
+          ctx.save();
+          ctx.fillStyle = '#9A5A39';
+          ctx.beginPath();
+          ctx.ellipse(x + tileSize * 0.5, y + tileSize * 0.62, Math.max(4, tileSize * 0.12), Math.max(3, tileSize * 0.08), 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        } catch (e) {}
+        return;
+      }
+      const baseW = Math.max(14, tileSize * Math.max(0.75, ent.size || 0.8));
+      const baseH = baseW;
+      const cx = x + tileSize * 0.5;
+      const cyBase = y + tileSize * 0.6;
+      const jumpPct = (ent._petJumpUntil && ent._petJumpUntil > now) ? Math.max(0, Math.min(1, (ent._petJumpUntil - now) / 520)) : 0;
+      const jumpOffset = jumpPct > 0 ? (Math.sin((1 - jumpPct) * Math.PI) * Math.max(2, tileSize * 0.18)) : 0;
+      const cy = cyBase - jumpOffset;
+      const facingLeft = !!(ent.moveTarget && ent.moveTarget.x < ent.x) || (!!ent._lastX && ent.x < ent._lastX);
+      try {
+        const dogSprite = (window._ENTITY_BITMAPS && window._ENTITY_BITMAPS['pet_dog']) ? window._ENTITY_BITMAPS['pet_dog'] : null;
+        if (dogSprite) {
+          ctx.save();
+          ctx.fillStyle = 'rgba(0,0,0,0.24)';
+          ctx.beginPath();
+          ctx.ellipse(cx, cyBase + baseH * 0.3, baseW * 0.38, Math.max(3, baseH * 0.09), 0, 0, Math.PI * 2);
+          ctx.fill();
+          if (facingLeft) {
+            ctx.translate(cx, cy);
+            ctx.scale(-1, 1);
+            ctx.drawImage(dogSprite, -baseW / 2, -baseH * 0.84, baseW, baseH);
+          } else {
+            ctx.drawImage(dogSprite, cx - baseW / 2, cy - baseH * 0.84, baseW, baseH);
+          }
+          ctx.restore();
+        } else {
+          drawEntitySpriteAt('pet_dog', cx, cy + baseH * 0.12, baseW, baseH, { ignoreEntityScale: true });
+        }
+        const hpPct = Math.max(0, (ent.hp || 0) / Math.max(1, ent.maxHp || 1));
+        if (shouldShowEntityHealthBar(ent, now)) {
+          ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(x + tileSize * 0.3, y + tileSize * 0.12, tileSize * 0.4, 4);
+          ctx.fillStyle = 'rgba(60,200,80,0.95)'; ctx.fillRect(x + tileSize * 0.3, y + tileSize * 0.12, tileSize * 0.4 * hpPct, 4);
+        }
+      } catch (e) {}
+      try {
+        const NAME_MAX_DIST = 3.5;
+        const dist = Math.hypot((ent.x || ent.col) - player.x, (ent.y || ent.row) - player.y);
+        if (dist <= NAME_MAX_DIST && ent.name) {
+          const p = worldToScreen((ent.x || ent.col) + 0.1, (ent.y || ent.row) - 0.25);
+          ctx.save(); ctx.font = '12px sans-serif';
+          const w = ctx.measureText(ent.name).width;
+          ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(p.x - w / 2 - 4, p.y - 18, w + 8, 16);
+          ctx.fillStyle = '#FFF'; ctx.fillText(ent.name, p.x - w / 2, p.y - 6);
           ctx.restore();
         }
       } catch (e) {}
@@ -6451,8 +6996,7 @@ function render() {
         try {
           const atlas = window._TREE_ATLAS;
           if (atlas && atlas.map) {
-            const map = { pine:0, tallslim:4, oak:1, broad:1, round:1, scrub:2, bush:2, shrub:2, multi:3 };
-            let idx = (map[variant] !== undefined) ? map[variant] : Math.floor(tileNoise(ent.col || 0, ent.row || 0, 5, 6) * GLOBAL_TREE_TEMPLATES.length);
+            let idx = pickForestTreeTemplateIndex(variant, ent.col || 0, ent.row || 0);
             idx = Math.max(0, Math.min(GLOBAL_TREE_TEMPLATES.length - 1, idx));
             const meta = atlas.map[idx];
             if (meta) {
@@ -6464,8 +7008,7 @@ function render() {
         } catch (e) {}
         // map variants to templates (only if atlas didn't draw)
         if (!atlasDrawn) {
-          const map = { pine:0, tallslim:4, oak:1, broad:1, round:1, scrub:2, bush:2, shrub:2, multi:3 };
-        let idx = (map[variant] !== undefined) ? map[variant] : Math.floor(tileNoise(ent.col || 0, ent.row || 0, 5, 6) * GLOBAL_TREE_TEMPLATES.length);
+        let idx = pickForestTreeTemplateIndex(variant, ent.col || 0, ent.row || 0);
         idx = Math.max(0, Math.min(GLOBAL_TREE_TEMPLATES.length - 1, idx));
         const tpl = GLOBAL_TREE_TEMPLATES[idx];
         // scale trees based on tile size and entity size hint
@@ -6624,7 +7167,7 @@ function render() {
       ctx.ellipse(x + tileSize*0.5, y + tileSize*0.72, tileSize*0.26, tileSize*0.08, 0, 0, Math.PI*2);
       ctx.fill();
       ctx.restore();
-    } else {
+    } else if (shouldShowEntityHealthBar(rab, now)) {
       const hpPct = Math.max(0, hp / maxHp);
       ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(x + tileSize*0.35, y + tileSize*0.18, tileSize*0.3, 4);
       ctx.fillStyle = 'rgba(200,50,50,0.95)'; ctx.fillRect(x + tileSize*0.35, y + tileSize*0.18, tileSize*0.3, 4);
@@ -6636,18 +7179,15 @@ function render() {
     }
     // draw name for rabbits when nearby and zoomed in
     try {
-      const NAME_ZOOM_THRESHOLD = 0.6;
-      const NAME_MAX_DIST = 5.0;
-      if (zoom >= NAME_ZOOM_THRESHOLD) {
-        const dist = Math.hypot(rab.x - player.x, rab.y - player.y);
-        if (dist <= NAME_MAX_DIST && rab.name) {
-          const p = worldToScreen(rab.x + 0.5, rab.y - 0.2);
-          ctx.save(); ctx.font = '12px sans-serif';
-          const w = ctx.measureText(rab.name).width;
-          ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(p.x - w/2 - 4, p.y - 18, w + 8, 16);
-          ctx.fillStyle = '#FFF'; ctx.fillText(rab.name, p.x - w/2, p.y - 6);
-          ctx.restore();
-        }
+      const NAME_MAX_DIST = 3.5;
+      const dist = Math.hypot(rab.x - player.x, rab.y - player.y);
+      if (dist <= NAME_MAX_DIST && rab.name) {
+        const p = worldToScreen(rab.x + 0.5, rab.y - 0.2);
+        ctx.save(); ctx.font = '12px sans-serif';
+        const w = ctx.measureText(rab.name).width;
+        ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(p.x - w/2 - 4, p.y - 18, w + 8, 16);
+        ctx.fillStyle = '#FFF'; ctx.fillText(rab.name, p.x - w/2, p.y - 6);
+        ctx.restore();
       }
     } catch (e) {}
     // highlight if selected
@@ -6775,7 +7315,7 @@ function render() {
         ctx.ellipse(x + tileSize*0.5, y + tileSize*0.74, tileSize*0.3, tileSize*0.09, 0, 0, Math.PI*2);
         ctx.fill();
         ctx.restore();
-      } else {
+      } else if (shouldShowEntityHealthBar(fox, now)) {
         const hpPct = Math.max(0, hp / maxHp);
         ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(x + tileSize*0.34, y + tileSize*0.16, tileSize*0.32, 4);
         ctx.fillStyle = 'rgba(200,50,50,0.95)'; ctx.fillRect(x + tileSize*0.34, y + tileSize*0.16, tileSize*0.32, 4);
@@ -6783,18 +7323,15 @@ function render() {
       }
       // name for foxes if given and nearby
       try {
-        const NAME_ZOOM_THRESHOLD = 0.6;
-        const NAME_MAX_DIST = 5.0;
-        if (zoom >= NAME_ZOOM_THRESHOLD) {
-          const dist = Math.hypot(fox.col - player.x, fox.row - player.y);
-          if (dist <= NAME_MAX_DIST && fox.name) {
-            const p = worldToScreen(fox.col + 0.5, fox.row - 0.2);
-            ctx.save(); ctx.font = '12px sans-serif';
-            const w = ctx.measureText(fox.name).width;
-            ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(p.x - w/2 - 4, p.y - 18, w + 8, 16);
-            ctx.fillStyle = '#FFF'; ctx.fillText(fox.name, p.x - w/2, p.y - 6);
-            ctx.restore();
-          }
+        const NAME_MAX_DIST = 3.5;
+        const dist = Math.hypot(fox.col - player.x, fox.row - player.y);
+        if (dist <= NAME_MAX_DIST && fox.name) {
+          const p = worldToScreen(fox.col + 0.5, fox.row - 0.2);
+          ctx.save(); ctx.font = '12px sans-serif';
+          const w = ctx.measureText(fox.name).width;
+          ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(p.x - w/2 - 4, p.y - 18, w + 8, 16);
+          ctx.fillStyle = '#FFF'; ctx.fillText(fox.name, p.x - w/2, p.y - 6);
+          ctx.restore();
         }
       } catch (e) {}
     });
@@ -6821,10 +7358,100 @@ function render() {
       } else {
         ctx.fillStyle = '#8B2E2E'; ctx.beginPath(); ctx.ellipse(p.x + tileSize*0.5, p.y + tileSize*0.55, Math.max(6, tileSize*0.4), Math.max(4, tileSize*0.32), 0, 0, Math.PI*2); ctx.fill();
         const hpPct = Math.max(0, (en.hp||0) / (en.maxHp||1));
-        ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(p.x + tileSize*0.2, p.y + tileSize*0.12, tileSize*0.6, 6);
-        ctx.fillStyle = 'rgba(200,50,50,0.95)'; ctx.fillRect(p.x + tileSize*0.2, p.y + tileSize*0.12, tileSize*0.6 * hpPct, 6);
+        if (shouldShowEntityHealthBar(en, now)) {
+          ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(p.x + tileSize*0.2, p.y + tileSize*0.12, tileSize*0.6, 6);
+          ctx.fillStyle = 'rgba(200,50,50,0.95)'; ctx.fillRect(p.x + tileSize*0.2, p.y + tileSize*0.12, tileSize*0.6 * hpPct, 6);
+        }
       }
     }
+  } catch (e) {}
+
+  // ── GRAVES (Tumbas) ─────────────────────────────────────
+  try {
+    graves.forEach(grave => {
+      const { x: gx, y: gy } = worldToScreen(grave.x, grave.y);
+      const tileSize = getTileSize();
+      const offPad = viewMode === 'iso' ? Math.max(24, isoSize.w) : Math.max(24, tileSize);
+      if (gx < -offPad || gx > W + offPad || gy < -offPad || gy > H + offPad) return;
+      
+      if (lowDetail) {
+        ctx.fillStyle = '#333';
+        ctx.fillRect(gx + tileSize * 0.3, gy + tileSize * 0.5, tileSize * 0.4, tileSize * 0.3);
+        return;
+      }
+      
+      // Render grave using pixel art design: cross tombstone with soil
+      // Grid 16x16, draw pixels
+      ctx.save();
+      const scale = Math.max(1, Math.floor(tileSize / 14));
+      const centerX = Math.floor(gx + tileSize * 0.5);
+      const centerY = Math.floor(gy + tileSize * 0.6);
+      
+      // Draw cross border (black outline)
+      const borderPixels = [
+        [2,14],[13,14],[2,13],[13,13],[2,12],[13,12],[2,11],[13,11],[2,10],[13,10],[2,9],[13,9],[2,8],[13,8],
+        [3,8],[12,8],[3,7],[12,7],[3,6],[12,6],[3,5],[12,5],[4,5],[11,5],[4,4],[11,4],[5,4],[10,4],
+        [5,3],[10,3],[6,3],[9,3],[7,3],[8,3],[3,14],[12,14],[4,14],[11,14],[5,14],[10,14],[6,14],[9,14],[7,14],[8,14]
+      ];
+      
+      for (const [px, py] of borderPixels) {
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(centerX - 8*scale + px*scale, centerY - 8*scale + py*scale, scale, scale);
+      }
+      
+      // Draw gray fill (interior)
+      const fillPixels = [
+        [7,10],[8,10],[6,10],[7,11],[7,9],[9,10],[8,11],[8,9],[5,10],[6,11],[6,9],
+        [7,12],[7,8],[10,10],[9,11],[9,9],[8,12],[8,8],[4,10],[5,11],[5,9],[6,12],[6,8],
+        [7,13],[7,7],[11,10],[10,11],[10,9],[9,12],[9,8],[3,11],[3,9],[4,12],[4,8],[5,13],[5,7],
+        [8,13],[8,7],[11,11],[11,9],[12,10],[3,10],[4,11],[4,9],[3,12],[3,8]
+      ];
+      
+      for (const [px, py] of fillPixels) {
+        ctx.fillStyle = '#808080';
+        ctx.fillRect(centerX - 8*scale + px*scale, centerY - 8*scale + py*scale, scale, scale);
+      }
+      
+      ctx.restore();
+      
+      // Draw grave name
+      try {
+        const nameZoom = 0.5;
+        const maxDist = 8.0;
+        const dist = Math.hypot((grave.x || grave.col) - player.x, (grave.y || grave.row) - player.y);
+        if (zoom >= nameZoom && dist <= maxDist) {
+          const p = worldToScreen(grave.x, grave.y - 0.3);
+          ctx.save();
+          ctx.font = '11px sans-serif';
+          const w = ctx.measureText(grave.name).width;
+          ctx.fillStyle = 'rgba(0,0,0,0.7)';
+          ctx.fillRect(p.x - w/2 - 5, p.y - 20, w + 10, 16);
+          ctx.fillStyle = '#DDD';
+          ctx.fillText(grave.name, p.x - w/2, p.y - 8);
+          ctx.restore();
+        }
+      } catch (e) {}
+      
+      // Interaction hint for epitaph
+      const distHint = Math.hypot((grave.x || grave.col) - player.x, (grave.y || grave.row) - player.y);
+      if (distHint < 1.2) {
+        const hx = gx + tileSize*0.5;
+        const hy = gy - 20;
+        ctx.save();
+        ctx.fillStyle = 'rgba(200,200,255,0.9)';
+        ctx.strokeStyle = '#555';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect ? ctx.roundRect(hx-16, hy-18, 32, 20, 4) : ctx.rect(hx-16, hy-18, 32, 20);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#111';
+        ctx.font = '12px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('E', hx, hy-4);
+        ctx.restore();
+      }
+    });
   } catch (e) {}
 
   // draw smoke particles (ambient campfire smoke)
@@ -7038,6 +7665,138 @@ function render() {
     }
   } catch (e) {}
 
+  // Companion dog AI + smooth movement
+  try {
+    const dog = getActivePetDog();
+    if (dog && !window.currentInterior) {
+      if (typeof dog.x !== 'number') dog.x = (typeof dog.col === 'number' ? dog.col : player.x) + 0.5;
+      if (typeof dog.y !== 'number') dog.y = (typeof dog.row === 'number' ? dog.row : player.y) + 0.5;
+      if (!dog.behavior) dog.behavior = 'follow';
+      if (typeof dog.loyalty !== 'number') dog.loyalty = 60;
+      if (dog.behavior === 'follow') {
+        const distToPlayer = Math.hypot((player.x + 0.5) - dog.x, (player.y + 0.5) - dog.y);
+        if ((!dog.nextMove || now >= dog.nextMove) && distToPlayer > 1.25) {
+          dog.nextMove = now + 120 + Math.floor(Math.random() * 180);
+          const followTight = Math.max(0.25, 0.85 - ((dog.loyalty || 60) / 200));
+          const ox = player.x + (Math.random() * (followTight * 2) - followTight);
+          const oy = player.y + 0.55 + (Math.random() * (followTight * 1.8) - followTight * 0.9);
+          const targetCol = Math.max(0, Math.min(COLS - 1, Math.floor(ox)));
+          const targetRow = Math.max(0, Math.min(ROWS - 1, Math.floor(oy)));
+          const safe = canWalkTo(targetCol, targetRow) ? { col: targetCol, row: targetRow } : findNearestWalkable(targetCol, targetRow, 4);
+          dog.moveTarget = { x: safe.col + 0.5, y: safe.row + 0.5 };
+          if (distToPlayer > 7.5) {
+            const baseSpd = typeof dog._baseSpeed === 'number' ? dog._baseSpeed : (dog._baseSpeed = dog.speed || 1.8);
+            dog.speed = Math.max(baseSpd, 3.1);
+            dog._recallSprintUntil = now + 2500;
+          }
+        }
+      } else if (dog.behavior === 'stay' && dog.moveTarget) {
+        delete dog.moveTarget;
+      }
+
+      if (dog._recallSprintUntil && now >= dog._recallSprintUntil) {
+        const baseSpd = typeof dog._baseSpeed === 'number' ? dog._baseSpeed : 1.8;
+        dog.speed = baseSpd;
+        delete dog._recallSprintUntil;
+      }
+
+      // Combat mode: look for nearest hostile target and attack
+      if (dog.combatMode && dog.behavior !== 'stay') {
+        let best = null;
+        let bestBucket = null;
+        let bestDist = 9e9;
+        const acquireRange = 5.2;
+        const consider = (ref, bucket) => {
+          if (!ref || isDownedEntity(ref, now)) return;
+          const tx = (typeof ref.x === 'number' ? ref.x : ref.col) + 0.5;
+          const ty = (typeof ref.y === 'number' ? ref.y : ref.row) + 0.5;
+          const dist = Math.hypot(tx - dog.x, ty - dog.y);
+          if (dist < bestDist && dist <= acquireRange) {
+            best = ref;
+            bestBucket = bucket;
+            bestDist = dist;
+          }
+        };
+        for (let i = 0; i < enemies.length; i++) consider(enemies[i], 'enemy');
+        for (let i = 0; i < foxes.length; i++) consider(foxes[i], 'fox');
+        for (let i = 0; i < entities.length; i++) {
+          const ent = entities[i];
+          if (!ent || ent === dog) continue;
+          if (ent.kind === 'player' && ent._hostile) consider(ent, 'hostile-npc');
+        }
+
+        if (best) {
+          if (bestDist > 1.15) {
+            const tx = Math.floor((typeof best.x === 'number' ? best.x : best.col));
+            const ty = Math.floor((typeof best.y === 'number' ? best.y : best.row));
+            const safe = canWalkTo(tx, ty) ? { col: tx, row: ty } : findNearestWalkable(tx, ty, 3);
+            dog.moveTarget = { x: safe.col + 0.5, y: safe.row + 0.5 };
+          } else if (!dog._nextAttackAt || now >= dog._nextAttackAt) {
+            dog._nextAttackAt = now + 820;
+            const dmg = 4;
+            best.hp = Math.max(0, (best.hp || best.maxHp || 1) - dmg);
+            best._flashUntil = now + 280;
+            try { if (window.spawnFloatingText) window.spawnFloatingText((best.x || best.col) + 0.2, (best.y || best.row) - 0.2, `-${dmg}`, { color: '#FF5C5C', force: true }); } catch (e) {}
+            try { if (window.spawnFloatingText) window.spawnFloatingText((dog.x || dog.col) + 0.2, (dog.y || dog.row) - 0.35, 'Grr!', { color: '#FFD27A', force: true }); } catch (e) {}
+            if ((best.hp || 0) <= 0) {
+              markEntityDowned(best, { lingerMs: CORPSE_LINGER_MS });
+            }
+          }
+        }
+      }
+
+      if (dog.moveTarget) {
+        const dx = dog.moveTarget.x - dog.x;
+        const dy = dog.moveTarget.y - dog.y;
+        const dist = Math.hypot(dx, dy) || 0.0001;
+        const step = ((dog.speed || 1.8) + ((dog.loyalty || 60) / 200)) * dt;
+        if (dist <= step) {
+          dog.x = dog.moveTarget.x;
+          dog.y = dog.moveTarget.y;
+          dog.col = Math.floor(dog.x);
+          dog.row = Math.floor(dog.y);
+          delete dog.moveTarget;
+        } else {
+          dog.x += (dx / dist) * step;
+          dog.y += (dy / dist) * step;
+          dog.col = Math.floor(dog.x);
+          dog.row = Math.floor(dog.y);
+        }
+        dog._lastX = dog.x;
+      }
+
+      try {
+        const nearDist = Math.hypot((player.x + 0.5) - dog.x, (player.y + 0.5) - dog.y);
+        if (nearDist <= 2.2) {
+          let hasOthersNearby = false;
+          for (let i = 0; i < entities.length; i++) {
+            const ent = entities[i];
+            if (!ent || ent === dog || ent.kind !== 'player') continue;
+            const dx = ((ent.x || ent.col) + 0.5) - (player.x + 0.5);
+            const dy = ((ent.y || ent.row) + 0.5) - (player.y + 0.5);
+            if (Math.hypot(dx, dy) <= 6) { hasOthersNearby = true; break; }
+          }
+          if (!hasOthersNearby) {
+            for (let i = 0; i < enemies.length; i++) {
+              const en = enemies[i];
+              if (!en || isDownedEntity(en, now)) continue;
+              const dx = ((en.x || en.col) + 0.5) - (player.x + 0.5);
+              const dy = ((en.y || en.row) + 0.5) - (player.y + 0.5);
+              if (Math.hypot(dx, dy) <= 7) { hasOthersNearby = true; break; }
+            }
+          }
+          if (!hasOthersNearby) {
+            const nextLineAt = player._nextDogCompanionLineAt || 0;
+            if (now >= nextLineAt) {
+              player._nextDogCompanionLineAt = now + 26000 + Math.floor(Math.random() * 18000);
+              speakToPet('alone', dog);
+            }
+          }
+        }
+      } catch (e) {}
+    }
+  } catch (e) {}
+
   // decay camera inertia
   // follow player: update targetCam each frame when enabled
   if (followPlayer && !isPanning) {
@@ -7165,6 +7924,8 @@ function render() {
         let bestRes = null, bestResDist = 9e9;
         let bestTree = null, bestTreeDist = 9e9;
         let bestNpc = null, bestNpcDist = 9e9;
+        let bestPet = null, bestPetDist = 9e9;
+        let bestGrave = null, bestGraveDist = 9e9;
         let bestScene = null, bestSceneDist = 9e9;
         try {
           const scenes = Array.isArray(window._mapSceneTriggers) ? window._mapSceneTriggers : [];
@@ -7183,14 +7944,29 @@ function render() {
           if (ent.kind === 'player' && ent.id && ent.id.indexOf('npc-') === 0) {
             // NPC (villager, story, etc.)
             if (dist < bestNpcDist && dist <= 1.5) { bestNpc = ent; bestNpcDist = dist; }
+          } else if (ent.kind === 'pet' && ent.petType === 'dog') {
+            if (dist < bestPetDist && dist <= 1.6) { bestPet = ent; bestPetDist = dist; }
           } else if (ent.kind === 'resource') {
             if (dist < bestResDist && dist <= 1.6) { bestRes = ent; bestResDist = dist; }
           } else if (ent.kind === 'tree') {
             if (dist < bestTreeDist && dist <= 1.6) { bestTree = ent; bestTreeDist = dist; }
           }
         }
+        // Also check for graves
+        try {
+          for (let i = 0; i < graves.length; i++) {
+            const grave = graves[i];
+            if (!grave) continue;
+            const gx = (grave.x !== undefined ? grave.x : grave.col) + 0.5;
+            const gy = (grave.y !== undefined ? grave.y : grave.row) + 0.5;
+            const dist = Math.hypot(gx - (player.x || 0), gy - (player.y || 0));
+            if (dist < bestGraveDist && dist <= 1.2) { bestGrave = grave; bestGraveDist = dist; }
+          }
+        } catch (e) {}
         if (bestDoor) _interactionScanCache = { kind: 'door', ref: bestDoor, actionText: 'Entrar', showPrompt: true };
         else if (bestNpc && bestNpc.isStoryNPC) _interactionScanCache = { kind: 'player', ref: bestNpc, actionText: `Hablar con ${bestNpc.name || 'NPC'}`, showPrompt: true };
+        else if (bestPet) _interactionScanCache = { kind: 'pet-dog', ref: bestPet, actionText: `Interactuar con ${bestPet.name || 'perro'}`, showPrompt: true };
+        else if (bestGrave) _interactionScanCache = { kind: 'grave', ref: bestGrave, actionText: `Leer: ${bestGrave.name}`, showPrompt: true };
         else if (bestScene) _interactionScanCache = { kind: 'map-scene', ref: bestScene, actionText: bestScene.prompt || 'Examinar', showPrompt: true };
         else if (bestNpc) _interactionScanCache = { kind: 'player', ref: bestNpc, actionText: 'Hablar', showPrompt: true };
         else if (bestRes) _interactionScanCache = { kind: 'resource', ref: bestRes, actionText: bestRes.subtype ? ('Recoger ' + bestRes.subtype) : 'Recoger', showPrompt: true };
@@ -8344,15 +9120,27 @@ function renderActionList() {
   // Render to horizontal action bar if it exists, fallback to old list
   const bar = document.getElementById('action-bar');
   const list = document.getElementById('actions-list');
-  const target = bar || list;
+  const target = (bar && bar.querySelector('.floating-body')) || bar || list;
   if (!target) return;
   target.innerHTML = '';
+  const ACTION_ICONS = {
+    explore: '🧭',
+    gather: '🪓',
+    build: '🏗️',
+    trade: '💱',
+    ritual: '✨',
+    study: '📜',
+    hunt: '🏹',
+    attack: '⚔️',
+    call_dog: '🐕'
+  };
   ACTIONS.forEach(action => {
     const btn = document.createElement('button');
     btn.className = 'action-bar-btn';
     btn.dataset.action = action.id;
     btn.title = action.desc;
-    btn.innerHTML = `<span class="action-bar-name">${action.name}</span><span class="action-bar-cost">-${action.cost} AP</span>`;
+    const icon = ACTION_ICONS[action.id] || '•';
+    btn.innerHTML = `<span class="action-bar-icon">${icon}</span><span class="action-bar-name">${action.name}</span><span class="action-bar-cost">-${action.cost} AP</span>`;
     btn.addEventListener('click', () => { if (action.id) performAction(action.id); });
     target.appendChild(btn);
   });
@@ -8591,6 +9379,13 @@ function performAction(actionId) {
     notify('No hay animales cercanos para cazar.');
     char.ap += action.cost; // refund AP
     return;
+  }
+
+  if (actionId === 'call_dog') {
+    if (!callPetDogToPlayer()) {
+      char.ap += action.cost;
+      return;
+    }
   }
 
   updateUI();
@@ -8844,13 +9639,24 @@ function closeCharacterSelect() {
   // Start cinematic intro now that the DOM modal is gone and the canvas is fully visible
   if (window._pendingIntro) {
     window._pendingIntro = false;
-    try { startIntroSequence(); } catch (e) {}
+    try {
+      if (!(window._homePrologue && window._homePrologue.active)) startIntroSequence();
+    } catch (e) {}
   }
 }
 
 function setupCharacterSelection() {
   renderCharacterOptions();
   renderCustomOptions();
+  try {
+    if (window._homePrologue && window._homePrologue.active) {
+      const defaultPreset = CHARACTER_PRESETS.find(p => p.id === 'builder') || CHARACTER_PRESETS[0];
+      if (defaultPreset) applyCharacterPreset(defaultPreset);
+      setActiveTab('preset');
+      closeCharacterSelect();
+      return;
+    }
+  } catch (e) {}
   const savedMode = localStorage.getItem(STORAGE_CHAR_MODE);
   const savedId = localStorage.getItem(STORAGE_CHAR_KEY);
   const savedCustom = localStorage.getItem(STORAGE_CHAR_CUSTOM);
@@ -8902,6 +9708,15 @@ function setupCharacterSelection() {
     setActiveTab('preset');
     closeCharacterSelect();
   } else {
+    try {
+      if (window._homePrologue && window._homePrologue.active) {
+        const defaultPreset = CHARACTER_PRESETS.find(p => p.id === 'builder') || CHARACTER_PRESETS[0];
+        if (defaultPreset) applyCharacterPreset(defaultPreset);
+        setActiveTab('preset');
+        closeCharacterSelect();
+        return;
+      }
+    } catch (e) {}
     setActiveTab('preset');
     openCharacterSelect();
   }
@@ -8910,7 +9725,7 @@ function setupCharacterSelection() {
   if (startBtn) {
     startBtn.addEventListener('click', () => {
       // ensure runtime defaults exist (values are updated live when user changes the selector)
-      try { window._DEFAULT_DENSITIES = window._DEFAULT_DENSITIES || { npc:1.0, animals:1.0, vegetation:0.6 }; } catch (e) {}
+      try { window._DEFAULT_DENSITIES = window._DEFAULT_DENSITIES || { npc:1.0, animals:1.0, vegetation:0.4 }; } catch (e) {}
 
       if (selectedMode === 'custom') {
         applyCustomCharacter(customState);
@@ -8964,7 +9779,7 @@ function setupCharacterSelection() {
     const next = document.getElementById('param-next');
     const indicator = document.getElementById('param-indicator');
     const iconCanvas = document.getElementById('param-icon');
-    window._DEFAULT_DENSITIES = window._DEFAULT_DENSITIES || { npc:1.0, animals:1.0, vegetation:0.6 };
+    window._DEFAULT_DENSITIES = window._DEFAULT_DENSITIES || { npc:1.0, animals:1.0, vegetation:0.4 };
 
     function drawIconFor(key) {
       try {
@@ -9226,8 +10041,16 @@ function createAbilityBarAndMissions() {
     { id: 'attack', label: 'Golpear', key: '1', cooldown: 800, last: 0, desc: 'Atacar con arma o puño' },
     { id: 'dash', label: 'Dash', key: '2', cooldown: 5000, last: 0, desc: 'Avanza rápidamente' },
     { id: 'heal', label: 'Heal', key: '3', cooldown: 12000, last: 0, desc: 'Cura HP' },
-    { id: 'beacon', label: 'Beacon', key: '4', cooldown: 15000, last: 0, desc: 'Coloca señal' }
+    { id: 'beacon', label: 'Beacon', key: '4', cooldown: 15000, last: 0, desc: 'Coloca señal' },
+    { id: 'call-dog', label: 'Perro', key: '5', cooldown: 3500, last: 0, desc: 'Llama a tu perro' }
   ];
+  const ABILITY_ICONS = {
+    attack: '⚔️',
+    dash: '💨',
+    heal: '🩹',
+    beacon: '📍',
+    'call-dog': '🐕'
+  };
 
   // bar container
   let bar = document.getElementById('ability-bar');
@@ -9252,7 +10075,7 @@ function createAbilityBarAndMissions() {
     slot.className = 'ability-slot'; slot.dataset.idx = idx;
     slot.style.width = '64px'; slot.style.height = '48px'; slot.style.background = '#222'; slot.style.border = '1px solid #555';
     slot.style.borderRadius = '6px'; slot.style.display = 'flex'; slot.style.flexDirection = 'column'; slot.style.alignItems = 'center'; slot.style.justifyContent = 'center'; slot.style.color = '#fff'; slot.style.position = 'relative';
-    slot.innerHTML = `<div style="font-weight:700">${ab.label}</div><div style="font-size:12px;color:#ccc">${ab.key}</div><div class="cd" style="position:absolute;width:64px;height:48px;left:0;top:0;border-radius:6px;background:rgba(0,0,0,0.45);display:none"></div>`;
+    slot.innerHTML = `<div style="font-size:17px;line-height:1">${ABILITY_ICONS[ab.id] || '•'}</div><div style="font-weight:700">${ab.label}</div><div style="font-size:12px;color:#ccc">${ab.key}</div><div class="cd" style="position:absolute;width:64px;height:48px;left:0;top:0;border-radius:6px;background:rgba(0,0,0,0.45);display:none"></div>`;
     slot.addEventListener('click', () => useAbility(idx));
     bar.appendChild(slot);
   });
@@ -9362,6 +10185,8 @@ function createAbilityBarAndMissions() {
       char.hp = Math.min(char.maxHp, (char.hp || 10) + 6); notify('Curación aplicada'); updateCharCard();
     } else if (ab.id === 'beacon') {
       addToInventory('beacon', 1); notify('Señal colocada');
+    } else if (ab.id === 'call-dog') {
+      if (!callPetDogToPlayer()) notify('No se pudo llamar al perro');
     } else if (ab.id === 'buff') {
       char.special.attack = (char.special.attack || 0) + 1; notify('Furor temporal'); setTimeout(() => { char.special.attack = Math.max(0, (char.special.attack||0)-1); }, 12000);
     }
@@ -9374,7 +10199,7 @@ function createAbilityBarAndMissions() {
 
   // missions removed: simplified hybrid flow uses EventManager + event history
 
-  // global keybinds for abilities (1-4)
+  // global keybinds for abilities (1-5)
   document.addEventListener('keydown', (e) => {
     if (!e.key) return;
     const k = e.key;
@@ -9696,9 +10521,20 @@ function createMenuBar() {
                 const npc = spawnNPC(nm, nd.col || 1, nd.row || 1);
                 if (npc) {
                   npc._interiorNpc = true;
-                  npc.npcType = 'villager';
+                  npc.npcType = nd.npcType || 'villager';
                   assignSovietVillagerProfile(npc);
                   npc._interiorBounds = { minC: 1, maxC: (data.width||8)-2, minR: 1, maxR: (data.height||6)-2 };
+                  if (Array.isArray(nd.storyLines) && nd.storyLines.length > 0) {
+                    npc._storyLines = nd.storyLines.slice();
+                    npc.isStoryNPC = true;
+                  }
+                  if (nd.static === true) {
+                    const sc = Math.max(1, Math.floor(nd.col || 1));
+                    const sr = Math.max(1, Math.floor(nd.row || 1));
+                    npc.patrolRoute = [{ c: sc, r: sr }];
+                    npc.patrolLoop = false;
+                    npc.nextMove = Date.now() + 12000;
+                  }
                 }
               } catch (e) {}
             });
@@ -9745,6 +10581,42 @@ function createMenuBar() {
           }
           window.currentInterior = null;
           try { targetCam = null; centerCameraOnPlayer(); } catch (e) {}
+          try {
+            const prologue = window._homePrologue;
+            if (prologue && prologue.active && !prologue.guardsSpawned) {
+              prologue.guardsSpawned = true;
+              const list = Array.isArray(prologue.military) ? prologue.military : [];
+              const spawned = [];
+              for (const soldierDef of list) {
+                try {
+                  const sx = Math.max(0, Math.min(COLS - 1, soldierDef.col));
+                  const sy = Math.max(0, Math.min(ROWS - 1, soldierDef.row));
+                  const soldier = spawnNPC(soldierDef.name, sx, sy);
+                  if (soldier) {
+                    soldier.npcType = 'guard';
+                    soldier.isStoryNPC = true;
+                    soldier._storyLines = [
+                      'Orden del alto mando: nadie entra ni sale hasta nuevo aviso.',
+                      'No hemos venido a arrestarte... todavía.',
+                      'Ahora sal y escucha. La situación es peor de lo que te dijeron.'
+                    ];
+                    soldier.patrolRoute = [{ c: sx, r: sy }];
+                    soldier.patrolLoop = false;
+                    soldier.behavior = 'stay';
+                    spawned.push(soldier);
+                  }
+                } catch (e) {}
+              }
+              setTimeout(() => {
+                try {
+                  const target = spawned.find(s => s && !isDownedEntity(s, Date.now()));
+                  if (target) {
+                    openNpcDialogue(target);
+                  }
+                } catch (e) {}
+              }, 700);
+            }
+          } catch (e) {}
           notify && notify('Sales de la casa');
         }};
       } catch (e) {}
@@ -10108,6 +10980,30 @@ function findEntityAtWorld(x, y) {
   return nearest;
 }
 
+function showGraveEpitaph(grave) {
+  const panel = document.getElementById('entity-info');
+  const body = document.getElementById('entity-info-body');
+  const title = document.getElementById('entity-info-title');
+  if (!panel || !body || !title) return;
+  
+  title.textContent = '⚰️ ' + (grave.name || 'Tumba');
+  const epitaphLines = (grave.epitaph || '').split('\\n');
+  const epitaphHtml = epitaphLines.map(line => `<div style="margin:4px 0;line-height:1.4">${line}</div>`).join('');
+  
+  body.innerHTML = `
+    <div style="padding:12px;border-left:3px solid #888;background:rgba(64,64,64,0.5)">
+      <div style="font-size:14px;color:#D4AF8F;font-family:serif;font-style:italic;margin-bottom:8px">
+        ${epitaphHtml}
+      </div>
+      <div style="margin-top:12px;font-size:12px;color:#999">
+        Descansa en paz
+      </div>
+    </div>
+  `;
+  
+  panel.style.display = 'block';
+}
+
 function showEntityInfo(ent) {
   const panel = document.getElementById('entity-info');
   const body = document.getElementById('entity-info-body');
@@ -10130,6 +11026,13 @@ function showEntityInfo(ent) {
   if (ent.kind === 'resource') {
     lines.push(`<div style="margin-bottom:6px"><b>Recurso:</b> ${ent.subtype}</div>`);
     lines.push(`<div>Ubicación: ${ent.col}, ${ent.row}</div>`);
+  } else if (ent.kind === 'pet' && ent.petType === 'dog') {
+    lines.push(`<div style="display:flex;align-items:center;gap:8px"><div style="font-size:20px">🐕</div><div><div style="font-weight:700">${ent.name || 'Perro'}</div><div style="font-size:12px;color:#ccc">Mascota compañera</div></div></div>`);
+    lines.push(`<div style="margin-top:8px">Estado: <b>${ent.behavior === 'stay' ? 'Quieto' : 'Siguiendo'}</b></div>`);
+    lines.push(`<div>Modo combate: <b>${ent.combatMode ? 'Activo' : 'Pasivo'}</b></div>`);
+    lines.push(`<div>Lealtad: <b>${Math.max(0, Math.min(100, Math.floor(ent.loyalty || 60)))}/100</b></div>`);
+    lines.push(`<div>HP: <b>${ent.hp || 0}/${ent.maxHp || 0}</b></div>`);
+    lines.push(`<div>Pos: ${Math.floor(ent.col || 0)},${Math.floor(ent.row || 0)}</div>`);
   } else if (ent.kind === 'player') {
     try { assignSovietVillagerProfile(ent); } catch (e) {}
     lines.push(`<div style="display:flex;align-items:center;gap:8px"><div style="width:64px;height:64px;background:#222;padding:6px;border-radius:6px">`);
@@ -10171,6 +11074,12 @@ function showEntityInfo(ent) {
 
   // action buttons when relevant
   const actionsHtml = [];
+  if (ent.kind === 'pet' && ent.petType === 'dog') {
+    actionsHtml.push(`<button id="ent-action-pet" style="margin-right:6px;padding:6px 8px;background:#2A4A2A;color:#E8FFD0;border-radius:6px;border:none">Acariciar</button>`);
+    actionsHtml.push(`<button id="ent-action-feed" style="margin-right:6px;padding:6px 8px;background:#6E5A2A;color:#FFF0C0;border-radius:6px;border:none">Dar comida</button>`);
+    actionsHtml.push(`<button id="ent-action-toggle-follow" style="padding:6px 8px;background:#224466;color:#D8EDFF;border-radius:6px;border:none">${ent.behavior === 'stay' ? 'Seguirme' : 'Quedarse'}</button>`);
+    actionsHtml.push(`<button id="ent-action-toggle-attack" style="margin-left:6px;padding:6px 8px;background:${ent.combatMode ? '#7A1B1B' : '#4A4A4A'};color:#FFE8E8;border-radius:6px;border:none">${ent.combatMode ? 'Ataque: ON' : 'Ataque: OFF'}</button>`);
+  }
   if (ent.kind === 'player' || ent.kind === 'resource' || ent.kind === undefined) {
     actionsHtml.push(`<button id="ent-action-follow" style="margin-right:6px;padding:6px 8px;background:#222;color:#FFD27A;border-radius:6px;border:none">Seguir</button>`);
     actionsHtml.push(`<button id="ent-action-attack" style="padding:6px 8px;background:#8B0000;color:#fff;border-radius:6px;border:none">Atacar</button>`);
@@ -10180,6 +11089,14 @@ function showEntityInfo(ent) {
   panel.style.display = 'block';
   // wire action handlers
   setTimeout(() => {
+    const pbtn = document.getElementById('ent-action-pet');
+    if (pbtn) pbtn.addEventListener('click', () => { try { interactWithPetDog('pet', ent); } catch (e) {} panel.style.display = 'none'; });
+    const feedBtn = document.getElementById('ent-action-feed');
+    if (feedBtn) feedBtn.addEventListener('click', () => { try { interactWithPetDog('feed', ent); } catch (e) {} panel.style.display = 'none'; });
+    const toggleBtn = document.getElementById('ent-action-toggle-follow');
+    if (toggleBtn) toggleBtn.addEventListener('click', () => { try { interactWithPetDog('toggle-follow', ent); } catch (e) {} panel.style.display = 'none'; });
+    const attackModeBtn = document.getElementById('ent-action-toggle-attack');
+    if (attackModeBtn) attackModeBtn.addEventListener('click', () => { try { interactWithPetDog('toggle-attack', ent); } catch (e) {} panel.style.display = 'none'; });
     const fbtn = document.getElementById('ent-action-follow'); if (fbtn) fbtn.addEventListener('click', () => { followPlayer = true; notify('Siguiendo entidad'); panel.style.display='none'; });
     const abtn = document.getElementById('ent-action-attack'); if (abtn) abtn.addEventListener('click', () => { try { performAction('attack'); } catch (e) { notify('Atacar (error)'); } panel.style.display='none'; });
   }, 20);
@@ -10270,6 +11187,18 @@ const BUILTIN_TREE_TEMPLATES = [
 // Start with builtins; may be overridden by `data/entity-pixels.json` on load
 let GLOBAL_TREE_TEMPLATES = BUILTIN_TREE_TEMPLATES.slice();
 
+function pickForestTreeTemplateIndex(variant, col, row) {
+  const v = String(variant || '').toLowerCase();
+  const seed = tileNoise(col || 0, row || 0, 11, 12);
+  if (v === 'birch' || v === 'aspen' || v === 'pine' || v === 'willow' || v === 'fir') {
+    return seed < 0.5 ? 0 : 6;
+  }
+  if (v === 'tallgrass' || v === 'weed') return 6;
+  if (v === 'hedge') return 5;
+  const map = { oak:1, broad:1, round:1, scrub:2, bush:2, shrub:2, multi:3 };
+  return (map[v] !== undefined) ? map[v] : Math.floor(seed * GLOBAL_TREE_TEMPLATES.length);
+}
+
 function drawTreesVisible() {
   const tileSize = getTileSize();
   // Use shared pixel templates declared globally
@@ -10305,7 +11234,7 @@ function drawTreesVisible() {
       }
       const { x, y } = worldToScreen(c, r);
       // choose a template and draw scaled pixel-art tree
-      const tpl = TREE_TEMPLATES[Math.floor(tileNoise(c, r, 3, 4) * TREE_TEMPLATES.length)];
+      const tpl = TREE_TEMPLATES[pickForestTreeTemplateIndex('birch', c, r) % TREE_TEMPLATES.length];
       // scale for iso/ortho with balanced proportions
       const iso = getIsoTileSize();
       const lodFactor = zoom >= GRAPHICS_CONFIG.smoothingThreshold ? 1 : 0.75;
@@ -10486,10 +11415,25 @@ function refineBiomes() {
 // Make a panel draggable, minimizable and closable
 function enableFloatingBehavior(el) {
   if (!el) return el;
+  const isActionBar = el.id === 'action-bar';
   // base floating styles
-  el.style.position = el.style.position || 'absolute';
+  el.style.position = isActionBar ? 'fixed' : (el.style.position || 'absolute');
   el.style.zIndex = el.style.zIndex || 1900;
-  stylePanel(el);
+  if (!isActionBar) stylePanel(el);
+  if (isActionBar) {
+    el.style.left = '0';
+    el.style.right = '0';
+    el.style.bottom = '0';
+    el.style.width = '100vw';
+    el.style.maxWidth = '100vw';
+    el.style.margin = '0';
+    el.style.display = 'flex';
+    el.style.flexDirection = 'column';
+    el.style.gap = '4px';
+    el.style.background = 'rgba(12,9,4,0.96)';
+    el.style.borderTop = '2px solid #C8A84B';
+    el.style.boxShadow = '0 -8px 24px rgba(0,0,0,0.45)';
+  }
   // ensure header container
   let header = el.querySelector('.floating-header');
   if (!header) {
@@ -10503,8 +11447,14 @@ function enableFloatingBehavior(el) {
     header.style.marginBottom = '6px';
     if (!el.id) el.id = 'panel-' + Math.random().toString(36).slice(2,6);
     const title = document.createElement('strong');
-    title.textContent = el.getAttribute('data-title') || el.id || 'Panel';
+    title.textContent = el.getAttribute('data-title') || (isActionBar ? 'Barra de acciones' : (el.id || 'Panel'));
     header.appendChild(title);
+    if (isActionBar) {
+      header.style.width = '100%';
+      header.style.padding = '6px 10px';
+      header.style.marginBottom = '0';
+      header.style.cursor = 'default';
+    }
     // insert header before current content
     el.insertBefore(header, el.firstChild);
   }
@@ -10519,6 +11469,17 @@ function enableFloatingBehavior(el) {
     nodes.forEach(n => body.appendChild(n));
     el.appendChild(body);
   }
+  if (isActionBar) {
+    body.style.display = 'flex';
+    body.style.flexDirection = 'row';
+    body.style.flexWrap = 'nowrap';
+    body.style.gap = '6px';
+    body.style.alignItems = 'center';
+    body.style.overflowX = 'auto';
+    body.style.overflowY = 'hidden';
+    body.style.padding = '0 8px 8px';
+    body.style.width = '100%';
+  }
 
   // register panel so menu can control visibility
   registerPanel(el);
@@ -10528,8 +11489,8 @@ function enableFloatingBehavior(el) {
   if (!controls) {
     controls = document.createElement('div'); controls.className = 'float-controls';
     controls.style.display = 'flex'; controls.style.gap = '6px';
-    controls.style.opacity = '0';
-    controls.style.pointerEvents = 'none';
+    controls.style.opacity = isActionBar ? '1' : '0';
+    controls.style.pointerEvents = isActionBar ? 'auto' : 'none';
     controls.style.transition = 'opacity 0.16s ease';
     header.appendChild(controls);
   }
@@ -10718,6 +11679,7 @@ function registerClosableUIElements() {
     { id: 'char-card', title: 'Ficha de jugador' },
     { id: 'zoom-control', title: 'Control de zoom' },
     { id: 'ability-bar', title: 'Barra de habilidades' },
+    { id: 'action-bar', title: 'Barra de acciones' },
     { id: 'event-history', title: 'Historial de eventos' },
     { id: 'inventory-panel', title: 'Inventario' },
     { id: 'crafting-panel', title: 'Crafteo' },
@@ -11634,6 +12596,7 @@ function syncCinematicUiVisibility() {
       'toolbar',
       'panel',
       'char-card',
+      'action-bar',
       'ability-bar',
       'event-history',
       'zoom-control',
@@ -11812,18 +12775,21 @@ function drawIntroSequence(ctx, W, H) {
   ctx.globalAlpha = alpha;
   const cx = W / 2, cy = H / 2;
   const epochNow = window._currentEpoch || 'mesopotamia';
+  const homePrologueMode = !!window._homePrologueIntro;
   const protagonistName = (window.player && window.player.name) ? window.player.name : 'el camarada';
   const protagonistTitle = (window.player && window.player.title) ? window.player.title : 'responsable del distrito';
   if (seq.phase === 0) {
     ctx.textAlign = 'center';
     ctx.fillStyle = '#c8a96e';
     ctx.font = 'italic 18px serif';
-    if (epochNow === 'urss') ctx.fillText('URSS clásica, 1926', cx, cy - 18);
+    if (homePrologueMode) ctx.fillText('Casa aislada, antes del amanecer', cx, cy - 18);
+    else if (epochNow === 'urss') ctx.fillText('URSS clásica, 1926', cx, cy - 18);
     else if (epochNow === 'medieval') ctx.fillText('Reino del Norte, año 1187', cx, cy - 18);
     else ctx.fillText('Mesopotamia, 2350 a.C.', cx, cy - 18);
     ctx.font = '13px serif';
     ctx.fillStyle = 'rgba(255,235,200,0.82)';
-    if (epochNow === 'urss') ctx.fillText('Novozarya, un pueblo soviético entre nieve y acero, depende de una red frágil de suministro.', cx, cy + 10);
+    if (homePrologueMode) ctx.fillText('Tu familia duerme a pocos pasos; afuera, dos militares esperan con órdenes selladas.', cx, cy + 10);
+    else if (epochNow === 'urss') ctx.fillText('Novozarya, un pueblo soviético entre nieve y acero, depende de una red frágil de suministro.', cx, cy + 10);
     else if (epochNow === 'medieval') ctx.fillText('Entre caminos y ríos, toda aldea depende del clima y del comercio.', cx, cy + 10);
     else ctx.fillText('Entre el Río Don y el Río Ob Nord, bajo el hielo perpetuo, solo el trabajo colectivo sostiene la vida.', cx, cy + 10);
     ctx.font = '11px monospace';
@@ -11833,7 +12799,18 @@ function drawIntroSequence(ctx, W, H) {
     ctx.textAlign = 'center';
     ctx.font = '14px serif';
     ctx.fillStyle = 'rgba(255,240,210,0.92)';
-    const lore = (epochNow === 'urss')
+    const lore = homePrologueMode
+      ? [
+          `Eres ${protagonistName}, ${protagonistTitle}.`,
+          'Has regresado a tu casa tras meses siguiendo señales de sabotaje.',
+          '',
+          'Esta madrugada, la radio clandestina confirmó lo impensable:',
+          'la red de espionaje militar ya opera dentro de tu distrito.',
+          '',
+          'Tu perro Kidu y tu familia están dentro, pero dos militares te exigen fuera.',
+          'Debes decidir a quién creer antes de que la operación te trague por completo.'
+        ]
+      : (epochNow === 'urss')
       ? [
           `Eres ${protagonistName}, ${protagonistTitle} en Novozarya.`,
           'La noche pasada, un sabotaje dejó al pueblo sin calefacción ni reservas.',
@@ -11877,13 +12854,15 @@ function drawIntroSequence(ctx, W, H) {
     ctx.shadowBlur = 20;
     ctx.fillStyle = '#FFD27A';
     ctx.font = 'bold 34px serif';
-    if (epochNow === 'urss') ctx.fillText('OPERACIÓN NOVOZARYA', cx, cy - 10);
+    if (homePrologueMode) ctx.fillText('OPERACIÓN SOMBRA FRÍA', cx, cy - 10);
+    else if (epochNow === 'urss') ctx.fillText('OPERACIÓN NOVOZARYA', cx, cy - 10);
     else if (epochNow === 'medieval') ctx.fillText('ADAPA Y LA TORMENTA', cx, cy - 10);
     else ctx.fillText('ADAPA Y EL DILUVIO', cx, cy - 10);
     ctx.shadowBlur = 0;
     ctx.font = 'italic 15px serif';
     ctx.fillStyle = 'rgba(255,240,210,0.75)';
-    if (epochNow === 'urss') ctx.fillText('Una historia de un pueblo soviético', cx, cy + 26);
+    if (homePrologueMode) ctx.fillText('Un thriller de espionaje en tierra hostil', cx, cy + 26);
+    else if (epochNow === 'urss') ctx.fillText('Una historia de un pueblo soviético', cx, cy + 26);
     else if (epochNow === 'medieval') ctx.fillText('Una crónica del reino medieval', cx, cy + 26);
     else ctx.fillText('Una historia de Mesopotamia', cx, cy + 26);
     ctx.font = '11px monospace';
@@ -13000,6 +13979,7 @@ document.addEventListener('keydown', e => {
         if (window._activeDialogue) advanceDialogue();
         else if (window._introSeq && !window._introSeq.done) advanceIntroSequence();
       } catch (_) {}
+      try { e.stopImmediatePropagation(); } catch (_) {}
       e.preventDefault();
       return;
     }
@@ -13180,6 +14160,11 @@ document.addEventListener('keydown', e => {
   if (!e.key) return;
   if (e.key.toLowerCase() !== 'e') return;
 
+  if (isCinematicActive()) {
+    e.preventDefault();
+    return;
+  }
+
   // ── interior interactions ──
   if (window.currentInterior) {
     const interior = window.currentInterior;
@@ -13282,6 +14267,14 @@ document.addEventListener('keydown', e => {
         try { openMapSceneDialogue(it.ref); } catch (_) {}
         e.preventDefault(); return;
       }
+      if (it.kind === 'pet-dog' && it.ref) {
+        try { showEntityInfo(it.ref); } catch (_) {}
+        e.preventDefault(); return;
+      }
+      if (it.kind === 'grave' && it.ref) {
+        try { showGraveEpitaph(it.ref); } catch (_) {}
+        e.preventDefault(); return;
+      }
       if (it.kind === 'door' && it.ref && it.ref.interiorId) {
         try { if (window.enterInterior) window.enterInterior(it.ref.interiorId, it.ref); } catch (ee) {}
         e.preventDefault();
@@ -13368,6 +14361,13 @@ function init() {
     try { createOverlayUI(); } catch (err) { /* ignore */ }
     try { createDebugHUD(); } catch (err) {}
     try { createAbilityBarAndMissions(); } catch (err) { /* ignore */ }
+    try {
+      const actionBarEl = document.getElementById('action-bar');
+      if (actionBarEl) {
+        actionBarEl.setAttribute('data-title', 'Barra de acciones');
+        enableFloatingBehavior(actionBarEl);
+      }
+    } catch (err) {}
   } else {
     try { ensureStandaloneEditorSandboxState(); } catch (err) {}
     try { setAdvStatsVisible(false); } catch (err) {}
@@ -13479,6 +14479,7 @@ function init() {
               try { if (window._onEngineProgress) window._onEngineProgress(72, 'Aplicando diseño manual...'); } catch (e) {}
               importMapDesignFromObject(JSON.parse(pendingMapDesignRaw));
               console.log && console.log('game-engine: pending map design applied');
+              try { setupHomePrologueSpawn(player.col, player.row); } catch (e) {}
             }
           } catch (e) {
             console.warn('game-engine: could not apply pending map design', e);
@@ -13490,7 +14491,10 @@ function init() {
         // do not open the engine's internal character selector or block the UI.
         if (!window._externalMenu) {
           try { window._pendingIntro = true; } catch (e) {}
-          try { setupCharacterSelection(); openCharacterSelect(); } catch (e) {}
+          try {
+            setupCharacterSelection();
+            if (!(window._homePrologue && window._homePrologue.active)) openCharacterSelect();
+          } catch (e) {}
           try { if (!localStorage.getItem('meso.noBuildTut')) showBuildTutorial(); } catch (e) {}
         } else {
           // external menu already provided initial params and won't need the internal modal
@@ -13508,6 +14512,9 @@ function init() {
               if (_mc.palette && typeof _mc.palette === 'object') player.palette = Object.assign({}, player.palette, _mc.palette);
               try { localStorage.removeItem('meso.menuChar'); } catch (e) {}
             }
+          } catch (e) {}
+          try {
+            ensurePetDogCompanion();
           } catch (e) {}
           try { postMapInit(); } catch (e) { console.warn('postMapInit call failed', e); }
           try { applyNewGamePanelsHiddenDefaults(); } catch (e) {}
@@ -13664,6 +14671,57 @@ function postMapInit() {
   try { targetZoom = zoom; } catch (e) {}
   try { ensureBottomHudDock(); } catch (e) {}
   try { canvas.tabIndex = 0; canvas.focus({ preventScroll: true }); } catch (e) {}
+
+  try {
+    const prologue = window._homePrologue;
+    if (prologue && prologue.active && !prologue.enteredInterior && !prologue.enteringInterior) {
+      prologue.enteringInterior = true;
+
+      const doorRef = {
+        col: prologue.homeDoorCol,
+        row: prologue.homeDoorRow,
+        interiorId: 'house_player_home',
+        buildingType: 'house_isolated',
+        buildingBase: { col: prologue.homeCol, row: prologue.homeRow }
+      };
+
+      const tryEnterHomeInterior = (attempt) => {
+        try { window.enterInterior('house_player_home', doorRef); } catch (e) {}
+        setTimeout(() => {
+          try {
+            const insideHome = !!(window.currentInterior && window.currentInterior._interiorId === 'house_player_home');
+            if (insideHome) {
+              prologue.enteredInterior = true;
+              prologue.enteringInterior = false;
+              const dog = ensurePetDogCompanion();
+              if (dog) {
+                const inCol = Math.max(1, Math.min(8, Math.floor((window.currentInterior && window.currentInterior.entryCol) || 4) + 1));
+                const inRow = Math.max(1, Math.min(5, Math.floor((window.currentInterior && window.currentInterior.entryRow) || 4)));
+                dog.col = inCol;
+                dog.row = inRow;
+                dog.x = inCol + 0.5;
+                dog.y = inRow + 0.5;
+                dog.behavior = 'stay';
+                delete dog.moveTarget;
+              }
+              return;
+            }
+            if (attempt < 4) {
+              tryEnterHomeInterior(attempt + 1);
+              return;
+            }
+            prologue.enteringInterior = false;
+            prologue.enteredInterior = false;
+          } catch (e) {
+            prologue.enteringInterior = false;
+            prologue.enteredInterior = false;
+          }
+        }, 240);
+      };
+
+      tryEnterHomeInterior(0);
+    }
+  } catch (e) {}
 }
 
 // Listen for events from EventManager and apply simple impacts to game state

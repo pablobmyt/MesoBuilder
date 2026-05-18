@@ -19,6 +19,10 @@
         "/^node --check \"c:\\\\Proyectos\\\\Personal\\\\MesoBuilder\\\\engine\\\\game-engine\\.js\" 2>&1 && echo \"ALL OK\"$/": {
             "approve": true,
             "matchCommandLine": true
+        },
+        "/^node --check engine/game-engine\\.js$/": {
+            "approve": true,
+            "matchCommandLine": true
         }
     },
     "liveServer.settings.port": 5501

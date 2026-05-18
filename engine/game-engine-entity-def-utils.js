@@ -74,7 +74,7 @@ export function importEntityDefinitionsFromObject(obj, deps) {
   } catch (e) { console.warn('importEntityDefinitionsFromObject err', e); return false; }
 }
 
-export function exportEntityDefinitionsToJSON(deps) {
+export async function exportEntityDefinitionsToJSON(deps) {
   const {
     BUILDINGS,
     DEFAULT_ENEMY_DEFS,
@@ -89,9 +89,19 @@ export function exportEntityDefinitionsToJSON(deps) {
       enemies: defs.enemies || DEFAULT_ENEMY_DEFS,
       resources: defs.resources || DEFAULT_RESOURCE_DEFS
     };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'entities-defs.json'; document.body.appendChild(a); a.click(); setTimeout(() => { try { document.body.removeChild(a); URL.revokeObjectURL(a.href); } catch (e) {} }, 200);
-  } catch (e) { console.warn('exportEntityDefinitionsToJSON err', e); }
+    try {
+      const resp = await fetch('http://localhost:3001/save-entity-defs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ defs: data, mode: 'merge' })
+      });
+      if (!resp.ok) throw new Error('save-entity-defs ' + resp.status);
+      return true;
+    } catch (saveErr) {
+      console.warn('No se pudo guardar entities-defs automáticamente. Inicia el save-server para persistir cambios.', saveErr);
+      return false;
+    }
+  } catch (e) { console.warn('exportEntityDefinitionsToJSON err', e); return false; }
 }
 
 export async function ensureEntityPixelsReady(timeoutMs = 1200) {

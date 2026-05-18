@@ -483,6 +483,29 @@
     </section>
 
     <section class="panel">
+      <h2>Plantillas de zona</h2>
+      <div class="field">
+        <label for="zonePresetType">Tipo de zona</label>
+        <select id="zonePresetType">
+          <option value="military_base">Base militar</option>
+          <option value="capital">Capital</option>
+          <option value="trading_post">Puesto comercial</option>
+          <option value="origin">Aldea origen</option>
+          <option value="village">Aldea</option>
+        </select>
+      </div>
+      <div class="button-row tight">
+        <button id="btnZonePresetCapture" class="tool-btn">Guardar desde selección</button>
+        <button id="btnZonePresetClear" class="tool-btn danger">Borrar plantilla</button>
+        <button id="btnZonePresetExport" class="tool-btn">Exportar JSON</button>
+        <button id="btnZonePresetImport" class="tool-btn">Importar JSON</button>
+        <button id="btnOpenZonePresetEditor" class="tool-btn">Editor aparte</button>
+      </div>
+      <div class="hint" style="margin-top:8px">Selecciona un área ya montada y guárdala para que esa zona aparezca así al generar partida nueva.</div>
+      <div class="selection-summary" id="zonePresetStatus" style="margin-top:8px">Sin plantilla para este tipo de zona.</div>
+    </section>
+
+    <section class="panel">
       <h2>Edificios</h2>
       <div class="build-grid" id="buildGrid"></div>
       <div class="button-row" style="margin-top:10px">
@@ -538,6 +561,7 @@
   </main>
 
   <input id="fileInput" type="file" accept=".json,application/json" hidden>
+  <input id="zonePresetFileInput" type="file" accept=".json,application/json" hidden>
   <dialog id="confirmDialog" class="meso-dialog">
     <form method="dialog" class="dialog-body">
       <h3 class="dialog-title" id="confirmDialogTitle">Confirmar acción</h3>
@@ -552,6 +576,7 @@
   <script>
     const STORAGE_KEY = 'meso.pendingMapDesign';
     const META_KEY = 'meso.pendingMapDesignMeta';
+    const ZONE_PRESETS_STORAGE_KEY = 'meso.zoneSpawnPresets';
     const BUILDING_SCALE_KEY = 'meso.standaloneEditorBuildingScale';
     const ENTITY_SCALE_KEY = 'meso.standaloneEditorEntityScale';
     const terrainDefs = [
@@ -588,6 +613,8 @@
     const metaEpoch = document.getElementById('metaEpoch');
     const metaTool = document.getElementById('metaTool');
     const selectionSummary = document.getElementById('selectionSummary');
+    const zonePresetType = document.getElementById('zonePresetType');
+    const zonePresetStatus = document.getElementById('zonePresetStatus');
     const confirmDialog = document.getElementById('confirmDialog');
     const confirmDialogTitle = document.getElementById('confirmDialogTitle');
     const confirmDialogMessage = document.getElementById('confirmDialogMessage');
@@ -609,6 +636,13 @@
     const undoStack = [];
     const redoStack = [];
     const HISTORY_LIMIT = 20;
+    const zonePresetTypeLabels = {
+      military_base: 'Base militar',
+      capital: 'Capital',
+      trading_post: 'Puesto comercial',
+      origin: 'Aldea origen',
+      village: 'Aldea'
+    };
 
     function clampScale(raw) {
       if (!Number.isFinite(raw)) return 1;
@@ -1025,6 +1059,164 @@
       return JSON.parse(JSON.stringify(design));
     }
 
+    function getCurrentZonePresetType() {
+      return String((zonePresetType && zonePresetType.value) || 'military_base');
+    }
+
+    function getZonePresetsFromDesign(design) {
+      const src = (design && design.zoneSpawnPresets && typeof design.zoneSpawnPresets === 'object')
+        ? design.zoneSpawnPresets
+        : {};
+      return src;
+    }
+
+    function createZonePresetFromSelection(design, selection, zoneType) {
+      if (!selection) throw new Error('Primero aplica una selección para capturar la plantilla.');
+      const minC = selection.minC;
+      const maxC = selection.maxC;
+      const minR = selection.minR;
+      const maxR = selection.maxR;
+      const anchorCol = Math.floor((minC + maxC) / 2);
+      const anchorRow = Math.floor((minR + maxR) / 2);
+      const terrain = [];
+      const buildingsMap = new Map();
+      const entitiesOut = [];
+
+      for (let r = minR; r <= maxR; r++) {
+        for (let c = minC; c <= maxC; c++) {
+          const biome = design.tileBiome[r] && design.tileBiome[r][c] ? design.tileBiome[r][c] : 'alluvial';
+          const height = Number(design.heightMap[r] && design.heightMap[r][c]);
+          terrain.push({
+            dc: c - anchorCol,
+            dr: r - anchorRow,
+            biome,
+            height: Number.isFinite(height) ? height : 0.12
+          });
+
+          const cell = design.grid[r] && design.grid[r][c];
+          if (!cell) continue;
+          let type = null;
+          let baseCol = c;
+          let baseRow = r;
+          if (typeof cell === 'string') {
+            type = cell;
+          } else if (typeof cell === 'object') {
+            type = cell.type || null;
+            baseCol = Number.isFinite(Number(cell.baseCol)) ? Number(cell.baseCol) : c;
+            baseRow = Number.isFinite(Number(cell.baseRow)) ? Number(cell.baseRow) : r;
+          }
+          if (!type) continue;
+          if (baseCol < minC || baseCol > maxC || baseRow < minR || baseRow > maxR) continue;
+          const key = `${type}|${baseCol}|${baseRow}`;
+          if (!buildingsMap.has(key)) {
+            buildingsMap.set(key, {
+              type,
+              dc: baseCol - anchorCol,
+              dr: baseRow - anchorRow
+            });
+          }
+        }
+      }
+
+      const entities = Array.isArray(design.entities) ? design.entities : [];
+      for (const ent of entities) {
+        if (!ent || typeof ent !== 'object') continue;
+        const col = (typeof ent.col === 'number') ? ent.col : Math.floor(Number(ent.x) || -9999);
+        const row = (typeof ent.row === 'number') ? ent.row : Math.floor(Number(ent.y) || -9999);
+        if (col < minC || col > maxC || row < minR || row > maxR) continue;
+        if (ent.kind !== 'ambient') continue;
+        entitiesOut.push({
+          kind: 'ambient',
+          subtype: ent.subtype || null,
+          name: ent.name || null,
+          size: Number.isFinite(Number(ent.size)) ? Number(ent.size) : 1,
+          dc: col - anchorCol,
+          dr: row - anchorRow,
+          nonInteractive: true
+        });
+      }
+
+      return {
+        type: zoneType,
+        anchor: { col: anchorCol, row: anchorRow },
+        selection: { minC, minR, maxC, maxR },
+        terrain,
+        buildings: Array.from(buildingsMap.values()),
+        entities: entitiesOut,
+        updatedAt: new Date().toISOString()
+      };
+    }
+
+    function updateZonePresetStatus() {
+      if (!zonePresetStatus) return;
+      try {
+        const design = getCurrentDesign();
+        const presets = getZonePresetsFromDesign(design);
+        const zt = getCurrentZonePresetType();
+        const p = presets[zt];
+        if (!p) {
+          zonePresetStatus.textContent = 'Sin plantilla para este tipo de zona.';
+          return;
+        }
+        const label = zonePresetTypeLabels[zt] || zt;
+        const buildings = Array.isArray(p.buildings) ? p.buildings.length : 0;
+        const terrain = Array.isArray(p.terrain) ? p.terrain.length : 0;
+        const ambients = Array.isArray(p.entities) ? p.entities.length : 0;
+        zonePresetStatus.textContent = `${label}: ${buildings} edificios, ${ambients} ambient, ${terrain} celdas de terreno.`;
+      } catch (e) {
+        zonePresetStatus.textContent = 'Sin plantilla para este tipo de zona.';
+      }
+    }
+
+    function persistZonePresetsToStorage() {
+      try {
+        const design = getCurrentDesign();
+        const presets = getZonePresetsFromDesign(design);
+        localStorage.setItem(ZONE_PRESETS_STORAGE_KEY, JSON.stringify(presets || {}));
+      } catch (e) {}
+    }
+
+    function downloadZonePresetsJson() {
+      const design = getCurrentDesign();
+      const presets = getZonePresetsFromDesign(design);
+      const payload = {
+        meta: {
+          type: 'mesobuilder-zone-spawn-presets',
+          version: 1,
+          exportedAt: new Date().toISOString()
+        },
+        zoneSpawnPresets: presets
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `meso-zone-spawn-presets-${stamp}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function normalizeZonePresetPayload(parsed) {
+      if (!parsed || typeof parsed !== 'object') throw new Error('Archivo JSON inválido.');
+      const src = (parsed.zoneSpawnPresets && typeof parsed.zoneSpawnPresets === 'object')
+        ? parsed.zoneSpawnPresets
+        : parsed;
+      if (!src || typeof src !== 'object') throw new Error('No contiene plantillas de zona válidas.');
+      return src;
+    }
+
+    function importZonePresetsObject(presetsObj) {
+      runDesignMutation('Importar plantillas de zona', design => {
+        design.zoneSpawnPresets = cloneDesign(presetsObj || {});
+        return true;
+      });
+      persistZonePresetsToStorage();
+      updateZonePresetStatus();
+    }
+
     function pushUndoSnapshot(snapshot) {
       undoStack.push(cloneDesign(snapshot));
       while (undoStack.length > HISTORY_LIMIT) undoStack.shift();
@@ -1113,8 +1305,41 @@
       pushUndoSnapshot(original);
       importDesignBack(working);
       updateHistoryButtons();
+      updateZonePresetStatus();
       setStatus(`Aplicado: ${label}.`);
       return true;
+    }
+
+    function saveZonePresetFromSelection() {
+      const zt = getCurrentZonePresetType();
+      const label = zonePresetTypeLabels[zt] || zt;
+      const changed = runDesignMutation(`Guardar plantilla de ${label}`, design => {
+        const preset = createZonePresetFromSelection(design, activeSelection, zt);
+        const presets = getZonePresetsFromDesign(design);
+        design.zoneSpawnPresets = { ...presets, [zt]: preset };
+        return true;
+      });
+      if (changed) persistZonePresetsToStorage();
+      updateZonePresetStatus();
+    }
+
+    async function clearZonePreset() {
+      const zt = getCurrentZonePresetType();
+      const label = zonePresetTypeLabels[zt] || zt;
+      const accepted = await confirmAction(`Se eliminará la plantilla guardada para ${label}. ¿Continuar?`, {
+        title: 'Eliminar plantilla de zona',
+        acceptText: 'Eliminar'
+      });
+      if (!accepted) return;
+      const changed = runDesignMutation(`Eliminar plantilla de ${label}`, design => {
+        const presets = { ...getZonePresetsFromDesign(design) };
+        if (!Object.prototype.hasOwnProperty.call(presets, zt)) return false;
+        delete presets[zt];
+        design.zoneSpawnPresets = presets;
+        return true;
+      });
+      if (changed) persistZonePresetsToStorage();
+      updateZonePresetStatus();
     }
 
     function fillTerrainInSelection() {
@@ -1301,6 +1526,7 @@
       while (redoStack.length > HISTORY_LIMIT) redoStack.shift();
       importDesignBack(prev);
       updateHistoryButtons();
+      updateZonePresetStatus();
       setStatus('Cambio deshecho.');
     }
 
@@ -1312,6 +1538,7 @@
       while (undoStack.length > HISTORY_LIMIT) undoStack.shift();
       importDesignBack(next);
       updateHistoryButtons();
+      updateZonePresetStatus();
       setStatus('Cambio rehecho.');
     }
 
@@ -1475,6 +1702,8 @@
       await renderBuildButtons();
       metaEpoch.textContent = epochLabels[payload.epoch || epochSelect.value] || (payload.epoch || epochSelect.value);
       setActiveToolLabel('Ninguna');
+      persistZonePresetsToStorage();
+      updateZonePresetStatus();
       setStatus('Diseño importado en el mapa real.');
     }
 
@@ -1720,6 +1949,73 @@
       }
     });
 
+    if (zonePresetType) {
+      zonePresetType.addEventListener('change', () => {
+        try { updateZonePresetStatus(); } catch (e) {}
+      });
+    }
+
+    document.getElementById('btnZonePresetCapture').addEventListener('click', () => {
+      try {
+        saveZonePresetFromSelection();
+      } catch (e) {
+        setStatus(`No se pudo guardar la plantilla de zona: ${e && e.message ? e.message : e}`);
+      }
+    });
+
+    document.getElementById('btnZonePresetClear').addEventListener('click', async () => {
+      try {
+        await clearZonePreset();
+      } catch (e) {
+        setStatus(`No se pudo borrar la plantilla de zona: ${e && e.message ? e.message : e}`);
+      }
+    });
+
+    document.getElementById('btnOpenZonePresetEditor').addEventListener('click', () => {
+      try {
+        const w = window.open('./zone-layout-visual-editor.html', '_blank', 'noopener,noreferrer,width=1280,height=860');
+        if (w && typeof w.focus === 'function') w.focus();
+        if (!w) setStatus('No se pudo abrir el editor aparte (revisa bloqueador de ventanas).');
+      } catch (e) {
+        setStatus(`No se pudo abrir el editor aparte: ${e && e.message ? e.message : e}`);
+      }
+    });
+
+    document.getElementById('btnZonePresetExport').addEventListener('click', () => {
+      try {
+        downloadZonePresetsJson();
+        setStatus('Plantillas de zona exportadas a JSON independiente.');
+      } catch (e) {
+        setStatus(`No se pudo exportar plantillas: ${e && e.message ? e.message : e}`);
+      }
+    });
+
+    document.getElementById('btnZonePresetImport').addEventListener('click', () => {
+      try {
+        const input = document.getElementById('zonePresetFileInput');
+        input.value = '';
+        input.click();
+      } catch (e) {
+        setStatus('No se pudo abrir selector de archivo para plantillas de zona.');
+      }
+    });
+
+    document.getElementById('zonePresetFileInput').addEventListener('change', async (ev) => {
+      const file = ev.target && ev.target.files && ev.target.files[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const parsed = JSON.parse(text);
+        const normalized = normalizeZonePresetPayload(parsed);
+        importZonePresetsObject(normalized);
+        setStatus('Plantillas de zona importadas desde JSON independiente.');
+      } catch (e) {
+        setStatus(`No se pudo importar plantillas: ${e && e.message ? e.message : e}`);
+      } finally {
+        try { ev.target.value = ''; } catch (err) {}
+      }
+    });
+
     document.getElementById('btnUndo').addEventListener('click', () => {
       try {
         undoDesignChange();
@@ -1771,6 +2067,17 @@
 
     window.addEventListener('storage', (ev) => {
       if (ev.key === STORAGE_KEY || ev.key === META_KEY) updatePendingStatus();
+      if (ev.key === ZONE_PRESETS_STORAGE_KEY) updateZonePresetStatus();
+    });
+
+    window.addEventListener('message', (ev) => {
+      try {
+        if (ev && ev.data && ev.data.type === 'meso-zone-presets-updated') updateZonePresetStatus();
+      } catch (e) {}
+    });
+
+    window.addEventListener('focus', () => {
+      try { updateZonePresetStatus(); } catch (e) {}
     });
 
     frame.addEventListener('load', async () => {
@@ -1794,6 +2101,8 @@
         bindFrameCanvasInteractions();
         clearSelectedObject();
         setVisualTool('select');
+        persistZonePresetsToStorage();
+        updateZonePresetStatus();
         setStatus('Visor cargado. Ya puedes editar el mapa procedural real.');
       } catch (e) {
         setStatus(`Error al inicializar el visor: ${e && e.message ? e.message : e}`);
@@ -1816,6 +2125,7 @@
       updateBuildSelection();
       updateSelectionSummary();
       updateHistoryButtons();
+      updateZonePresetStatus();
       setSelectedObjectSummary('Nada seleccionado.');
       updatePendingStatus();
       initializeFrame(true);

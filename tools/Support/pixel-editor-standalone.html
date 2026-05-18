@@ -504,9 +504,14 @@
             <div class="color-section">
                 <div class="sidebar-title">LIBRERÍA</div>
                 <select id="entityLibrary" style="width:100%; padding:8px; background:#1f1f1f; color:#e0e0e0; border:1px solid #3a3a3a; margin-bottom:8px;"></select>
+                <input id="newEntityKeyInput" type="text" placeholder="new_entity_key" style="width:100%; padding:8px; background:#1f1f1f; color:#e0e0e0; border:1px solid #3a3a3a; margin-bottom:8px;">
                 <div style="display:flex; gap:8px;">
                     <button class="tool-button" id="reloadLibraryBtn">🔄 Reload</button>
                     <button class="tool-button" id="saveToLibraryBtn">💾 Save</button>
+                </div>
+                <div style="display:flex; gap:8px; margin-top:8px;">
+                    <button class="tool-button" id="createEntityBtn">➕ Add New</button>
+                    <button class="tool-button" id="saveAllLibraryBtn">🗂 Save All</button>
                 </div>
                 <div style="font-size:9px;color:#888;margin-top:4px;line-height:1.4;">
                     💾 guarda en <b>entity-pixels.json</b><br>
@@ -618,7 +623,7 @@
                     <button class="tool-button" id="importBtn">⬆️ Import</button>
                     <button class="tool-button" id="loadGameDefsBtn">⚙️ Load Game Defs</button>
                     <button class="tool-button" id="sendToGameBtn">➡️ Import To Game</button>
-                    <button class="tool-button" id="exportGameDefsBtn">⬆️ Export Game Defs</button>
+                    <button class="tool-button" id="exportGameDefsBtn">💾 Save Game Defs</button>
                 </div>
             </div>
 
@@ -888,8 +893,8 @@
 
         exportGameDefsBtn.addEventListener('click', () => {
             try {
-                if (window.opener && typeof window.opener.exportEntityDefinitionsToJSON === 'function') { window.opener.exportEntityDefinitionsToJSON(); showToast('Export triggered'); return; }
-                if (window.parent && typeof window.parent.exportEntityDefinitionsToJSON === 'function') { window.parent.exportEntityDefinitionsToJSON(); showToast('Export triggered'); return; }
+                if (window.opener && typeof window.opener.exportEntityDefinitionsToJSON === 'function') { window.opener.exportEntityDefinitionsToJSON(); showToast('Guardado de defs solicitado'); return; }
+                if (window.parent && typeof window.parent.exportEntityDefinitionsToJSON === 'function') { window.parent.exportEntityDefinitionsToJSON(); showToast('Guardado de defs solicitado'); return; }
                 showToast('No game window found', true);
             } catch (e) { showToast('Export failed', true); }
         });
@@ -912,7 +917,29 @@
         const entityLibrarySelect = document.getElementById('entityLibrary');
         const reloadLibraryBtn = document.getElementById('reloadLibraryBtn');
         const saveToLibraryBtn = document.getElementById('saveToLibraryBtn');
+        const newEntityKeyInput = document.getElementById('newEntityKeyInput');
+        const createEntityBtn = document.getElementById('createEntityBtn');
+        const saveAllLibraryBtn = document.getElementById('saveAllLibraryBtn');
         let ENTITY_PIXEL_LIBRARY = {};
+
+        function normalizeEntityKey(raw) {
+            const key = String(raw || '').trim().toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/^_+|_+$/g, '');
+            return key;
+        }
+
+        async function persistLibraryToDisk(payload, fallbackFilename = 'entity-pixels.json') {
+            try {
+                const r = await fetch('http://localhost:3001/save-entity-pixels', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!r.ok) throw new Error('server error ' + r.status);
+                return { ok: true };
+            } catch (e) {
+                return { ok: false, error: e };
+            }
+        }
 
         async function loadEntityPixelLibrary() {
             try {
@@ -938,9 +965,35 @@
             });
         }
 
+        createEntityBtn.addEventListener('click', () => {
+            const key = normalizeEntityKey(newEntityKeyInput && newEntityKeyInput.value);
+            if (!key) {
+                showToast('Escribe un nombre válido (a-z, 0-9, _)', true);
+                return;
+            }
+            const grid = state.gridSize;
+            const pixels = state.pixels.map(p => [p.x, p.y, p.color]);
+            ENTITY_PIXEL_LIBRARY[key] = { grid, pixels };
+            populateLibrarySelect();
+            entityLibrarySelect.value = key;
+            if (newEntityKeyInput) newEntityKeyInput.value = key;
+            updateCodeOutput();
+            showToast(`Entidad ${key} creada en librería local`);
+        });
+
+        saveAllLibraryBtn.addEventListener('click', async () => {
+            const payload = { icons: Object.assign({}, ENTITY_PIXEL_LIBRARY) };
+            const result = await persistLibraryToDisk(payload, 'entity-pixels.json');
+            if (result.ok) showToast('✓ Librería completa guardada en entity-pixels.json');
+            else showToast('⚠ Servidor no activo. No se guardó en disco.', true);
+            try { if (window.opener && window.opener !== window) window.opener.postMessage({ type: 'saveEntityPixels', data: payload }, '*'); } catch (e) {}
+            try { if (window.parent && window.parent !== window) window.parent.postMessage({ type: 'saveEntityPixels', data: payload }, '*'); } catch (e) {}
+        });
+
         entityLibrarySelect.addEventListener('change', () => {
             const k = entityLibrarySelect.value;
             if (!k) return;
+            if (newEntityKeyInput) newEntityKeyInput.value = k;
             const def = ENTITY_PIXEL_LIBRARY[k];
             if (!def) return;
             // def.pixels is expected as array [x,y,color]
@@ -1016,32 +1069,22 @@
 
         // Save current edited sprite back to entity-pixels.json via save server + optional game post
         saveToLibraryBtn.addEventListener('click', async () => {
-            const key = entityLibrarySelect.value || 'editor_custom';
+            const typedKey = normalizeEntityKey(newEntityKeyInput && newEntityKeyInput.value);
+            const key = typedKey || entityLibrarySelect.value || 'editor_custom';
             const grid = state.gridSize;
             const pixels = state.pixels.map(p => [p.x, p.y, p.color]);
             // Update in-memory library
             ENTITY_PIXEL_LIBRARY[key] = { grid, pixels };
+            populateLibrarySelect();
+            entityLibrarySelect.value = key;
+            if (newEntityKeyInput) newEntityKeyInput.value = key;
             const newLib = Object.assign({}, ENTITY_PIXEL_LIBRARY);
             const payload = { icons: newLib };
 
             // 1. Write to disk via save server (primary)
-            let savedToDisk = false;
-            try {
-                const r = await fetch('http://localhost:3001/save-entity-pixels', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-                if (r.ok) { savedToDisk = true; showToast(`✓ ${key} guardado en entity-pixels.json`); }
-                else throw new Error('server error ' + r.status);
-            } catch (e) {
-                // Server not running — fall back to download
-                showToast('⚠ Servidor no activo. Descargando entity-pixels.json…', true);
-                const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-                const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-                a.download = 'entity-pixels.json'; document.body.appendChild(a); a.click();
-                setTimeout(() => { try { document.body.removeChild(a); URL.revokeObjectURL(a.href); } catch(e){} }, 300);
-            }
+            const result = await persistLibraryToDisk(payload, 'entity-pixels.json');
+            if (result.ok) showToast(`✓ ${key} guardado en entity-pixels.json`);
+            else showToast('⚠ Servidor no activo. No se guardó en disco.', true);
 
             // 2. Also notify live game window if open
             const patch = { icons: {} };
@@ -1755,13 +1798,7 @@
                 // post as a patch so game merges it
                 if (window.opener && window.opener !== window) { window.opener.postMessage({ type: 'saveEntityPixelsPatch', data: patch, meta: { key, exportMultiplier: exportMultiplierLocal } }, '*'); showToast('Posted sprite patch to game'); return; }
                 if (window.parent && window.parent !== window) { window.parent.postMessage({ type: 'saveEntityPixelsPatch', data: patch, meta: { key, exportMultiplier: exportMultiplierLocal } }, '*'); showToast('Posted sprite patch to parent'); return; }
-                // fallback: offer patch download
-                const name = `entity-pixels.patch.${key}.js`;
-                const el = document.createElement('a');
-                el.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(code));
-                el.setAttribute('download', name);
-                el.style.display = 'none'; document.body.appendChild(el); el.click(); document.body.removeChild(el);
-                showToast('No game window found — patch downloaded');
+                showToast('No game window found — no se pudo guardar', true);
                 return;
             }
 

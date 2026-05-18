@@ -43,7 +43,7 @@ export function _isEntityReferenceFromCollections(ent) {
 export function _isSelectableEntity(ent) {
   try {
     if (!ent || typeof ent !== 'object') return false;
-    if (ent.kind === 'building' || ent.nonInteractive || ent.kind === 'ambient') return false;
+    if (ent.kind === 'building' || ent.nonInteractive || ent.kind === 'ambient' || ent.kind === 'pet') return false;
     return _isEntityReferenceFromCollections(ent);
   } catch (e) { return false; }
 }

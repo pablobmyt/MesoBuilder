@@ -642,7 +642,8 @@
       cols: Number(source.cols) || 180,
       rows: Number(source.rows) || 120,
       tileBiome: source.tileBiome,
-      heightMap: Array.isArray(source.heightMap) ? source.heightMap : []
+      heightMap: Array.isArray(source.heightMap) ? source.heightMap : [],
+      zoneSpawnPresets: (source.zoneSpawnPresets && typeof source.zoneSpawnPresets === 'object') ? source.zoneSpawnPresets : {}
     };
   }
 
@@ -675,7 +676,7 @@
     try {
       const popup = window.open(editorUrl, '_blank', 'noopener,noreferrer,width=1480,height=980');
       if (popup && typeof popup.focus === 'function') popup.focus();
-      if (!popup) window.location.href = editorUrl;
+      if (!popup) { try { alert('Permite ventanas emergentes (popups) en este sitio para abrir el editor de mapas.'); } catch(e){} }
     } catch (e) {
       try { window.location.href = editorUrl; } catch (err) {}
     }

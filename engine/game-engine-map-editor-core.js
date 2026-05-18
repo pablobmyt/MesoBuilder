@@ -152,6 +152,7 @@ export function createMapEditorCore(deps) {
       grid: cloneMapDesignValue(grid, []),
       entities: cloneMapDesignValue(entities || [], []),
       villages: cloneMapDesignValue(window._VILLAGES || [], []),
+      zoneSpawnPresets: cloneMapDesignValue(window._ZONE_SPAWN_PRESETS || {}, {}),
       player: {
         col: player.col,
         row: player.row,
@@ -237,6 +238,11 @@ export function createMapEditorCore(deps) {
       }
       if (Object.prototype.hasOwnProperty.call(source, 'villages') && Array.isArray(source.villages)) {
         try { window._VILLAGES = cloneMapDesignValue(source.villages, []); } catch (e) {}
+      }
+      if (Object.prototype.hasOwnProperty.call(source, 'zoneSpawnPresets') && source.zoneSpawnPresets && typeof source.zoneSpawnPresets === 'object') {
+        try { window._ZONE_SPAWN_PRESETS = cloneMapDesignValue(source.zoneSpawnPresets, {}); } catch (e) {}
+      } else {
+        try { window._ZONE_SPAWN_PRESETS = window._ZONE_SPAWN_PRESETS || {}; } catch (e) {}
       }
       if (source.player && typeof source.player === 'object') {
         try {

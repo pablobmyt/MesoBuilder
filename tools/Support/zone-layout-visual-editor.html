@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MesoBuilder · Editor visual de zonas</title>
+  <style>
+    :root {
+      --bg: #0e141f;
+      --panel: #182334;
+      --line: rgba(121, 168, 235, 0.28);
+      --text: #ecf2fc;
+      --muted: #a8b9d0;
+      --accent: #4f86d9;
+      --accent-2: #79a8eb;
+      --danger: #b45b4f;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      background: radial-gradient(circle at top, rgba(79,134,217,0.2), transparent 35%), var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      overflow: hidden;
+    }
+    body { display: grid; grid-template-columns: 360px 1fr; }
+    .sidebar {
+      border-right: 1px solid var(--line);
+      background: rgba(17,24,36,0.95);
+      padding: 12px;
+      overflow-y: auto;
+    }
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(24,35,52,0.9);
+      padding: 10px;
+      margin-bottom: 10px;
+    }
+    .title { margin: 0 0 8px; color: var(--accent-2); font-size: 20px; }
+    .sub { margin: 0 0 10px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+    .field { display: grid; gap: 6px; margin-bottom: 8px; }
+    label { font-size: 12px; color: var(--muted); }
+    select, input[type="number"] {
+      width: 100%;
+      border: 1px solid rgba(121,168,235,0.3);
+      border-radius: 8px;
+      background: rgba(11,16,24,0.92);
+      color: var(--text);
+      padding: 8px 10px;
+      font-size: 13px;
+    }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; }
+    button {
+      border: 1px solid rgba(121,168,235,0.28);
+      border-radius: 9px;
+      background: linear-gradient(180deg, rgba(39,55,79,0.95), rgba(28,40,58,0.95));
+      color: var(--text);
+      padding: 8px 10px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    button.primary { background: linear-gradient(180deg, var(--accent-2), var(--accent)); color: #081526; font-weight: 700; }
+    button.danger { background: linear-gradient(180deg, rgba(121,52,42,0.95), rgba(73,28,22,0.95)); border-color: rgba(180,91,79,0.5); color: #ffe1dc; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+    .hint { font-size: 11px; color: var(--muted); line-height: 1.45; }
+    .status { font-size: 12px; color: var(--muted); min-height: 18px; }
+    .workspace { position: relative; padding: 12px; min-width: 0; }
+    iframe {
+      width: 100%;
+      height: calc(100vh - 24px);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #000;
+    }
+    #overlay {
+      position: absolute;
+      inset: 12px;
+      pointer-events: none;
+      z-index: 5;
+    }
+    #selectionBox {
+      position: absolute;
+      border: 2px solid rgba(121,168,235,0.95);
+      background: rgba(79,134,217,0.15);
+      border-radius: 8px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <aside class="sidebar">
+    <h1 class="title">Editor visual de zonas</h1>
+    <p class="sub">Diseña visualmente la zona (base militar, capital, etc.), marca un rectángulo y guárdalo como plantilla de spawn.</p>
+
+    <section class="panel">
+      <div class="field">
+        <label for="epochSelect">Época</label>
+        <select id="epochSelect">
+          <option value="mesopotamia">Mesopotamia</option>
+          <option value="urss">Antigua URSS</option>
+          <option value="medieval">Edad Media</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="zoneType">Tipo de zona</label>
+        <select id="zoneType">
+          <option value="military_base">Base militar</option>
+          <option value="capital">Capital</option>
+          <option value="trading_post">Puesto comercial</option>
+          <option value="origin">Aldea origen</option>
+          <option value="village">Aldea</option>
+        </select>
+      </div>
+      <div class="row">
+        <button id="btnReloadFrame">Recargar</button>
+        <button id="btnRegenerate">Regenerar</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="field">
+        <label for="brushSize">Pincel terreno</label>
+        <input id="brushSize" type="number" min="1" max="6" value="2">
+      </div>
+      <div class="grid" id="terrainGrid"></div>
+      <div class="row" style="margin-top:8px;">
+        <button id="btnDisableTerrain">Quitar pincel</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="hint" style="margin-bottom:6px;">Edificios</div>
+      <div class="grid" id="buildGrid"></div>
+      <div class="row" style="margin-top:8px;">
+        <button id="btnDemolish" class="danger">Demoler</button>
+        <button id="btnClearTool">Sin herramienta</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="hint" style="margin-bottom:6px;">Selección de zona</div>
+      <div class="row">
+        <button id="btnArmSelection" class="primary">Marcar área (2 clics)</button>
+        <button id="btnClearSelection">Limpiar área</button>
+      </div>
+      <div class="status" id="selectionStatus" style="margin-top:8px;">Sin selección.</div>
+      <div class="row" style="margin-top:8px;">
+        <button id="btnSavePreset" class="primary">Guardar plantilla</button>
+        <button id="btnDeletePreset" class="danger">Borrar plantilla</button>
+      </div>
+      <div class="status" id="presetStatus" style="margin-top:8px;">Sin plantilla para este tipo.</div>
+    </section>
+
+    <section class="panel">
+      <div class="row">
+        <button id="btnExportJson">Exportar JSON</button>
+        <button id="btnImportJson">Importar JSON</button>
+      </div>
+      <div class="status" id="status" style="margin-top:8px;">Cargando editor visual…</div>
+    </section>
+  </aside>
+
+  <main class="workspace">
+    <iframe id="editorFrame" title="Editor visual de zona"></iframe>
+    <div id="overlay"><div id="selectionBox"></div></div>
+  </main>
+
+  <input id="fileInput" type="file" accept=".json,application/json" hidden>
+
+  <script>
+    const ZONE_PRESETS_STORAGE_KEY = 'meso.zoneSpawnPresets';
+    const terrainDefs = [
+      { id: 'alluvial', label: 'Aluvial' },
+      { id: 'road', label: 'Camino' },
+      { id: 'concrete_road', label: 'Hormigón' },
+      { id: 'steppe', label: 'Estepa' },
+      { id: 'forest', label: 'Bosque' },
+      { id: 'water', label: 'Agua' }
+    ];
+
+    const frame = document.getElementById('editorFrame');
+    const epochSelect = document.getElementById('epochSelect');
+    const zoneType = document.getElementById('zoneType');
+    const brushSize = document.getElementById('brushSize');
+    const terrainGrid = document.getElementById('terrainGrid');
+    const buildGrid = document.getElementById('buildGrid');
+    const statusEl = document.getElementById('status');
+    const selectionStatus = document.getElementById('selectionStatus');
+    const presetStatus = document.getElementById('presetStatus');
+    const selectionBox = document.getElementById('selectionBox');
+
+    let frameReady = false;
+    let selectionArmed = false;
+    let selectionClicks = [];
+    let currentSelection = null;
+    let boundCanvas = null;
+    let suppressFrameReload = false;
+
+    function setStatus(text) { statusEl.textContent = text || ''; }
+
+    function getFrameApi() {
+      try { return frame.contentWindow && frame.contentWindow.MESO_MAP_EDITOR_API; } catch (e) { return null; }
+    }
+
+    function getFrameSrc() {
+      return `../../index.html?editor=1&epoch=${encodeURIComponent(epochSelect.value || 'mesopotamia')}`;
+    }
+
+    async function waitForApi(maxMs = 30000) {
+      const start = Date.now();
+      while (Date.now() - start < maxMs) {
+        const api = getFrameApi();
+        if (api && api.ready) return api;
+        await new Promise(r => setTimeout(r, 250));
+      }
+      throw new Error('El motor no respondió a tiempo.');
+    }
+
+    function loadAllPresets() {
+      try {
+        const raw = localStorage.getItem(ZONE_PRESETS_STORAGE_KEY);
+        const parsed = raw ? JSON.parse(raw) : {};
+        return (parsed && typeof parsed === 'object') ? parsed : {};
+      } catch (e) {
+        return {};
+      }
+    }
+
+    function saveAllPresets(obj) {
+      localStorage.setItem(ZONE_PRESETS_STORAGE_KEY, JSON.stringify(obj || {}));
+      try { if (window.opener && !window.opener.closed) window.opener.postMessage({ type: 'meso-zone-presets-updated' }, '*'); } catch (e) {}
+    }
+
+    function normalizeSelection(sel) {
+      if (!sel) return null;
+      const minC = Math.min(sel.c1, sel.c2);
+      const maxC = Math.max(sel.c1, sel.c2);
+      const minR = Math.min(sel.r1, sel.r2);
+      const maxR = Math.max(sel.r1, sel.r2);
+      return { minC, maxC, minR, maxR };
+    }
+
+    function updateSelectionStatus() {
+      const sel = normalizeSelection(currentSelection);
+      if (!sel) {
+        selectionStatus.textContent = 'Sin selección.';
+        selectionBox.style.display = 'none';
+        return;
+      }
+      const w = sel.maxC - sel.minC + 1;
+      const h = sel.maxR - sel.minR + 1;
+      selectionStatus.textContent = `Área: (${sel.minC}, ${sel.minR}) → (${sel.maxC}, ${sel.maxR}) · ${w}x${h}`;
+      drawSelectionOverlay();
+    }
+
+    function drawSelectionOverlay() {
+      const sel = normalizeSelection(currentSelection);
+      const api = getFrameApi();
+      if (!sel || !api || typeof api.getCellClientFrame !== 'function') {
+        selectionBox.style.display = 'none';
+        return;
+      }
+      const f1 = api.getCellClientFrame(sel.minC, sel.minR);
+      const f2 = api.getCellClientFrame(sel.maxC, sel.maxR);
+      if (!f1 || !f2) {
+        selectionBox.style.display = 'none';
+        return;
+      }
+      const hostRect = document.querySelector('.workspace').getBoundingClientRect();
+      const frameRect = frame.getBoundingClientRect();
+      const toHostRect = (rect) => {
+        const isIframeLocal = rect.left >= 0 && rect.top >= 0 && rect.left <= (frameRect.width + 4) && rect.top <= (frameRect.height + 4);
+        const leftAbs = isIframeLocal ? (frameRect.left + rect.left) : rect.left;
+        const topAbs = isIframeLocal ? (frameRect.top + rect.top) : rect.top;
+        return {
+          left: leftAbs - hostRect.left,
+          top: topAbs - hostRect.top,
+          right: leftAbs - hostRect.left + rect.width,
+          bottom: topAbs - hostRect.top + rect.height
+        };
+      };
+      const r1 = toHostRect(f1);
+      const r2 = toHostRect(f2);
+      const left = Math.min(r1.left, r2.left);
+      const top = Math.min(r1.top, r2.top);
+      const right = Math.max(r1.right, r2.right);
+      const bottom = Math.max(r1.bottom, r2.bottom);
+      selectionBox.style.display = 'block';
+      selectionBox.style.left = `${Math.round(left)}px`;
+      selectionBox.style.top = `${Math.round(top)}px`;
+      selectionBox.style.width = `${Math.max(2, Math.round(right - left))}px`;
+      selectionBox.style.height = `${Math.max(2, Math.round(bottom - top))}px`;
+    }
+
+    function buildEmptyDesign(cols, rows, epochId) {
+      const tileBiome = [];
+      const heightMap = [];
+      const grid = [];
+      for (let r = 0; r < rows; r++) {
+        tileBiome.push(Array(cols).fill('alluvial'));
+        heightMap.push(Array(cols).fill(0.12));
+        grid.push(Array(cols).fill(null));
+      }
+      return {
+        meta: {
+          type: 'mesobuilder-map-design',
+          version: 2,
+          exportedAt: new Date().toISOString(),
+          epoch: epochId || 'mesopotamia'
+        },
+        epoch: epochId || 'mesopotamia',
+        cols,
+        rows,
+        tileBiome,
+        heightMap,
+        grid,
+        entities: [],
+        villages: [],
+        player: { col: Math.floor(cols / 2), row: Math.floor(rows / 2), x: Math.floor(cols / 2), y: Math.floor(rows / 2) }
+      };
+    }
+
+    function setBuildingFootprintAt(design, baseCol, baseRow, type, width, height) {
+      for (let r = 0; r < height; r++) {
+        for (let c = 0; c < width; c++) {
+          const col = baseCol + c;
+          const row = baseRow + r;
+          if (!design.grid[row] || col < 0 || col >= design.cols) continue;
+          if (r === 0 && c === 0) design.grid[row][col] = type;
+          else design.grid[row][col] = { type, baseCol, baseRow };
+        }
+      }
+    }
+
+    function getPresetExtents(preset) {
+      let minDc = Infinity, maxDc = -Infinity, minDr = Infinity, maxDr = -Infinity;
+      const touch = (dc, dr) => {
+        minDc = Math.min(minDc, dc);
+        maxDc = Math.max(maxDc, dc);
+        minDr = Math.min(minDr, dr);
+        maxDr = Math.max(maxDr, dr);
+      };
+      (Array.isArray(preset.terrain) ? preset.terrain : []).forEach(t => touch(Number(t.dc) || 0, Number(t.dr) || 0));
+      (Array.isArray(preset.buildings) ? preset.buildings : []).forEach(b => touch(Number(b.dc) || 0, Number(b.dr) || 0));
+      (Array.isArray(preset.entities) ? preset.entities : []).forEach(e => touch(Number(e.dc) || 0, Number(e.dr) || 0));
+      if (!Number.isFinite(minDc)) return { minDc: -6, maxDc: 6, minDr: -6, maxDr: 6 };
+      return { minDc, maxDc, minDr, maxDr };
+    }
+
+    function getCurrentPreset() {
+      const all = loadAllPresets();
+      const key = zoneType.value;
+      const p = all[key];
+      return (p && typeof p === 'object') ? p : null;
+    }
+
+    function applyPresetToDesign(design, preset, anchorCol, anchorRow) {
+      const cols = design.cols;
+      const rows = design.rows;
+      const terrain = Array.isArray(preset.terrain) ? preset.terrain : [];
+      const buildings = Array.isArray(preset.buildings) ? preset.buildings : [];
+      const ambient = Array.isArray(preset.entities) ? preset.entities : [];
+
+      terrain.forEach(t => {
+        const col = anchorCol + (Number(t.dc) || 0);
+        const row = anchorRow + (Number(t.dr) || 0);
+        if (col < 0 || row < 0 || col >= cols || row >= rows) return;
+        design.tileBiome[row][col] = String(t.biome || 'alluvial');
+        if (typeof t.height === 'number') design.heightMap[row][col] = Math.max(0, Math.min(1, t.height));
+      });
+
+      const sortedBuildings = buildings.slice().sort((a, b) => {
+        const as = Math.max(1, Number(a.w) || 1) * Math.max(1, Number(a.h) || 1);
+        const bs = Math.max(1, Number(b.w) || 1) * Math.max(1, Number(b.h) || 1);
+        return bs - as;
+      });
+      sortedBuildings.forEach(b => {
+        const type = String(b.type || 'house_small');
+        const col = anchorCol + (Number(b.dc) || 0);
+        const row = anchorRow + (Number(b.dr) || 0);
+        if (col < 0 || row < 0 || col >= cols || row >= rows) return;
+        const w = Math.max(1, Number(b.w) || 1);
+        const h = Math.max(1, Number(b.h) || 1);
+        if (col + w > cols || row + h > rows) return;
+        let blocked = false;
+        for (let rr = 0; rr < h && !blocked; rr++) {
+          for (let cc = 0; cc < w; cc++) {
+            if (design.grid[row + rr][col + cc]) { blocked = true; break; }
+          }
+        }
+        if (!blocked) setBuildingFootprintAt(design, col, row, type, w, h);
+      });
+
+      ambient.forEach(a => {
+        const col = anchorCol + (Number(a.dc) || 0);
+        const row = anchorRow + (Number(a.dr) || 0);
+        if (col < 0 || row < 0 || col >= cols || row >= rows) return;
+        design.entities.push({
+          id: `ambient-zone-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          kind: a.kind || 'ambient',
+          subtype: a.subtype || null,
+          name: a.name || null,
+          size: Number.isFinite(Number(a.size)) ? Number(a.size) : 1,
+          col, row, x: col, y: row,
+          nonInteractive: true
+        });
+      });
+    }
+
+    function computeSelectionFromPreset(preset, anchorCol, anchorRow) {
+      if (!preset || !preset.selection || !preset.anchor) return null;
+      const src = preset.selection;
+      const anc = preset.anchor;
+      const minC = anchorCol + (Number(src.minC) - Number(anc.col));
+      const maxC = anchorCol + (Number(src.maxC) - Number(anc.col));
+      const minR = anchorRow + (Number(src.minR) - Number(anc.row));
+      const maxR = anchorRow + (Number(src.maxR) - Number(anc.row));
+      return { c1: minC, r1: minR, c2: maxC, r2: maxR };
+    }
+
+    function buildIsolatedWorkspaceDesign(api) {
+      const mapSize = (api && typeof api.getMapSize === 'function') ? api.getMapSize() : { cols: 180, rows: 120 };
+      const cols = Math.max(80, Number(mapSize.cols) || 180);
+      const rows = Math.max(60, Number(mapSize.rows) || 120);
+      const preset = getCurrentPreset();
+      const ext = preset ? getPresetExtents(preset) : { minDc: -8, maxDc: 8, minDr: -8, maxDr: 8 };
+      const centerCol = Math.max(12, Math.min(cols - 13, Math.floor(cols / 2)));
+      const centerRow = Math.max(10, Math.min(rows - 11, Math.floor(rows / 2)));
+      const design = buildEmptyDesign(cols, rows, epochSelect.value || 'mesopotamia');
+      if (preset) {
+        applyPresetToDesign(design, preset, centerCol, centerRow);
+        currentSelection = computeSelectionFromPreset(preset, centerCol, centerRow);
+      } else {
+        currentSelection = {
+          c1: centerCol + ext.minDc,
+          r1: centerRow + ext.minDr,
+          c2: centerCol + ext.maxDc,
+          r2: centerRow + ext.maxDr
+        };
+      }
+      return design;
+    }
+
+    function loadIsolatedWorkspace() {
+      const api = getFrameApi();
+      if (!api || typeof api.importMapDesignData !== 'function') return;
+      const design = buildIsolatedWorkspaceDesign(api);
+      api.importMapDesignData(design);
+      selectionArmed = false;
+      selectionClicks = [];
+      updateSelectionStatus();
+      updatePresetStatus();
+      drawSelectionOverlay();
+      setStatus('Modo zona aislada cargado: solo se muestra el área de trabajo.');
+    }
+
+    function createPresetFromSelection(design, selection, type) {
+      const sel = normalizeSelection(selection);
+      if (!sel) throw new Error('Primero marca un área.');
+      const anchorCol = Math.floor((sel.minC + sel.maxC) / 2);
+      const anchorRow = Math.floor((sel.minR + sel.maxR) / 2);
+      const terrain = [];
+      const buildingsMap = new Map();
+      const entitiesOut = [];
+
+      for (let r = sel.minR; r <= sel.maxR; r++) {
+        for (let c = sel.minC; c <= sel.maxC; c++) {
+          const biome = design.tileBiome[r] && design.tileBiome[r][c] ? design.tileBiome[r][c] : 'alluvial';
+          const h = Number(design.heightMap[r] && design.heightMap[r][c]);
+          terrain.push({ dc: c - anchorCol, dr: r - anchorRow, biome, height: Number.isFinite(h) ? h : 0.12 });
+
+          const cell = design.grid[r] && design.grid[r][c];
+          if (!cell) continue;
+          let btype = null;
+          let baseCol = c;
+          let baseRow = r;
+          if (typeof cell === 'string') btype = cell;
+          else if (typeof cell === 'object') {
+            btype = cell.type || null;
+            baseCol = Number.isFinite(Number(cell.baseCol)) ? Number(cell.baseCol) : c;
+            baseRow = Number.isFinite(Number(cell.baseRow)) ? Number(cell.baseRow) : r;
+          }
+          if (!btype) continue;
+          if (baseCol < sel.minC || baseCol > sel.maxC || baseRow < sel.minR || baseRow > sel.maxR) continue;
+          const key = `${btype}|${baseCol}|${baseRow}`;
+          if (!buildingsMap.has(key)) {
+            buildingsMap.set(key, {
+              type: btype,
+              dc: baseCol - anchorCol,
+              dr: baseRow - anchorRow,
+              w: 1,
+              h: 1
+            });
+          }
+          const rec = buildingsMap.get(key);
+          if (rec) {
+            rec.w = Math.max(rec.w || 1, (c - baseCol + 1));
+            rec.h = Math.max(rec.h || 1, (r - baseRow + 1));
+          }
+        }
+      }
+
+      const entities = Array.isArray(design.entities) ? design.entities : [];
+      for (const ent of entities) {
+        if (!ent || typeof ent !== 'object' || ent.kind !== 'ambient') continue;
+        const col = (typeof ent.col === 'number') ? ent.col : Math.floor(Number(ent.x) || -9999);
+        const row = (typeof ent.row === 'number') ? ent.row : Math.floor(Number(ent.y) || -9999);
+        if (col < sel.minC || col > sel.maxC || row < sel.minR || row > sel.maxR) continue;
+        entitiesOut.push({
+          kind: 'ambient', subtype: ent.subtype || null, name: ent.name || null,
+          size: Number.isFinite(Number(ent.size)) ? Number(ent.size) : 1,
+          dc: col - anchorCol, dr: row - anchorRow, nonInteractive: true
+        });
+      }
+
+      return {
+        type,
+        anchor: { col: anchorCol, row: anchorRow },
+        selection: { minC: sel.minC, minR: sel.minR, maxC: sel.maxC, maxR: sel.maxR },
+        terrain,
+        buildings: Array.from(buildingsMap.values()),
+        entities: entitiesOut,
+        updatedAt: new Date().toISOString()
+      };
+    }
+
+    function updatePresetStatus() {
+      const all = loadAllPresets();
+      const key = zoneType.value;
+      const p = all[key];
+      if (!p) {
+        presetStatus.textContent = 'Sin plantilla para este tipo.';
+        return;
+      }
+      const b = Array.isArray(p.buildings) ? p.buildings.length : 0;
+      const t = Array.isArray(p.terrain) ? p.terrain.length : 0;
+      const e = Array.isArray(p.entities) ? p.entities.length : 0;
+      presetStatus.textContent = `Guardada: ${b} edificios, ${e} ambient, ${t} celdas terreno.`;
+    }
+
+    async function renderBuildButtons() {
+      const api = getFrameApi();
+      if (!api) return;
+      const palette = api.getBuildPalette(epochSelect.value || 'mesopotamia') || [];
+      buildGrid.innerHTML = '';
+      palette.forEach(item => {
+        const btn = document.createElement('button');
+        btn.textContent = item.name || item.id;
+        btn.title = item.desc || '';
+        btn.addEventListener('click', () => {
+          const live = getFrameApi();
+          if (!live) return;
+          live.selectBuildTool(item.id);
+          live.disableTerrainBrush();
+          setStatus(`Herramienta: ${item.name || item.id}`);
+        });
+        buildGrid.appendChild(btn);
+      });
+    }
+
+    function renderTerrainButtons() {
+      terrainGrid.innerHTML = '';
+      terrainDefs.forEach(def => {
+        const btn = document.createElement('button');
+        btn.textContent = def.label;
+        btn.addEventListener('click', () => {
+          const api = getFrameApi();
+          if (!api) return;
+          api.enableTerrainBrush(def.id, Number(brushSize.value || 2));
+          setStatus(`Pincel: ${def.label}`);
+        });
+        terrainGrid.appendChild(btn);
+      });
+    }
+
+    function bindCanvasPicking() {
+      try {
+        const c = frame.contentWindow && frame.contentWindow.document && frame.contentWindow.document.getElementById('gameCanvas');
+        if (!c || c === boundCanvas) return;
+        boundCanvas = c;
+        c.addEventListener('click', (ev) => {
+          if (!selectionArmed) return;
+          const api = getFrameApi();
+          if (!api || typeof api.pickFromClient !== 'function') return;
+          const pick = api.pickFromClient(ev.clientX, ev.clientY);
+          if (!pick) return;
+          selectionClicks.push({ c: pick.col, r: pick.row });
+          if (selectionClicks.length === 1) {
+            selectionStatus.textContent = `Primer punto: (${pick.col}, ${pick.row})`;
+          } else {
+            const a = selectionClicks[0], b = selectionClicks[1];
+            currentSelection = { c1: a.c, r1: a.r, c2: b.c, r2: b.r };
+            selectionArmed = false;
+            selectionClicks = [];
+            updateSelectionStatus();
+            setStatus('Área marcada. Ya puedes guardar plantilla.');
+          }
+        }, true);
+      } catch (e) {}
+    }
+
+    function initializeFrame(regenerate = false) {
+      frameReady = false;
+      setStatus('Cargando visor...');
+      if (suppressFrameReload) {
+        suppressFrameReload = false;
+        return;
+      }
+      frame.src = getFrameSrc();
+      frame.onload = async () => {
+        try {
+          const api = await waitForApi();
+          frameReady = true;
+          if (regenerate) api.regenerateProceduralMap(epochSelect.value);
+          api.clearTool();
+          api.disableTerrainBrush();
+          loadIsolatedWorkspace();
+          bindCanvasPicking();
+          await renderBuildButtons();
+          updateSelectionStatus();
+          updatePresetStatus();
+          setStatus('Editor visual listo (zona aislada).');
+        } catch (e) {
+          setStatus(`Error inicializando: ${e && e.message ? e.message : e}`);
+        }
+      };
+    }
+
+    function exportPresetsJson() {
+      const all = loadAllPresets();
+      const payload = {
+        meta: { type: 'mesobuilder-zone-spawn-presets', version: 1, exportedAt: new Date().toISOString() },
+        zoneSpawnPresets: all
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `meso-zone-spawn-presets-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function normalizeImportedPresets(parsed) {
+      if (!parsed || typeof parsed !== 'object') throw new Error('JSON inválido.');
+      const src = (parsed.zoneSpawnPresets && typeof parsed.zoneSpawnPresets === 'object') ? parsed.zoneSpawnPresets : parsed;
+      if (!src || typeof src !== 'object') throw new Error('No contiene plantillas válidas.');
+      return src;
+    }
+
+    document.getElementById('btnReloadFrame').addEventListener('click', () => initializeFrame(false));
+
+    document.getElementById('btnRegenerate').addEventListener('click', () => {
+      const api = getFrameApi();
+      if (!api) return;
+      api.regenerateProceduralMap(epochSelect.value);
+      loadIsolatedWorkspace();
+      setStatus('Zona aislada regenerada.');
+    });
+
+    epochSelect.addEventListener('change', () => initializeFrame(true));
+
+    brushSize.addEventListener('change', () => {
+      const api = getFrameApi();
+      if (!api) return;
+      api.setBrushSize(Math.max(1, Math.min(6, Number(brushSize.value || 2))));
+    });
+
+    document.getElementById('btnDisableTerrain').addEventListener('click', () => {
+      const api = getFrameApi();
+      if (!api) return;
+      api.disableTerrainBrush();
+      setStatus('Pincel desactivado.');
+    });
+
+    document.getElementById('btnDemolish').addEventListener('click', () => {
+      const api = getFrameApi();
+      if (!api) return;
+      api.selectBuildTool('demolish');
+      api.disableTerrainBrush();
+      setStatus('Herramienta: demoler.');
+    });
+
+    document.getElementById('btnClearTool').addEventListener('click', () => {
+      const api = getFrameApi();
+      if (!api) return;
+      api.clearTool();
+      api.disableTerrainBrush();
+      setStatus('Sin herramienta activa.');
+    });
+
+    document.getElementById('btnArmSelection').addEventListener('click', () => {
+      selectionArmed = true;
+      selectionClicks = [];
+      setStatus('Haz 2 clics sobre el mapa para marcar el rectángulo.');
+      selectionStatus.textContent = 'Esperando primer clic...';
+      bindCanvasPicking();
+    });
+
+    document.getElementById('btnClearSelection').addEventListener('click', () => {
+      currentSelection = null;
+      selectionArmed = false;
+      selectionClicks = [];
+      updateSelectionStatus();
+      setStatus('Selección limpiada.');
+    });
+
+    document.getElementById('btnSavePreset').addEventListener('click', () => {
+      try {
+        const api = getFrameApi();
+        if (!api) throw new Error('Visor no listo.');
+        const design = api.exportMapDesignData();
+        const key = zoneType.value;
+        const preset = createPresetFromSelection(design, currentSelection, key);
+        const all = loadAllPresets();
+        all[key] = preset;
+        saveAllPresets(all);
+        updatePresetStatus();
+        setStatus(`Plantilla guardada para ${key}.`);
+      } catch (e) {
+        setStatus(`No se pudo guardar plantilla: ${e && e.message ? e.message : e}`);
+      }
+    });
+
+    document.getElementById('btnDeletePreset').addEventListener('click', () => {
+      try {
+        const key = zoneType.value;
+        const all = loadAllPresets();
+        if (!Object.prototype.hasOwnProperty.call(all, key)) {
+          setStatus(`No existía plantilla para ${key}.`);
+          return;
+        }
+        delete all[key];
+        saveAllPresets(all);
+        updatePresetStatus();
+        setStatus(`Plantilla eliminada para ${key}.`);
+      } catch (e) {
+        setStatus(`No se pudo borrar plantilla: ${e && e.message ? e.message : e}`);
+      }
+    });
+
+    zoneType.addEventListener('change', () => {
+      updatePresetStatus();
+      if (frameReady) loadIsolatedWorkspace();
+    });
+
+    document.getElementById('btnExportJson').addEventListener('click', () => {
+      try {
+        exportPresetsJson();
+        setStatus('Plantillas exportadas a JSON.');
+      } catch (e) {
+        setStatus(`No se pudo exportar: ${e && e.message ? e.message : e}`);
+      }
+    });
+
+    document.getElementById('btnImportJson').addEventListener('click', () => {
+      const input = document.getElementById('fileInput');
+      input.value = '';
+      input.click();
+    });
+
+    document.getElementById('fileInput').addEventListener('change', async (ev) => {
+      const file = ev.target && ev.target.files && ev.target.files[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const parsed = JSON.parse(text);
+        const normalized = normalizeImportedPresets(parsed);
+        saveAllPresets(normalized);
+        updatePresetStatus();
+        setStatus('Plantillas importadas desde JSON.');
+      } catch (e) {
+        setStatus(`No se pudo importar: ${e && e.message ? e.message : e}`);
+      } finally {
+        try { ev.target.value = ''; } catch (err) {}
+      }
+    });
+
+    window.addEventListener('resize', () => drawSelectionOverlay());
+    window.addEventListener('focus', () => { updatePresetStatus(); drawSelectionOverlay(); bindCanvasPicking(); });
+    window.addEventListener('storage', (ev) => { if (ev.key === ZONE_PRESETS_STORAGE_KEY) updatePresetStatus(); });
+
+    renderTerrainButtons();
+    updatePresetStatus();
+    initializeFrame(true);
+  </script>
+</body>
+</html>
