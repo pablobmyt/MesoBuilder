@@ -19,6 +19,11 @@ export function placeStone(col, row) {
   } catch (err) { /* ignore */ }
 }
 export function placeTree(col, row, variant) {
+  try {
+    if (typeof col !== 'number' || typeof row !== 'number') return;
+    if (col < 0 || row < 0 || col >= COLS || row >= ROWS) return;
+    if ((typeof isRiver === 'function' && isRiver(col, row)) || (tileBiome[row] && tileBiome[row][col] === 'water')) return;
+  } catch (e) { return; }
   // Mesopotamian flora types (primary) + legacy types for backward compat
   const types = [
     'birch','willow','aspen','pine','fir',

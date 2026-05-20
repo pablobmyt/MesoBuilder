@@ -1,42 +1,66 @@
 {
-  "width": 10,
-  "height": 7,
-  "entryCol": 4,
-  "entryRow": 5,
-  "chestItems": ["food", "wheat", "wheat", "stone"],
-  "npcs": [
+  "defaultFloor": 1,
+  "floors": [
     {
-      "col": 2,
-      "row": 2,
-      "name": "Ninsun",
-      "npcType": "villager",
-      "static": true,
-      "storyLines": [
-        "Volviste al fin... pensé que los hombres del norte te habían alcanzado.",
-        "Tu familia no ha dormido en días. Solo Kidu se queda tranquilo cuando te oye respirar.",
-        "Los militares no se moverán de la puerta hasta que tomes una decisión."
+      "name": "Sótano",
+      "width": 10,
+      "height": 7,
+      "entryCol": 4,
+      "entryRow": 4,
+      "chestItems": ["food", "wheat", "stone"],
+      "npcs": [],
+      "tiles": [
+        ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"],
+        ["wall", "floor", "floor", "floor", "pot", "floor", "floor", "floor", "floor", "wall"],
+        ["wall", "floor", "floor", "floor", "floor", "floor", "floor", "floor", "floor", "wall"],
+        ["wall", "floor", "table", "table", "stairs_up", "rug", "floor", "floor", "pot", "wall"],
+        ["wall", "rug", "floor", "floor", "floor", "floor", "floor", "floor", "rug", "wall"],
+        ["wall", "floor", "floor", "floor", "floor", "floor", "floor", "chest", "floor", "wall"],
+        ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"]
       ]
     },
     {
-      "col": 7,
-      "row": 2,
-      "name": "Lugal",
-      "npcType": "villager",
-      "static": true,
-      "storyLines": [
-        "Padre, la radio volvió a sonar sola esta noche.",
-        "Escuché la palabra 'operación' y luego solo estática.",
-        "Si sales, Kidu querrá correr contigo."
+      "name": "Planta baja",
+      "width": 10,
+      "height": 7,
+      "entryCol": 4,
+      "entryRow": 5,
+      "chestItems": ["food", "wheat", "wheat", "stone"],
+      "npcs": [
+        {
+          "col": 2,
+          "row": 2,
+          "name": "Ninsun",
+          "npcType": "villager",
+          "static": true,
+          "storyLines": [
+            "Volviste al fin... pensé que los hombres del norte te habían alcanzado.",
+            "Tu familia no ha dormido en días. Solo Kidu se queda tranquilo cuando te oye respirar.",
+            "Los militares no se moverán de la puerta hasta que tomes una decisión."
+          ]
+        },
+        {
+          "col": 7,
+          "row": 2,
+          "name": "Lugal",
+          "npcType": "villager",
+          "static": true,
+          "storyLines": [
+            "Padre, la radio volvió a sonar sola esta noche.",
+            "Escuché la palabra 'operación' y luego solo estática.",
+            "Si sales, Kidu querrá correr contigo."
+          ]
+        }
+      ],
+      "tiles": [
+        ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"],
+        ["wall", "bed", "bed", "floor", "pot", "floor", "floor", "bed", "bed", "wall"],
+        ["wall", "floor", "floor", "floor", "floor", "floor", "floor", "floor", "floor", "wall"],
+        ["wall", "floor", "table", "table", "rug", "rug", "floor", "floor", "pot", "wall"],
+        ["wall", "rug", "floor", "stairs_down", "firepit", "floor", "floor", "floor", "rug", "wall"],
+        ["wall", "floor", "floor", "floor", "door", "floor", "floor", "chest", "floor", "wall"],
+        ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"]
       ]
     }
-  ],
-  "tiles": [
-    ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"],
-    ["wall", "bed", "bed", "floor", "pot", "floor", "floor", "bed", "bed", "wall"],
-    ["wall", "floor", "floor", "floor", "floor", "floor", "floor", "floor", "floor", "wall"],
-    ["wall", "floor", "table", "table", "rug", "rug", "floor", "floor", "pot", "wall"],
-    ["wall", "rug", "floor", "floor", "firepit", "floor", "floor", "floor", "rug", "wall"],
-    ["wall", "floor", "floor", "floor", "door", "floor", "floor", "chest", "floor", "wall"],
-    ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"]
   ]
 }

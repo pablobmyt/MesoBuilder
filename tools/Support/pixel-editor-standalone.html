@@ -449,6 +449,22 @@
         ::-webkit-scrollbar-thumb:hover {
             background: #4a4a4a;
         }
+
+        /* Layer drag & drop styles */
+        .layer-item[draggable="true"] {
+            transition: all 150ms ease;
+        }
+
+        .layer-item[draggable="true"]:hover {
+            background-color: #252525 !important;
+            transform: translateX(2px);
+        }
+
+        .layer-item[draggable="true"].active {
+            background-color: #1a3a3a;
+            border: 1px solid #00D9FF;
+            box-shadow: inset 0 0 8px rgba(0, 217, 255, 0.2);
+        }
     </style>
 </head>
 <body>
@@ -463,6 +479,7 @@
             <button class="tool-button" data-tool="line">／ Line</button>
             <button class="tool-button" data-tool="rect">▭ Rect</button>
             <button class="tool-button" data-tool="select">⬚ Select</button>
+            <button class="tool-button" data-tool="text">📝 Text</button>
 
             <div style="display:flex; flex-direction:column; gap:8px;">
                 <button class="tool-button" id="fillSelectionBtn" disabled>🪣 Fill Selection</button>
@@ -498,6 +515,35 @@
                 <button class="tool-button" id="rotateRightBtn">↻ Rotate 90°</button>
                 <button class="tool-button" id="trimCanvasBtn">✂ Trim Content</button>
                 <button class="tool-button" id="centerSpriteBtn">◎ Center Sprite</button>
+            </div>
+
+            <div class="divider"></div>
+            <div class="color-section">
+                <div class="sidebar-title">BACKGROUND & CAPAS</div>
+                <div style="display:flex; flex-direction:column; gap:6px; font-size:10px;">
+                    <label>📷 Imagen de Fondo:</label>
+                    <input id="bgImageFile" type="file" accept="image/*" style="width:100%; padding:4px; background:#1f1f1f; color:#e0e0e0; border:1px solid #3a3a3a; font-size:9px;">
+                    <input id="bgImageUrl" type="text" placeholder="URL remoto" style="width:100%; padding:6px; background:#1f1f1f; color:#e0e0e0; border:1px solid #3a3a3a; margin-bottom:4px;">
+                    <div style="display:flex; gap:4px;">
+                        <button class="tool-button" id="loadBgUrlBtn" style="flex:1; padding:4px; font-size:9px;">🔗 Cargar URL</button>
+                        <button class="tool-button" id="clearBgBtn" style="flex:1; padding:4px; font-size:9px;">✕ Limpiar</button>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:6px;">
+                        <label style="width:60px;">Opacidad:</label>
+                        <input id="bgOpacitySlider" type="range" min="0" max="100" value="50" style="flex:1;">
+                        <span id="bgOpacityValue" style="width:30px;">50%</span>
+                    </div>
+                </div>
+                <div style="margin-top:10px; border-top:1px solid #3a3a3a; padding-top:8px;">
+                    <label style="font-size:10px;">🗂 Capas:</label>
+                    <div id="layersPanel" style="max-height:120px; overflow-y:auto; background:#141414; border:1px solid #2a2a2a; border-radius:4px; margin:6px 0;">
+                        <!-- Layer items injected here -->
+                    </div>
+                    <div style="display:flex; gap:4px; margin-top:6px;">
+                        <button class="tool-button" id="addLayerBtn" style="flex:1; padding:4px; font-size:9px;">➕ Capa</button>
+                        <button class="tool-button" id="flattenLayersBtn" style="flex:1; padding:4px; font-size:9px;">🔗 Aplanar</button>
+                    </div>
+                </div>
             </div>
 
             <div class="divider"></div>
@@ -690,7 +736,14 @@
             isDrawing: false,
             strokeDirty: false,
             lastPaintedCell: null,
-            showTransparency: true
+            showTransparency: true,
+            // Layer system
+            layers: [{ id: 'layer_0', name: 'Capa 1', pixels: [], visible: true, opacity: 100 }],
+            currentLayerId: 'layer_0',
+            draggedLayerIndex: null,
+            // Background image
+            backgroundImage: null,
+            bgOpacity: 50
         };
 
         // Preset Colors
@@ -799,7 +852,7 @@
                 document.getElementById('gridSizeValue2').textContent = n;
                 gridInfoSpan.textContent = `${n}x${n}`;
                 // clear out-of-bounds pixels
-                state.pixels = state.pixels.filter(p => p.x < n && p.y < n);
+                getCurrentLayer().pixels = getCurrentLayer().pixels.filter(p => p.x < n && p.y < n);
                 resizeCanvas();
                 addToHistory(); updateCodeOutput(); draw();
                 showToast(`Grid ${n}×${n}`);
@@ -997,7 +1050,7 @@
             const def = ENTITY_PIXEL_LIBRARY[k];
             if (!def) return;
             // def.pixels is expected as array [x,y,color]
-            state.pixels = (def.pixels || []).map(p => ({ x: p[0], y: p[1], color: p[2] }));
+            getCurrentLayer().pixels = (def.pixels || []).map(p => ({ x: p[0], y: p[1], color: p[2] }));
             clearSelection(false);
             state.shapeStart = null;
             state.shapePreview = null;
@@ -1115,6 +1168,78 @@
         rotateRightBtn.addEventListener('click', () => applyCanvasTransform(pixel => ({ x: state.gridSize - 1 - pixel.y, y: pixel.x, color: pixel.color }), 'Canvas rotado 90°'));
         trimCanvasBtn.addEventListener('click', trimCanvasToContent);
         centerSpriteBtn.addEventListener('click', centerSpriteToGrid);
+        
+        // Background image handlers
+        document.getElementById('bgImageFile').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const img = new Image();
+                img.onload = () => {
+                    state.backgroundImage = img;
+                    draw();
+                    showToast('Imagen de fondo cargada');
+                };
+                img.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+        });
+        
+        document.getElementById('loadBgUrlBtn').addEventListener('click', () => {
+            const url = document.getElementById('bgImageUrl').value.trim();
+            if (!url) { showToast('Ingrese una URL', true); return; }
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => {
+                state.backgroundImage = img;
+                draw();
+                showToast('Imagen remota cargada');
+            };
+            img.onerror = () => { showToast('Error al cargar imagen', true); };
+            img.src = url;
+        });
+        
+        document.getElementById('clearBgBtn').addEventListener('click', () => {
+            state.backgroundImage = null;
+            document.getElementById('bgImageFile').value = '';
+            document.getElementById('bgImageUrl').value = '';
+            draw();
+            showToast('Imagen de fondo eliminada');
+        });
+        
+        document.getElementById('bgOpacitySlider').addEventListener('input', (e) => {
+            state.bgOpacity = parseInt(e.target.value);
+            document.getElementById('bgOpacityValue').textContent = state.bgOpacity + '%';
+            draw();
+        });
+        
+        // Layer handlers
+        document.getElementById('addLayerBtn').addEventListener('click', () => {
+            const layerId = 'layer_' + Date.now();
+            state.layers.push({ id: layerId, name: `Capa ${state.layers.length + 1}`, pixels: [], visible: true, opacity: 100 });
+            state.currentLayerId = layerId;
+            updateLayersPanel();
+            draw();
+            showToast('Nueva capa creada');
+        });
+        
+        document.getElementById('flattenLayersBtn').addEventListener('click', () => {
+            if (state.layers.length <= 1) { showToast('Solo hay una capa', true); return; }
+            // Merge all visible layers into first layer
+            const merged = { ...state.layers[0], pixels: [...state.layers[0].pixels] };
+            for (let i = 1; i < state.layers.length; i++) {
+                if (state.layers[i].visible) {
+                    merged.pixels.push(...state.layers[i].pixels);
+                }
+            }
+            state.layers = [merged];
+            state.currentLayerId = merged.id;
+            updateLayersPanel();
+            draw();
+            showToast(`${state.layers.length - 1} capas combinadas`);
+        });
+        
         document.getElementById('copyBtn').addEventListener('click', copyCode);
         document.getElementById('downloadBtn').addEventListener('click', downloadCode);
         document.getElementById('importBtn').addEventListener('click', () => importModal.classList.add('active'));
@@ -1168,11 +1293,31 @@
             const cs = getCellSize();
             drawBackground(cs);
 
-            // Draw pixels
-            state.pixels.forEach(pixel => {
-                ctx.fillStyle = pixel.color;
-                ctx.fillRect(pixel.x * cs, pixel.y * cs, cs, cs);
+            // Draw pixels from all visible layers
+            state.layers.forEach((layer, layerIdx) => {
+                if (!layer.visible) return;
+                ctx.save();
+                ctx.globalAlpha = layer.opacity / 100;
+                layer.pixels.forEach(pixel => {
+                    ctx.fillStyle = pixel.color;
+                    ctx.fillRect(pixel.x * cs, pixel.y * cs, cs, cs);
+                });
+                ctx.restore();
             });
+
+            // Highlight current layer (draw outline around visible pixels)
+            const currentLayer = getCurrentLayer();
+            if (currentLayer && currentLayer.pixels.length > 0) {
+                const minX = Math.min(...currentLayer.pixels.map(p => p.x));
+                const maxX = Math.max(...currentLayer.pixels.map(p => p.x));
+                const minY = Math.min(...currentLayer.pixels.map(p => p.y));
+                const maxY = Math.max(...currentLayer.pixels.map(p => p.y));
+                ctx.save();
+                ctx.strokeStyle = 'rgba(255, 100, 100, 0.3)';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(minX * cs - 1, minY * cs - 1, (maxX - minX + 2) * cs, (maxY - minY + 2) * cs);
+                ctx.restore();
+            }
 
             // Draw grid lines on top
             if (state.showGrid) {
@@ -1216,17 +1361,27 @@
             if (!state.showTransparency) {
                 ctx.fillStyle = '#0a0a0a';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
-                return;
-            }
-            const tile = Math.max(4, Math.floor(cs));
-            const c1 = '#11151b';
-            const c2 = '#1b222b';
-            for (let y = 0; y < canvas.height; y += tile) {
-                for (let x = 0; x < canvas.width; x += tile) {
-                    const even = ((Math.floor(x / tile) + Math.floor(y / tile)) % 2) === 0;
-                    ctx.fillStyle = even ? c1 : c2;
-                    ctx.fillRect(x, y, tile, tile);
+            } else {
+                const tile = Math.max(4, Math.floor(cs));
+                const c1 = '#11151b';
+                const c2 = '#1b222b';
+                for (let y = 0; y < canvas.height; y += tile) {
+                    for (let x = 0; x < canvas.width; x += tile) {
+                        const even = ((Math.floor(x / tile) + Math.floor(y / tile)) % 2) === 0;
+                        ctx.fillStyle = even ? c1 : c2;
+                        ctx.fillRect(x, y, tile, tile);
+                    }
                 }
+            }
+            
+            // Draw background image if loaded
+            if (state.backgroundImage) {
+                ctx.save();
+                ctx.globalAlpha = state.bgOpacity / 100;
+                const imgWidth = state.gridSize * cs;
+                const imgHeight = state.gridSize * cs;
+                ctx.drawImage(state.backgroundImage, 0, 0, imgWidth, imgHeight);
+                ctx.restore();
             }
         }
 
@@ -1272,8 +1427,13 @@
         }
 
         function getPixelColor(x, y) {
-            const pixel = state.pixels.find(p => p.x === x && p.y === y);
-            return pixel ? pixel.color : null;
+            // Search through all visible layers from top to bottom
+            for (let i = state.layers.length - 1; i >= 0; i--) {
+                if (!state.layers[i].visible) continue;
+                const pixel = state.layers[i].pixels.find(p => p.x === x && p.y === y);
+                if (pixel) return pixel.color;
+            }
+            return null;
         }
 
         function getMirroredPoints(x, y) {
@@ -1292,20 +1452,120 @@
         }
 
         function upsertPixel(x, y, color) {
-            const existingIndex = state.pixels.findIndex(p => p.x === x && p.y === y);
+            const layer = getCurrentLayer();
+            const existingIndex = layer.pixels.findIndex(p => p.x === x && p.y === y);
             if (existingIndex >= 0) {
-                if (state.pixels[existingIndex].color === color) return false;
-                state.pixels[existingIndex].color = color;
+                if (layer.pixels[existingIndex].color === color) return false;
+                layer.pixels[existingIndex].color = color;
                 return true;
             }
-            state.pixels.push({ x, y, color });
+            layer.pixels.push({ x, y, color });
             return true;
         }
 
         function erasePixel(x, y) {
-            const before = state.pixels.length;
-            state.pixels = state.pixels.filter(p => !(p.x === x && p.y === y));
-            return state.pixels.length !== before;
+            const layer = getCurrentLayer();
+            const before = layer.pixels.length;
+            layer.pixels = layer.pixels.filter(p => !(p.x === x && p.y === y));
+            return layer.pixels.length !== before;
+        }
+
+        // Layer system helpers
+        function getCurrentLayer() {
+            return state.layers.find(l => l.id === state.currentLayerId) || state.layers[0];
+        }
+
+        function getCurrentLayerPixels() {
+            return getCurrentLayer().pixels || [];
+        }
+
+        function setCurrentLayerPixels(pixels) {
+            const layer = getCurrentLayer();
+            if (layer) layer.pixels = pixels;
+        }
+
+        function upsertPixelInLayer(layerId, x, y, color) {
+            const layer = state.layers.find(l => l.id === layerId);
+            if (!layer) return false;
+            const existingIndex = layer.pixels.findIndex(p => p.x === x && p.y === y);
+            if (existingIndex >= 0) {
+                if (layer.pixels[existingIndex].color === color) return false;
+                layer.pixels[existingIndex].color = color;
+                return true;
+            }
+            layer.pixels.push({ x, y, color });
+            return true;
+        }
+
+        function updateLayersPanel() {
+            const panel = document.getElementById('layersPanel');
+            panel.innerHTML = '';
+            state.layers.forEach((layer, idx) => {
+                const item = document.createElement('div');
+                item.className = 'layer-item' + (layer.id === state.currentLayerId ? ' active' : '');
+                item.draggable = true;
+                item.dataset.layerIdx = idx;
+                item.style.cssText = 'padding:6px; background:#1a1a1a; border:1px solid #2a2a2a; margin:2px 0; border-radius:3px; display:flex; justify-content:space-between; align-items:center; font-size:10px; cursor:move; user-select:none;';
+                
+                const nameSpan = document.createElement('span');
+                nameSpan.textContent = layer.name;
+                nameSpan.style.flex = '1';
+                nameSpan.style.pointerEvents = 'none';
+                
+                const visBtn = document.createElement('button');
+                visBtn.textContent = layer.visible ? '👁' : '🚫';
+                visBtn.style.cssText = 'padding:2px 6px; background:#2a2a2a; border:none; color:#e0e0e0; cursor:pointer; border-radius:2px; font-size:9px;';
+                visBtn.onclick = (e) => { e.stopPropagation(); layer.visible = !layer.visible; updateLayersPanel(); draw(); };
+                
+                const delBtn = document.createElement('button');
+                delBtn.textContent = '✕';
+                delBtn.style.cssText = 'padding:2px 6px; background:#4a1a1a; border:none; color:#ff6b6b; cursor:pointer; border-radius:2px; margin-left:4px; font-size:9px;';
+                delBtn.onclick = (e) => { e.stopPropagation(); if (state.layers.length > 1) { state.layers.splice(idx, 1); if (state.currentLayerId === layer.id) state.currentLayerId = state.layers[0].id; updateLayersPanel(); draw(); } };
+                
+                item.appendChild(nameSpan);
+                item.appendChild(visBtn);
+                item.appendChild(delBtn);
+                
+                // Drag & drop handlers
+                item.ondragstart = (e) => { 
+                    state.draggedLayerIndex = idx; 
+                    item.style.opacity = '0.5';
+                    e.dataTransfer.effectAllowed = 'move';
+                };
+                item.ondragend = (e) => { 
+                    state.draggedLayerIndex = null; 
+                    item.style.opacity = '1';
+                    updateLayersPanel();
+                };
+                item.ondragover = (e) => { 
+                    e.preventDefault(); 
+                    e.dataTransfer.dropEffect = 'move';
+                    if (state.draggedLayerIndex !== null && state.draggedLayerIndex !== idx) {
+                        item.style.borderTop = '2px solid #00D9FF';
+                    }
+                };
+                item.ondragleave = (e) => {
+                    item.style.borderTop = '';
+                };
+                item.ondrop = (e) => { 
+                    e.preventDefault(); 
+                    if (state.draggedLayerIndex !== null && state.draggedLayerIndex !== idx) {
+                        const draggedLayer = state.layers[state.draggedLayerIndex];
+                        state.layers.splice(state.draggedLayerIndex, 1);
+                        const newIdx = idx > state.draggedLayerIndex ? idx - 1 : idx;
+                        state.layers.splice(newIdx, 0, draggedLayer);
+                    }
+                    item.style.borderTop = '';
+                    state.draggedLayerIndex = null;
+                    updateLayersPanel();
+                    draw();
+                };
+                
+                // Click to select
+                item.onclick = () => { state.currentLayerId = layer.id; updateLayersPanel(); draw(); };
+                
+                panel.appendChild(item);
+            });
         }
 
         function paintPoints(points, mode = state.tool, color = state.currentColor, useMirror = true) {
@@ -1372,6 +1632,11 @@
         }
 
         function applyBucketFill(startX, startY) {
+            const selection = normalizeSelection(state.selection);
+            if (selection) {
+                applySelection('fill');
+                return true;
+            }
             const targetColor = getPixelColor(startX, startY);
             if (targetColor === state.currentColor) return false;
             const queue = [{ x: startX, y: startY }];
@@ -1398,15 +1663,19 @@
             if (state.tool === 'eraser') return paintPoints([{ x, y }], 'eraser', state.currentColor, true);
             if (state.tool === 'bucket') return applyBucketFill(x, y);
             if (state.tool === 'picker') {
-                const pixel = state.pixels.find(p => p.x === x && p.y === y);
-                if (!pixel) return false;
-                state.currentColor = pixel.color;
-                colorPicker.value = pixel.color;
-                colorPreview.style.backgroundColor = pixel.color;
+                const color = getPixelColor(x, y);
+                if (!color) return false;
+                state.currentColor = color;
+                colorPicker.value = color;
+                colorPreview.style.backgroundColor = color;
                 updateColorSwatches();
                 state.tool = 'brush';
                 document.querySelectorAll('[data-tool]').forEach(b => b.classList.remove('active'));
                 document.querySelector('[data-tool="brush"]').classList.add('active');
+                return false;
+            }
+            if (state.tool === 'text') {
+                openTextInputDialog(x, y);
                 return false;
             }
             return false;
@@ -1515,20 +1784,21 @@
         }
 
         function trimCanvasToContent() {
-            if (!state.pixels.length) {
+            const layerPixels = getCurrentLayer().pixels;
+            if (!layerPixels.length) {
                 showToast('No hay contenido para recortar');
                 return;
             }
-            const minX = Math.min(...state.pixels.map(p => p.x));
-            const minY = Math.min(...state.pixels.map(p => p.y));
-            const maxX = Math.max(...state.pixels.map(p => p.x));
-            const maxY = Math.max(...state.pixels.map(p => p.y));
+            const minX = Math.min(...layerPixels.map(p => p.x));
+            const minY = Math.min(...layerPixels.map(p => p.y));
+            const maxX = Math.max(...layerPixels.map(p => p.x));
+            const maxY = Math.max(...layerPixels.map(p => p.y));
             const nextSize = Math.max(4, Math.min(128, Math.max(maxX - minX + 1, maxY - minY + 1)));
-            const shifted = state.pixels
+            const shifted = layerPixels
                 .map(p => ({ x: p.x - minX, y: p.y - minY, color: p.color }))
                 .filter(p => p.x >= 0 && p.y >= 0 && p.x < nextSize && p.y < nextSize);
             state.gridSize = nextSize;
-            state.pixels = shifted;
+            getCurrentLayer().pixels = shifted;
             gridSizeInput.value = nextSize;
             document.getElementById('gridSizeValue').textContent = nextSize;
             document.getElementById('gridSizeValue2').textContent = nextSize;
@@ -1544,21 +1814,22 @@
         }
 
         function centerSpriteToGrid() {
-            if (!state.pixels.length) {
+            const layerPixels = getCurrentLayer().pixels;
+            if (!layerPixels.length) {
                 showToast('No hay contenido para centrar');
                 return;
             }
-            const minX = Math.min(...state.pixels.map(p => p.x));
-            const minY = Math.min(...state.pixels.map(p => p.y));
-            const maxX = Math.max(...state.pixels.map(p => p.x));
-            const maxY = Math.max(...state.pixels.map(p => p.y));
+            const minX = Math.min(...layerPixels.map(p => p.x));
+            const minY = Math.min(...layerPixels.map(p => p.y));
+            const maxX = Math.max(...layerPixels.map(p => p.x));
+            const maxY = Math.max(...layerPixels.map(p => p.y));
             const spriteW = maxX - minX + 1;
             const spriteH = maxY - minY + 1;
             const offsetX = Math.floor((state.gridSize - spriteW) / 2) - minX;
             const offsetY = Math.floor((state.gridSize - spriteH) / 2) - minY;
             const centered = [];
             const seen = new Set();
-            state.pixels.forEach(pixel => {
+            layerPixels.forEach(pixel => {
                 const x = pixel.x + offsetX;
                 const y = pixel.y + offsetY;
                 if (x < 0 || y < 0 || x >= state.gridSize || y >= state.gridSize) return;
@@ -1567,7 +1838,7 @@
                 seen.add(key);
                 centered.push({ x, y, color: pixel.color });
             });
-            state.pixels = centered;
+            getCurrentLayer().pixels = centered;
             clearSelection(false);
             addToHistory();
             updateCodeOutput();
@@ -1584,6 +1855,38 @@
             updateCodeOutput();
             draw();
             scheduleAutoSave();
+        }
+
+        function openTextInputDialog(x, y) {
+            const input = prompt('Escribe el texto (usa: A-Z, 0-9):', '');
+            if (!input) return;
+            const text = input.toUpperCase().substring(0, 10);
+            drawTextAtPosition(x, y, text, state.currentColor);
+        }
+
+        function drawTextAtPosition(x, y, text, color) {
+            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+            const charWidth = 3, charHeight = 5;
+            let changed = false;
+            for (let i = 0; i < text.length; i++) {
+                const char = text[i];
+                const charIndex = chars.indexOf(char);
+                if (charIndex === -1) continue;
+                const charPixelData = getCharPixelData(char);
+                for (const [px, py] of charPixelData) {
+                    changed = upsertPixel(x + i * (charWidth + 1) + px, y + py, color) || changed;
+                }
+            }
+            if (changed) { addToHistory(); updateCodeOutput(); draw(); scheduleAutoSave(); }
+        }
+
+        function getCharPixelData(char) {
+            const fontAssets = {
+                'A': [[1,0],[0,1],[1,1],[2,1],[0,2],[1,2],[2,2]],
+                '0': [[0,0],[1,0],[2,0],[0,1],[2,1],[0,2],[1,2],[2,2]],
+                '1': [[1,0],[0,1],[1,1],[0,2],[1,2],[2,2]],
+            };
+            return fontAssets[char] || [];
         }
 
         function handleCanvasPointerDown(e) {
@@ -1687,7 +1990,7 @@
 
         function addToHistory() {
             const newHistory = state.history.slice(0, state.historyIndex + 1);
-            newHistory.push(JSON.parse(JSON.stringify(state.pixels)));
+            newHistory.push(JSON.parse(JSON.stringify(getCurrentLayer().pixels)));
             state.history = newHistory;
             state.historyIndex = newHistory.length - 1;
             updateHistoryButtons();
@@ -1696,7 +1999,7 @@
         function undo() {
             if (state.historyIndex > 0) {
                 state.historyIndex--;
-                state.pixels = JSON.parse(JSON.stringify(state.history[state.historyIndex]));
+                getCurrentLayer().pixels = JSON.parse(JSON.stringify(state.history[state.historyIndex]));
                 clearSelection(false);
                 state.shapeStart = null;
                 state.shapePreview = null;
@@ -1710,7 +2013,7 @@
         function redo() {
             if (state.historyIndex < state.history.length - 1) {
                 state.historyIndex++;
-                state.pixels = JSON.parse(JSON.stringify(state.history[state.historyIndex]));
+                getCurrentLayer().pixels = JSON.parse(JSON.stringify(state.history[state.historyIndex]));
                 clearSelection(false);
                 state.shapeStart = null;
                 state.shapePreview = null;
@@ -1722,7 +2025,7 @@
         }
 
         function clear() {
-            state.pixels = [];
+            getCurrentLayer().pixels = [];
             clearSelection(false);
             state.shapeStart = null;
             state.shapePreview = null;
@@ -1735,7 +2038,7 @@
         function applyCanvasTransform(transformer, message) {
             const transformed = [];
             const seen = new Set();
-            state.pixels.forEach(pixel => {
+            getCurrentLayer().pixels.forEach(pixel => {
                 const next = transformer(pixel);
                 if (!next) return;
                 if (next.x < 0 || next.x >= state.gridSize || next.y < 0 || next.y >= state.gridSize) return;
@@ -1744,7 +2047,7 @@
                 seen.add(key);
                 transformed.push({ x: next.x, y: next.y, color: next.color || pixel.color });
             });
-            state.pixels = transformed;
+            getCurrentLayer().pixels = transformed;
             clearSelection(false);
             state.shapeStart = null;
             state.shapePreview = null;
@@ -1756,14 +2059,22 @@
         }
 
         function updateCodeOutput() {
-            pixelCountSpan.textContent = state.pixels.length;
+            // Flatten visible layers for export
+            const exportPixels = [];
+            state.layers.forEach(layer => {
+                if (layer.visible) {
+                    exportPixels.push(...layer.pixels);
+                }
+            });
+            
+            pixelCountSpan.textContent = exportPixels.length;
             if (typeof _codeEditMode !== 'undefined' && _codeEditMode) return; // don't clobber live edit
             const key = entityLibrarySelect.value || 'editor_custom';
             const grid = state.gridSize;
-            if (state.pixels.length === 0) {
+            if (exportPixels.length === 0) {
                 codeOutput.textContent = JSON.stringify({ grid, pixels: [] }, null, 2);
             } else {
-                const pxArr = state.pixels.map(p => [p.x, p.y, p.color]);
+                const pxArr = exportPixels.map(p => [p.x, p.y, p.color]);
                 const entry = { grid, pixels: pxArr };
                 // Pretty-print with compact pixel rows
                 const pxLines = pxArr.map(p => `    [${p[0]},${p[1]},"${p[2]}"]`);
@@ -1789,7 +2100,14 @@
             const saveMode = (document.querySelector('input[name="saveMode"]:checked') || {}).value || 'post';
             const key = entityLibrarySelect.value || 'editor_custom';
             const grid = state.gridSize;
-            const pixels = state.pixels.map(p => [p.x, p.y, p.color]);
+            // Flatten visible layers for export
+            const exportPixels = [];
+            state.layers.forEach(layer => {
+                if (layer.visible) {
+                    exportPixels.push(...layer.pixels);
+                }
+            });
+            const pixels = exportPixels.map(p => [p.x, p.y, p.color]);
             const exportMultiplierLocal = (typeof exportMultiplier !== 'undefined') ? exportMultiplier : 1;
 
             if (saveMode === 'post') {
@@ -1911,7 +2229,7 @@
                 fitZoomToCanvas();
                 resizeCanvas();
                 draw();
-                showToast(`Importado: ${state.pixels.length} px · ${state.gridSize}×${state.gridSize}`);
+                showToast(`Importado: ${getCurrentLayer().pixels.length} px · ${state.gridSize}×${state.gridSize}`);
             } catch (error) {
                 showToast('Error importing pixels', true);
             }
@@ -2175,6 +2493,7 @@
 
         // Initialize
         resizeCanvas();
+        updateLayersPanel();
         draw();
         updateHistoryButtons();
         updateSelectionButtons();

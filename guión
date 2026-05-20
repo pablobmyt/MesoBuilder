@@ -1,0 +1,122 @@
+GUION NARRATIVO — OPERACIÓN ZIGURAT
+
+Premisa
+Un pulso geomagnético en 1926, durante una prueba hidroeléctrica soviética en Novozarya, activa una anomalía en los sedimentos del río. La señal no abre un portal fantástico visible: desincroniza zonas concretas del valle y hace que dos capas de tiempo coexistan durante breves ventanas. En la capa antigua aparece Mesopotamia tardía; en la moderna, la URSS de entreguerras. Los personajes no “viajan” con luces ni magia: atraviesan corredores donde la geología, el agua y el frío alteran relojes, brújulas y memoria operativa.
+
+Tono
+Extraño pero realista: ingeniería hidráulica, comunicaciones, logística, clima extremo, decisiones políticas y supervivencia civil.
+
+Reglas del fenómeno temporal
+1) Las ventanas se abren cerca de cauces, esclusas y depósitos de arcilla.
+2) Cuanto mayor el caudal, mayor la deriva temporal.
+3) Los objetos masivos no cruzan bien; personas y mensajes sí, si van por rutas estables.
+4) Cada cruce deja ruido en radio y “ecos” de arquitectura en el terreno.
+
+Acto I — El Telegrama Roto
+- Objetivo narrativo: confirmar que la anomalía es real.
+- Misión: hablar con la Comisaria de Novozarya (URSS) / Sacerdotisa en Nínagara (Mesopotamia).
+- Sentido jugable: desbloquea el mapa de riesgo y la lectura de rutas seguras.
+
+Acto II — Logística contra el Tiempo
+- Objetivo narrativo: sostener a la población en ambos marcos temporales.
+- Misión: reunir recursos clave (comida, piedra, combustible/arcilla según época).
+- Sentido jugable: activa diques, refugios, hornos y rutas de convoy.
+
+Acto III — Sincronía de la Crecida
+- Objetivo narrativo: impedir que la crecida colapse ambas líneas temporales.
+- Misión: coordinar señales en puntos espejo (presa soviética / zigurat hidráulico).
+- Sentido jugable: defensa multi-zona, priorización de infraestructuras y evacuación.
+
+Personajes clave
+- Adapa: enlace operativo entre capas temporales.
+- Comisaria Irina Markova: autoridad de distrito, pragmática, prioriza control y logística.
+- Gavril Denisov: veterano del origen, detecta patrones del río antes que los instrumentos.
+- Escriba/Ingeniero de archivo: traduce equivalencias técnicas entre eras.
+
+Mecánica narrativa recomendada
+- Cada misión debe responder a una pregunta concreta:
+  a) ¿Qué sabemos del fenómeno?
+  b) ¿Qué necesita la gente para pasar la semana?
+  c) ¿Qué infraestructura evita el colapso?
+- Cada objetivo debe señalar un lugar y una persona reales en el mapa.
+- Cada recompensa debe tener impacto inmediato (acceso, seguridad, producción o movilidad).
+
+Cierre ideal
+
+No se "vence al tiempo"; se estabiliza una frontera frágil entre épocas. El final ideal no es heroico-místico, sino operativo: menos muertos, más rutas abiertas, y una ciudad que sigue funcionando al amanecer.
+
+Pero el verdadero cierre es la pregunta que queda:
+"Si Adapa es un eco de una decisión, ¿qué decisión soy yo?"
+
+═══════════════════════════════════════════════════════════════════════════════
+
+ACTO IV — Ecos Persistentes (Final Abierto)
+Objetivo narrativo: la anomalía no desaparece; se convierte en infraestructura.
+Consecuencias según la ruta elegida:
+
+Ruta A (Presa): 
+  → Novozarya consolida poder tecnológico. La URSS reclama el zigurat como "patrimonio de Moscú".
+  → Enlil-Ama se retira a templos interiores. El comercio entre épocas se industrializa.
+  → Adapa aparece cada equinoccio en ambos lugares, aún sin saber qué es.
+  → Epílogo: el jugador recibe transmisión de radio de hace 2150 años pidiendo ayuda.
+
+Ruta B (Zigurat):
+  → Nínagara asciende en importancia. Las técnicas de agua mesopotámicas salvan a ambas ciudades.
+  → Markova es destituida. La URSS negocia con el Consejo Eufratiano como iguales.
+  → Las visiones de Adapa se vuelven más frecuentes. A veces habla sumerio.
+  → Epílogo: encuentran ruinas de máquinas soviéticas en capas arcilla de 2150 AC.
+
+Ruta C (Equilibrio):
+  → Ambas ciudades negocian frontera temporal. Puentes esclusa se estabilizan.
+  → Adapa funciona como guardia fronterizo, olvidando su verdadera naturaleza.
+  → Markova y Enlil-Ama se reúnen cada equinoccio sin hablar, observando el río.
+  → Epílogo: en 1826 (200 años atrás en el futuro), alguien descubre el registro de Adapa en una cápsula de tiempo.
+     La cápsula contiene un mensaje: "Si estás leyendo esto, aún no hemos decidido."
+
+═══════════════════════════════════════════════════════════════════════════════
+
+Sistema de Confianza
+  - Cada diálogo con una autoridad suma/resta confianza (0-100).
+  - A <30: la autoridad boicotea misiones. A >70: ofrece misiones secretas.
+  - Adapa comienza a 50 confianza. Si descubre que es un eco, reacciones varían por autoridad.
+
+Sistema de Memoria
+  - Adapa pierde 5% de memoria cada cruce después del Acto I.
+  - A 40%: empieza a confundir identidades (ve a Markova como Enlil-Ama).
+  - A 20%: riesgo de olvidar misiones críticas. El jugador debe completarlas sin ayuda de Adapa.
+  - A 0%: Adapa es una herramienta inerte. El final automáticamente cambia.
+
+═══════════════════════════════════════════════════════════════════════════════
+
+NOTAS DE IMPLEMENTACIÓN EN MOTOR
+
+1. Sistema de Diálogos Ramificados
+   - Cada NPC (Markova, Enlil-Ama, Denisov) tiene 3 árboles de diálogo por acto.
+   - Las elecciones del jugador afectan confianza y acceso a rutas narrativas.
+   - Algunos diálogos son exclusivos si Adapa ha cruzado la frontera temporal X veces.
+
+2. Mecánica de Cruz de Tiempo (Cross-Temporal Events)
+   - Eventos en Mesopotamia afectan la economía de URSS (y viceversa).
+   - Ej: si la cosecha en Nínagara falla, Markova presiona por militarización.
+   - Ej: si Novozarya prioriza presa, la Sacerdotisa pierde templos clave.
+
+3. Sistema de Memoria de Adapa
+   - Integrar en HUD: barra de memoria con icono de "Adapa".
+   - Cada cruce resta memoria. Diálogos se olvidan, eventos no disparan.
+   - En 0% memoria: Adapa no reconoce al jugador. Final alternativo.
+
+4. Puntos de Elección Crítica (Branching Locks)
+   - Acto I: ¿Creer a Markova o a Enlil-Ama sobre la causa?
+   - Acto II: ¿Proteger recursos de Novozarya o de Nínagara?
+   - Acto III: Crisis de tres botones (Presa / Zigurat / Equilibrio).
+   - Acto IV: 3 finales distintos + epílogos ramificados.
+
+5. Integración de Recursos
+   - Grano, Piedra, Arcilla, Metal, Madera = tiles interactuables.
+   - Cada recurso se multiplica si se traduce entre épocas (grano→semilla→bebida).
+   - Los edificios críticos (Presa, Zigurat, Esclusa) dan bonificadores narrativos.
+
+6. Tutorial Narrativo
+   - Primer acto es guiado. Markova/Enlil-Ama dan órdenes directas.
+   - Acto II: libertad parcial. Puedes elegir misiones en orden.
+   - Acto III: crisis real. Muy poco tiempo. Las prioridades son tú.

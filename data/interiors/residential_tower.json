@@ -1,0 +1,188 @@
+{
+  "defaultFloor": 1,
+  "floors": [
+    {
+      "name": "Sótano -1",
+      "width": 10,
+      "height": 8,
+      "entryCol": 5,
+      "entryRow": 3,
+      "chestItems": ["wheat", "brick", "stone", "food"],
+      "npcs": [],
+      "tiles": [
+        ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"],
+        ["wall", "floor", "floor", "floor", "pot", "floor", "floor", "floor", "floor", "wall"],
+        ["wall", "floor", "floor", "floor", "floor", "elevator", "floor", "chest", "floor", "wall"],
+        ["wall", "floor", "stairs_up", "floor", "floor", "floor", "floor", "floor", "floor", "wall"],
+        ["wall", "floor", "floor", "floor", "table", "table", "floor", "floor", "floor", "wall"],
+        ["wall", "floor", "floor", "floor", "floor", "floor", "floor", "pot", "floor", "wall"],
+        ["wall", "floor", "floor", "floor", "floor", "floor", "floor", "floor", "floor", "wall"],
+        ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"]
+      ]
+    },
+    {
+      "name": "Planta baja",
+      "width": 10,
+      "height": 8,
+      "entryCol": 5,
+      "entryRow": 5,
+      "chestItems": ["wheat", "wheat", "stone", "brick"],
+      "npcs": [
+        { "col": 7, "row": 2, "name": "Portero", "npcType": "villager", "static": true }
+      ],
+      "tiles": [
+        ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"],
+        ["wall", "floor", "bed", "bed", "floor", "floor", "pot", "floor", "floor", "wall"],
+        ["wall", "floor", "stairs_up", "floor", "floor", "elevator", "floor", "table", "floor", "wall"],
+        ["wall", "floor", "stairs_down", "floor", "rug", "floor", "floor", "floor", "floor", "wall"],
+        ["wall", "floor", "floor", "floor", "firepit", "floor", "floor", "floor", "floor", "wall"],
+        ["wall", "floor", "floor", "floor", "floor", "floor", "floor", "chest", "floor", "wall"],
+        ["wall", "floor", "floor", "floor", "floor", "door", "floor", "floor", "floor", "wall"],
+        ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"]
+      ]
+    },
+    {
+      "name": "Planta 2",
+      "width": 10,
+      "height": 8,
+      "entryCol": 5,
+      "entryRow": 3,
+      "chestItems": ["wheat", "stone"],
+      "npcs": [
+        { "col": 7, "row": 2, "name": "Vecino", "npcType": "villager" }
+      ],
+      "tiles": [
+        ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"],
+        ["wall", "bed", "bed", "floor", "floor", "floor", "floor", "bed", "bed", "wall"],
+        ["wall", "floor", "stairs_up", "floor", "floor", "elevator", "floor", "table", "floor", "wall"],
+        ["wall", "floor", "stairs_down", "floor", "rug", "floor", "floor", "floor", "floor", "wall"],
+        ["wall", "floor", "floor", "floor", "floor", "floor", "floor", "pot", "floor", "wall"],
+        ["wall", "floor", "floor", "chest", "floor", "floor", "floor", "floor", "floor", "wall"],
+        ["wall", "floor", "floor", "floor", "floor", "floor", "floor", "floor", "floor", "wall"],
+        ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"]
+      ]
+    },
+    {
+      "name": "Planta 3",
+      "width": 10,
+      "height": 8,
+      "entryCol": 5,
+      "entryRow": 3,
+      "chestItems": ["wheat", "brick"],
+      "npcs": [
+        { "col": 3, "row": 2, "name": "Residente", "npcType": "villager" }
+      ],
+      "tiles": [
+        ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"],
+        ["wall", "bed", "floor", "floor", "pot", "floor", "floor", "floor", "bed", "wall"],
+        ["wall", "floor", "stairs_up", "floor", "floor", "elevator", "floor", "table", "floor", "wall"],
+        ["wall", "floor", "stairs_down", "floor", "rug", "floor", "floor", "floor", "pot", "wall"],
+        ["wall", "floor", "floor", "floor", "floor", "floor", "floor", "floor", "floor", "wall"],
+        ["wall", "floor", "chest", "floor", "floor", "floor", "floor", "floor", "floor", "wall"],
+        ["wall", "floor", "floor", "floor", "floor", "floor", "floor", "floor", "floor", "wall"],
+        ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"]
+      ]
+    },
+    {
+      "name": "Planta 4",
+      "width": 10,
+      "height": 8,
+      "entryCol": 5,
+      "entryRow": 3,
+      "chestItems": ["wheat", "stone"],
+      "npcs": [],
+      "tiles": [
+        ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"],
+        ["wall", "floor", "floor", "bed", "bed", "floor", "floor", "floor", "floor", "wall"],
+        ["wall", "floor", "stairs_up", "floor", "floor", "elevator", "floor", "table", "floor", "wall"],
+        ["wall", "floor", "stairs_down", "floor", "rug", "floor", "floor", "floor", "floor", "wall"],
+        ["wall", "floor", "floor", "floor", "pot", "floor", "floor", "floor", "floor", "wall"],
+        ["wall", "floor", "floor", "floor", "floor", "chest", "floor", "floor", "floor", "wall"],
+        ["wall", "floor", "floor", "floor", "floor", "floor", "floor", "floor", "floor", "wall"],
+        ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"]
+      ]
+    },
+    {
+      "name": "Planta 5",
+      "width": 10,
+      "height": 8,
+      "entryCol": 5,
+      "entryRow": 3,
+      "chestItems": ["brick", "stone"],
+      "npcs": [
+        { "col": 7, "row": 4, "name": "Familia", "npcType": "villager" }
+      ],
+      "tiles": [
+        ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"],
+        ["wall", "bed", "bed", "floor", "floor", "floor", "floor", "bed", "bed", "wall"],
+        ["wall", "floor", "stairs_up", "floor", "floor", "elevator", "floor", "table", "floor", "wall"],
+        ["wall", "floor", "stairs_down", "floor", "rug", "floor", "floor", "floor", "floor", "wall"],
+        ["wall", "floor", "floor", "floor", "floor", "pot", "floor", "floor", "floor", "wall"],
+        ["wall", "floor", "floor", "chest", "floor", "floor", "floor", "floor", "floor", "wall"],
+        ["wall", "floor", "floor", "floor", "floor", "floor", "floor", "floor", "floor", "wall"],
+        ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"]
+      ]
+    },
+    {
+      "name": "Planta 6",
+      "width": 10,
+      "height": 8,
+      "entryCol": 5,
+      "entryRow": 3,
+      "chestItems": ["wheat", "wheat", "brick"],
+      "npcs": [],
+      "tiles": [
+        ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"],
+        ["wall", "floor", "floor", "floor", "bed", "floor", "floor", "floor", "floor", "wall"],
+        ["wall", "floor", "stairs_up", "floor", "floor", "elevator", "floor", "table", "floor", "wall"],
+        ["wall", "floor", "stairs_down", "floor", "rug", "floor", "floor", "floor", "pot", "wall"],
+        ["wall", "floor", "floor", "floor", "floor", "floor", "floor", "floor", "floor", "wall"],
+        ["wall", "floor", "chest", "floor", "floor", "floor", "floor", "floor", "floor", "wall"],
+        ["wall", "floor", "floor", "floor", "floor", "floor", "floor", "floor", "floor", "wall"],
+        ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"]
+      ]
+    },
+    {
+      "name": "Planta 7",
+      "width": 10,
+      "height": 8,
+      "entryCol": 5,
+      "entryRow": 3,
+      "chestItems": ["stone", "brick"],
+      "npcs": [
+        { "col": 2, "row": 4, "name": "Anciana", "npcType": "villager", "static": true }
+      ],
+      "tiles": [
+        ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"],
+        ["wall", "bed", "floor", "floor", "floor", "floor", "floor", "floor", "bed", "wall"],
+        ["wall", "floor", "stairs_up", "floor", "floor", "elevator", "floor", "table", "floor", "wall"],
+        ["wall", "floor", "stairs_down", "floor", "rug", "floor", "floor", "floor", "floor", "wall"],
+        ["wall", "floor", "floor", "floor", "floor", "pot", "floor", "floor", "floor", "wall"],
+        ["wall", "floor", "floor", "floor", "chest", "floor", "floor", "floor", "floor", "wall"],
+        ["wall", "floor", "floor", "floor", "floor", "floor", "floor", "floor", "floor", "wall"],
+        ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"]
+      ]
+    },
+    {
+      "name": "Ático",
+      "width": 10,
+      "height": 8,
+      "entryCol": 5,
+      "entryRow": 3,
+      "chestItems": ["wheat", "brick", "stone"],
+      "npcs": [
+        { "col": 6, "row": 2, "name": "Vigilante", "npcType": "villager", "static": true }
+      ],
+      "tiles": [
+        ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"],
+        ["wall", "floor", "floor", "floor", "bed", "bed", "floor", "floor", "floor", "wall"],
+        ["wall", "floor", "stairs_down", "floor", "floor", "elevator", "floor", "table", "floor", "wall"],
+        ["wall", "floor", "floor", "floor", "rug", "floor", "floor", "floor", "pot", "wall"],
+        ["wall", "floor", "floor", "floor", "floor", "floor", "floor", "floor", "floor", "wall"],
+        ["wall", "floor", "floor", "floor", "chest", "floor", "floor", "floor", "floor", "wall"],
+        ["wall", "floor", "floor", "floor", "floor", "floor", "floor", "floor", "floor", "wall"],
+        ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"]
+      ]
+    }
+  ]
+}

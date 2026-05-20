@@ -316,18 +316,18 @@ let _rebuildMapAsyncRunning = false;
 function getBiomeFillColor(biome) {
   const isUrss = (window._currentEpoch || 'mesopotamia') === 'urss';
   if (isUrss) {
-    if (biome === 'water')    return '#5E6A79';
-    if (biome === 'riparian') return '#6F7973';
-    if (biome === 'marsh')    return '#626B67';
-    if (biome === 'alluvial') return '#8A887E';
-    if (biome === 'saline')   return '#E2E5EA';
-    if (biome === 'steppe')   return '#7A7E83';
-    if (biome === 'hills')    return '#666A71';
-    if (biome === 'forest')   return '#56625C';
-    if (biome === 'grass')    return '#8F9893';
-    if (biome === 'road')        return '#8A8E95';
-    if (biome === 'canal_road')  return '#9A9EA5'; // logistics corridor in URSS epoch
-    return '#7D8188';
+    if (biome === 'water')    return '#4F6B87';
+    if (biome === 'riparian') return '#5E8A5F';
+    if (biome === 'marsh')    return '#4F7A63';
+    if (biome === 'alluvial') return '#7FA06F';
+    if (biome === 'saline')   return '#C7CEC4';
+    if (biome === 'steppe')   return '#6E8A62';
+    if (biome === 'hills')    return '#647C62';
+    if (biome === 'forest')   return '#3F6844';
+    if (biome === 'grass')    return '#78A06E';
+    if (biome === 'road')        return '#7F867D';
+    if (biome === 'canal_road')  return '#8D958B'; // logistics corridor in URSS epoch
+    return '#739070';
   }
   if (biome === 'water')       return '#2A72C3';
   if (biome === 'riparian')    return '#5A8C38';
@@ -1752,6 +1752,55 @@ function interactWithPetDog(action, dog) {
   } catch (e) {}
 }
 
+let petRadialMenuActive = false;
+let petRadialPointer = { x: 0, y: 0 };
+let petRadialSelection = -1;
+
+const PET_RADIAL_OPTIONS = [
+  { id: 'call', label: 'Ven', run: () => callPetDogToPlayer() },
+  { id: 'toggle-follow', label: 'Seguir/Quieto', run: () => interactWithPetDog('toggle-follow') },
+  { id: 'toggle-attack', label: 'Ataque', run: () => interactWithPetDog('toggle-attack') },
+  { id: 'pet', label: 'Acariciar', run: () => interactWithPetDog('pet') },
+  { id: 'feed', label: 'Dar comida', run: () => interactWithPetDog('feed') }
+];
+
+function getPetRadialCenterScreen() {
+  try {
+    const p = worldToScreen(player.x + 0.5, player.y + 0.5);
+    return { x: p.x, y: p.y };
+  } catch (e) {
+    return { x: canvas.width * 0.5, y: canvas.height * 0.5 };
+  }
+}
+
+function getPetRadialHoverIndex(pointerX, pointerY, centerX, centerY) {
+  const dx = pointerX - centerX;
+  const dy = pointerY - centerY;
+  const dist = Math.hypot(dx, dy);
+  const innerRadius = 28;
+  const outerRadius = 118;
+  if (dist < innerRadius || dist > outerRadius) return -1;
+  const n = PET_RADIAL_OPTIONS.length;
+  const angle = (Math.atan2(dy, dx) + Math.PI * 2) % (Math.PI * 2);
+  return Math.floor((angle / (Math.PI * 2)) * n) % n;
+}
+
+function executePetRadialSelection() {
+  try {
+    if (!petRadialMenuActive) return;
+    const pet = getActivePetDog();
+    if (!pet) {
+      notify('No tienes perro compañero activo.');
+      return;
+    }
+    const center = getPetRadialCenterScreen();
+    const idx = getPetRadialHoverIndex(petRadialPointer.x, petRadialPointer.y, center.x, center.y);
+    if (idx < 0 || idx >= PET_RADIAL_OPTIONS.length) return;
+    const option = PET_RADIAL_OPTIONS[idx];
+    if (option && typeof option.run === 'function') option.run();
+  } catch (e) {}
+}
+
 const mapEditorCore = createMapEditorCore({
   MAP_EDITOR_TERRAINS,
   MAP_EDITOR_HEIGHT_PRESETS,
@@ -2678,7 +2727,10 @@ function drawWheatIcon(ctx, w, h) {
               templates.push(BUILTIN_TREE_TEMPLATES[i] || BUILTIN_TREE_TEMPLATES[0]);
             }
           }
-          if (foundAny) GLOBAL_TREE_TEMPLATES = templates;
+          if (foundAny) {
+            GLOBAL_TREE_TEMPLATES = templates;
+            try { buildTreeAtlas(TILE); } catch (e) { console.warn('rebuild tree atlas failed', e); }
+          }
         } catch (e) { console.warn('populate tree templates err', e); }
         // Rebuild map caches now that sprite library is ready (avoids stale pre-library renders)
         try {
@@ -2799,9 +2851,19 @@ function createCraftingPanel() {
     const row = document.createElement('div'); row.style.display='flex'; row.style.justifyContent='space-between'; row.style.alignItems='center'; row.style.padding='6px'; row.style.background='rgba(255,255,255,0.02)'; row.style.borderRadius='6px';
     row.dataset.recipeId = rid;
     row.dataset.requires = Object.keys(r.requires).join(',');
+    const infoWrap = document.createElement('div'); infoWrap.style.display = 'flex'; infoWrap.style.alignItems = 'center'; infoWrap.style.gap = '8px';
+    const outIcon = document.createElement('canvas'); outIcon.width = 24; outIcon.height = 24; outIcon.style.width = '24px'; outIcon.style.height = '24px';
+    try {
+      const outItem = Object.keys(r.output || {})[0] || rid;
+      drawItemIcon(outIcon.getContext('2d'), outItem, 24, 24);
+    } catch (e) {}
     const info = document.createElement('div'); info.style.fontSize='13px'; info.style.color='#fff'; info.innerHTML = `<div style='font-weight:700'>${rid}</div>`;
     const reqs = document.createElement('div'); reqs.style.fontSize='12px'; reqs.style.color='#ccc'; reqs.textContent = Object.entries(r.requires).map(([k,v]) => `${v} ${k}`).join(', ');
+    const outs = document.createElement('div'); outs.style.fontSize='11px'; outs.style.color='#9fe39f'; outs.textContent = 'Produce: ' + Object.entries(r.output || {}).map(([k,v]) => `${v} ${k}`).join(', ');
     info.appendChild(reqs);
+    info.appendChild(outs);
+    infoWrap.appendChild(outIcon);
+    infoWrap.appendChild(info);
     const rightSide = document.createElement('div'); rightSide.style.display='flex'; rightSide.style.flexDirection='column'; rightSide.style.alignItems='flex-end';
     const craftBtn = document.createElement('button'); craftBtn.textContent = 'Craftear'; craftBtn.style.padding='6px 8px'; craftBtn.style.borderRadius='6px'; craftBtn.style.background='#222'; craftBtn.style.color='#FFD27A'; craftBtn.style.border='1px solid #333';
     craftBtn.addEventListener('click', () => { if (canCraft(rid)) { craftItem(rid); } else { notify('Te faltan materiales para ' + rid); } });
@@ -2821,20 +2883,35 @@ function createCraftingPanel() {
       if (canCraft(rid)) craftItem(rid);
       else notify('Te faltan materiales para ' + rid);
     });
-    row.appendChild(info); row.appendChild(rightSide);
+    row.appendChild(infoWrap); row.appendChild(rightSide);
     list.appendChild(row);
   });
   right.appendChild(list);
 
-  const guide = document.createElement('div'); guide.style.marginTop='10px'; guide.style.fontSize='12px'; guide.style.color='#ddd'; guide.innerHTML = '<div style="font-weight:700;margin-bottom:6px">Guía rápida</div>';
-  // build guide text from RECIPES
-  const lines = [];
-  Object.keys(RECIPES).forEach(rid => {
+  const guide = document.createElement('div');
+  guide.style.marginTop='10px';
+  guide.style.fontSize='12px';
+  guide.style.color='#ddd';
+  guide.innerHTML = '<div style="font-weight:700;margin-bottom:6px">Guía de crafteos y agricultura</div>';
+
+  const recipeLines = Object.keys(RECIPES).map(rid => {
     const r = RECIPES[rid];
     const reqs = Object.entries(r.requires).map(([k,v]) => `${v} ${k}`).join(', ');
-    lines.push(`<div style="margin-bottom:4px"><b>${rid}:</b> Necesitas ${reqs}. Pulsa "Craftear" si tienes los materiales.</div>`);
-  });
-  guide.innerHTML += lines.join('');
+    return `<div style="margin-bottom:4px;line-height:1.35;"><b>${rid}:</b> ${reqs}</div>`;
+  }).join('');
+
+  guide.innerHTML += `
+    <div style="padding:6px;border:1px solid rgba(255,210,122,0.18);border-radius:6px;background:rgba(0,0,0,0.2);margin-bottom:8px;">
+      <div style="font-weight:700;color:#FFD27A;margin-bottom:4px;">Recetas principales</div>
+      ${recipeLines}
+    </div>
+    <div style="padding:6px;border:1px solid rgba(159,227,159,0.18);border-radius:6px;background:rgba(0,0,0,0.2);">
+      <div style="font-weight:700;color:#9fe39f;margin-bottom:4px;">Gestionar agricultura</div>
+      <div style="margin-bottom:4px;">1) Craftea <b>stone-hoe</b> (azada de piedra).</div>
+      <div style="margin-bottom:4px;">2) Equipa la azada desde inventario.</div>
+      <div style="margin-bottom:4px;">3) En modo libre, pulsa <b>F</b> cerca de una casa para crear un campo.</div>
+      <div>4) Amplía producción con granjas y almacenes para sostener misiones largas.</div>
+    </div>`;
   right.appendChild(guide);
 
   panel.appendChild(left); panel.appendChild(right);
@@ -3115,10 +3192,10 @@ function rebuildInteriorDoorsFromGrid() {
         else if (type === 'mesopotamian_house') intId = 'house';
         else if (type === 'house_isolated') intId = 'house_player_home';
         else if (type === 'mesopotamian_baths') intId = 'house_large';
-        else if (type === 'soviet_block') intId = 'house';
+        else if (type === 'soviet_block') intId = 'residential_tower';
         else if (type === 'party_hq') intId = 'house_large';
-        else if (type === 'soviet_superblock') intId = 'house_large';
-        else if (type === 'soviet_superblock_b') intId = 'house_large';
+        else if (type === 'soviet_superblock') intId = 'residential_tower';
+        else if (type === 'soviet_superblock_b') intId = 'residential_tower';
         else if (type === 'state_clinic') intId = 'house_large';
         else if (type === 'checkpoint_gate') intId = 'house-small';
         else if (type === 'stone_house') intId = 'house';
@@ -3167,6 +3244,16 @@ function setupHomePrologueSpawn(anchorCol, anchorRow) {
           if (grid[rr][cc]) grid[rr][cc] = null;
           if (tileBiome[rr] && tileBiome[rr][cc] !== 'water') tileBiome[rr][cc] = 'road';
         } catch (e) {}
+      }
+    }
+    for (let i = entities.length - 1; i >= 0; i--) {
+      const ent = entities[i];
+      if (!ent || (ent.kind !== 'tree' && ent.kind !== 'resource')) continue;
+      const ec = (typeof ent.col === 'number') ? ent.col : (typeof ent.x === 'number' ? Math.floor(ent.x) : null);
+      const er = (typeof ent.row === 'number') ? ent.row : (typeof ent.y === 'number' ? Math.floor(ent.y) : null);
+      if (ec === null || er === null) continue;
+      if (ec >= homeCol - 1 && ec <= homeCol + homeW + 1 && er >= homeRow - 1 && er <= homeRow + homeH + 1) {
+        entities.splice(i, 1);
       }
     }
 
@@ -4183,9 +4270,9 @@ function spawnVillage(baseCol, baseRow, opts) {
       }
       // Priestess at the temple — story NPC
       const templeH = houses.find(h => h.variant === 'temple') || houses[0];
-      const priestess = spawnNPC(epochNow === 'urss' ? 'Konstantin Markov' : 'Sacerdotisa Enlil-Ama', templeH.c + 1, templeH.r + 1);
+      const priestess = spawnNPC(epochNow === 'urss' ? 'Comisaria Irina Markova' : 'Sacerdotisa Enlil-Ama', templeH.c + 1, templeH.r + 1);
       if (priestess) {
-        priestess.npcType = 'priestess';
+        priestess.npcType = (epochNow === 'urss') ? 'commissar' : 'priestess';
         priestess.isStoryNPC = true;
         priestess._storyLines = (epochNow === 'urss')
           ? [
@@ -4208,6 +4295,17 @@ function spawnVillage(baseCol, baseRow, opts) {
               'Trae al templo cinco haces de cebada y tres piedras del río para el altar.',
               '[ Misión: Reúne 5 cebada + 3 piedra para el ritual del templo ]'
             ];
+        if (epochNow === 'urss') {
+          try {
+            window._storyTargets = window._storyTargets || {};
+            window._storyTargets.commissar = {
+              id: priestess.id,
+              col: priestess.col,
+              row: priestess.row,
+              city: 'Novozarya'
+            };
+          } catch (e) {}
+        }
       }
       // Scribe in the administrative district — story NPC
       const scribeH = houses.length > 2 ? houses[2] : houses[houses.length - 1];
@@ -4433,7 +4531,7 @@ function movementMultiplier(col, row) {
 function tryMovePlayer(dx, dy) {
   const nextCol = player.col + dx;
   const nextRow = player.row + dy;
-  if (!canWalkTo(nextCol, nextRow)) return;
+  if (!canWalkTo(nextCol, nextRow, { allowWater: true })) return;
   player.col = nextCol;
   player.row = nextRow;
 }
@@ -4476,7 +4574,8 @@ function findNearestWalkable(col, row, maxRadius = 12) {
   return { col, row }; // fallback: original position
 }
 
-function canWalkTo(col, row) {
+function canWalkTo(col, row, options = null) {
+  const allowWater = !!(options && options.allowWater);
   if (window.currentInterior) {
     const interior = window.currentInterior;
     const cols = interior.width || interior.cols || (interior.tiles && interior.tiles[0] ? interior.tiles[0].length : 8);
@@ -4484,15 +4583,15 @@ function canWalkTo(col, row) {
     if (col < 0 || col >= cols || row < 0 || row >= rows) return false;
     const tile = (interior.tiles && interior.tiles[row] && interior.tiles[row][col]) ? interior.tiles[row][col] : 'floor';
     // wall, furniture blocking, door is passable (triggers exit)
-    const blocked = new Set(['wall','bed','table','chest','pot','firepit']);
+    const blocked = new Set(['wall']);
     return !blocked.has(tile);
   }
   if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return false;
   const biome = (tileBiome[row] && tileBiome[row][col]) || null;
   // Logistics corridors and roads are always pass-through ground.
   if (biome === 'canal_road' || biome === 'road' || biome === 'concrete_road') return true;
-  // Water remains non-walkable (except explicit corridor override above).
-  if (biome === 'water' || isRiver(col, row)) return false;
+  // Water remains non-walkable unless explicitly allowed (player swimming).
+  if (!allowWater && (biome === 'water' || isRiver(col, row))) return false;
   const cell = grid[row][col];
   if (cell) {
     const type = (typeof cell === 'string') ? cell : (cell.type || '');
@@ -4728,23 +4827,24 @@ function generateMap(mapType) {
   // ── 11. Epoch flavor pass (URSS) ──
   try {
     if ((window._currentEpoch || 'mesopotamia') === 'urss') {
-      // Convert terrain feel to cold soviet town surroundings: gray steppe, snow patches, mountain belts
+      // Keep soviet terrain colder, but with healthier green balance (less gray/snow look).
       for (let r = 0; r < ROWS; r++) {
         for (let c = 0; c < COLS; c++) {
           if (rFullMap[r][c] || (window._CANAL_MAP && window._CANAL_MAP[r] && window._CANAL_MAP[r][c])) continue;
           const b = tileBiome[r][c];
-          if (b === 'saline') tileBiome[r][c] = Math.random() < 0.82 ? 'saline' : 'hills';
-          else if (b === 'marsh') tileBiome[r][c] = Math.random() < 0.45 ? 'saline' : 'alluvial';
+          if (b === 'saline') tileBiome[r][c] = Math.random() < 0.54 ? 'saline' : (Math.random() < 0.62 ? 'steppe' : 'alluvial');
+          else if (b === 'marsh') tileBiome[r][c] = Math.random() < 0.22 ? 'saline' : 'alluvial';
           else if (b === 'alluvial') {
             const roll = Math.random();
-            tileBiome[r][c] = roll < 0.28 ? 'steppe' : (roll < 0.40 ? 'saline' : 'alluvial');
+            tileBiome[r][c] = roll < 0.22 ? 'steppe' : (roll < 0.30 ? 'saline' : (roll < 0.38 ? 'grass' : 'alluvial'));
           } else if (b === 'riparian') {
-            tileBiome[r][c] = Math.random() < 0.34 ? 'forest' : (Math.random() < 0.45 ? 'steppe' : 'riparian');
+            tileBiome[r][c] = Math.random() < 0.48 ? 'forest' : (Math.random() < 0.60 ? 'grass' : 'riparian');
           }
 
           if (r < Math.floor(ROWS * 0.26)) {
-            if (Math.random() < 0.52) tileBiome[r][c] = 'hills';
-            else if (Math.random() < 0.34) tileBiome[r][c] = 'saline';
+            if (Math.random() < 0.35) tileBiome[r][c] = 'hills';
+            else if (Math.random() < 0.18) tileBiome[r][c] = 'saline';
+            else if (Math.random() < 0.24) tileBiome[r][c] = 'forest';
           }
         }
       }
@@ -4759,9 +4859,10 @@ function generateMap(mapType) {
           const eastBand = c > Math.floor(COLS * 0.82);
           if (!westBand && !eastBand) continue;
           const ridgeRoll = Math.random();
-          if (ridgeRoll < 0.62) tileBiome[r][c] = 'hills';
-          else if (ridgeRoll < 0.84) tileBiome[r][c] = 'saline';
-          else tileBiome[r][c] = 'steppe';
+          if (ridgeRoll < 0.56) tileBiome[r][c] = 'hills';
+          else if (ridgeRoll < 0.68) tileBiome[r][c] = 'saline';
+          else if (ridgeRoll < 0.84) tileBiome[r][c] = 'steppe';
+          else tileBiome[r][c] = 'forest';
         }
       }
 
@@ -4846,6 +4947,14 @@ function drawBuilding(col, row, type, alpha) {
       if (hasRegisteredSprite(districtVariant)) useKey = districtVariant;
     }
     if (useKey) {
+      let spriteW = W;
+      let spriteH = H;
+      let spriteAnchorY = y + H;
+      if (type === 'house_isolated') {
+        spriteW = W * 1.03;
+        spriteH = H * 1.55;
+        spriteAnchorY = y + H * 1.03;
+      }
       // If zoomed out, draw a simplified block for performance and to avoid floating look
       if (viewMode === 'iso' && zoom < 0.6) {
         try {
@@ -4855,7 +4964,7 @@ function drawBuilding(col, row, type, alpha) {
           ctx.restore();
         } catch (e) {}
       } else {
-        drawEntitySpriteAt(useKey, x + W * 0.5, y + H, W, H, { ignoreEntityScale: true });
+        drawEntitySpriteAt(useKey, x + W * 0.5, spriteAnchorY, spriteW, spriteH, { ignoreEntityScale: true });
       }
       ctx.restore();
       return;
@@ -5416,6 +5525,28 @@ function drawWorldMapOverlay(W, H) {
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
+    try {
+      const target = getCurrentStoryTarget();
+      if (target) {
+        const tx = mapX + (target.col + 0.5) * cell;
+        const ty = mapY + (target.row + 0.5) * cell;
+        const rr = Math.max(4, cell * 0.75);
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,210,122,0.95)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(tx, ty, rr, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(255,210,122,0.95)';
+        ctx.fillRect(tx - 1, ty - rr - 7, 2, 8);
+        ctx.font = 'bold 10px sans-serif';
+        ctx.fillStyle = '#FFD27A';
+        ctx.textAlign = 'left';
+        ctx.fillText(target.city, tx + rr + 4, ty - rr - 2);
+        ctx.restore();
+      }
+    } catch (e) {}
+
     if (window.currentInterior) {
       ctx.fillStyle = 'rgba(0,0,0,0.7)';
       ctx.fillRect(mapX + 10, mapY + mapH - 34, 214, 24);
@@ -5758,7 +5889,7 @@ function render() {
     try { drawMountainsBackground(ctx, W, H); } catch (e) {}
 
   // Update player movement in free mode (continuous)
-  if (!editMode && !worldMapOverlayVisible && !isPlayerDowned(now)) {
+  if (!editMode && !worldMapOverlayVisible && !isPlayerDowned(now) && !isPrologueMovementLocked()) {
     // move player by tiles in small steps to avoid skipping collisions when sprinting
     function applyPlayerMoveTiles(dxTiles, dyTiles) {
       try {
@@ -5774,7 +5905,7 @@ function render() {
           const tryY = player.y + stepDy;
           const tcol = Math.floor(tryX);
           const trow = Math.floor(tryY);
-          if (canWalkTo(tcol, trow)) {
+          if (canWalkTo(tcol, trow, { allowWater: true })) {
             player.x = tryX; player.y = tryY;
             player.col = Math.floor(player.x); player.row = Math.floor(player.y);
             moved = true;
@@ -6175,6 +6306,50 @@ function render() {
               drawEntitySpriteAt('interior_chest', x + ts*0.5, y + ts, ts*0.78, ts*0.68);
             } else if (t === 'firepit') {
               drawEntitySpriteAt('interior_firepit', x + ts*0.5, y + ts, ts*0.80, ts*0.85);
+            } else if (t === 'stairs_up') {
+              ctx.fillStyle = '#9C7A4B'; ctx.fillRect(x + ts*0.12, y + ts*0.14, ts*0.76, ts*0.72);
+              ctx.fillStyle = '#B8925C';
+              for (let si = 0; si < 4; si++) {
+                const sy = y + ts*0.18 + si * ts * 0.16;
+                ctx.fillRect(x + ts*0.16, sy, ts*0.68, ts*0.1);
+              }
+              ctx.fillStyle = '#F2D59A';
+              ctx.beginPath();
+              ctx.moveTo(x + ts*0.5, y + ts*0.2);
+              ctx.lineTo(x + ts*0.66, y + ts*0.4);
+              ctx.lineTo(x + ts*0.58, y + ts*0.4);
+              ctx.lineTo(x + ts*0.58, y + ts*0.56);
+              ctx.lineTo(x + ts*0.42, y + ts*0.56);
+              ctx.lineTo(x + ts*0.42, y + ts*0.4);
+              ctx.lineTo(x + ts*0.34, y + ts*0.4);
+              ctx.closePath();
+              ctx.fill();
+            } else if (t === 'stairs_down') {
+              ctx.fillStyle = '#7A5C38'; ctx.fillRect(x + ts*0.12, y + ts*0.14, ts*0.76, ts*0.72);
+              ctx.fillStyle = '#946E43';
+              for (let si = 0; si < 4; si++) {
+                const sy = y + ts*0.18 + si * ts * 0.16;
+                ctx.fillRect(x + ts*0.16, sy, ts*0.68, ts*0.1);
+              }
+              ctx.fillStyle = '#DAB87E';
+              ctx.beginPath();
+              ctx.moveTo(x + ts*0.5, y + ts*0.58);
+              ctx.lineTo(x + ts*0.66, y + ts*0.38);
+              ctx.lineTo(x + ts*0.58, y + ts*0.38);
+              ctx.lineTo(x + ts*0.58, y + ts*0.24);
+              ctx.lineTo(x + ts*0.42, y + ts*0.24);
+              ctx.lineTo(x + ts*0.42, y + ts*0.38);
+              ctx.lineTo(x + ts*0.34, y + ts*0.38);
+              ctx.closePath();
+              ctx.fill();
+            } else if (t === 'elevator') {
+              ctx.fillStyle = '#626A75'; ctx.fillRect(x + ts*0.16, y + ts*0.1, ts*0.68, ts*0.82);
+              ctx.fillStyle = '#939EAD'; ctx.fillRect(x + ts*0.22, y + ts*0.16, ts*0.56, ts*0.58);
+              ctx.fillStyle = '#414955'; ctx.fillRect(x + ts*0.48, y + ts*0.16, ts*0.04, ts*0.58);
+              ctx.fillStyle = '#FFD27A';
+              ctx.beginPath();
+              ctx.arc(x + ts*0.72, y + ts*0.84, Math.max(2, ts*0.06), 0, Math.PI * 2);
+              ctx.fill();
             }
           }
           // floor tile groove lines
@@ -6189,10 +6364,19 @@ function render() {
 
       // Exit prompt: show near door tile
       try {
+        ctx.save();
+        ctx.font = Math.max(10, Math.floor(12 * (ts / 32))) + 'px sans-serif';
+        ctx.fillStyle = 'rgba(255,235,185,0.95)';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.fillText(interior._floorLabel || 'Interior', 12, 10);
+        ctx.restore();
+
         const ec = interior.entryCol || 1;
         const er = (interior.height || iRows) - 2;
+        const hasExitDoor = !!(interior.tiles && interior.tiles[er] && interior.tiles[er][ec] === 'door');
         const px2 = Math.floor(player.x), py2 = Math.floor(player.y);
-        const nearDoor = Math.abs(px2 - ec) <= 1 && Math.abs(py2 - er) <= 1;
+        const nearDoor = hasExitDoor && Math.abs(px2 - ec) <= 1 && Math.abs(py2 - er) <= 1;
         if (nearDoor) {
           const sp = worldToScreen(player.x + 0.5, player.y - 0.5);
           ctx.save();
@@ -6402,7 +6586,9 @@ function render() {
         } else {
           const biome = tileBiome[r][c] || 'sand';
           // micro-tiles inside each tile for higher-detail landscapes
-          const subdiv = cameraBusy ? 1 : Math.min(4, Math.max(1, Math.floor(tileSize / 8)));
+          // Allow subdivisions even when camera is busy if tileSize is large enough (zoomed in)
+          const allowSubdivEvenBusy = tileSize > 24;
+          const subdiv = (cameraBusy && !allowSubdivEvenBusy) ? 1 : Math.min(4, Math.max(1, Math.floor(tileSize / 8)));
           if (subdiv > 1) {
             const sw = tileSize / subdiv;
             for (let sy = 0; sy < subdiv; sy++) {
@@ -6526,7 +6712,7 @@ function render() {
     for (let i = 0; i < entities.length; i++) {
       if (entities[i] && entities[i].kind === 'tree') { hasTreeEntities = true; break; }
     }
-    if (!hasTreeEntities) drawTreesVisible();
+    if (!window.currentInterior && !hasTreeEntities) drawTreesVisible();
   } catch (e) {}
 
   // ── BUILDINGS ─────────────────────────────────────────────
@@ -6573,8 +6759,16 @@ function render() {
     // update flying jet patrol paths each frame
     if (ent._flyLoop) {
       const t = now / 3500;
+      const prevX = ent.x;
+      const prevY = ent.y;
       ent.x = (ent._baseX ?? ent.col) + Math.cos(t + (ent._flyPhase || 0)) * (ent._flyRadius || 8);
       ent.y = (ent._baseY ?? ent.row) + Math.sin(t + (ent._flyPhase || 0)) * (ent._flyRadius || 8) * 0.55;
+      // track movement direction so the sprite faces forward
+      const dx = ent.x - prevX;
+      const dy = ent.y - prevY;
+      if (Math.abs(dx) > 0.0001 || Math.abs(dy) > 0.0001) {
+        ent._flyAngle = Math.atan2(dy, dx);
+      }
     }
     // ensure continuous position fields for smooth movement
     if (typeof ent.x !== 'number') ent.x = ent.col;
@@ -6607,10 +6801,9 @@ function render() {
         const { w, h } = getIsoTileSize();
         // different visuals per subtype
         if (subtype === 'wheat') {
-          const sizeW = w * 0.85 * pulse;
-          const sizeH = h * 0.85 * pulse;
-          ctx.fillStyle = '#DAA520';
-          drawDiamond(x, y, sizeW, sizeH, ctx.fillStyle, null, null);
+          const sizeW = Math.max(14, w * 0.92 * pulse);
+          const sizeH = Math.max(14, h * 1.1 * pulse);
+          drawEntitySpriteAt('wheat', x, y + h * 0.12, sizeW, sizeH, { ignoreEntityScale: true });
         } else if (subtype === 'wood') {
           // draw a small log with grain marks
           const lw = Math.max(6, Math.floor(w * 0.36 * pulse));
@@ -6620,21 +6813,25 @@ function render() {
           ctx.fillStyle = '#7A4A2A';
           for (let i=0;i<3;i++) ctx.fillRect(lx + 2 + i* (lw/4), ly + 2 + (i%2), 1, lh-4);
         } else if (subtype === 'stone') {
-          // draw a small stone/rock cluster
-          const rw = Math.max(6, Math.floor(w * 0.5 * pulse));
-          const rh = Math.max(6, Math.floor(h * 0.4 * pulse));
-          const rx = x - rw/2, ry = y - rh*0.3;
-          ctx.fillStyle = '#888';
-          ctx.beginPath();
-          ctx.ellipse(rx + rw*0.45, ry + rh*0.5, rw*0.45, rh*0.4, 0, 0, Math.PI*2);
-          ctx.fill();
-          ctx.fillStyle = '#6f6f6f';
-          ctx.beginPath();
-          ctx.ellipse(rx + rw*0.2, ry + rh*0.55, rw*0.18, rh*0.28, 0, 0, Math.PI*2);
-          ctx.fill();
-          ctx.beginPath();
-          ctx.ellipse(rx + rw*0.7, ry + rh*0.6, rw*0.18, rh*0.25, 0, 0, Math.PI*2);
-          ctx.fill();
+          const rw = Math.max(10, Math.floor(w * 0.7 * pulse));
+          const rh = Math.max(10, Math.floor(h * 0.7 * pulse));
+          const stoneSprite = (window._ENTITY_BITMAPS && window._ENTITY_BITMAPS['stone']) || (window._SPRITE_IMAGES && window._SPRITE_IMAGES['stone']);
+          if (stoneSprite) {
+            try { ctx.save(); ctx.imageSmoothingEnabled = false; ctx.drawImage(stoneSprite, x - rw/2, y - rh*0.5, rw, rh); ctx.restore(); } catch(e) {}
+          } else {
+            const rx = x - rw/2, ry = y - rh*0.3;
+            ctx.fillStyle = '#888';
+            ctx.beginPath();
+            ctx.ellipse(rx + rw*0.45, ry + rh*0.5, rw*0.45, rh*0.4, 0, 0, Math.PI*2);
+            ctx.fill();
+            ctx.fillStyle = '#6f6f6f';
+            ctx.beginPath();
+            ctx.ellipse(rx + rw*0.2, ry + rh*0.55, rw*0.18, rh*0.28, 0, 0, Math.PI*2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.ellipse(rx + rw*0.7, ry + rh*0.6, rw*0.18, rh*0.25, 0, 0, Math.PI*2);
+            ctx.fill();
+          }
         } else if (subtype === 'mountain') {
           try {
             const { w: iw, h: ih } = getIsoTileSize();
@@ -6674,16 +6871,21 @@ function render() {
         const cx = x + tileSize*0.5 - sz*0.5;
         const cy = y + tileSize*0.5 - sz*0.5;
         if (subtype === 'wheat') {
-          ctx.fillStyle = '#DAA520'; ctx.fillRect(cx, cy, sz, sz);
+          const spriteSize = Math.max(12, sz * 1.25);
+          drawEntitySpriteAt('wheat', x + tileSize * 0.5, y + tileSize * 0.72, spriteSize, spriteSize, { ignoreEntityScale: true });
         } else if (subtype === 'wood') {
           // draw a plank with grain
           ctx.fillStyle = '#8B5A38'; ctx.fillRect(cx, cy + sz*0.15, sz, sz*0.7);
           ctx.fillStyle = '#7A4A2A';
           for (let i=0;i<3;i++) ctx.fillRect(cx + 2 + i*(sz/4), cy + sz*0.2, 1, sz*0.6);
         } else if (subtype === 'stone') {
-          // small rock block
-          ctx.fillStyle = '#808080'; ctx.fillRect(cx, cy + sz*0.1, sz, sz*0.8);
-          ctx.fillStyle = '#6b6b6b'; ctx.fillRect(cx + 2, cy + sz*0.25, sz*0.25, sz*0.5);
+          const stoneSprite = (window._ENTITY_BITMAPS && window._ENTITY_BITMAPS['stone']) || (window._SPRITE_IMAGES && window._SPRITE_IMAGES['stone']);
+          if (stoneSprite) {
+            try { ctx.save(); ctx.imageSmoothingEnabled = false; ctx.drawImage(stoneSprite, cx, cy, sz, sz); ctx.restore(); } catch(e) {}
+          } else {
+            ctx.fillStyle = '#808080'; ctx.fillRect(cx, cy + sz*0.1, sz, sz*0.8);
+            ctx.fillStyle = '#6b6b6b'; ctx.fillRect(cx + 2, cy + sz*0.25, sz*0.25, sz*0.5);
+          }
         } else if (subtype === 'campfire' || subtype === 'furnace') {
           // campfire: stone ring + animated fire glow
           const fcx2 = x + tileSize*0.5;
@@ -6785,7 +6987,14 @@ function render() {
           drawCharacterPixels(ctx, palette, Math.floor(-spriteW * 0.5), Math.floor(-spriteH * 0.65), scale, { dir: 'right', frame: 0 });
           ctx.restore();
         } else {
-          drawCharacterPixels(ctx, palette, px, py, scale, { dir, frame: walkFrame });
+          // If NPC has a custom entity-pixels sprite (e.g. commissar), prefer it
+          const npcSpriteKey = ent.npcType === 'commissar' ? 'commissar' : (ent.npcType === 'priestess' ? 'priestess' : null);
+          const npcCustomSprite = npcSpriteKey && ((window._ENTITY_BITMAPS && window._ENTITY_BITMAPS[npcSpriteKey]) || (window._SPRITE_IMAGES && window._SPRITE_IMAGES[npcSpriteKey]));
+          if (npcCustomSprite) {
+            try { ctx.save(); ctx.imageSmoothingEnabled = false; ctx.drawImage(npcCustomSprite, px, py, spriteW, spriteH); ctx.restore(); } catch(e) {}
+          } else {
+            drawCharacterPixels(ctx, palette, px, py, scale, { dir, frame: walkFrame });
+          }
         }
         // draw hp bar above the tile
         const hpPct = Math.max(0, (ent.hp || 0) / (ent.maxHp || 1));
@@ -6795,6 +7004,31 @@ function render() {
         }
         if (ent._flashUntil && now < ent._flashUntil) {
           ctx.fillStyle = 'rgba(220,40,40,0.25)'; ctx.fillRect(x + tileSize*0.15, y + tileSize*0.15, tileSize*0.7, tileSize*0.7);
+        }
+        const missionMarkerType = !downedEnt ? getNpcMissionMarkerType(ent) : null;
+        if (missionMarkerType) {
+          try {
+            const isPrimaryMarker = missionMarkerType === 'primary';
+            const marker = worldToScreen(ent.x + 0.5, ent.y - 0.28);
+            const pulse = 1 + Math.sin((now || Date.now()) * 0.012) * 0.08;
+            const radius = Math.max(8, tileSize * 0.12) * pulse;
+            const ringColor = isPrimaryMarker ? 'rgba(255,92,92,0.95)' : 'rgba(255,210,90,0.95)';
+            const textColor = isPrimaryMarker ? '#FF6B6B' : '#FFD25A';
+            ctx.save();
+            ctx.fillStyle = 'rgba(12,12,12,0.78)';
+            ctx.beginPath();
+            ctx.arc(marker.x, marker.y - 16, radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = ringColor;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.fillStyle = textColor;
+            ctx.font = `bold ${Math.max(12, Math.round(tileSize * 0.24))}px sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('!', marker.x, marker.y - 16);
+            ctx.restore();
+          } catch (e) {}
         }
       } catch (e) {
         // fallback to simple portrait box
@@ -6899,11 +7133,34 @@ function render() {
       } catch (e) {}
     } else if (ent.kind === 'ambient' && ent.subtype === 'soviet_fighter_jet') {
       if (isOffscreen) return;
+      // flying patrol jets are at high altitude — only visible when zoomed in enough
+      if (ent._flyLoop && zoom < 0.52) return;
       try {
-        const bob = Math.sin(now / 520 + ((ent.col || 0) * 3 + (ent.row || 0) * 5)) * Math.max(1, tileSize * 0.04);
+        const bob = ent._flyLoop
+          ? Math.sin(now / 520 + ((ent.col || 0) * 3 + (ent.row || 0) * 5)) * Math.max(1, tileSize * 0.04)
+          : 0;
         const jetW = Math.max(tileSize * 1.9, tileSize * (ent.size || 1.9));
         const jetH = Math.max(tileSize * 0.9, jetW * 0.52);
-        drawEntitySpriteAt('soviet_fighter_jet', x + tileSize * 0.5, y + tileSize * 0.22 - bob, jetW, jetH);
+        const cx2 = x + tileSize * 0.5;
+        const cy2 = y + tileSize * 0.22 - bob;
+        ctx.save();
+        if (ent._flyLoop) {
+          // draw a tiny distant shadow far below to sell the altitude
+          ctx.globalAlpha = 0.12;
+          ctx.fillStyle = '#000';
+          ctx.beginPath();
+          ctx.ellipse(cx2, cy2 + tileSize * 0.55, jetW * 0.22, jetH * 0.1, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.globalAlpha = 1.0;
+          // rotate sprite to face direction of travel
+          const angle = ent._flyAngle ?? 0;
+          ctx.translate(cx2, cy2);
+          ctx.rotate(angle);
+          drawEntitySpriteAt('soviet_fighter_jet', 0, 0, jetW, jetH);
+        } else {
+          drawEntitySpriteAt('soviet_fighter_jet', cx2, cy2, jetW, jetH);
+        }
+        ctx.restore();
       } catch (e) {}
     } else if (ent.kind === 'ambient') {
       if (isOffscreen) return;
@@ -6956,6 +7213,7 @@ function render() {
       }
       // small grass/weed variants: draw a tiny tuft
       if (variant === 'tallgrass' || variant === 'weed') {
+        if ((window._currentEpoch || 'mesopotamia') === 'urss') return;
         const tpl = GLOBAL_TREE_TEMPLATES[6];
         const scale = Math.max(1, Math.floor(tileSize / 7 * (ent.size || 0.6)));
         const cx = Math.floor(x + tileSize * 0.5);
@@ -6970,6 +7228,7 @@ function render() {
           try { window._drawCalls = (window._drawCalls || 0) + 1; } catch (e) {}
         }
       } else if (variant === 'hedge') {
+        if ((window._currentEpoch || 'mesopotamia') === 'urss') return;
         const tpl = GLOBAL_TREE_TEMPLATES[5];
         const scale = Math.max(1, Math.floor(tileSize / 6 * (ent.size || 0.8)));
         const cx = Math.floor(x + tileSize * 0.5);
@@ -6997,6 +7256,7 @@ function render() {
           const atlas = window._TREE_ATLAS;
           if (atlas && atlas.map) {
             let idx = pickForestTreeTemplateIndex(variant, ent.col || 0, ent.row || 0);
+            if (idx < 0) return;
             idx = Math.max(0, Math.min(GLOBAL_TREE_TEMPLATES.length - 1, idx));
             const meta = atlas.map[idx];
             if (meta) {
@@ -7009,12 +7269,14 @@ function render() {
         // map variants to templates (only if atlas didn't draw)
         if (!atlasDrawn) {
         let idx = pickForestTreeTemplateIndex(variant, ent.col || 0, ent.row || 0);
+        if (idx < 0) return;
         idx = Math.max(0, Math.min(GLOBAL_TREE_TEMPLATES.length - 1, idx));
         const tpl = GLOBAL_TREE_TEMPLATES[idx];
         // scale trees based on tile size and entity size hint
         const lodFactor = zoom >= GRAPHICS_CONFIG.smoothingThreshold ? 1 : 0.8;
         // keep trees proportional to tile/building scale
         let baseScale = Math.floor((tileSize / 4.8) * lodFactor);
+        if ((window._currentEpoch || 'mesopotamia') === 'urss') baseScale = Math.max(1, Math.floor(baseScale / 3));
         if (ent.variant === 'tall' || ent.variant === 'tallslim') baseScale = Math.floor(baseScale * 1.2);
         const scale = Math.max(1, Math.floor(baseScale * (ent.size || 1)));
         // compute sprite dims
@@ -7673,6 +7935,37 @@ function render() {
       if (typeof dog.y !== 'number') dog.y = (typeof dog.row === 'number' ? dog.row : player.y) + 0.5;
       if (!dog.behavior) dog.behavior = 'follow';
       if (typeof dog.loyalty !== 'number') dog.loyalty = 60;
+      
+      // Cancel play mode if timeout expires
+      if (dog.playMode && dog.playTimeout && now >= dog.playTimeout) {
+        dog.playMode = false;
+        notify('El perro se aburre esperando...');
+      }
+      
+      // Handle fetch/play mode
+      if (dog.fetchMode && dog.fetchTarget) {
+        const targetX = dog.fetchTarget.col + 0.5;
+        const targetY = dog.fetchTarget.row + 0.5;
+        const distToTarget = Math.hypot(targetX - dog.x, targetY - dog.y);
+        if (distToTarget > 0.3) {
+          // Move towards target
+          dog.moveTarget = { x: targetX, y: targetY };
+          const baseSpd = typeof dog._baseSpeed === 'number' ? dog._baseSpeed : (dog._baseSpeed = dog.speed || 1.8);
+          dog.speed = Math.max(baseSpd * 1.3, 2.4); // faster during fetch
+        } else {
+          // Reached target - wait a moment then return
+          if (!dog._fetchWaitUntil) {
+            dog._fetchWaitUntil = now + 600; // 600ms wait
+          } else if (now >= dog._fetchWaitUntil) {
+            delete dog._fetchWaitUntil;
+            dog.fetchMode = false;
+            dog.fetchTarget = null;
+            dog.behavior = 'follow'; // back to following player
+            notify('¡El perro vuelve corriendo, satisfecho del juego!');
+          }
+        }
+      }
+      
       if (dog.behavior === 'follow') {
         const distToPlayer = Math.hypot((player.x + 0.5) - dog.x, (player.y + 0.5) - dog.y);
         if ((!dog.nextMove || now >= dog.nextMove) && distToPlayer > 1.25) {
@@ -7845,7 +8138,7 @@ function render() {
       window._deferredBuildings = [];
     }
   } catch(e) {}
-  try { drawTreesInFrontOfPlayer(); } catch (e) {}
+  try { if (!window.currentInterior) drawTreesInFrontOfPlayer(); } catch (e) {}
 
   // ── NIGHT TORCH VIGNETTE ─────────────────────────────────
   // Radial gradient: transparent at player centre → dark at edges.
@@ -7883,13 +8176,29 @@ function render() {
       const doorRow2 = iRows - 2;
       const doorCol2 = interior.entryCol || 1;
       const px2 = Math.floor(player.x), py2 = Math.floor(player.y);
-      if (py2 >= doorRow2 && Math.abs(px2 - doorCol2) <= 1) {
+      const hasExitDoor2 = !!(interior.tiles && interior.tiles[doorRow2] && interior.tiles[doorRow2][doorCol2] === 'door');
+      if (hasExitDoor2 && py2 >= doorRow2 && Math.abs(px2 - doorCol2) <= 1) {
         _interactionScanCache = { kind: 'interior-exit', actionText: 'Salir', showPrompt: true };
         window._interactionTarget = _interactionScanCache;
       } else if (interior._furniture) {
+        const nearStairsUp = interior._furniture.find(f => f.kind === 'stairs_up' &&
+          Math.abs(f.col - px2) <= 1 && Math.abs(f.row - py2) <= 1);
+        const nearStairsDown = interior._furniture.find(f => f.kind === 'stairs_down' &&
+          Math.abs(f.col - px2) <= 1 && Math.abs(f.row - py2) <= 1);
+        const nearElevator = interior._furniture.find(f => f.kind === 'elevator' &&
+          Math.abs(f.col - px2) <= 1 && Math.abs(f.row - py2) <= 1);
         const f = interior._furniture.find(f => f.kind === 'chest' &&
           Math.abs(f.col - px2) <= 1 && Math.abs(f.row - py2) <= 1);
-        if (f) {
+        if (nearStairsUp) {
+          _interactionScanCache = { kind: 'interior-stairs-up', ref: nearStairsUp, actionText: 'Subir planta', showPrompt: true };
+          window._interactionTarget = _interactionScanCache;
+        } else if (nearStairsDown) {
+          _interactionScanCache = { kind: 'interior-stairs-down', ref: nearStairsDown, actionText: 'Bajar planta', showPrompt: true };
+          window._interactionTarget = _interactionScanCache;
+        } else if (nearElevator) {
+          _interactionScanCache = { kind: 'interior-elevator', ref: nearElevator, actionText: 'Usar ascensor', showPrompt: true };
+          window._interactionTarget = _interactionScanCache;
+        } else if (f) {
           _interactionScanCache = { kind: 'interior-chest', ref: f, actionText: f._looted ? 'Cofre vacío' : 'Abrir cofre', showPrompt: true };
           window._interactionTarget = _interactionScanCache;
         } else {
@@ -7965,7 +8274,6 @@ function render() {
         } catch (e) {}
         if (bestDoor) _interactionScanCache = { kind: 'door', ref: bestDoor, actionText: 'Entrar', showPrompt: true };
         else if (bestNpc && bestNpc.isStoryNPC) _interactionScanCache = { kind: 'player', ref: bestNpc, actionText: `Hablar con ${bestNpc.name || 'NPC'}`, showPrompt: true };
-        else if (bestPet) _interactionScanCache = { kind: 'pet-dog', ref: bestPet, actionText: `Interactuar con ${bestPet.name || 'perro'}`, showPrompt: true };
         else if (bestGrave) _interactionScanCache = { kind: 'grave', ref: bestGrave, actionText: `Leer: ${bestGrave.name}`, showPrompt: true };
         else if (bestScene) _interactionScanCache = { kind: 'map-scene', ref: bestScene, actionText: bestScene.prompt || 'Examinar', showPrompt: true };
         else if (bestNpc) _interactionScanCache = { kind: 'player', ref: bestNpc, actionText: 'Hablar', showPrompt: true };
@@ -8312,7 +8620,9 @@ function render() {
   try { if (!editMode && !worldMapOverlayVisible && window._gameStarted && !cinematicActive && window._hudVisible) drawMiniMap(ctx, W, H); } catch (e) {}
   // Story objective HUD (top-left, free mode)
   try { if (window._gameStarted && !worldMapOverlayVisible && !cinematicActive && window._hudVisible) drawStoryObjectiveHUD(ctx, W, H); } catch (e) {}
+  try { if (window._gameStarted && !worldMapOverlayVisible && !cinematicActive && window._hudVisible) drawStoryTargetGuidance(ctx, W, H); } catch (e) {}
   try { if (window._gameStarted && !worldMapOverlayVisible && !cinematicActive && window._hudVisible) drawCompactGuideOverlay(ctx, W, H); } catch (e) {}
+  try { if (window._gameStarted) drawPetRadialMenu(ctx, W, H); } catch (e) {}
   // Time speed indicator on canvas (top-center, only when not ×1 or paused)
   try {
     if (window._gameStarted && !editMode && !cinematicActive) {
@@ -8536,6 +8846,7 @@ function placeBuild(col, row) {
       window._missions.forEach(m => {
         if (m.watch && m.watch === ('build.' + selectedTool)) {
           m.progress = (m.progress || 0) + 1;
+          if (m.isSide && !m.done && (m.progress || 0) >= (m.target || 1)) completeSideMission(m);
         }
       });
       // Check if first mission (story mission) is complete
@@ -8580,6 +8891,7 @@ function placeBuildMultiple(rect) {
         window._missions.forEach(m => {
           if (m.watch && m.watch === ('build.' + selectedTool)) {
             m.progress = (m.progress || 0) + placed.length;
+            if (m.isSide && !m.done && (m.progress || 0) >= (m.target || 1)) completeSideMission(m);
           }
         });
         // Check if first mission (story mission) is complete
@@ -8611,6 +8923,78 @@ function demolishCell(col, row) {
   addLog(`Demolido: ${b.name} en (${col},${row})`);
   notify(`${b.name} demolida.`);
 }
+
+function createFieldNearHome() {
+  try {
+    if (startLocked && !window._standaloneEditorMode) return false;
+    if ((player.equipped || '') !== 'stone-hoe') {
+      notify('Equipa la azada de piedra para preparar un campo.');
+      return false;
+    }
+    let nearestHome = null;
+    let nearestDist = Infinity;
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const info = getCellInfo(c, r);
+        if (!info || !info.isBase || !isShelterBuildingType(info.type)) continue;
+        const d = Math.hypot((info.baseCol + 0.5) - player.x, (info.baseRow + 0.5) - player.y);
+        if (d < nearestDist) {
+          nearestDist = d;
+          nearestHome = info;
+        }
+      }
+    }
+    if (!nearestHome || nearestDist > 14) {
+      notify('Acércate a una casa para crear el campo.');
+      return false;
+    }
+
+    const fieldType = (getEpochBuildPalette(window._currentEpoch || 'mesopotamia')[2]) || 'farm';
+    const homeSize = getBuildingSize(nearestHome.type);
+    const cx = nearestHome.baseCol + Math.floor(homeSize.w / 2);
+    const cy = nearestHome.baseRow + Math.floor(homeSize.h / 2);
+    const candidates = [];
+    for (let ring = 2; ring <= 7; ring++) {
+      candidates.push({ c: cx + ring, r: cy });
+      candidates.push({ c: cx - ring, r: cy });
+      candidates.push({ c: cx, r: cy + ring });
+      candidates.push({ c: cx, r: cy - ring });
+      candidates.push({ c: cx + ring, r: cy + ring });
+      candidates.push({ c: cx - ring, r: cy + ring });
+      candidates.push({ c: cx + ring, r: cy - ring });
+      candidates.push({ c: cx - ring, r: cy - ring });
+    }
+
+    for (const pos of candidates) {
+      if (!canPlaceAt(pos.c, pos.r, fieldType)) continue;
+      setBuildingCells(pos.c, pos.r, fieldType);
+      addLog(`Campo preparado cerca de casa (${getBuildingDisplay(fieldType).name}).`);
+      notify('Campo creado con la azada.');
+      gainXP(6);
+      try {
+        if (window._missions && window._missions.length > 0) {
+          window._missions.forEach(m => {
+            if (m.watch === ('build.' + fieldType)) {
+              m.progress = (m.progress || 0) + 1;
+              if (m.isSide && !m.done && (m.progress || 0) >= (m.target || 1)) completeSideMission(m);
+            }
+          });
+          if (window.renderMissions) window.renderMissions();
+        }
+      } catch (e) {}
+      updateUI();
+      return true;
+    }
+
+    notify('No hay espacio libre para un campo cerca de la casa.');
+    return false;
+  } catch (e) {
+    notify('No se pudo preparar el campo.');
+    return false;
+  }
+}
+
+try { window.createFieldNearHome = createFieldNearHome; } catch (e) {}
 
 function endTurn() {
   // kept for backwards compatibility: trigger daily production
@@ -8739,6 +9123,9 @@ function addToInventory(item, qty) {
         if (m.watch && m.watch === item) {
           m.progress = (m.progress || 0) + qty;
           changed = true;
+          if (m.isSide && !m.done && (m.progress || 0) >= (m.target || 1)) {
+            completeSideMission(m);
+          }
         }
       });
       if (changed && window.renderMissions) window.renderMissions();
@@ -8746,6 +9133,24 @@ function addToInventory(item, qty) {
   } catch (err) { }
   // Check if chapter 2 offering is now complete
   try { checkChapter2Completion(); } catch (e) {}
+}
+
+function completeSideMission(mission) {
+  try {
+    if (!mission || mission.done || !mission.isSide) return;
+    mission.done = true;
+    mission.progress = Math.max(mission.progress || 0, mission.target || 1);
+    const reward = mission.reward || {};
+    Object.entries(reward).forEach(([item, amount]) => {
+      const n = Math.max(0, Number(amount) || 0);
+      if (!n) return;
+      inventory[item] = (inventory[item] || 0) + n;
+    });
+    addLog(`Misión secundaria completada: ${mission.title}`);
+    notify(`Completada: ${mission.title}`);
+    try { updateInventory(); } catch (e) {}
+    try { if (window.renderMissions) window.renderMissions(); } catch (e) {}
+  } catch (e) {}
 }
 
 function drawItemIcon(ctx, itemId, w = 28, h = 28) {
@@ -8778,8 +9183,9 @@ function drawItemIcon(ctx, itemId, w = 28, h = 28) {
     return;
   }
   if (id === 'stone') {
-    ctx.fillStyle = '#808080'; ctx.fillRect(5, 8, 18, 12);
-    ctx.fillStyle = '#6b6b6b'; ctx.fillRect(7, 11, 5, 6);
+    const stoneSprite = (window._ENTITY_BITMAPS && window._ENTITY_BITMAPS['stone']) || (window._SPRITE_IMAGES && window._SPRITE_IMAGES['stone']);
+    if (stoneSprite) { try { ctx.save(); ctx.imageSmoothingEnabled = false; ctx.drawImage(stoneSprite, 0, 0, w, h); ctx.restore(); } catch(e) {} }
+    else { ctx.fillStyle = '#808080'; ctx.fillRect(5, 8, 18, 12); ctx.fillStyle = '#6b6b6b'; ctx.fillRect(7, 11, 5, 6); }
     return;
   }
   if (id === 'food' || id === 'berry' || id === 'bush') {
@@ -8810,6 +9216,11 @@ function drawItemIcon(ctx, itemId, w = 28, h = 28) {
   if (id === 'stone-pick') {
     ctx.fillStyle = '#6b6b6b'; ctx.fillRect(5, 8, 14, 5);
     ctx.fillStyle = '#7a4a2a'; ctx.fillRect(15, 11, 3, 12);
+    return;
+  }
+  if (id === 'stone-hoe') {
+    ctx.fillStyle = '#7a4a2a'; ctx.fillRect(13, 7, 2, 15);
+    ctx.fillStyle = '#8f8f8f'; ctx.fillRect(8, 8, 10, 3);
     return;
   }
   if (id === 'stone-sword' || id === 'sword') {
@@ -8856,6 +9267,7 @@ const RECIPES = {
   'plank': { requires: { wood: 1 }, output: { plank: 2 } },
   'stick': { requires: { plank: 1 }, output: { stick: 2 } },
   'stone-pick': { requires: { wood: 2, stone: 3 }, output: { 'stone-pick': 1 } },
+  'stone-hoe': { requires: { wood: 2, stone: 2 }, output: { 'stone-hoe': 1 } },
   'stone-axe': { requires: { wood: 2, stone: 2 }, output: { 'stone-axe': 1 } },
   'stone-sword': { requires: { wood: 1, stone: 4 }, output: { 'stone-sword': 1 } },
   'campfire': { requires: { wood: 3, stone: 2 }, output: { campfire: 1 } },
@@ -8884,6 +9296,17 @@ function craftItem(recipeId, qty = 1) {
     const amount = r.output[out] * qty;
     addToInventory(out, amount);
   }
+  try {
+    if (window._missions && window._missions.length > 0) {
+      window._missions.forEach(m => {
+        if (m.watch === ('craft.' + recipeId)) {
+          m.progress = (m.progress || 0) + qty;
+          if (m.isSide && !m.done && (m.progress || 0) >= (m.target || 1)) completeSideMission(m);
+        }
+      });
+      if (window.renderMissions) window.renderMissions();
+    }
+  } catch (e) {}
   notify(`Has crafteado ${qty} x ${recipeId}`);
   try { saveAppStateDebounced(); } catch (err) {}
   try { updateInventory(); } catch (err) {}
@@ -8891,7 +9314,7 @@ function craftItem(recipeId, qty = 1) {
   return true;
 }
 
-const EQUIPPABLE_ITEMS = new Set(['stone-axe','stone-pick','stone-sword','plank','stick','campfire','furnace','brick-block','beacon','axe','sword','spear','club']);
+const EQUIPPABLE_ITEMS = new Set(['stone-axe','stone-pick','stone-hoe','stone-sword','plank','stick','campfire','furnace','brick-block','beacon','axe','sword','spear','club']);
 
 function isEquippableItem(itemId) {
   return EQUIPPABLE_ITEMS.has(String(itemId || '').toLowerCase());
@@ -10494,6 +10917,161 @@ function createMenuBar() {
   // Dev helpers: inventory and interior doors
   try {
     window.INTERIOR_DOORS = window.INTERIOR_DOORS || [];
+
+    function cloneInteriorTiles(tiles) {
+      try {
+        if (!Array.isArray(tiles)) return [];
+        return tiles.map(row => Array.isArray(row) ? row.slice() : []);
+      } catch (e) {
+        return [];
+      }
+    }
+
+    function applyInteriorFloor(interior, floorIndex) {
+      try {
+        if (!interior) return;
+        const floors = Array.isArray(interior.floors) ? interior.floors : [];
+        if (!floors.length) {
+          interior._floorIndex = 0;
+          interior._floorLabel = 'Planta baja';
+          return;
+        }
+        const idx = Math.max(0, Math.min(floors.length - 1, Math.floor(floorIndex || 0)));
+        const floor = floors[idx] || floors[0] || {};
+        interior._floorIndex = idx;
+        interior._floorLabel = floor.name || `Planta ${idx + 1}`;
+        interior.width = floor.width || (floor.tiles && floor.tiles[0] ? floor.tiles[0].length : interior.width) || 8;
+        interior.height = floor.height || (floor.tiles ? floor.tiles.length : interior.height) || 6;
+        interior.entryCol = (typeof floor.entryCol === 'number') ? floor.entryCol : (typeof interior.entryCol === 'number' ? interior.entryCol : 1);
+        interior.entryRow = (typeof floor.entryRow === 'number') ? floor.entryRow : (typeof interior.entryRow === 'number' ? interior.entryRow : Math.max(1, interior.height - 3));
+        interior.tiles = cloneInteriorTiles(floor.tiles || interior.tiles);
+        interior.npcs = Array.isArray(floor.npcs) ? floor.npcs.map(n => ({ ...n })) : [];
+        interior.chestItems = Array.isArray(floor.chestItems)
+          ? floor.chestItems.slice()
+          : (Array.isArray(interior.chestItems) ? interior.chestItems.slice() : ['wheat']);
+      } catch (e) {}
+    }
+
+    function buildInteriorFurniture(interior) {
+      try {
+        interior._furniture = [];
+        if (!Array.isArray(interior.tiles)) return;
+        for (let r = 0; r < interior.tiles.length; r++) {
+          for (let c = 0; c < interior.tiles[r].length; c++) {
+            const t = interior.tiles[r][c];
+            if (t === 'chest') interior._furniture.push({ kind: 'chest', col: c, row: r });
+            if (t === 'firepit') interior._furniture.push({ kind: 'firepit', col: c, row: r, born: Date.now() });
+            if (t === 'stairs_up') interior._furniture.push({ kind: 'stairs_up', col: c, row: r });
+            if (t === 'stairs_down') interior._furniture.push({ kind: 'stairs_down', col: c, row: r });
+            if (t === 'elevator') interior._furniture.push({ kind: 'elevator', col: c, row: r });
+          }
+        }
+      } catch (e) {}
+    }
+
+    function spawnInteriorNpcsForCurrentFloor(interior) {
+      try {
+        for (let i = entities.length - 1; i >= 0; i--) {
+          if (entities[i] && entities[i]._interiorNpc) entities.splice(i, 1);
+        }
+        if (!Array.isArray(interior.npcs)) return;
+        interior.npcs.forEach((nd, ni) => {
+          try {
+            const names = ((window._currentEpoch || 'mesopotamia') === 'urss')
+              ? ['Mikhail Petrov','Olga Sokolova','Yuri Volkov','Tatiana Smirnova','Nikolai Orlov','Anya Lebedeva']
+              : ['Gilmesh','Enlila','Dumuzi','Ninsun','Uttu','Ninmah','Anu','Enki','Nanna','Utu'];
+            const nm = nd.name || names[ni % names.length];
+            const npc = spawnNPC(nm, nd.col || 1, nd.row || 1);
+            if (npc) {
+              npc._interiorNpc = true;
+              npc.npcType = nd.npcType || 'villager';
+              assignSovietVillagerProfile(npc);
+              npc._interiorBounds = { minC: 1, maxC: (interior.width || 8) - 2, minR: 1, maxR: (interior.height || 6) - 2 };
+              if (Array.isArray(nd.storyLines) && nd.storyLines.length > 0) {
+                npc._storyLines = nd.storyLines.slice();
+                npc.isStoryNPC = true;
+              }
+              if (nd.static === true) {
+                const sc = Math.max(1, Math.floor(nd.col || 1));
+                const sr = Math.max(1, Math.floor(nd.row || 1));
+                npc.patrolRoute = [{ c: sc, r: sr }];
+                npc.patrolLoop = false;
+                npc.nextMove = Date.now() + 12000;
+              }
+            }
+          } catch (e) {}
+        });
+      } catch (e) {}
+    }
+
+    function moveToInteriorFloor(interior, floorIndex, source) {
+      try {
+        if (!interior) return false;
+        const floors = Array.isArray(interior.floors) ? interior.floors : [];
+        if (!floors.length) return false;
+        const from = Math.max(0, Math.min(floors.length - 1, Math.floor(interior._floorIndex || 0)));
+        const to = Math.max(0, Math.min(floors.length - 1, Math.floor(floorIndex || 0)));
+        if (to === from) return false;
+        applyInteriorFloor(interior, to);
+        buildInteriorFurniture(interior);
+        interior._chestItems = Array.isArray(interior.chestItems) ? interior.chestItems.slice() : ['wheat'];
+        spawnInteriorNpcsForCurrentFloor(interior);
+
+        const elevatorTile = (interior._furniture || []).find(f => f.kind === 'elevator');
+        const stairsDown = (interior._furniture || []).find(f => f.kind === 'stairs_down');
+        const stairsUp = (interior._furniture || []).find(f => f.kind === 'stairs_up');
+        let target = null;
+        if (source === 'elevator' && elevatorTile) target = elevatorTile;
+        else if (source === 'stairs_up' && stairsDown) target = stairsDown;
+        else if (source === 'stairs_down' && stairsUp) target = stairsUp;
+        if (!target) target = { col: interior.entryCol || 1, row: interior.entryRow || 1 };
+
+        player.col = Math.max(1, Math.min((interior.width || 8) - 2, Math.floor(target.col)));
+        player.row = Math.max(1, Math.min((interior.height || 6) - 2, Math.floor(target.row)));
+        player.x = player.col;
+        player.y = player.row;
+        notify(`Planta actual: ${interior._floorLabel || ('Planta ' + (to + 1))}`);
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function openInteriorElevatorSelector(interior) {
+      try {
+        const floors = Array.isArray(interior && interior.floors) ? interior.floors : [];
+        if (!floors.length) return false;
+        const options = [];
+        for (let i = 0; i < floors.length && options.length < 9; i++) {
+          const floor = floors[i] || {};
+          options.push({
+            num: options.length + 1,
+            text: floor.name || `Planta ${i + 1}`,
+            action: () => {
+              window._activeDialogue = null;
+              document.body.classList.remove('dialogue-active');
+              try { moveToInteriorFloor(interior, i, 'elevator'); } catch (e) {}
+            }
+          });
+        }
+        window._activeDialogue = {
+          lines: ['Ascensor residencial: selecciona planta.'],
+          idx: 0,
+          npcName: 'Ascensor',
+          options
+        };
+        document.body.classList.add('dialogue-active');
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    try {
+      window.moveToInteriorFloor = moveToInteriorFloor;
+      window.openInteriorElevatorSelector = openInteriorElevatorSelector;
+    } catch (e) {}
+
     window.enterInterior = function(id, doorRef) {
       try {
         fetch('data/interiors/' + id + '.json').then(r => { if (!r.ok) throw new Error('missing'); return r.json(); }).then(data => {
@@ -10510,46 +11088,9 @@ function createMenuBar() {
           entities.length = 0;
           rabbits.length = 0;
           foxes.length = 0;
-          // Spawn interior NPCs from JSON definition
-          if (Array.isArray(data.npcs)) {
-            data.npcs.forEach((nd, ni) => {
-              try {
-                const names = ((window._currentEpoch || 'mesopotamia') === 'urss')
-                  ? ['Mikhail Petrov','Olga Sokolova','Yuri Volkov','Tatiana Smirnova','Nikolai Orlov','Anya Lebedeva']
-                  : ['Gilmesh','Enlila','Dumuzi','Ninsun','Uttu','Ninmah','Anu','Enki','Nanna','Utu'];
-                const nm = nd.name || names[ni % names.length];
-                const npc = spawnNPC(nm, nd.col || 1, nd.row || 1);
-                if (npc) {
-                  npc._interiorNpc = true;
-                  npc.npcType = nd.npcType || 'villager';
-                  assignSovietVillagerProfile(npc);
-                  npc._interiorBounds = { minC: 1, maxC: (data.width||8)-2, minR: 1, maxR: (data.height||6)-2 };
-                  if (Array.isArray(nd.storyLines) && nd.storyLines.length > 0) {
-                    npc._storyLines = nd.storyLines.slice();
-                    npc.isStoryNPC = true;
-                  }
-                  if (nd.static === true) {
-                    const sc = Math.max(1, Math.floor(nd.col || 1));
-                    const sr = Math.max(1, Math.floor(nd.row || 1));
-                    npc.patrolRoute = [{ c: sc, r: sr }];
-                    npc.patrolLoop = false;
-                    npc.nextMove = Date.now() + 12000;
-                  }
-                }
-              } catch (e) {}
-            });
-          }
-          // Store interior furniture entities list for rendering
-          data._furniture = [];
-          if (Array.isArray(data.tiles)) {
-            for (let r = 0; r < data.tiles.length; r++) {
-              for (let c = 0; c < data.tiles[r].length; c++) {
-                const t = data.tiles[r][c];
-                if (t === 'chest') data._furniture.push({ kind:'chest', col:c, row:r });
-                if (t === 'firepit') data._furniture.push({ kind:'firepit', col:c, row:r, born: Date.now() });
-              }
-            }
-          }
+          applyInteriorFloor(data, (typeof data.defaultFloor === 'number') ? data.defaultFloor : 0);
+          buildInteriorFurniture(data);
+          spawnInteriorNpcsForCurrentFloor(data);
           data._chestItems = Array.isArray(data.chestItems) ? data.chestItems.slice() : ['wheat'];
           data._interiorId = id;
           window.currentInterior = data;
@@ -10611,7 +11152,18 @@ function createMenuBar() {
                 try {
                   const target = spawned.find(s => s && !isDownedEntity(s, Date.now()));
                   if (target) {
+                    prologue.lockMovementForIntro = true;
                     openNpcDialogue(target);
+                    try {
+                      if (window._activeDialogue && !window._activeDialogue._fromHomePrologueBriefing) {
+                        window._activeDialogue._fromHomePrologueBriefing = true;
+                        const prevComplete = window._activeDialogue.onComplete;
+                        window._activeDialogue.onComplete = function() {
+                          try { if (typeof prevComplete === 'function') prevComplete(); } catch (e) {}
+                          try { if ((window._storyChapter || 0) < 1) advanceStoryChapter(1); } catch (e) {}
+                        };
+                      }
+                    } catch (e) {}
                   }
                 } catch (e) {}
               }, 700);
@@ -11190,6 +11742,17 @@ let GLOBAL_TREE_TEMPLATES = BUILTIN_TREE_TEMPLATES.slice();
 function pickForestTreeTemplateIndex(variant, col, row) {
   const v = String(variant || '').toLowerCase();
   const seed = tileNoise(col || 0, row || 0, 11, 12);
+  const isUrss = (window._currentEpoch || 'mesopotamia') === 'urss';
+  if (isUrss) {
+    if (v === 'tallgrass' || v === 'weed' || v === 'hedge') return -1;
+    const urssMap = {
+      pine: 0, fir: 0,
+      oak: 1, broad: 1, round: 1,
+      birch: 2, aspen: 2, scrub: 2, bush: 2, shrub: 2,
+      willow: 3, multi: 3, tall: 3, tallslim: 3
+    };
+    return (urssMap[v] !== undefined) ? urssMap[v] : Math.floor(seed * 4);
+  }
   if (v === 'birch' || v === 'aspen' || v === 'pine' || v === 'willow' || v === 'fir') {
     return seed < 0.5 ? 0 : 6;
   }
@@ -11288,6 +11851,7 @@ function drawTreeOcclusionOverlay(ent) {
     const variant = ent.variant || 'oak';
 
     if (variant === 'tallgrass' || variant === 'weed') {
+      if ((window._currentEpoch || 'mesopotamia') === 'urss') return null;
       const tpl = GLOBAL_TREE_TEMPLATES[6];
       const scale = Math.max(1, Math.floor(tileSize / 7 * (ent.size || 0.6)));
       const cx = Math.floor(x + tileSize * 0.5);
@@ -11304,6 +11868,7 @@ function drawTreeOcclusionOverlay(ent) {
     }
 
     if (variant === 'hedge') {
+      if ((window._currentEpoch || 'mesopotamia') === 'urss') return null;
       const tpl = GLOBAL_TREE_TEMPLATES[5];
       const scale = Math.max(1, Math.floor(tileSize / 6 * (ent.size || 0.8)));
       const cx = Math.floor(x + tileSize * 0.5);
@@ -11327,12 +11892,13 @@ function drawTreeOcclusionOverlay(ent) {
       return { x: x + tileSize * 0.5 + jitterX, y: y - sz * 0.35, dist: Math.hypot(ex - player.x, ey - player.y) };
     }
 
-    const map = { pine:0, tallslim:4, oak:1, broad:1, round:1, scrub:2, bush:2, shrub:2, multi:3 };
-    let idx = (map[variant] !== undefined) ? map[variant] : Math.floor(tileNoise(ent.col || 0, ent.row || 0, 5, 6) * GLOBAL_TREE_TEMPLATES.length);
+    let idx = pickForestTreeTemplateIndex(variant, ent.col || 0, ent.row || 0);
+    if (idx < 0) return null;
     idx = Math.max(0, Math.min(GLOBAL_TREE_TEMPLATES.length - 1, idx));
     const tpl = GLOBAL_TREE_TEMPLATES[idx];
     const lodFactor = zoom >= GRAPHICS_CONFIG.smoothingThreshold ? 1 : 0.8;
     let baseScale = Math.floor((tileSize / 4.8) * lodFactor);
+    if ((window._currentEpoch || 'mesopotamia') === 'urss') baseScale = Math.max(1, Math.floor(baseScale / 3));
     if (variant === 'tall' || variant === 'tallslim') baseScale = Math.floor(baseScale * 1.2);
     const scale = Math.max(1, Math.floor(baseScale * (ent.size || 1)));
     let maxX = 0, maxY = 0;
@@ -11417,22 +11983,23 @@ function enableFloatingBehavior(el) {
   if (!el) return el;
   const isActionBar = el.id === 'action-bar';
   // base floating styles
-  el.style.position = isActionBar ? 'fixed' : (el.style.position || 'absolute');
+  el.style.position = 'fixed';
   el.style.zIndex = el.style.zIndex || 1900;
-  if (!isActionBar) stylePanel(el);
+  stylePanel(el);
   if (isActionBar) {
-    el.style.left = '0';
-    el.style.right = '0';
-    el.style.bottom = '0';
-    el.style.width = '100vw';
-    el.style.maxWidth = '100vw';
+    el.style.left = el.style.left || '14px';
+    el.style.right = 'auto';
+    el.style.bottom = el.style.bottom || '76px';
+    el.style.top = 'auto';
+    el.style.width = el.style.width || 'min(92vw, 980px)';
+    el.style.maxWidth = '92vw';
     el.style.margin = '0';
     el.style.display = 'flex';
     el.style.flexDirection = 'column';
     el.style.gap = '4px';
-    el.style.background = 'rgba(12,9,4,0.96)';
-    el.style.borderTop = '2px solid #C8A84B';
-    el.style.boxShadow = '0 -8px 24px rgba(0,0,0,0.45)';
+    el.style.background = 'rgba(14,10,4,0.95)';
+    el.style.borderTop = '1px solid #C8A84B';
+    el.style.boxShadow = '0 12px 28px rgba(0,0,0,0.45)';
   }
   // ensure header container
   let header = el.querySelector('.floating-header');
@@ -11453,7 +12020,7 @@ function enableFloatingBehavior(el) {
       header.style.width = '100%';
       header.style.padding = '6px 10px';
       header.style.marginBottom = '0';
-      header.style.cursor = 'default';
+      header.style.cursor = 'grab';
     }
     // insert header before current content
     el.insertBefore(header, el.firstChild);
@@ -11506,7 +12073,7 @@ function enableFloatingBehavior(el) {
     min.addEventListener('click', (ev) => {
       ev.stopPropagation();
       const hidden = body.style.display === 'none';
-      body.style.display = hidden ? 'block' : 'none';
+      body.style.display = hidden ? (isActionBar ? 'flex' : 'block') : 'none';
       min.textContent = hidden ? '—' : '+';
       try { saveAppStateDebounced(); } catch (e) {}
     });
@@ -12247,6 +12814,40 @@ function createBuildPanelControls() {
 window._storyChapter = window._storyChapter || 0;
 window._storySceneFlags = window._storySceneFlags || {};
 window._mapSceneTriggers = window._mapSceneTriggers || [];
+window._storyTargets = window._storyTargets || {};
+
+function getCurrentStoryTarget() {
+  try {
+    const chapter = window._storyChapter || 0;
+    if (chapter <= 0 || chapter >= 3) return null;
+    const epochNow = window._currentEpoch || 'mesopotamia';
+    const isUrss = epochNow === 'urss';
+    const isMedieval = epochNow === 'medieval';
+    const npcType = isUrss ? 'commissar' : 'priestess';
+    const cityName = isUrss ? 'Novozarya' : (isMedieval ? 'Norhaven' : 'Nínagara');
+    const label = isUrss ? 'Comisaria del distrito' : (isMedieval ? 'Prior del templo' : 'Sacerdotisa del templo');
+
+    const npc = (Array.isArray(entities) ? entities : []).find(en =>
+      en && en.kind === 'player' && en.isStoryNPC &&
+      (en.npcType === npcType || (isUrss && en.npcType === 'priestess'))
+    );
+    if (npc && Number.isFinite(npc.col) && Number.isFinite(npc.row)) {
+      return { col: npc.col, row: npc.row, city: cityName, label, source: 'npc' };
+    }
+
+    const cap = (window._VILLAGES || []).find(v => v && v.type === 'capital');
+    if (cap && Number.isFinite(cap.minC) && Number.isFinite(cap.maxC) && Number.isFinite(cap.minR) && Number.isFinite(cap.maxR)) {
+      return {
+        col: Math.floor((cap.minC + cap.maxC) / 2),
+        row: Math.floor((cap.minR + cap.maxR) / 2),
+        city: cityName,
+        label,
+        source: 'city'
+      };
+    }
+  } catch (e) {}
+  return null;
+}
 
 function buildStoryQuestsForEpoch(epochId) {
   if (epochId === 'urss') {
@@ -12505,6 +13106,70 @@ function drawStoryObjectiveHUD(ctx, W, H) {
   return;
 }
 
+function drawStoryTargetGuidance(ctx, W, H) {
+  try {
+    if (editMode || worldMapOverlayVisible || isCinematicActive()) return;
+    const target = getCurrentStoryTarget();
+    if (!target) return;
+
+    const tx = (target.col || 0) + 0.5;
+    const ty = (target.row || 0) + 0.5;
+    const px = (player.x || 0) + 0.5;
+    const py = (player.y || 0) + 0.5;
+    const distTiles = Math.hypot(tx - px, ty - py);
+
+    const pulse = 0.65 + 0.35 * Math.sin(Date.now() / 220);
+    const wp = worldToScreen(tx, ty);
+    const onScreen = wp && wp.x > -40 && wp.x < W + 40 && wp.y > -40 && wp.y < H + 40;
+
+    if (onScreen) {
+      const mx = Math.floor(wp.x);
+      const my = Math.floor(wp.y - 12);
+      ctx.save();
+      ctx.strokeStyle = `rgba(255,210,122,${Math.max(0.45, pulse)})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(mx, my, 10 + pulse * 3, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(255,95,87,0.92)';
+      ctx.beginPath();
+      ctx.arc(mx, my, 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    const dx = tx - px;
+    const dy = ty - py;
+    const ang = Math.atan2(dy, dx);
+    const cx = Math.floor(W / 2);
+    const cy = 28;
+    const len = 18;
+    const tipX = Math.floor(cx + Math.cos(ang) * len);
+    const tipY = Math.floor(cy + Math.sin(ang) * len);
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,210,122,0.9)';
+    ctx.fillStyle = 'rgba(255,210,122,0.9)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(tipX, tipY);
+    ctx.stroke();
+    const left = ang + Math.PI * 0.82;
+    const right = ang - Math.PI * 0.82;
+    ctx.beginPath();
+    ctx.moveTo(tipX, tipY);
+    ctx.lineTo(tipX + Math.cos(left) * 8, tipY + Math.sin(left) * 8);
+    ctx.lineTo(tipX + Math.cos(right) * 8, tipY + Math.sin(right) * 8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.font = 'bold 11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#FFD27A';
+    ctx.fillText(`${target.city} · ${Math.max(1, Math.round(distTiles))} tiles`, cx, 12);
+    ctx.restore();
+  } catch (e) {}
+}
+
 function drawCompactGuideOverlay(ctx, W, H) {
   try {
     if (editMode || !window._gameStarted || worldMapOverlayVisible || isCinematicActive()) return;
@@ -12572,6 +13237,71 @@ function isCinematicActive() {
   try {
     return !!((window._introSeq && !window._introSeq.done) || isCinematicDialogueActive());
   } catch (e) { return false; }
+}
+
+function isPrologueMovementLocked() {
+  try {
+    const prologue = window._homePrologue;
+    return !!(prologue && prologue.active && prologue.lockMovementForIntro && window._activeDialogue);
+  } catch (e) {
+    return false;
+  }
+}
+
+function interactWithPet(dog) {
+  if (!dog || dog.kind !== 'pet' || dog.petType !== 'dog') return;
+  try {
+    const petName = dog.name || 'Kidu';
+    const lines = [`¡Hola ${petName}! ¿Quieres jugar?`];
+    const getCurrentPlayer = () => {
+      for (let i = 0; i < entities.length; i++) {
+        if (entities[i].kind === 'player') return entities[i];
+      }
+      return null;
+    };
+    
+    window._activeDialogue = {
+      lines,
+      idx: 0,
+      npcName: 'Tú',
+      isPetInteraction: true,
+      petRef: dog,
+      options: [
+        { num: 1, text: 'Acariciar', action: () => {
+          const dlg = window._activeDialogue;
+          if (!dlg.petPettingStarted) {
+            dlg.petPettingStarted = true;
+            dlg.lines = [`${petName} menea la cola alegremente...`, '¡Le encanta que lo acaricies!'];
+            dlg.idx = 0;
+            dlg.options = null;
+            dlg.onComplete = () => {
+              window._activeDialogue = null;
+              document.body.classList.remove('dialogue-active');
+            };
+          }
+        }},
+        { num: 2, text: 'Jugar', action: () => {
+          const dlg = window._activeDialogue;
+          const petRef = dlg.petRef;
+          window._activeDialogue = null;
+          document.body.classList.remove('dialogue-active');
+          
+          if (petRef) {
+            notify(`¡${petName} está listo para jugar! Lleva al perro cerca de donde quieras que busque.`);
+            petRef.playMode = true;
+            petRef.playTimeout = Date.now() + 3000;
+          }
+        }},
+        { num: 3, text: 'Dejar', action: () => {
+          window._activeDialogue = null;
+          document.body.classList.remove('dialogue-active');
+        }}
+      ]
+    };
+    document.body.classList.add('dialogue-active');
+  } catch (e) {
+    console.error('Error en interactWithPet:', e);
+  }
 }
 
 function syncCinematicUiVisibility() {
@@ -13080,6 +13810,174 @@ function rebuildMapSceneTriggers() {
 }
 
 // ── NPC story/dialogue helpers ────────────────────────────────
+window._sideMissionOffers = window._sideMissionOffers || {};
+
+function isSideMissionEligibleNpc(npc) {
+  try {
+    if (!npc || npc.isStoryNPC || npc.kind !== 'player') return false;
+    const type = String(npc.npcType || 'villager');
+    return ['villager', 'farmer', 'merchant', 'survivor', 'guard', 'scribe'].includes(type);
+  } catch (e) {
+    return false;
+  }
+}
+
+function hasActiveSideMissionFromNpc(npcId) {
+  try {
+    return !!((window._missions || []).find(m => m && m.isSide && !m.done && m.giverNpcId === npcId));
+  } catch (e) {
+    return false;
+  }
+}
+
+function createSecondaryMissionForNpc(npc) {
+  const epoch = window._currentEpoch || 'mesopotamia';
+  const npcName = npc.name || 'Habitante';
+  const foodKey = epoch === 'urss' ? 'food' : 'wheat';
+  const fieldBuildKey = (getEpochBuildPalette(epoch)[2]) || 'farm';
+  const type = String(npc.npcType || 'villager');
+  const templates = [
+    {
+      key: 'gather_food',
+      title: 'Abastecimiento local',
+      desc: `Recolecta ${epoch === 'urss' ? 'comida' : 'trigo'} para ${npcName}.`,
+      watch: foodKey,
+      target: (type === 'farmer') ? 12 : 8,
+      reward: { brick: 2 }
+    },
+    {
+      key: 'gather_stone',
+      title: 'Piedra para reparaciones',
+      desc: 'Consigue piedra para reforzar el asentamiento.',
+      watch: 'stone',
+      target: 6,
+      reward: { wheat: 2, food: 2 }
+    },
+    {
+      key: 'craft_tool',
+      title: 'Herramienta para el trabajo',
+      desc: 'Craftea una azada de piedra para expandir los cultivos.',
+      watch: 'craft.stone-hoe',
+      target: 1,
+      reward: { wheat: 3, food: 3 }
+    },
+    {
+      key: 'build_farm',
+      title: 'Ayuda al campo',
+      desc: 'Construye una granja para aumentar la producción.',
+      watch: 'build.' + fieldBuildKey,
+      target: 1,
+      reward: { wheat: 4, brick: 1 }
+    }
+  ];
+
+  let pool = templates;
+  if (type === 'farmer') pool = templates.filter(t => t.key === 'gather_food' || t.key === 'build_farm' || t.key === 'craft_tool');
+  else if (type === 'merchant') pool = templates.filter(t => t.key === 'gather_stone' || t.key === 'gather_food');
+  else if (type === 'guard') pool = templates.filter(t => t.key === 'gather_stone' || t.key === 'craft_tool');
+
+  const tpl = pool[Math.floor(Math.random() * pool.length)] || templates[0];
+  return {
+    id: `side_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    title: tpl.title,
+    desc: tpl.desc,
+    target: tpl.target,
+    progress: 0,
+    watch: tpl.watch,
+    reward: tpl.reward,
+    isStory: false,
+    isSide: true,
+    done: false,
+    giverNpcId: npc.id,
+    giverNpcName: npcName,
+    giverNpcType: type,
+    offeredAt: Date.now()
+  };
+}
+
+function renderSideMissionOffer(npc, mission) {
+  try {
+    let panel = document.getElementById('side-mission-offer');
+    if (!panel) {
+      panel = document.createElement('div');
+      panel.id = 'side-mission-offer';
+      panel.style.position = 'fixed';
+      panel.style.left = '50%';
+      panel.style.top = '50%';
+      panel.style.transform = 'translate(-50%, -50%)';
+      panel.style.zIndex = '5005';
+      panel.style.width = '420px';
+      panel.style.maxWidth = '92vw';
+      panel.style.background = 'rgba(12,10,6,0.95)';
+      panel.style.border = '1px solid rgba(255,210,122,0.35)';
+      panel.style.borderRadius = '10px';
+      panel.style.padding = '14px';
+      panel.style.boxShadow = '0 10px 28px rgba(0,0,0,0.55)';
+      document.body.appendChild(panel);
+    }
+    const rewards = Object.entries(mission.reward || {}).map(([k, v]) => `${v} ${k}`).join(', ');
+    panel.innerHTML = `
+      <div style="font:700 15px sans-serif;color:#FFD27A;margin-bottom:8px;">¡Misión secundaria!</div>
+      <div style="font:600 13px sans-serif;color:#fff;">${mission.title}</div>
+      <div style="font:12px sans-serif;color:#d7d7d7;margin-top:6px;line-height:1.4;">${mission.desc}</div>
+      <div style="font:12px monospace;color:#9fd7ff;margin-top:8px;">Objetivo: ${mission.target} (${mission.watch})</div>
+      <div style="font:12px monospace;color:#9fe39f;margin-top:4px;">Recompensa: ${rewards || '—'}</div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
+        <button id="side-mission-decline" style="padding:6px 10px;border-radius:6px;border:1px solid #444;background:#1e1e1e;color:#ddd;">Rechazar</button>
+        <button id="side-mission-accept" style="padding:6px 10px;border-radius:6px;border:1px solid #8b6a25;background:#2d2312;color:#FFD27A;">Aceptar</button>
+      </div>`;
+
+    const closePanel = () => { try { panel.remove(); } catch (e) {} };
+    const acceptBtn = panel.querySelector('#side-mission-accept');
+    const declineBtn = panel.querySelector('#side-mission-decline');
+    if (acceptBtn) {
+      acceptBtn.addEventListener('click', () => {
+        window._missions = window._missions || [];
+        window._missions.push(mission);
+        delete window._sideMissionOffers[npc.id];
+        npc._sideMissionRejectedUntil = 0;
+        addLog(`Misión secundaria aceptada: ${mission.title}`);
+        notify('Misión secundaria aceptada');
+        try { if (window.renderMissions) window.renderMissions(); } catch (e) {}
+        closePanel();
+      });
+    }
+    if (declineBtn) {
+      declineBtn.addEventListener('click', () => {
+        npc._sideMissionRejectedUntil = Date.now() + 3 * 60 * 1000;
+        delete window._sideMissionOffers[npc.id];
+        notify('Misión rechazada');
+        closePanel();
+      });
+    }
+  } catch (e) {
+    if (confirm(`Misión secundaria: ${mission.title}\n\n${mission.desc}\n\n¿Aceptar?`)) {
+      window._missions = window._missions || [];
+      window._missions.push(mission);
+      delete window._sideMissionOffers[npc.id];
+      notify('Misión secundaria aceptada');
+    } else {
+      npc._sideMissionRejectedUntil = Date.now() + 3 * 60 * 1000;
+      delete window._sideMissionOffers[npc.id];
+      notify('Misión rechazada');
+    }
+  }
+}
+
+function maybeOfferSideMission(npc) {
+  try {
+    if (!isSideMissionEligibleNpc(npc)) return false;
+    if (hasActiveSideMissionFromNpc(npc.id)) return false;
+    if (npc._sideMissionRejectedUntil && Date.now() < npc._sideMissionRejectedUntil) return false;
+    const pending = window._sideMissionOffers[npc.id] || createSecondaryMissionForNpc(npc);
+    window._sideMissionOffers[npc.id] = pending;
+    renderSideMissionOffer(npc, pending);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 function openNpcDialogue(npc) {
   if (!npc) return;
 
@@ -13100,6 +13998,12 @@ function openNpcDialogue(npc) {
     }
   } catch (e) {}
 
+  if (!npc.isStoryNPC) {
+    try {
+      if (maybeOfferSideMission(npc)) return;
+    } catch (e) {}
+  }
+
   // Story NPCs: context-aware lines based on current chapter
   if (npc.isStoryNPC) {
     let lines = null;
@@ -13112,7 +14016,7 @@ function openNpcDialogue(npc) {
       } else if (ch === 1) {
         if ((window._currentEpoch || 'mesopotamia') === 'urss') {
           lines = ['Mantente firme, camarada Adapa. Tu camino sigue al norte.',
-                   'Busca a Konstantin Markov en la Casa del Soviet de Novozarya.',
+                   'Busca a la comisaria Irina Markova en la Casa del Soviet de Novozarya.',
                    'No te retrases. El informe de crecida es real.'];
         } else {
           lines = ['¡Que los dioses te guíen, Adapa! Tu camino te lleva al norte.',
@@ -13128,7 +14032,7 @@ function openNpcDialogue(npc) {
                    'Confío en ti, Adapa. Sigue adelante.'];
         }
       }
-    } else if (npc.npcType === 'priestess') {
+    } else if (npc.npcType === 'priestess' || npc.npcType === 'commissar') {
       if (ch <= 1 && npc._storyLines) {
         // First meeting: receive the ritual mission
         lines = npc._storyLines;
@@ -13223,6 +14127,27 @@ function openNpcDialogue(npc) {
   if (window._activeDialogue) document.body.classList.add('dialogue-active');
 }
 
+function getNpcMissionMarkerType(ent) {
+  try {
+    if (!ent) return null;
+    const ch = window._storyChapter || 0;
+    if (ent.isStoryNPC) {
+      if (ch === 0 && ent.npcType === 'elder') return 'primary';
+      if (ch === 1 && (ent.npcType === 'priestess' || ent.npcType === 'commissar')) return 'primary';
+    }
+    if (isSideMissionEligibleNpc(ent) && !hasActiveSideMissionFromNpc(ent.id)) {
+      if (!ent._sideMissionRejectedUntil || Date.now() >= ent._sideMissionRejectedUntil) return 'secondary';
+    }
+    return null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function isNpcMissionGiver(ent) {
+  return !!getNpcMissionMarkerType(ent);
+}
+
 function advanceDialogue() {
   const dlg = window._activeDialogue;
   if (!dlg) return;
@@ -13235,9 +14160,9 @@ function advanceDialogue() {
       if (npc && npc.isStoryNPC) {
         if (npc.npcType === 'elder' && window._storyChapter === 0) {
           advanceStoryChapter(1);
-        } else if (npc.npcType === 'priestess' && window._storyChapter === 1) {
+        } else if ((npc.npcType === 'priestess' || npc.npcType === 'commissar') && window._storyChapter === 1) {
           advanceStoryChapter(2);
-        } else if (npc.npcType === 'priestess' && window._storyChapter === 2) {
+        } else if ((npc.npcType === 'priestess' || npc.npcType === 'commissar') && window._storyChapter === 2) {
           // Player returns to priestess with offerings — check completion
           checkChapter2Completion();
         }
@@ -13245,6 +14170,10 @@ function advanceDialogue() {
     } catch (e) {}
     try { if (typeof dlg.onComplete === 'function') dlg.onComplete(); } catch (e) {}
     window._activeDialogue = null;
+    try {
+      const prologue = window._homePrologue;
+      if (prologue && prologue.lockMovementForIntro) prologue.lockMovementForIntro = false;
+    } catch (e) {}
     document.body.classList.remove('dialogue-active');
   }
 }
@@ -13253,7 +14182,8 @@ function drawDialoguePanel(ctx, W, H) {
   const dlg = window._activeDialogue;
   if (!dlg) return;
   const line = dlg.lines[dlg.idx] || '';
-  const panH = 160;
+  const hasOptions = dlg.options && dlg.options.length > 0;
+  const panH = hasOptions ? 220 : 160;
   const panW = Math.min(W - 40, 720);
   const px = (W - panW) / 2;
   const py = Math.round((H - panH) / 2); // centred vertically
@@ -13295,7 +14225,7 @@ function drawDialoguePanel(ctx, W, H) {
   const words = line.split(' ');
   let cur = '', ty = py + 56;
   const lineH = 22;
-  const maxY = py + panH - 26; // leave room for footer
+  const maxY = hasOptions ? py + panH - 86 : py + panH - 26;
   for (const w of words) {
     const test = cur ? cur + ' ' + w : w;
     if (ctx.measureText(test).width > maxW && cur) {
@@ -13304,13 +14234,30 @@ function drawDialoguePanel(ctx, W, H) {
     } else { cur = test; }
   }
   if (cur && ty <= maxY) ctx.fillText(cur, px + 14, ty);
+  
+  // Render options if available
+  if (hasOptions) {
+    ctx.fillStyle = 'rgba(200,160,60,0.4)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(px + 14, py + panH - 70); ctx.lineTo(px + panW - 14, py + panH - 70); ctx.stroke();
+    
+    ctx.fillStyle = '#FFD27A';
+    ctx.font = '12px sans-serif';
+    ctx.textAlign = 'left';
+    let optY = py + panH - 60;
+    for (const opt of dlg.options) {
+      ctx.fillText(`[${opt.num}] ${opt.text}`, px + 20, optY);
+      optY += 18;
+    }
+  }
+  
   // Footer prompt
   const isLast = dlg.idx >= dlg.lines.length - 1;
   ctx.font = '11px monospace';
-  ctx.fillStyle = isLast ? 'rgba(220,100,100,0.80)' : 'rgba(255,210,122,0.75)';
+  ctx.fillStyle = isLast && !hasOptions ? 'rgba(220,100,100,0.80)' : 'rgba(255,210,122,0.75)';
   ctx.textAlign = 'right';
-  ctx.fillText(`[${dlg.idx + 1}/${dlg.lines.length}]  [E] ${isLast ? 'Cerrar' : 'Continuar'}`,
-    px + panW - 12, py + panH - 10);
+  const footerText = hasOptions ? `Presiona número para opción` : `[${dlg.idx + 1}/${dlg.lines.length}]  [E] ${isLast ? 'Cerrar' : 'Continuar'}`;
+  ctx.fillText(footerText, px + panW - 12, py + panH - 10);
   ctx.restore();
 }
 
@@ -13372,6 +14319,30 @@ function drawMiniMap(ctx, W, H) {
   // Player dot (white with black outline)
   const px = ox + player.x * scaleX;
   const py = oy + player.y * scaleY;
+
+  // Story route guidance on mini-map (active objective target)
+  try {
+    const target = getCurrentStoryTarget();
+    if (target) {
+      const tx = ox + (target.col + 0.5) * scaleX;
+      const ty = oy + (target.row + 0.5) * scaleY;
+      ctx.save();
+      ctx.setLineDash([4, 3]);
+      ctx.strokeStyle = 'rgba(255,210,122,0.92)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(px, py);
+      ctx.lineTo(tx, ty);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#000000';
+      ctx.beginPath(); ctx.arc(tx, ty, 3.2, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#FFD27A';
+      ctx.beginPath(); ctx.arc(tx, ty, 2.0, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+  } catch (e) {}
+
   ctx.fillStyle = '#000000';
   ctx.beginPath(); ctx.arc(px, py, 3.2, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = '#FFFFFF';
@@ -13395,6 +14366,65 @@ function drawCloudOverlay() {
   return;
 }
 
+function drawPetRadialMenu(ctx, W, H) {
+  try {
+    if (!petRadialMenuActive || editMode || worldMapOverlayVisible || isCinematicActive()) return;
+    const pet = getActivePetDog();
+    if (!pet) return;
+    const center = getPetRadialCenterScreen();
+    const cx = center.x;
+    const cy = center.y;
+    const innerR = 30;
+    const outerR = 108;
+    const n = PET_RADIAL_OPTIONS.length;
+    const hoverIdx = getPetRadialHoverIndex(petRadialPointer.x, petRadialPointer.y, cx, cy);
+    petRadialSelection = hoverIdx;
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.32)';
+    ctx.fillRect(0, 0, W, H);
+
+    for (let i = 0; i < n; i++) {
+      const start = (i / n) * Math.PI * 2;
+      const end = ((i + 1) / n) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.arc(cx, cy, outerR, start, end);
+      ctx.closePath();
+      ctx.fillStyle = (i === hoverIdx) ? 'rgba(255,210,122,0.82)' : 'rgba(25,25,25,0.86)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      const mid = (start + end) * 0.5;
+      const tx = cx + Math.cos(mid) * ((innerR + outerR) * 0.5);
+      const ty = cy + Math.sin(mid) * ((innerR + outerR) * 0.5);
+      ctx.fillStyle = (i === hoverIdx) ? '#1A1208' : '#F5EAD0';
+      ctx.font = 'bold 12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(PET_RADIAL_OPTIONS[i].label, tx, ty);
+    }
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, innerR, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(12,12,12,0.95)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,210,122,0.65)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = '#FFD27A';
+    ctx.font = 'bold 13px sans-serif';
+    ctx.fillText('PERRO', cx, cy);
+
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.font = '12px sans-serif';
+    ctx.fillText('Suelta K para confirmar', cx, cy + outerR + 20);
+    ctx.restore();
+  } catch (e) {}
+}
+
 canvas.addEventListener('mousemove', e => {
   if (startLocked && !window._standaloneEditorMode) return;
   const ptr = getCanvasPointerPosition(e);
@@ -13402,6 +14432,8 @@ canvas.addEventListener('mousemove', e => {
   const my = ptr.y;
   const mxCss = ptr.cssX;
   const myCss = ptr.cssY;
+  petRadialPointer.x = mx;
+  petRadialPointer.y = my;
 
   if (isZooming) {
     markCameraInput();
@@ -13510,6 +14542,24 @@ canvas.addEventListener('mousedown', e => {
     canvas.style.cursor = 'ns-resize';
     e.preventDefault();
   } else if (e.button === 0) {
+    // Handle pet play mode click
+    if (!editMode && !isPanning && !isZooming) {
+      for (let i = 0; i < entities.length; i++) {
+        const ent = entities[i];
+        if (ent.kind === 'pet' && ent.petType === 'dog' && ent.playMode) {
+          const ptr = getCanvasPointerPosition(e);
+          const { col, row } = screenToWorld(ptr.x, ptr.y);
+          // Send dog to fetch location
+          ent.fetchTarget = { col: Math.floor(col), row: Math.floor(row) };
+          ent.fetchMode = true;
+          ent.playMode = false;
+          notify('¡El perro sale corriendo por el objeto!');
+          e.preventDefault();
+          return;
+        }
+      }
+    }
+    
     const ptr = getCanvasPointerPosition(e);
     const mx = ptr.x;
     const my = ptr.y;
@@ -13958,6 +15008,18 @@ if (floatBtn) floatBtn.addEventListener('click', () => setFloatingPanels(!docume
 
 // Keyboard shortcuts
 document.addEventListener('keydown', e => {
+  // Handle pet interaction menu options (1, 2, 3)
+  if (window._activeDialogue && window._activeDialogue.options && window._activeDialogue.options.length > 0) {
+    const keyNum = parseInt(e.key);
+    if (keyNum >= 1 && keyNum <= 9) {
+      const selectedOpt = window._activeDialogue.options.find(o => o.num === keyNum);
+      if (selectedOpt && typeof selectedOpt.action === 'function') {
+        try { selectedOpt.action(); } catch (err) { console.error('Error executing option action:', err); }
+        e.preventDefault();
+        return;
+      }
+    }
+  }
   if (e.key === 'F10') {
     const mb = document.getElementById('top-menubar');
     if (mb) {
@@ -14074,8 +15136,28 @@ document.addEventListener('keydown', e => {
     _setSelectedEntities([], false);
     notify('Selección limpiada');
   }
+  if (!editMode && e.key && e.key.toLowerCase() === 'k') {
+    const pet = getActivePetDog();
+    if (!pet) {
+      notify('No tienes perro compañero activo.');
+      e.preventDefault();
+      return;
+    }
+    petRadialMenuActive = true;
+    petRadialSelection = -1;
+    e.preventDefault();
+    return;
+  }
+  if (petRadialMenuActive) {
+    e.preventDefault();
+    return;
+  }
   if (!editMode && e.key && e.key.toLowerCase() === 'g') {
     _sendSelectedNPCsToGather();
+    e.preventDefault();
+  }
+  if (!editMode && e.key && e.key.toLowerCase() === 'f') {
+    createFieldNearHome();
     e.preventDefault();
   }
   if (!editMode && e.key && e.key.toLowerCase() === 'h') {
@@ -14102,8 +15184,8 @@ document.addEventListener('keydown', e => {
     }
     e.preventDefault();
   }
-  // toggle camera follow with 'f'
-  if (e.key && e.key.toLowerCase() === 'f') {
+  // toggle camera follow with 'l'
+  if (e.key && e.key.toLowerCase() === 'l') {
     followPlayer = !followPlayer;
     notify(followPlayer ? 'Camara: siguiendo jugador' : 'Camara: libre');
     if (followPlayer) {
@@ -14129,12 +15211,23 @@ document.addEventListener('keydown', e => {
   }
 });
 document.addEventListener('keyup', e => {
+  if (e.key && e.key.toLowerCase() === 'k') {
+    if (petRadialMenuActive) {
+      executePetRadialSelection();
+      petRadialMenuActive = false;
+      petRadialSelection = -1;
+    }
+    e.preventDefault();
+    return;
+  }
   if (['w','a','s','d','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Shift'].includes(e.key)) {
     keyState[e.key] = false;
   }
 });
 window.addEventListener('blur', () => {
   try { keyState = {}; } catch (e) {}
+  petRadialMenuActive = false;
+  petRadialSelection = -1;
 });
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
@@ -14143,6 +15236,8 @@ document.addEventListener('visibilitychange', () => {
       moveTarget = null;
       movePath = null;
     } catch (e) {}
+    petRadialMenuActive = false;
+    petRadialSelection = -1;
   }
 });
 
@@ -14171,10 +15266,41 @@ document.addEventListener('keydown', e => {
     const iRows = interior.height || (interior.tiles ? interior.tiles.length : 6);
     const doorRow = iRows - 2;
     const doorCol = interior.entryCol || 1;
+    const hasExitDoor = !!(interior.tiles && interior.tiles[doorRow] && interior.tiles[doorRow][doorCol] === 'door');
     const px2 = Math.floor(player.x), py2 = Math.floor(player.y);
     // Exit if near door row
-    if (py2 >= doorRow && Math.abs(px2 - doorCol) <= 1) {
+    if (hasExitDoor && py2 >= doorRow && Math.abs(px2 - doorCol) <= 1) {
       try { if (window.exitInterior) window.exitInterior(); } catch(e) {}
+      e.preventDefault(); return;
+    }
+    const nearStairsUp = interior._furniture && interior._furniture.find(f => f.kind === 'stairs_up' &&
+      Math.abs(f.col - px2) <= 1 && Math.abs(f.row - py2) <= 1);
+    if (nearStairsUp) {
+      try {
+        const idx = Math.floor(interior._floorIndex || 0);
+        const ok = window.moveToInteriorFloor ? window.moveToInteriorFloor(interior, idx + 1, 'stairs_up') : false;
+        if (!ok) notify('No hay planta superior disponible');
+      } catch (e2) {}
+      e.preventDefault(); return;
+    }
+    const nearStairsDown = interior._furniture && interior._furniture.find(f => f.kind === 'stairs_down' &&
+      Math.abs(f.col - px2) <= 1 && Math.abs(f.row - py2) <= 1);
+    if (nearStairsDown) {
+      try {
+        const idx = Math.floor(interior._floorIndex || 0);
+        const ok = window.moveToInteriorFloor ? window.moveToInteriorFloor(interior, idx - 1, 'stairs_down') : false;
+        if (!ok) notify('No hay planta inferior disponible');
+      } catch (e2) {}
+      e.preventDefault(); return;
+    }
+    const nearElevator = interior._furniture && interior._furniture.find(f => f.kind === 'elevator' &&
+      Math.abs(f.col - px2) <= 1 && Math.abs(f.row - py2) <= 1);
+    if (nearElevator) {
+      try {
+        if (!(window.openInteriorElevatorSelector && window.openInteriorElevatorSelector(interior))) {
+          notify('Ascensor fuera de servicio');
+        }
+      } catch (e2) {}
       e.preventDefault(); return;
     }
     // Chest interaction
@@ -14265,10 +15391,6 @@ document.addEventListener('keydown', e => {
       }
       if (it.kind === 'map-scene' && it.ref) {
         try { openMapSceneDialogue(it.ref); } catch (_) {}
-        e.preventDefault(); return;
-      }
-      if (it.kind === 'pet-dog' && it.ref) {
-        try { showEntityInfo(it.ref); } catch (_) {}
         e.preventDefault(); return;
       }
       if (it.kind === 'grave' && it.ref) {
@@ -14366,6 +15488,7 @@ function init() {
       if (actionBarEl) {
         actionBarEl.setAttribute('data-title', 'Barra de acciones');
         enableFloatingBehavior(actionBarEl);
+        actionBarEl.style.display = 'none';
       }
     } catch (err) {}
   } else {

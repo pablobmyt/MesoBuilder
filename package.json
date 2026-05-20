@@ -6,7 +6,8 @@
   "scripts": {
     "start-electron": "npx electron --js-flags=\"--max-old-space-size=4096\" .",
     "start-electron-dev": "set MESOBUILDER_EXTERNAL_PATH=%CD% && npx electron --js-flags=\"--max-old-space-size=4096\" .",
-    "package-win": "electron-packager . MesoBuilder --platform=win32 --arch=x64 --out=dist --overwrite"
+    "package-win": "electron-packager . MesoBuilder --platform=win32 --arch=x64 --out=dist --overwrite",
+    "clean-cache": "npm cache clean --force && npm cache verify"
   },
   "devDependencies": {
     "electron": "^26.0.0",

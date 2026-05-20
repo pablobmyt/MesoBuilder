@@ -1,18 +1,41 @@
 {
-  "width": 8,
-  "height": 6,
-  "entryCol": 3,
-  "entryRow": 3,
-  "chestItems": ["wheat","wheat","stone","brick"],
-  "npcs": [
-    {"col": 5, "row": 2, "name": "Aldeana"}
-  ],
-  "tiles": [
-    ["wall","wall","wall","wall","wall","wall","wall","wall"],
-    ["wall","bed","bed","floor","pot","floor","floor","wall"],
-    ["wall","floor","floor","floor","table","table","floor","wall"],
-    ["wall","rug","rug","floor","rug","rug","chest","wall"],
-    ["wall","floor","floor","door","floor","floor","floor","wall"],
-    ["wall","wall","wall","wall","wall","wall","wall","wall"]
+  "defaultFloor": 1,
+  "floors": [
+    {
+      "name": "Sótano",
+      "width": 8,
+      "height": 6,
+      "entryCol": 3,
+      "entryRow": 3,
+      "chestItems": ["wheat", "stone", "brick"],
+      "npcs": [],
+      "tiles": [
+        ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"],
+        ["wall", "floor", "floor", "floor", "floor", "floor", "floor", "wall"],
+        ["wall", "pot", "floor", "floor", "floor", "floor", "pot", "wall"],
+        ["wall", "floor", "floor", "stairs_up", "floor", "chest", "floor", "wall"],
+        ["wall", "floor", "floor", "floor", "floor", "floor", "floor", "wall"],
+        ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"]
+      ]
+    },
+    {
+      "name": "Planta baja",
+      "width": 8,
+      "height": 6,
+      "entryCol": 3,
+      "entryRow": 3,
+      "chestItems": ["wheat", "wheat", "stone", "brick"],
+      "npcs": [
+        { "col": 5, "row": 2, "name": "Aldeana" }
+      ],
+      "tiles": [
+        ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"],
+        ["wall", "bed", "bed", "floor", "pot", "floor", "floor", "wall"],
+        ["wall", "floor", "floor", "floor", "table", "table", "floor", "wall"],
+        ["wall", "rug", "rug", "floor", "rug", "rug", "chest", "wall"],
+        ["wall", "stairs_down", "floor", "door", "floor", "floor", "floor", "wall"],
+        ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"]
+      ]
+    }
   ]
 }
