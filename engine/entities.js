@@ -8,8 +8,19 @@ export const graves = [];
 window.NPC_DIALOGUES = window.NPC_DIALOGUES || {};
 window.loadNpcDialogues = function(obj) { try { Object.assign(window.NPC_DIALOGUES, obj || {}); console.debug('NPC dialogues loaded', Object.keys(window.NPC_DIALOGUES)); } catch(e) {} };
 
-export function placeResource(col, row, type) {
-  entities.push({ id: 'res-' + Date.now() + '-' + Math.random().toString(36).slice(2,6), kind: 'resource', subtype: type, col, row, _born: Date.now(), _dropSeed: Math.random() });
+export function placeResource(col, row, type, options = {}) {
+  const created = {
+    id: 'res-' + Date.now() + '-' + Math.random().toString(36).slice(2,6),
+    kind: 'resource',
+    subtype: type,
+    col,
+    row,
+    _born: Date.now(),
+    _dropSeed: Math.random(),
+    _pickupAnimated: !!(options && options.pickupAnimated)
+  };
+  entities.push(created);
+  return created;
 }
 
 export function placeStone(col, row) {
@@ -41,7 +52,8 @@ export function placeTree(col, row, variant) {
   else if (chosen === 'steppe_shrub') size = 1.1;
   else if (chosen === 'hay') size = 0.9;
   else if (chosen === 'sedge') size = 1.3;
-  else if (chosen === 'winter_grass' || chosen === 'weed') size = 0.6;
+  else if (chosen === 'winter_grass') size = 0.6;
+  else if (chosen === 'weed') size = 0.95;
   else if (chosen === 'shrub') size = 1.4;
   else if (chosen === 'bush') size = 1.6;
   entities.push({ id, kind: 'tree', col, row, variant: chosen, hp: 10, size });

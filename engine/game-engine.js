@@ -627,7 +627,7 @@ BUILDINGS.mesopotamian_villa_detailed = { name: 'Villa mesopotámica', costBrick
 BUILDINGS.mesopotamian_house = { name: 'Casa mesopotámica', costBrick: 10, costWheat: 2, prodPop: 6, prodWheat:0, prodBrick:0, color:'#C9A058', roofColor:'#8B5A28', desc:'Vivienda tradicional de ladrillo cocido.', size: { w:3, h:3 } };
 BUILDINGS.mesopotamian_arch  = { name: 'Arco monumental', costBrick: 8, costWheat: 0, prodPop: 0, prodWheat:0, prodBrick:0, color:'#C8A84B', roofColor:'#8B6914', desc:'Arco de entrada a la ciudad.', size: { w:2, h:1 } };
 BUILDINGS.mesopotamian_baths = { name: 'Baños públicos', costBrick: 16, costWheat: 4, prodPop: 3, prodWheat:0, prodBrick:0, color:'#6B9EC8', roofColor:'#3A6B8A', desc:'Instalación de baños para la comunidad.', size: { w:3, h:2 } };
-BUILDINGS.house_isolated = { name:'Casa aislada', costBrick:0, costWheat:0, prodPop:0, prodWheat:0, prodBrick:0, color:'#C19A6B', roofColor:'#6F4D2A', desc:'Refugio personal del protagonista.', size:{ w:5, h:2 } };
+BUILDINGS.house_isolated = { name:'Casa aislada', costBrick:0, costWheat:0, prodPop:0, prodWheat:0, prodBrick:0, color:'#C19A6B', roofColor:'#6F4D2A', desc:'Refugio personal del protagonista.', size:{ w:5, h:3 } };
 
 // Road definition: small footprint, player-can-build
 BUILDINGS.road = { name: 'Camino', costBrick:0, costWheat:0, prodPop:0, prodWheat:0, prodBrick:0, color:'#8B7B5B', roofColor:'#8B7B5B', desc:'Conecta edificios.', size: { w:1, h:1 } };
@@ -645,7 +645,7 @@ BUILDINGS.soviet_block = { name:'Bloque residencial', costBrick:10, costWheat:3,
 BUILDINGS.soviet_superblock = { name:'Superbloque residencial', costBrick:16, costWheat:5, prodPop:10, prodWheat:0, prodBrick:0, color:'#7D838C', roofColor:'#4A5D6B', desc:'Gran bloque residencial de alta densidad.', size:{ w:5, h:5 } };
 BUILDINGS.soviet_superblock_b = { name:'Superbloque residencial B', costBrick:15, costWheat:5, prodPop:9, prodWheat:0, prodBrick:0, color:'#5E6570', roofColor:'#4A4E54', desc:'Variante de superbloque residencial de alta densidad.', size:{ w:5, h:5 } };
 BUILDINGS.party_hq = { name:'Casa del Soviet', costBrick:24, costWheat:8, prodPop:12, prodWheat:0, prodBrick:0, color:'#9A3A3F', roofColor:'#5D1F24', desc:'Centro administrativo del distrito.', size:{ w:5, h:5 } };
-BUILDINGS.collective_farm = { name:'Granja colectiva', costBrick:1, costWheat:3, prodPop:0, prodWheat:4, prodBrick:0, color:'#5E7E52', roofColor:'#415B3A', desc:'Produce 4 comida/turno.' };
+BUILDINGS.collective_farm = { name:'Granja colectiva', costBrick:1, costWheat:3, prodPop:0, prodWheat:4, prodBrick:0, color:'#5E7E52', roofColor:'#415B3A', desc:'Produce 4 comida/turno.', size:{ w:3, h:2 } };
 BUILDINGS.factory = { name:'Fábrica', costBrick:15, costWheat:5, prodPop:4, prodWheat:1, prodBrick:2, color:'#6D7078', roofColor:'#4F525A', desc:'+4 población, +1 comida, +2 suministros.' };
 BUILDINGS.state_warehouse = { name:'Almacén estatal', costBrick:8, costWheat:4, prodPop:1, prodWheat:1, prodBrick:2, color:'#8C7A5E', roofColor:'#675540', desc:'+1 comida, +2 suministros.' };
 BUILDINGS.steel_foundry = { name:'Complejo metalúrgico', costBrick:30, costWheat:10, prodPop:10, prodWheat:2, prodBrick:4, color:'#70747D', roofColor:'#4B4E55', desc:'Proyecto mayor: +10 población, +2 comida, +4 suministros.', size:{ w:11, h:11 } };
@@ -1049,10 +1049,16 @@ function getResourceDisplay(resourceId) {
   const ui = getEpochUiProfile(window._currentEpoch || 'mesopotamia');
   const meta = ui && ui.resources ? ui.resources[resourceId] : null;
   if (meta) return meta;
+  if (resourceId === 'seed') return { label: 'Semillas', productionLabel: 'semillas' };
   if (resourceId === 'wheat') return { label: 'Trigo', productionLabel: 'trigo' };
   if (resourceId === 'brick') return { label: 'Ladrillos', productionLabel: 'ladrillos' };
   if (resourceId === 'pop') return { label: 'Población', productionLabel: 'población' };
   return { label: resourceId, productionLabel: resourceId };
+}
+
+function isGroundPickupResourceSubtype(subtype) {
+  const t = String(subtype || '').toLowerCase();
+  return t !== 'mountain' && t !== 'campfire' && t !== 'furnace';
 }
 
 function getBuildingDisplay(type) {
@@ -1694,6 +1700,11 @@ function ensurePetDogCompanion(opts = {}) {
       behavior: 'follow',
       combatMode: false,
       loyalty: 60,
+      hunger: 80,
+      maxHunger: 100,
+      energy: 90,
+      maxEnergy: 100,
+      playType: 'fetch',
       _lastInteractionAt: 0
     };
     entities.push(dog);
@@ -1741,6 +1752,8 @@ function interactWithPetDog(action, dog) {
       inventory[foodKey] = Math.max(0, (inventory[foodKey] || 0) - 1);
       if (inventory[foodKey] <= 0) delete inventory[foodKey];
       pet.hp = Math.min(pet.maxHp || 24, (pet.hp || 0) + 5);
+      pet.hunger = Math.min(pet.maxHunger || 100, (pet.hunger || 0) + 28);
+      pet.energy = Math.min(pet.maxEnergy || 100, (pet.energy || 0) + 12);
       pet.loyalty = Math.min(100, (pet.loyalty || 60) + 10);
       pet._lastInteractionAt = Date.now();
       notify(`${pet.name} come feliz.`);
@@ -1753,15 +1766,67 @@ function interactWithPetDog(action, dog) {
 }
 
 let petRadialMenuActive = false;
+let petRadialMenuMode = 'main';
 let petRadialPointer = { x: 0, y: 0 };
 let petRadialSelection = -1;
+let petRadialTimeScaleBackup = null;
+
+function openPetRadialMenu() {
+  petRadialMenuActive = true;
+  petRadialMenuMode = 'main';
+  petRadialSelection = -1;
+  if (petRadialTimeScaleBackup === null) {
+    petRadialTimeScaleBackup = window._timeScale || 1;
+  }
+  window._timeScale = 0.25;
+}
+
+function closePetRadialMenu() {
+  petRadialMenuActive = false;
+  petRadialMenuMode = 'main';
+  petRadialSelection = -1;
+  if (petRadialTimeScaleBackup !== null) {
+    window._timeScale = petRadialTimeScaleBackup;
+    petRadialTimeScaleBackup = null;
+  }
+}
+
+function startDogPlayMode(playType) {
+  try {
+    const pet = getActivePetDog();
+    if (!pet) return;
+    const baseSpd = typeof pet._baseSpeed === 'number' ? pet._baseSpeed : (pet._baseSpeed = pet.speed || 1.8);
+    pet.playMode = true;
+    pet.playType = playType || 'fetch';
+    pet.fetchMode = false;
+    pet.fetchTarget = null;
+    pet._playExploreTarget = null;
+    pet._playExploreUntil = 0;
+    pet.behavior = 'follow';
+    pet.speed = Math.max(baseSpd, 1.8);
+    const durations = { fetch: 16000, chase: 12000, explore: 14000 };
+    pet.playTimeout = Date.now() + (durations[pet.playType] || 14000);
+    if (pet.playType === 'fetch') notify(`Juego: traer. Haz clic donde quieres que busque ${pet.name || 'el perro'}.`);
+    else if (pet.playType === 'chase') notify(`Juego: persecución. ${pet.name || 'El perro'} corre tras de ti.`);
+    else if (pet.playType === 'explore') notify(`Juego: explorar. ${pet.name || 'El perro'} olfatea alrededor.`);
+    else notify(`Juego iniciado con ${pet.name || 'el perro'}.`);
+  } catch (e) {}
+}
 
 const PET_RADIAL_OPTIONS = [
   { id: 'call', label: 'Ven', run: () => callPetDogToPlayer() },
   { id: 'toggle-follow', label: 'Seguir/Quieto', run: () => interactWithPetDog('toggle-follow') },
   { id: 'toggle-attack', label: 'Ataque', run: () => interactWithPetDog('toggle-attack') },
   { id: 'pet', label: 'Acariciar', run: () => interactWithPetDog('pet') },
-  { id: 'feed', label: 'Dar comida', run: () => interactWithPetDog('feed') }
+  { id: 'feed', label: 'Dar comida', run: () => interactWithPetDog('feed') },
+  { id: 'play', label: 'Jugar', run: () => { petRadialMenuMode = 'play'; petRadialSelection = -1; } }
+];
+
+const PET_PLAY_OPTIONS = [
+  { id: 'fetch', label: 'Traer', run: () => startDogPlayMode('fetch') },
+  { id: 'chase', label: 'Perseguir', run: () => startDogPlayMode('chase') },
+  { id: 'explore', label: 'Explorar', run: () => startDogPlayMode('explore') },
+  { id: 'back', label: 'Volver', run: () => { petRadialMenuMode = 'main'; petRadialSelection = -1; } }
 ];
 
 function getPetRadialCenterScreen() {
@@ -1791,14 +1856,17 @@ function executePetRadialSelection() {
     const pet = getActivePetDog();
     if (!pet) {
       notify('No tienes perro compañero activo.');
-      return;
+      return true;
     }
+    const options = petRadialMenuMode === 'play' ? PET_PLAY_OPTIONS : PET_RADIAL_OPTIONS;
     const center = getPetRadialCenterScreen();
     const idx = getPetRadialHoverIndex(petRadialPointer.x, petRadialPointer.y, center.x, center.y);
-    if (idx < 0 || idx >= PET_RADIAL_OPTIONS.length) return;
-    const option = PET_RADIAL_OPTIONS[idx];
+    if (idx < 0 || idx >= options.length) return true;
+    const option = options[idx];
     if (option && typeof option.run === 'function') option.run();
+    return !(petRadialMenuMode === 'play' && option && option.id === 'play');
   } catch (e) {}
+  return true;
 }
 
 const mapEditorCore = createMapEditorCore({
@@ -1914,6 +1982,73 @@ let inventory = {};
 let isBuildDragging = false;
 let buildDragStart = null; // {col,row} when drag started
 let buildDragRect = null;  // {minC,maxC,minR,maxR}
+
+// Hoe-drag state for free-mode field tilling
+let isHoeDragging = false;
+let hoeDragStart = null;
+let hoeDragRect = null;
+
+function canTillSoilAt(col, row, fieldType = 'farm') {
+  try {
+    if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return false;
+    if ((grid[row] && grid[row][col]) || (rFullMap[row] && rFullMap[row][col])) return false;
+    const biome = (tileBiome && tileBiome[row] && tileBiome[row][col]) || '';
+    if (biome !== 'grass') return false;
+    return canPlaceAt(col, row, fieldType);
+  } catch (e) {
+    return false;
+  }
+}
+
+function tillFieldRect(rect) {
+  try {
+    if (startLocked && !window._standaloneEditorMode) return 0;
+    if (editMode) return 0;
+    if ((player.equipped || '') !== 'stone-hoe') {
+      notify('Equipa la azada de piedra para labrar.');
+      return 0;
+    }
+    const seedsAvail = Math.max(0, inventory.seed || 0);
+    if (seedsAvail <= 0) {
+      notify('No tienes semillas. Consíguelas rompiendo hierbajos.');
+      return 0;
+    }
+    const fieldType = 'farm';
+    let placed = 0;
+    for (let rr = rect.minR; rr <= rect.maxR; rr++) {
+      for (let cc = rect.minC; cc <= rect.maxC; cc++) {
+        if ((inventory.seed || 0) <= 0) break;
+        if (!canTillSoilAt(cc, rr, fieldType)) continue;
+        setBuildingCells(cc, rr, fieldType);
+        inventory.seed = Math.max(0, (inventory.seed || 0) - 1);
+        if (inventory.seed <= 0) delete inventory.seed;
+        placed++;
+      }
+    }
+    if (placed > 0) {
+      updateUI();
+      try { updateInventory(); } catch (e) {}
+      addLog(`Labraste ${placed} parcela(s) de cultivo.`);
+      notify(`Terreno labrado: ${placed} parcela(s).`);
+      gainXP(Math.min(18, placed * 2));
+      try {
+        const prologue = window._homePrologue;
+        if (prologue && prologue.active && !prologue.fieldPrepared) {
+          prologue.fieldPrepared = true;
+          prologue.stage = 'family-concern';
+          notify('Cultivo preparado. Vuelve con tu familia.');
+          setTimeout(() => { try { startHomePrologueFamilyBriefing(); } catch (e) {} }, 350);
+        }
+      } catch (e) {}
+    } else {
+      notify('Selecciona césped libre para labrar.');
+    }
+    return placed;
+  } catch (e) {
+    notify('No se pudo labrar el terreno.');
+    return 0;
+  }
+}
 
 const ACTIONS = [
   { id:'explore', name:'Explorar', cost:1, desc:'Encuentra recursos o rutas ocultas.' },
@@ -2276,6 +2411,9 @@ function markEntityDowned(ent, opts = {}) {
     ent._deadPose = opts.pose || 'side';
     if (ent.moveTarget) delete ent.moveTarget;
     if (typeof ent.speed === 'number') ent.speed = 0;
+    try {
+      if (opts.dropLoot !== false) dropCreatureLoot(ent);
+    } catch (e) {}
     if (opts.onDown && typeof opts.onDown === 'function') {
       try { opts.onDown(ent); } catch (e) {}
     }
@@ -2301,6 +2439,49 @@ function markPlayerDowned(reasonText) {
 
 function isPlayerDowned(now = Date.now()) {
   return !!(window._playerDownedUntil && now < window._playerDownedUntil);
+}
+
+function resolveCreatureLootProfile(ent) {
+  try {
+    if (!ent) return null;
+    const id = String(ent.id || '');
+    if (id.startsWith('rabbit-')) {
+      return [
+        { type: 'meat', amount: 1, chance: 1.0 },
+        { type: 'food', amount: 1, chance: 0.32 }
+      ];
+    }
+    if (id.startsWith('fox-')) {
+      return [
+        { type: 'meat', amount: 2, chance: 1.0 },
+        { type: 'food', amount: 1, chance: 0.58 }
+      ];
+    }
+    return null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function dropCreatureLoot(ent) {
+  try {
+    if (!ent || ent._lootDropped) return;
+    const loot = resolveCreatureLootProfile(ent);
+    if (!loot || !loot.length) return;
+    const baseCol = Math.max(0, Math.min(COLS - 1, Math.floor((typeof ent.x === 'number' ? ent.x : ent.col) || 0)));
+    const baseRow = Math.max(0, Math.min(ROWS - 1, Math.floor((typeof ent.y === 'number' ? ent.y : ent.row) || 0)));
+    for (const drop of loot) {
+      if (!drop || !drop.type) continue;
+      if (Math.random() > Math.max(0, Math.min(1, drop.chance || 0))) continue;
+      const amount = Math.max(1, Math.floor(drop.amount || 1));
+      for (let i = 0; i < amount; i++) {
+        const dc = Math.max(0, Math.min(COLS - 1, baseCol + Math.floor(Math.random() * 3) - 1));
+        const dr = Math.max(0, Math.min(ROWS - 1, baseRow + Math.floor(Math.random() * 3) - 1));
+        placeResource(dc, dr, drop.type, { pickupAnimated: true });
+      }
+    }
+    ent._lootDropped = true;
+  } catch (e) {}
 }
 
 function cleanupExpiredCorpses(now = Date.now()) {
@@ -2909,8 +3090,9 @@ function createCraftingPanel() {
       <div style="font-weight:700;color:#9fe39f;margin-bottom:4px;">Gestionar agricultura</div>
       <div style="margin-bottom:4px;">1) Craftea <b>stone-hoe</b> (azada de piedra).</div>
       <div style="margin-bottom:4px;">2) Equipa la azada desde inventario.</div>
-      <div style="margin-bottom:4px;">3) En modo libre, pulsa <b>F</b> cerca de una casa para crear un campo.</div>
-      <div>4) Amplía producción con granjas y almacenes para sostener misiones largas.</div>
+      <div style="margin-bottom:4px;">3) En modo libre, mantén clic izquierdo y arrastra con la azada sobre césped para labrar.</div>
+      <div style="margin-bottom:4px;">4) Consigue <b>semillas</b> rompiendo hierbajos y úsalas para cada parcela.</div>
+      <div>5) Amplía producción con granjas y almacenes para sostener misiones largas.</div>
     </div>`;
   right.appendChild(guide);
 
@@ -3279,6 +3461,12 @@ function setupHomePrologueSpawn(anchorCol, anchorRow) {
       enteredInterior: false,
       enteringInterior: false,
       guardsSpawned: false,
+      stage: 'prepare-field',
+      fieldPrepared: false,
+      familyBriefed: false,
+      sleepReady: false,
+      slept: false,
+      objectiveHintShownAt: 0,
       homeCol,
       homeRow,
       homeDoorCol,
@@ -3288,8 +3476,50 @@ function setupHomePrologueSpawn(anchorCol, anchorRow) {
         { name: 'Cabo Naram', col: Math.min(COLS - 1, homeDoorCol + 2), row: Math.min(ROWS - 1, homeDoorRow + 1) }
       ]
     };
+    try {
+      inventory = inventory || {};
+      if (!inventory['stone-hoe']) inventory['stone-hoe'] = 1;
+      player.equipped = player.equipped || 'stone-hoe';
+      if (window.updateEquippedUI) window.updateEquippedUI();
+      if (window.updateInventory) window.updateInventory();
+    } catch (e) {}
     window._homePrologueIntro = true;
     try { mapCacheDirty = true; rebuildMapCacheDebounced(); } catch (e) {}
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function startHomePrologueFamilyBriefing() {
+  try {
+    const prologue = window._homePrologue;
+    if (!prologue || !prologue.active) return false;
+    if (prologue.familyBriefed) return true;
+    prologue.familyBriefed = true;
+    prologue.stage = 'family-concern';
+    prologue.lockMovementForIntro = true;
+    window._activeDialogue = {
+      lines: [
+        'Madre: Por fin volviste... Estamos preocupados. Afuera no paran de pasar patrullas.',
+        'Hermana: Hoy el campo quedó raro, como si alguien hubiera pasado por la noche.',
+        'Tú: Ya he dejado un cultivo preparado. Intentad descansar y manteneros juntos.',
+        'Madre: Haz lo mismo tú. Duerme dentro de casa y mañana pensaremos con la cabeza fría.'
+      ],
+      idx: 0,
+      npcName: 'Familia',
+      onComplete: () => {
+        try {
+          const p = window._homePrologue;
+          if (!p || !p.active) return;
+          p.sleepReady = true;
+          p.stage = 'sleep-in-house';
+          p.lockMovementForIntro = false;
+          notify('Objetivo: entra en casa para dormir y calmar a la familia.');
+        } catch (e) {}
+      }
+    };
+    document.body.classList.add('dialogue-active');
     return true;
   } catch (e) {
     return false;
@@ -4709,13 +4939,15 @@ function generateMap(mapType) {
         const b=tileBiome[r][c];
         const roll=Math.random();
         if (b==='riparian') {
-          // Dense riparian belt: birch, pine, aspen, willows, sedge - northern boreal forest
-          if (roll<0.28*vegDensity) {
+          // Dense riparian belt with stronger tree3 presence for this biome
+          if (roll<0.40*vegDensity) {
             let v;
-            if (roll<0.13) v='birch';
-            else if (roll<0.22) v='fir';
-            else if (roll<0.28) v='pine';
-            else if (roll<0.35) v='willow';
+            if (roll<0.18) v='tree3';
+            else if (roll<0.25) v='tree2';
+            else if (roll<0.30) v='fir';
+            else if (roll<0.35) v='pine';
+            else if (roll<0.38) v='birch';
+            else if (roll<0.40) v='willow';
             else v='sedge';
             placeTree(c,r,v);
           }
@@ -4804,6 +5036,25 @@ function generateMap(mapType) {
     player.x=player.col; player.y=player.row;
 
     try { setupHomePrologueSpawn(spawnC, spawnR); } catch (e) {}
+    try {
+      let weedsNearSpawn = 0;
+      for (let i = 0; i < 10; i++) {
+        const wc = Math.max(1, Math.min(COLS - 2, spawnC + Math.floor(Math.random() * 15) - 7));
+        const wr = Math.max(1, Math.min(ROWS - 2, spawnR + Math.floor(Math.random() * 15) - 7));
+        if (grid[wr][wc] || rFullMap[wr][wc] || isRiver(wc)) continue;
+        const b = tileBiome[wr] && tileBiome[wr][wc];
+        if (b !== 'grass' && b !== 'alluvial' && b !== 'forest' && b !== 'riparian' && b !== 'steppe') continue;
+        if (Math.random() > 0.33) continue;
+        placeTree(wc, wr, 'weed');
+        weedsNearSpawn++;
+      }
+      if (weedsNearSpawn <= 0) {
+        const safeFallback = findNearestWalkable(spawnC + 2, spawnR + 2);
+        if (safeFallback && !isRiver(safeFallback.col, safeFallback.row)) {
+          placeTree(safeFallback.col, safeFallback.row, 'weed');
+        }
+      }
+    } catch (e) {}
   } catch(e){}
   // ── 9. Resource nodes ──
   for (let i=0;i<70;i++) {
@@ -4814,6 +5065,14 @@ function generateMap(mapType) {
     if (b==='steppe'||b==='hills') type='stone';
     else if (b==='alluvial'||b==='riparian') { const rnd=Math.random(); type=rnd<0.55?'wheat':rnd<0.80?'brick':'stone'; }
     placeResource(c,r,type);
+  }
+  // ── 9b. Weed patches (seed source) ──
+  for (let i = 0; i < 55; i++) {
+    const c = Math.floor(Math.random() * COLS), r = Math.floor(Math.random() * ROWS);
+    if (grid[r][c] || rFullMap[r][c] || isRiver(c)) continue;
+    const b = tileBiome[r] && tileBiome[r][c];
+    if (b !== 'grass' && b !== 'alluvial' && b !== 'forest' && b !== 'riparian' && b !== 'steppe') continue;
+    if (Math.random() < 0.30) placeTree(c, r, 'weed');
   }
   // ── 10. Animals ──
   try {
@@ -4951,9 +5210,9 @@ function drawBuilding(col, row, type, alpha) {
       let spriteH = H;
       let spriteAnchorY = y + H;
       if (type === 'house_isolated') {
-        spriteW = W * 1.03;
-        spriteH = H * 1.55;
-        spriteAnchorY = y + H * 1.03;
+        spriteW = W * 0.98;
+        spriteH = H * 1.85;
+        spriteAnchorY = y + H * 1.12;
       }
       // If zoomed out, draw a simplified block for performance and to avoid floating look
       if (viewMode === 'iso' && zoom < 0.6) {
@@ -6482,7 +6741,7 @@ function render() {
       // The cache is built at base TILE resolution and scaled by drawImage(zoom) cheaply on the GPU.
       // Exception: in free mode at higher zoom, bypass cache so subdiv micro-detail renders live.
       const _mc = viewMode === 'iso' ? mapCacheIso : mapCacheOrtho;
-      const _useCache = _mc && !mapCacheDirty && (editMode || zoom < 1.2);
+      const _useCache = _mc && !mapCacheDirty && zoom < 1.12;
       if (_useCache) {
         const scale = zoom; // cache is always at cacheZoom=1
         if (viewMode === 'iso' && _mc._isoOffset) {
@@ -6542,14 +6801,22 @@ function render() {
             drawDiamond(x, y, w, h, isUrss ? '#8B8F95' : '#D7C59A', null, null);
             // slight border for cobblestone separation
             drawDiamond(x, y, w, h, null, isUrss ? 'rgba(200,205,215,0.22)' : 'rgba(160,130,70,0.30)', 0.7);
+          } else if (biome === 'alluvial') {
+            drawDiamond(x, y, w, h, getBiomeFillColor('alluvial'), null, null);
+          } else if (biome === 'steppe') {
+            drawDiamond(x, y, w, h, getBiomeFillColor('steppe'), null, null);
+          } else if (biome === 'riparian') {
+            drawDiamond(x, y, w, h, getBiomeFillColor('riparian'), null, null);
+          } else if (biome === 'marsh') {
+            drawDiamond(x, y, w, h, getBiomeFillColor('marsh'), null, null);
           } else if (biome === 'forest') {
-            drawDiamond(x, y, w, h, isUrss ? '#5A665F' : '#2E6FA3', null, null);
+            drawDiamond(x, y, w, h, getBiomeFillColor('forest'), null, null);
           } else if (biome === 'hills') {
             drawDiamond(x, y, w, h, isUrss ? '#686D74' : '#B8860B', null, null);
           } else if (biome === 'saline') {
             drawDiamond(x, y, w, h, isUrss ? '#E3E7EE' : '#E8D8B8', null, null);
           } else if (biome === 'grass') {
-            drawDiamond(x, y, w, h, isUrss ? '#929D97' : '#9BC17A', null, null);
+            drawDiamond(x, y, w, h, getBiomeFillColor('grass'), null, null);
           } else {
             if (isUrss) {
               const frostVar = ((c*5 + r*11) % 6) * 3;
@@ -6609,11 +6876,43 @@ function render() {
                 } else if (biome === 'forest') {
                   // darker/lighter greens
                   if ((window._currentEpoch || 'mesopotamia') === 'urss') {
-                    const g = Math.floor(88 + v * 48);
-                    ctx.fillStyle = `rgb(${72+Math.floor(v*12)},${g},${88+Math.floor(v*12)})`;
+                    const g = Math.floor(98 + v * 46);
+                    ctx.fillStyle = `rgb(${58+Math.floor(v*10)},${g},${64+Math.floor(v*8)})`;
                   } else {
                     const g = Math.floor(100 + v * 80);
                     ctx.fillStyle = `rgb(${30+Math.floor(v*10)},${g},${50})`;
+                  }
+                } else if (biome === 'alluvial') {
+                  if ((window._currentEpoch || 'mesopotamia') === 'urss') {
+                    const g = 116 + Math.floor(v * 34);
+                    ctx.fillStyle = `rgb(${94+Math.floor(v*10)},${g},${82+Math.floor(v*8)})`;
+                  } else {
+                    const s = 198 + Math.floor((c*7 + r*13 + sx*3 + sy*5) % 20);
+                    ctx.fillStyle = `rgb(${s},${165 + (s%6)},${100 + (s%6)})`;
+                  }
+                } else if (biome === 'steppe') {
+                  if ((window._currentEpoch || 'mesopotamia') === 'urss') {
+                    const g = 100 + Math.floor(v * 30);
+                    ctx.fillStyle = `rgb(${92+Math.floor(v*8)},${g},${78+Math.floor(v*8)})`;
+                  } else {
+                    const s = 176 + Math.floor(v * 26);
+                    ctx.fillStyle = `rgb(${s},${150+Math.floor(v*12)},${82+Math.floor(v*8)})`;
+                  }
+                } else if (biome === 'riparian') {
+                  if ((window._currentEpoch || 'mesopotamia') === 'urss') {
+                    const g = 120 + Math.floor(v * 42);
+                    ctx.fillStyle = `rgb(${76+Math.floor(v*10)},${g},${84+Math.floor(v*10)})`;
+                  } else {
+                    const g = 108 + Math.floor(v * 52);
+                    ctx.fillStyle = `rgb(${52+Math.floor(v*10)},${g},${64+Math.floor(v*10)})`;
+                  }
+                } else if (biome === 'marsh') {
+                  if ((window._currentEpoch || 'mesopotamia') === 'urss') {
+                    const g = 98 + Math.floor(v * 28);
+                    ctx.fillStyle = `rgb(${74+Math.floor(v*8)},${g},${86+Math.floor(v*8)})`;
+                  } else {
+                    const g = 84 + Math.floor(v * 36);
+                    ctx.fillStyle = `rgb(${48+Math.floor(v*8)},${g},${72+Math.floor(v*8)})`;
                   }
                 } else if (biome === 'hills') {
                   if ((window._currentEpoch || 'mesopotamia') === 'urss') {
@@ -6634,7 +6933,7 @@ function render() {
                 } else if (biome === 'grass') {
                   if ((window._currentEpoch || 'mesopotamia') === 'urss') {
                     const g = 140 + Math.floor(v * 32);
-                    ctx.fillStyle = `rgb(${132},${g},${145})`;
+                    ctx.fillStyle = `rgb(${100},${g},${92})`;
                   } else {
                     const g = 140 + Math.floor(v * 60);
                     ctx.fillStyle = `rgb(${80},${g},${60})`;
@@ -6667,8 +6966,20 @@ function render() {
                   ctx.fillRect(sx, sy, stoneW, stoneH);
                 }
               }
+            } else if (biome === 'alluvial') {
+              ctx.fillStyle = getBiomeFillColor('alluvial');
+              ctx.fillRect(x, y, tileSize, tileSize);
+            } else if (biome === 'steppe') {
+              ctx.fillStyle = getBiomeFillColor('steppe');
+              ctx.fillRect(x, y, tileSize, tileSize);
+            } else if (biome === 'riparian') {
+              ctx.fillStyle = getBiomeFillColor('riparian');
+              ctx.fillRect(x, y, tileSize, tileSize);
+            } else if (biome === 'marsh') {
+              ctx.fillStyle = getBiomeFillColor('marsh');
+              ctx.fillRect(x, y, tileSize, tileSize);
             } else if (biome === 'forest') {
-              ctx.fillStyle = (window._currentEpoch || 'mesopotamia') === 'urss' ? '#5A665F' : '#2E6FA3';
+              ctx.fillStyle = getBiomeFillColor('forest');
               ctx.fillRect(x, y, tileSize, tileSize);
             } else if (biome === 'hills') {
               ctx.fillStyle = (window._currentEpoch || 'mesopotamia') === 'urss' ? '#686D74' : '#B8860B';
@@ -6677,7 +6988,7 @@ function render() {
               ctx.fillStyle = (window._currentEpoch || 'mesopotamia') === 'urss' ? '#E3E7EE' : '#E8D8B8';
               ctx.fillRect(x, y, tileSize, tileSize);
             } else if (biome === 'grass') {
-              ctx.fillStyle = (window._currentEpoch || 'mesopotamia') === 'urss' ? '#929D97' : '#9BC17A';
+              ctx.fillStyle = getBiomeFillColor('grass');
               ctx.fillRect(x, y, tileSize, tileSize);
             } else {
               if ((window._currentEpoch || 'mesopotamia') === 'urss') {
@@ -6794,6 +7105,27 @@ function render() {
     if (ent.kind === 'resource') {
       if (isOffscreen) return;
       const subtype = ent.subtype;
+      const canAnimatePickup = !!ent._pickupAnimated && isGroundPickupResourceSubtype(subtype);
+      const pickupPhase = (ent._dropSeed !== undefined ? ent._dropSeed : Math.random()) * Math.PI * 2;
+      const bob = canAnimatePickup ? (Math.sin(now / 280 + pickupPhase) * Math.max(1.5, tileSize * 0.06) + Math.max(2.2, tileSize * 0.08)) : 0;
+      const spin = canAnimatePickup ? (now / 520 + pickupPhase) % (Math.PI * 2) : 0;
+      if (canAnimatePickup) {
+        const shadowX = viewMode === 'iso' ? x : (x + tileSize * 0.5);
+        const shadowY = viewMode === 'iso' ? (y + getIsoTileSize().h * 0.52) : (y + tileSize * 0.78);
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,0,0,0.22)';
+        ctx.beginPath();
+        ctx.ellipse(shadowX, shadowY, Math.max(4, tileSize * 0.17), Math.max(2, tileSize * 0.08), 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        const anchorX = viewMode === 'iso' ? x : (x + tileSize * 0.5);
+        const anchorY = viewMode === 'iso' ? (y + getIsoTileSize().h * 0.26) : (y + tileSize * 0.56);
+        ctx.save();
+        ctx.translate(anchorX, anchorY - bob);
+        ctx.rotate(spin);
+        ctx.translate(-anchorX, -anchorY);
+      }
       // add a subtle pulsing to resources so they look special
       // slower, gentler pulse
       const pulse = 1 + 0.06 * Math.sin(now / 800 + (ent.col * 7 + ent.row * 13));
@@ -6804,6 +7136,27 @@ function render() {
           const sizeW = Math.max(14, w * 0.92 * pulse);
           const sizeH = Math.max(14, h * 1.1 * pulse);
           drawEntitySpriteAt('wheat', x, y + h * 0.12, sizeW, sizeH, { ignoreEntityScale: true });
+        } else if (subtype === 'meat') {
+          const mw = Math.max(10, w * 0.38 * pulse);
+          const mh = Math.max(9, h * 0.34 * pulse);
+          ctx.fillStyle = '#A74A35';
+          ctx.beginPath(); ctx.ellipse(x - mw * 0.1, y + h * 0.10, mw * 0.48, mh * 0.5, -0.2, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = '#D88B73';
+          ctx.beginPath(); ctx.ellipse(x + mw * 0.16, y + h * 0.05, mw * 0.24, mh * 0.24, 0, 0, Math.PI * 2); ctx.fill();
+        } else if (subtype === 'seed') {
+          const sw = Math.max(10, w * 0.44 * pulse);
+          const sh = Math.max(10, h * 0.46 * pulse);
+          ctx.fillStyle = '#B68645';
+          ctx.beginPath();
+          ctx.ellipse(x - sw * 0.18, y + h * 0.10, sw * 0.22, sh * 0.34, -0.35, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.beginPath();
+          ctx.ellipse(x + sw * 0.18, y + h * 0.08, sw * 0.22, sh * 0.34, 0.35, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#DFC485';
+          ctx.beginPath();
+          ctx.ellipse(x, y + h * 0.02, sw * 0.17, sh * 0.28, 0, 0, Math.PI * 2);
+          ctx.fill();
         } else if (subtype === 'wood') {
           // draw a small log with grain marks
           const lw = Math.max(6, Math.floor(w * 0.36 * pulse));
@@ -6873,6 +7226,23 @@ function render() {
         if (subtype === 'wheat') {
           const spriteSize = Math.max(12, sz * 1.25);
           drawEntitySpriteAt('wheat', x + tileSize * 0.5, y + tileSize * 0.72, spriteSize, spriteSize, { ignoreEntityScale: true });
+        } else if (subtype === 'meat') {
+          const mx = x + tileSize * 0.5;
+          const my = y + tileSize * 0.58;
+          const mr = Math.max(4, sz * 0.24);
+          ctx.fillStyle = '#A74A35';
+          ctx.beginPath(); ctx.ellipse(mx, my, mr, mr * 0.78, -0.2, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = '#D88B73';
+          ctx.beginPath(); ctx.ellipse(mx + mr * 0.28, my - mr * 0.08, mr * 0.36, mr * 0.32, 0, 0, Math.PI * 2); ctx.fill();
+        } else if (subtype === 'seed') {
+          const sx = x + tileSize * 0.5;
+          const sy = y + tileSize * 0.58;
+          const s = Math.max(4, sz * 0.22);
+          ctx.fillStyle = '#B68645';
+          ctx.beginPath(); ctx.ellipse(sx - s * 0.85, sy + s * 0.12, s * 0.7, s, -0.4, 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.ellipse(sx + s * 0.85, sy + s * 0.12, s * 0.7, s, 0.4, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = '#DFC485';
+          ctx.beginPath(); ctx.ellipse(sx, sy - s * 0.15, s * 0.55, s * 0.84, 0, 0, Math.PI * 2); ctx.fill();
         } else if (subtype === 'wood') {
           // draw a plank with grain
           ctx.fillStyle = '#8B5A38'; ctx.fillRect(cx, cy + sz*0.15, sz, sz*0.7);
@@ -6915,6 +7285,7 @@ function render() {
           ctx.fillStyle = '#A0522D'; ctx.fillRect(cx, cy, sz, sz);
         }
       }
+      if (canAnimatePickup) ctx.restore();
     } else if (ent.kind === 'player') {
       if (lowDetail) {
         try {
@@ -7213,7 +7584,12 @@ function render() {
       }
       // small grass/weed variants: draw a tiny tuft
       if (variant === 'tallgrass' || variant === 'weed') {
-        if ((window._currentEpoch || 'mesopotamia') === 'urss') return;
+        if (variant === 'tallgrass' && (window._currentEpoch || 'mesopotamia') === 'urss') return;
+        if (variant === 'weed' && hasRegisteredSprite('weed')) {
+          const sz = Math.max(tileSize * 0.46, Math.round(tileSize * (ent.size || 0.6) * 1.38));
+          drawEntitySpriteAt('weed', x + tileSize * 0.5, y + tileSize * 0.98, sz, sz * 1.05);
+          return;
+        }
         const tpl = GLOBAL_TREE_TEMPLATES[6];
         const scale = Math.max(1, Math.floor(tileSize / 7 * (ent.size || 0.6)));
         const cx = Math.floor(x + tileSize * 0.5);
@@ -7329,13 +7705,16 @@ function render() {
             let drop = 'wood';
             try {
               const variant = ent.variant || '';
-              if (variant === 'bush' || variant === 'shrub' || variant === 'tallgrass' || variant === 'weed') {
+              if (variant === 'weed') {
+                const roll = Math.random();
+                drop = roll < 0.82 ? 'seed' : (roll < 0.92 ? 'food' : 'wood');
+              } else if (variant === 'bush' || variant === 'shrub' || variant === 'tallgrass') {
                 // 50% chance to drop food
                 if (Math.random() < 0.5) drop = 'food';
                 else drop = 'wood';
               }
             } catch (e) {}
-            placeResource(ent.col, ent.row, drop);
+            placeResource(ent.col, ent.row, drop, { pickupAnimated: true });
           } catch (e) {}
         }
       }
@@ -7935,15 +8314,33 @@ function render() {
       if (typeof dog.y !== 'number') dog.y = (typeof dog.row === 'number' ? dog.row : player.y) + 0.5;
       if (!dog.behavior) dog.behavior = 'follow';
       if (typeof dog.loyalty !== 'number') dog.loyalty = 60;
+      if (typeof dog.hunger !== 'number') dog.hunger = 80;
+      if (typeof dog.maxHunger !== 'number') dog.maxHunger = 100;
+      if (typeof dog.energy !== 'number') dog.energy = 90;
+      if (typeof dog.maxEnergy !== 'number') dog.maxEnergy = 100;
+      if (typeof dog.playType !== 'string') dog.playType = 'fetch';
+
+      if (dog.playMode) {
+        const tickScale = Math.max(0.1, window._timeScale || 1);
+        dog.hunger = Math.max(0, (dog.hunger || 0) - 0.18 * dt * tickScale);
+        dog.energy = Math.max(0, (dog.energy || 0) - 0.3 * dt * tickScale);
+      } else {
+        dog.energy = Math.min(dog.maxEnergy || 100, (dog.energy || 0) + 0.12 * dt);
+      }
       
       // Cancel play mode if timeout expires
       if (dog.playMode && dog.playTimeout && now >= dog.playTimeout) {
         dog.playMode = false;
+        dog.playType = 'fetch';
+        dog.fetchMode = false;
+        dog.fetchTarget = null;
+        dog._playExploreTarget = null;
+        if (typeof dog._baseSpeed === 'number') dog.speed = dog._baseSpeed;
         notify('El perro se aburre esperando...');
       }
       
       // Handle fetch/play mode
-      if (dog.fetchMode && dog.fetchTarget) {
+      if (dog.playMode && dog.playType === 'fetch' && dog.fetchMode && dog.fetchTarget) {
         const targetX = dog.fetchTarget.col + 0.5;
         const targetY = dog.fetchTarget.row + 0.5;
         const distToTarget = Math.hypot(targetX - dog.x, targetY - dog.y);
@@ -7964,6 +8361,29 @@ function render() {
             notify('¡El perro vuelve corriendo, satisfecho del juego!');
           }
         }
+      } else if (dog.playMode && dog.playType === 'chase') {
+        const baseSpd = typeof dog._baseSpeed === 'number' ? dog._baseSpeed : (dog._baseSpeed = dog.speed || 1.8);
+        dog.speed = Math.max(baseSpd * 1.45, 2.6);
+        const orbit = now / 520;
+        dog.moveTarget = {
+          x: player.x + 0.5 + Math.cos(orbit) * 0.9,
+          y: player.y + 0.5 + Math.sin(orbit) * 0.6
+        };
+      } else if (dog.playMode && dog.playType === 'explore') {
+        const baseSpd = typeof dog._baseSpeed === 'number' ? dog._baseSpeed : (dog._baseSpeed = dog.speed || 1.8);
+        dog.speed = Math.max(baseSpd * 1.2, 2.2);
+        if (!dog._playExploreTarget || !dog._playExploreUntil || now >= dog._playExploreUntil) {
+          const radius = 2.5 + (Math.random() * 2.5);
+          const angle = Math.random() * Math.PI * 2;
+          dog._playExploreTarget = {
+            x: player.x + 0.5 + Math.cos(angle) * radius,
+            y: player.y + 0.5 + Math.sin(angle) * radius * 0.6
+          };
+          dog._playExploreUntil = now + 1200;
+        }
+        dog.moveTarget = dog._playExploreTarget;
+      } else if (!dog.playMode && typeof dog._baseSpeed === 'number' && dog.speed !== dog._baseSpeed) {
+        dog.speed = dog._baseSpeed;
       }
       
       if (dog.behavior === 'follow') {
@@ -8342,6 +8762,21 @@ function render() {
     for (let rr = buildDragRect.minR; rr <= buildDragRect.maxR; rr++) {
       for (let cc = buildDragRect.minC; cc <= buildDragRect.maxC; cc++) {
         drawTileHighlight(cc, rr, 'rgba(200,168,75,0.18)', 'rgba(200,168,75,0.9)', 1);
+      }
+    }
+  }
+  // draw hoe-drag tilling preview (free mode)
+  if (isHoeDragging && hoeDragRect && !editMode) {
+    for (let rr = hoeDragRect.minR; rr <= hoeDragRect.maxR; rr++) {
+      for (let cc = hoeDragRect.minC; cc <= hoeDragRect.maxC; cc++) {
+        const ok = canTillSoilAt(cc, rr, 'farm') && (inventory.seed || 0) > 0;
+        drawTileHighlight(
+          cc,
+          rr,
+          ok ? 'rgba(90,180,90,0.22)' : 'rgba(200,70,70,0.22)',
+          ok ? 'rgba(130,230,130,0.95)' : 'rgba(220,90,90,0.95)',
+          2
+        );
       }
     }
   }
@@ -8980,6 +9415,15 @@ function createFieldNearHome() {
             }
           });
           if (window.renderMissions) window.renderMissions();
+        }
+      } catch (e) {}
+      try {
+        const prologue = window._homePrologue;
+        if (prologue && prologue.active && !prologue.fieldPrepared) {
+          prologue.fieldPrepared = true;
+          prologue.stage = 'family-concern';
+          notify('Cultivo preparado. Vuelve con tu familia.');
+          setTimeout(() => { try { startHomePrologueFamilyBriefing(); } catch (e) {} }, 350);
         }
       } catch (e) {}
       updateUI();
@@ -9654,13 +10098,13 @@ function applyPlayerAttackDamage(targetInfo, damage, weaponName) {
     addLog(`Golpeas a un conejo por ${damage} daño.`);
     if (target.hp <= 0) {
       markEntityDowned(target, { lingerMs: CORPSE_LINGER_MS });
-      addToInventory('meat', 1);
+      addLog('El conejo suelta carne y provisiones.');
     }
   } else if (targetInfo.bucket === 'foxes') {
     addLog(`Golpeas a un zorro por ${damage} daño.`);
     if (target.hp <= 0) {
       markEntityDowned(target, { lingerMs: CORPSE_LINGER_MS });
-      addToInventory('meat', 2);
+      addLog('El zorro suelta carne y provisiones.');
     }
   } else if (targetInfo.bucket === 'enemies') {
     addLog(`Golpeas a ${targetInfo.label} por ${damage} daño.`);
@@ -9791,8 +10235,7 @@ function performAction(actionId) {
       const rab = rabbits[i];
       if (Math.abs(rab.col - player.col) <= 1 && Math.abs(rab.row - player.row) <= 1) {
         markEntityDowned(rab, { lingerMs: CORPSE_LINGER_MS });
-        addToInventory('meat', 1);
-        addLog('Cazaste un conejo. +1 carne');
+        addLog('Cazaste un conejo. Dejó carne en el suelo.');
         gainXP(6);
         updateUI();
         updateInventory();
@@ -10063,7 +10506,7 @@ function closeCharacterSelect() {
   if (window._pendingIntro) {
     window._pendingIntro = false;
     try {
-      if (!(window._homePrologue && window._homePrologue.active)) startIntroSequence();
+      startIntroSequence();
     } catch (e) {}
   }
 }
@@ -11074,6 +11517,14 @@ function createMenuBar() {
 
     window.enterInterior = function(id, doorRef) {
       try {
+        try {
+          const prologue = window._homePrologue;
+          if (id === 'house_player_home' && prologue && prologue.active && !prologue.sleepReady) {
+            if (!prologue.fieldPrepared) notify('Antes de dormir, prepara un cultivo cerca de casa (F con azada).');
+            else notify('Tu familia quiere hablar contigo primero.');
+            return;
+          }
+        } catch (e) {}
         fetch('data/interiors/' + id + '.json').then(r => { if (!r.ok) throw new Error('missing'); return r.json(); }).then(data => {
           // Save exterior state
           window._savedExterior = {
@@ -11100,6 +11551,31 @@ function createMenuBar() {
           window._interiorFadeIn = { start: Date.now(), dur: 500 };
           try { targetCam = null; centerCameraOnPlayer(); } catch (e) {}
           notify && notify('Entras en la casa');
+          try {
+            const prologue = window._homePrologue;
+            if (id === 'house_player_home' && prologue && prologue.active && prologue.sleepReady && !prologue.slept) {
+              prologue.slept = true;
+              prologue.stage = 'sleeping';
+              prologue.lockMovementForIntro = true;
+              window._activeDialogue = {
+                lines: [
+                  'Te recuestas un momento. El silencio pesa más que el cansancio.',
+                  'Respiras hondo: el cultivo está listo y tu familia está a salvo por esta noche.',
+                  'Al amanecer, unos golpes secos en la puerta te obligan a levantarte...'
+                ],
+                idx: 0,
+                npcName: 'Narrador',
+                onComplete: () => {
+                  try {
+                    const p = window._homePrologue;
+                    if (p) p.lockMovementForIntro = false;
+                    setTimeout(() => { try { if (window.exitInterior) window.exitInterior(); } catch (e) {} }, 450);
+                  } catch (e) {}
+                }
+              };
+              document.body.classList.add('dialogue-active');
+            }
+          } catch (e) {}
         }).catch(() => { notify && notify('Interior no encontrado: ' + id); });
       } catch (e) {}
     };
@@ -13057,7 +13533,49 @@ function drawStoryObjectiveHUD(ctx, W, H) {
   }
   const ch = window._storyChapter || 0;
   if (ch === 0 || !window._missions) {
-    try { const panel = document.getElementById('story-objective-overlay'); if (panel) panel.style.display = 'none'; } catch (e) {}
+    try {
+      const prologue = window._homePrologue;
+      if (!(prologue && prologue.active)) {
+        const panel = document.getElementById('story-objective-overlay');
+        if (panel) panel.style.display = 'none';
+        return;
+      }
+      let panel = document.getElementById('story-objective-overlay');
+      if (!panel) {
+        panel = document.createElement('div');
+        panel.id = 'story-objective-overlay';
+        panel.setAttribute('data-title', 'Objetivo');
+        panel.style.position = 'fixed';
+        panel.style.left = '12px';
+        panel.style.top = '52px';
+        panel.style.zIndex = '4200';
+        panel.style.minWidth = '320px';
+        panel.style.maxWidth = '360px';
+        panel.style.pointerEvents = 'auto';
+        panel.innerHTML = '<div class="story-objective-content"></div>';
+        document.body.appendChild(panel);
+        enableFloatingBehavior(panel);
+        registerPanel(panel);
+      }
+      const content = panel.querySelector('.story-objective-content');
+      if (content) {
+        let prologueDesc = 'Prepara un cultivo junto a casa con la azada de piedra (tecla F).';
+        if (prologue.fieldPrepared && !prologue.sleepReady) prologueDesc = 'Habla con tu familia y escucha su preocupación.';
+        else if (prologue.sleepReady && !prologue.slept) prologueDesc = 'Entra en casa y duerme para calmar los ánimos.';
+        else if (prologue.slept) prologueDesc = 'La noche termina. Prepárate para el briefing militar.';
+        content.innerHTML = `
+          <div style="display:flex;align-items:flex-start;gap:10px;min-width:0;">
+            <div style="flex:0 0 62px;padding:6px 4px;border-radius:4px;background:rgba(100,70,10,0.7);text-align:center;">
+              <div style="font:700 10px monospace;color:#FFD27A;">PRÓLOGO</div>
+              <div style="font:700 10px sans-serif;color:#FFD27A;margin-top:3px;word-break:break-word;">CASA</div>
+            </div>
+            <div style="flex:1;min-width:0;">
+              <div style="font:600 11px sans-serif;color:rgba(240,235,215,0.96);line-height:1.35;word-break:break-word;">${prologueDesc}</div>
+            </div>
+          </div>`;
+      }
+      panel.style.display = worldMapOverlayVisible || isCinematicActive() ? 'none' : 'block';
+    } catch (e) {}
     return;
   }
   const q = window._missions.find(m => m.isStory);
@@ -13518,7 +14036,7 @@ function drawIntroSequence(ctx, W, H) {
     else ctx.fillText('Mesopotamia, 2350 a.C.', cx, cy - 18);
     ctx.font = '13px serif';
     ctx.fillStyle = 'rgba(255,235,200,0.82)';
-    if (homePrologueMode) ctx.fillText('Tu familia duerme a pocos pasos; afuera, dos militares esperan con órdenes selladas.', cx, cy + 10);
+    if (homePrologueMode) ctx.fillText('Primero, prepara un cultivo y calma a tu familia antes de que la noche empeore.', cx, cy + 10);
     else if (epochNow === 'urss') ctx.fillText('Novozarya, un pueblo soviético entre nieve y acero, depende de una red frágil de suministro.', cx, cy + 10);
     else if (epochNow === 'medieval') ctx.fillText('Entre caminos y ríos, toda aldea depende del clima y del comercio.', cx, cy + 10);
     else ctx.fillText('Entre el Río Don y el Río Ob Nord, bajo el hielo perpetuo, solo el trabajo colectivo sostiene la vida.', cx, cy + 10);
@@ -13532,13 +14050,13 @@ function drawIntroSequence(ctx, W, H) {
     const lore = homePrologueMode
       ? [
           `Eres ${protagonistName}, ${protagonistTitle}.`,
-          'Has regresado a tu casa tras meses siguiendo señales de sabotaje.',
+          'Acabas de volver a casa tras días de tensión en los caminos.',
           '',
-          'Esta madrugada, la radio clandestina confirmó lo impensable:',
-          'la red de espionaje militar ya opera dentro de tu distrito.',
+          'Antes de pensar en política o guerra, debes asegurar comida:',
+          'prepara un cultivo junto a casa para los tuyos.',
           '',
-          'Tu perro Kidu y tu familia están dentro, pero dos militares te exigen fuera.',
-          'Debes decidir a quién creer antes de que la operación te trague por completo.'
+          'Tu familia está nerviosa y te pide calma.',
+          'Cuando termines, entra en casa, duerme y mañana afrontarás lo que venga.'
         ]
       : (epochNow === 'urss')
       ? [
@@ -14181,6 +14699,25 @@ function advanceDialogue() {
 function drawDialoguePanel(ctx, W, H) {
   const dlg = window._activeDialogue;
   if (!dlg) return;
+  const typeKey = String(
+    dlg.npcType ||
+    (dlg.npcRef && dlg.npcRef.npcType) ||
+    (dlg.isPetInteraction ? 'pet' : '') ||
+    (dlg.npcName === 'Familia' ? 'family' : '') ||
+    (dlg.isCinematic ? 'cinematic' : 'villager')
+  );
+  const DIALOGUE_THEME = {
+    villager:   { panel: 'rgba(8,6,3,0.93)', border: '#9B7520', header: '#FFD27A', text: '#f0ead8', divider: 'rgba(200,160,60,0.35)', option: '#FFD27A', footer: 'rgba(255,210,122,0.75)', footerEnd: 'rgba(220,100,100,0.80)' },
+    family:     { panel: 'rgba(7,9,18,0.93)', border: '#5A84D8', header: '#9CC3FF', text: '#E7EEFF', divider: 'rgba(110,145,220,0.40)', option: '#A9C9FF', footer: 'rgba(170,205,255,0.82)', footerEnd: 'rgba(255,150,150,0.85)' },
+    pet:        { panel: 'rgba(10,12,7,0.93)', border: '#6AA84F', header: '#B8E986', text: '#F1F8E5', divider: 'rgba(130,190,100,0.40)', option: '#B8E986', footer: 'rgba(184,233,134,0.82)', footerEnd: 'rgba(255,165,140,0.86)' },
+    guard:      { panel: 'rgba(13,8,7,0.94)', border: '#B66B4A', header: '#FFBE96', text: '#F9E8DE', divider: 'rgba(190,120,90,0.38)', option: '#FFC8A8', footer: 'rgba(255,190,150,0.82)', footerEnd: 'rgba(255,140,120,0.86)' },
+    merchant:   { panel: 'rgba(14,9,4,0.94)', border: '#D9A441', header: '#FFD98A', text: '#FFF2DA', divider: 'rgba(220,170,70,0.40)', option: '#FFE2A5', footer: 'rgba(255,218,145,0.84)', footerEnd: 'rgba(255,155,120,0.86)' },
+    elder:      { panel: 'rgba(11,8,15,0.93)', border: '#9C79D8', header: '#D2BAFF', text: '#F0E7FF', divider: 'rgba(156,121,216,0.42)', option: '#DCC7FF', footer: 'rgba(210,186,255,0.84)', footerEnd: 'rgba(255,160,175,0.86)' },
+    priestess:  { panel: 'rgba(7,10,14,0.93)', border: '#5FA5D7', header: '#A8DAFF', text: '#E8F6FF', divider: 'rgba(95,165,215,0.40)', option: '#B7E4FF', footer: 'rgba(175,225,255,0.84)', footerEnd: 'rgba(255,160,180,0.86)' },
+    commissar:  { panel: 'rgba(16,7,7,0.94)', border: '#C04C4C', header: '#FF9B9B', text: '#FFE5E5', divider: 'rgba(200,90,90,0.40)', option: '#FFB8B8', footer: 'rgba(255,170,170,0.84)', footerEnd: 'rgba(255,130,130,0.88)' },
+    cinematic:  { panel: 'rgba(4,4,6,0.95)', border: '#8A8A8A', header: '#E8E8E8', text: '#F2F2F2', divider: 'rgba(220,220,220,0.25)', option: '#EAEAEA', footer: 'rgba(220,220,220,0.72)', footerEnd: 'rgba(240,170,170,0.84)' }
+  };
+  const theme = DIALOGUE_THEME[typeKey] || DIALOGUE_THEME.villager;
   const line = dlg.lines[dlg.idx] || '';
   const hasOptions = dlg.options && dlg.options.length > 0;
   const panH = hasOptions ? 220 : 160;
@@ -14192,8 +14729,8 @@ function drawDialoguePanel(ctx, W, H) {
   ctx.imageSmoothingEnabled = true;
   try { ctx.imageSmoothingQuality = 'high'; } catch(e){}
   // Rounded panel background
-  ctx.fillStyle = 'rgba(8,6,3,0.93)';
-  ctx.strokeStyle = '#9B7520';
+  ctx.fillStyle = theme.panel;
+  ctx.strokeStyle = theme.border;
   ctx.lineWidth = 1.8;
   const r = 8;
   ctx.beginPath();
@@ -14207,17 +14744,17 @@ function drawDialoguePanel(ctx, W, H) {
   ctx.arcTo(px, py, px + r, py, r);
   ctx.closePath(); ctx.fill(); ctx.stroke();
   // NPC name header
-  ctx.fillStyle = '#FFD27A';
+  ctx.fillStyle = theme.header;
   ctx.font = 'bold 14px sans-serif';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
   ctx.fillText(dlg.npcName, px + 14, py + 24);
   // Thin gold divider
-  ctx.strokeStyle = 'rgba(200,160,60,0.35)';
+  ctx.strokeStyle = theme.divider;
   ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(px + 14, py + 32); ctx.lineTo(px + panW - 14, py + 32); ctx.stroke();
   // Dialogue text with word-wrap
-  ctx.fillStyle = '#f0ead8';
+  ctx.fillStyle = theme.text;
   ctx.font = '15px sans-serif';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
@@ -14237,11 +14774,11 @@ function drawDialoguePanel(ctx, W, H) {
   
   // Render options if available
   if (hasOptions) {
-    ctx.fillStyle = 'rgba(200,160,60,0.4)';
+    ctx.fillStyle = theme.divider;
     ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(px + 14, py + panH - 70); ctx.lineTo(px + panW - 14, py + panH - 70); ctx.stroke();
     
-    ctx.fillStyle = '#FFD27A';
+    ctx.fillStyle = theme.option;
     ctx.font = '12px sans-serif';
     ctx.textAlign = 'left';
     let optY = py + panH - 60;
@@ -14254,7 +14791,7 @@ function drawDialoguePanel(ctx, W, H) {
   // Footer prompt
   const isLast = dlg.idx >= dlg.lines.length - 1;
   ctx.font = '11px monospace';
-  ctx.fillStyle = isLast && !hasOptions ? 'rgba(220,100,100,0.80)' : 'rgba(255,210,122,0.75)';
+  ctx.fillStyle = isLast && !hasOptions ? theme.footerEnd : theme.footer;
   ctx.textAlign = 'right';
   const footerText = hasOptions ? `Presiona número para opción` : `[${dlg.idx + 1}/${dlg.lines.length}]  [E] ${isLast ? 'Cerrar' : 'Continuar'}`;
   ctx.fillText(footerText, px + panW - 12, py + panH - 10);
@@ -14376,7 +14913,8 @@ function drawPetRadialMenu(ctx, W, H) {
     const cy = center.y;
     const innerR = 30;
     const outerR = 108;
-    const n = PET_RADIAL_OPTIONS.length;
+    const options = petRadialMenuMode === 'play' ? PET_PLAY_OPTIONS : PET_RADIAL_OPTIONS;
+    const n = options.length;
     const hoverIdx = getPetRadialHoverIndex(petRadialPointer.x, petRadialPointer.y, cx, cy);
     petRadialSelection = hoverIdx;
 
@@ -14404,7 +14942,7 @@ function drawPetRadialMenu(ctx, W, H) {
       ctx.font = 'bold 12px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(PET_RADIAL_OPTIONS[i].label, tx, ty);
+      ctx.fillText(options[i].label, tx, ty);
     }
 
     ctx.beginPath();
@@ -14416,11 +14954,56 @@ function drawPetRadialMenu(ctx, W, H) {
     ctx.stroke();
     ctx.fillStyle = '#FFD27A';
     ctx.font = 'bold 13px sans-serif';
-    ctx.fillText('PERRO', cx, cy);
+    ctx.fillText(petRadialMenuMode === 'play' ? 'JUGAR' : 'PERRO', cx, cy);
 
     ctx.fillStyle = 'rgba(255,255,255,0.9)';
     ctx.font = '12px sans-serif';
-    ctx.fillText('Suelta K para confirmar', cx, cy + outerR + 20);
+
+    ctx.fillText(petRadialMenuMode === 'play' ? 'Suelta K para elegir juego' : 'Suelta K para confirmar', cx, cy + outerR + 20);
+
+    const panelW = 210;
+    const panelH = 170;
+    const pad = 14;
+    const panelX = Math.min(W - panelW - pad, cx + outerR + 18);
+    const panelY = Math.max(pad, Math.min(H - panelH - pad, cy - panelH * 0.5));
+    const clamp01 = (v) => Math.max(0, Math.min(1, v));
+    const drawBar = (x, y, w, label, value, fill) => {
+      ctx.fillStyle = 'rgba(0,0,0,0.72)';
+      ctx.fillRect(x, y, w, 20);
+      ctx.fillStyle = 'rgba(255,255,255,0.1)';
+      ctx.fillRect(x + 1, y + 1, w - 2, 18);
+      ctx.fillStyle = fill;
+      ctx.fillRect(x + 1, y + 1, Math.max(0, (w - 2) * clamp01(value)), 18);
+      ctx.fillStyle = '#FFF';
+      ctx.font = '11px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, x + 6, y + 10);
+      ctx.textAlign = 'right';
+      ctx.fillText(`${Math.round(clamp01(value) * 100)}%`, x + w - 6, y + 10);
+    };
+
+    ctx.fillStyle = 'rgba(12,12,14,0.92)';
+    ctx.strokeStyle = 'rgba(255,210,122,0.7)';
+    ctx.lineWidth = 2;
+    ctx.fillRect(panelX, panelY, panelW, panelH);
+    ctx.strokeRect(panelX, panelY, panelW, panelH);
+
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = '#FFD27A';
+    ctx.font = 'bold 13px sans-serif';
+    ctx.fillText(pet.name || 'Perro', panelX + 10, panelY + 8);
+
+    ctx.fillStyle = 'rgba(255,255,255,0.82)';
+    ctx.font = '11px sans-serif';
+    ctx.fillText(`Estado: ${pet.behavior === 'stay' ? 'Quieto' : 'Siguiendo'}`, panelX + 10, panelY + 28);
+    ctx.fillText(`Juego: ${pet.playMode ? (pet.playType || 'activo') : 'descanso'}`, panelX + 10, panelY + 42);
+
+    drawBar(panelX + 10, panelY + 64, panelW - 20, 'Lealtad', (pet.loyalty || 0) / 100, '#5CD67A');
+    drawBar(panelX + 10, panelY + 88, panelW - 20, 'Hambre', (pet.hunger || 0) / Math.max(1, pet.maxHunger || 100), (pet.hunger || 0) / Math.max(1, pet.maxHunger || 100) < 0.3 ? '#C84A1B' : '#9A6B2A');
+    drawBar(panelX + 10, panelY + 112, panelW - 20, 'Energía', (pet.energy || 0) / Math.max(1, pet.maxEnergy || 100), '#5FA8FF');
+    drawBar(panelX + 10, panelY + 136, panelW - 20, 'Vida', (pet.hp || 0) / Math.max(1, pet.maxHp || 1), '#74E06F');
     ctx.restore();
   } catch (e) {}
 }
@@ -14521,6 +15104,17 @@ canvas.addEventListener('mousemove', e => {
       maxR: Math.min(ROWS-1, Math.max(buildDragStart.row, r))
     };
   }
+
+  if (isHoeDragging && hoeDragStart) {
+    const cur = screenToWorld(mx, my);
+    const c = Math.floor(cur.col), r = Math.floor(cur.row);
+    hoeDragRect = {
+      minC: Math.max(0, Math.min(hoeDragStart.col, c)),
+      maxC: Math.min(COLS - 1, Math.max(hoeDragStart.col, c)),
+      minR: Math.max(0, Math.min(hoeDragStart.row, r)),
+      maxR: Math.min(ROWS - 1, Math.max(hoeDragStart.row, r))
+    };
+  }
 });
 
 canvas.addEventListener('mousedown', e => {
@@ -14546,13 +15140,12 @@ canvas.addEventListener('mousedown', e => {
     if (!editMode && !isPanning && !isZooming) {
       for (let i = 0; i < entities.length; i++) {
         const ent = entities[i];
-        if (ent.kind === 'pet' && ent.petType === 'dog' && ent.playMode) {
+        if (ent.kind === 'pet' && ent.petType === 'dog' && ent.playMode && ent.playType === 'fetch') {
           const ptr = getCanvasPointerPosition(e);
           const { col, row } = screenToWorld(ptr.x, ptr.y);
           // Send dog to fetch location
           ent.fetchTarget = { col: Math.floor(col), row: Math.floor(row) };
           ent.fetchMode = true;
-          ent.playMode = false;
           notify('¡El perro sale corriendo por el objeto!');
           e.preventDefault();
           return;
@@ -14589,6 +15182,18 @@ canvas.addEventListener('mousedown', e => {
     }
 
     if (!editMode) {
+      if ((player.equipped || '') === 'stone-hoe') {
+        isHoeDragging = true;
+        hoeDragStart = { col: Math.floor(col), row: Math.floor(row) };
+        hoeDragRect = {
+          minC: hoeDragStart.col,
+          maxC: hoeDragStart.col,
+          minR: hoeDragStart.row,
+          maxR: hoeDragStart.row
+        };
+        e.preventDefault();
+        return;
+      }
       // In free mode, left-click opens context info (auto-move removed)
       try {
         const pos = screenToWorldFloat(mx, my);
@@ -14708,6 +15313,15 @@ document.addEventListener('mouseup', (e) => {
     isBuildDragging = false;
     buildDragStart = null;
     buildDragRect = null;
+  }
+
+  if (isHoeDragging) {
+    try {
+      if (!editMode && hoeDragRect) tillFieldRect(hoeDragRect);
+    } catch (err) {}
+    isHoeDragging = false;
+    hoeDragStart = null;
+    hoeDragRect = null;
   }
 });
 
@@ -15143,8 +15757,7 @@ document.addEventListener('keydown', e => {
       e.preventDefault();
       return;
     }
-    petRadialMenuActive = true;
-    petRadialSelection = -1;
+    openPetRadialMenu();
     e.preventDefault();
     return;
   }
@@ -15213,9 +15826,8 @@ document.addEventListener('keydown', e => {
 document.addEventListener('keyup', e => {
   if (e.key && e.key.toLowerCase() === 'k') {
     if (petRadialMenuActive) {
-      executePetRadialSelection();
-      petRadialMenuActive = false;
-      petRadialSelection = -1;
+      const shouldClose = executePetRadialSelection();
+      if (shouldClose) closePetRadialMenu();
     }
     e.preventDefault();
     return;
@@ -15226,8 +15838,7 @@ document.addEventListener('keyup', e => {
 });
 window.addEventListener('blur', () => {
   try { keyState = {}; } catch (e) {}
-  petRadialMenuActive = false;
-  petRadialSelection = -1;
+  closePetRadialMenu();
 });
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
@@ -15236,8 +15847,7 @@ document.addEventListener('visibilitychange', () => {
       moveTarget = null;
       movePath = null;
     } catch (e) {}
-    petRadialMenuActive = false;
-    petRadialSelection = -1;
+    closePetRadialMenu();
   }
 });
 
@@ -15797,52 +16407,18 @@ function postMapInit() {
 
   try {
     const prologue = window._homePrologue;
-    if (prologue && prologue.active && !prologue.enteredInterior && !prologue.enteringInterior) {
-      prologue.enteringInterior = true;
-
-      const doorRef = {
-        col: prologue.homeDoorCol,
-        row: prologue.homeDoorRow,
-        interiorId: 'house_player_home',
-        buildingType: 'house_isolated',
-        buildingBase: { col: prologue.homeCol, row: prologue.homeRow }
-      };
-
-      const tryEnterHomeInterior = (attempt) => {
-        try { window.enterInterior('house_player_home', doorRef); } catch (e) {}
-        setTimeout(() => {
-          try {
-            const insideHome = !!(window.currentInterior && window.currentInterior._interiorId === 'house_player_home');
-            if (insideHome) {
-              prologue.enteredInterior = true;
-              prologue.enteringInterior = false;
-              const dog = ensurePetDogCompanion();
-              if (dog) {
-                const inCol = Math.max(1, Math.min(8, Math.floor((window.currentInterior && window.currentInterior.entryCol) || 4) + 1));
-                const inRow = Math.max(1, Math.min(5, Math.floor((window.currentInterior && window.currentInterior.entryRow) || 4)));
-                dog.col = inCol;
-                dog.row = inRow;
-                dog.x = inCol + 0.5;
-                dog.y = inRow + 0.5;
-                dog.behavior = 'stay';
-                delete dog.moveTarget;
-              }
-              return;
-            }
-            if (attempt < 4) {
-              tryEnterHomeInterior(attempt + 1);
-              return;
-            }
-            prologue.enteringInterior = false;
-            prologue.enteredInterior = false;
-          } catch (e) {
-            prologue.enteringInterior = false;
-            prologue.enteredInterior = false;
-          }
-        }, 240);
-      };
-
-      tryEnterHomeInterior(0);
+    if (prologue && prologue.active) {
+      if (!prologue.objectiveHintShownAt || Date.now() - prologue.objectiveHintShownAt > 1500) {
+        notify('Prólogo: prepara un cultivo cerca de casa y luego descansa dentro.');
+        prologue.objectiveHintShownAt = Date.now();
+      }
+      try {
+        const dog = ensurePetDogCompanion();
+        if (dog) {
+          dog.behavior = 'follow';
+          if (dog.combatMode) dog.combatMode = false;
+        }
+      } catch (e) {}
     }
   } catch (e) {}
 }

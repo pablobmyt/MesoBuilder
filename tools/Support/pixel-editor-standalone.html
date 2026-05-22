@@ -921,7 +921,7 @@
                 // attach current editor sprite data so the game has pixel art
                 try {
                     obj.sprites = obj.sprites || {};
-                    obj.sprites['editor_current'] = { pixels: state.pixels, gridSize: state.gridSize, zoom: state.zoom, palette: presetColors };
+                    obj.sprites['editor_current'] = { pixels: getEditorPixels(), gridSize: state.gridSize, zoom: state.zoom, palette: presetColors };
                 } catch (e) {}
                 // prefer direct function call on opener or parent
                 if (window.opener && typeof window.opener.importEntityDefinitionsFromObject === 'function') {
@@ -980,6 +980,24 @@
             return key;
         }
 
+        function getEditorPixels() {
+            try {
+                const layer = getCurrentLayer();
+                return Array.isArray(layer && layer.pixels) ? layer.pixels : [];
+            } catch (e) {
+                return [];
+            }
+        }
+
+        function normalizeImportedPixels(rawPixels) {
+            if (!Array.isArray(rawPixels)) return [];
+            return rawPixels.map(p => {
+                if (Array.isArray(p)) return { x: Number(p[0]), y: Number(p[1]), color: p[2] };
+                if (p && typeof p === 'object') return { x: Number(p.x), y: Number(p.y), color: p.color };
+                return null;
+            }).filter(p => p && Number.isFinite(p.x) && Number.isFinite(p.y) && typeof p.color === 'string');
+        }
+
         async function persistLibraryToDisk(payload, fallbackFilename = 'entity-pixels.json') {
             try {
                 const r = await fetch('http://localhost:3001/save-entity-pixels', {
@@ -1025,7 +1043,7 @@
                 return;
             }
             const grid = state.gridSize;
-            const pixels = state.pixels.map(p => [p.x, p.y, p.color]);
+            const pixels = getEditorPixels().map(p => [p.x, p.y, p.color]);
             ENTITY_PIXEL_LIBRARY[key] = { grid, pixels };
             populateLibrarySelect();
             entityLibrarySelect.value = key;
@@ -1049,8 +1067,9 @@
             if (newEntityKeyInput) newEntityKeyInput.value = k;
             const def = ENTITY_PIXEL_LIBRARY[k];
             if (!def) return;
-            // def.pixels is expected as array [x,y,color]
-            getCurrentLayer().pixels = (def.pixels || []).map(p => ({ x: p[0], y: p[1], color: p[2] }));
+            const imported = normalizeImportedPixels(def.pixels || []);
+            getCurrentLayer().pixels = imported;
+            state.pixels = imported.slice();
             clearSelection(false);
             state.shapeStart = null;
             state.shapePreview = null;
@@ -1125,7 +1144,7 @@
             const typedKey = normalizeEntityKey(newEntityKeyInput && newEntityKeyInput.value);
             const key = typedKey || entityLibrarySelect.value || 'editor_custom';
             const grid = state.gridSize;
-            const pixels = state.pixels.map(p => [p.x, p.y, p.color]);
+            const pixels = getEditorPixels().map(p => [p.x, p.y, p.color]);
             // Update in-memory library
             ENTITY_PIXEL_LIBRARY[key] = { grid, pixels };
             populateLibrarySelect();
@@ -2172,14 +2191,19 @@
                 try {
                     const obj = JSON.parse(code);
                     if (obj && Array.isArray(obj.pixels)) {
-                        newPixels = obj.pixels
-                            .map(p => ({ x: Number(p[0]), y: Number(p[1]), color: p[2] }))
-                            .filter(p => Number.isFinite(p.x) && Number.isFinite(p.y) && typeof p.color === 'string');
+                        newPixels = normalizeImportedPixels(obj.pixels);
                         if (typeof obj.grid === 'number' && obj.grid > 0) newGridSize = obj.grid;
+                        else if (typeof obj.gridSize === 'number' && obj.gridSize > 0) newGridSize = obj.gridSize;
                     } else if (Array.isArray(obj)) {
-                        newPixels = obj
-                            .map(p => ({ x: Number(p[0]), y: Number(p[1]), color: p[2] }))
-                            .filter(p => Number.isFinite(p.x) && Number.isFinite(p.y) && typeof p.color === 'string');
+                        newPixels = normalizeImportedPixels(obj);
+                    } else if (obj && obj.icons && typeof obj.icons === 'object') {
+                        const firstKey = Object.keys(obj.icons)[0];
+                        const firstDef = firstKey ? obj.icons[firstKey] : null;
+                        if (firstDef && Array.isArray(firstDef.pixels)) {
+                            newPixels = normalizeImportedPixels(firstDef.pixels);
+                            if (typeof firstDef.grid === 'number' && firstDef.grid > 0) newGridSize = firstDef.grid;
+                            else if (typeof firstDef.gridSize === 'number' && firstDef.gridSize > 0) newGridSize = firstDef.gridSize;
+                        }
                     }
                 } catch (e) {
                     // Not valid JSON, fallback to regex extraction
@@ -2220,7 +2244,9 @@
                     gridInfoSpan.textContent = `${newGridSize}x${newGridSize}`;
                 }
 
-                state.pixels = newPixels.filter(p => p.x >= 0 && p.y >= 0 && p.x < state.gridSize && p.y < state.gridSize);
+                const finalPixels = newPixels.filter(p => p.x >= 0 && p.y >= 0 && p.x < state.gridSize && p.y < state.gridSize);
+                getCurrentLayer().pixels = finalPixels;
+                state.pixels = finalPixels.slice();
                 clearSelection(false);
                 addToHistory();
                 updateCodeOutput();
@@ -2271,7 +2297,7 @@
         async function doAutoSave() {
             const key = entityLibrarySelect.value || 'editor_custom';
             const grid = state.gridSize;
-            const pixels = state.pixels.map(p => [p.x, p.y, p.color]);
+            const pixels = getEditorPixels().map(p => [p.x, p.y, p.color]);
             // Update in-memory library
             ENTITY_PIXEL_LIBRARY[key] = { grid, pixels };
             const newLib = Object.assign({}, ENTITY_PIXEL_LIBRARY);
@@ -2343,14 +2369,15 @@
                 const obj = JSON.parse(raw);
                 const grid = (typeof obj.grid === 'number') ? obj.grid : state.gridSize;
                 const pxRaw = Array.isArray(obj.pixels) ? obj.pixels : [];
-                const newPixels = pxRaw.map(p => ({ x: Number(p[0]), y: Number(p[1]), color: p[2] })).filter(p => p.color);
+                const newPixels = normalizeImportedPixels(pxRaw);
                 // Apply to edtor state
                 state.gridSize = grid;
                 gridSizeInput.value = grid;
                 document.getElementById('gridSizeValue').textContent = grid;
                 document.getElementById('gridSizeValue2').textContent = grid;
                 gridInfoSpan.textContent = `${grid}x${grid}`;
-                state.pixels = newPixels;
+                getCurrentLayer().pixels = newPixels;
+                state.pixels = newPixels.slice();
                 clearSelection(false);
                 addToHistory();
                 updateCodeOutput();

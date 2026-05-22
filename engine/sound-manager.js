@@ -21,6 +21,16 @@ let SoundManager = (() => {
         audioContext = new AudioContext();
         console.log('[SoundManager] Web Audio API initialized');
       }
+      try {
+        if (typeof localStorage !== 'undefined') {
+          const rawMaster = parseFloat(localStorage.getItem('meso.audio.master') || '');
+          if (Number.isFinite(rawMaster)) config.volume = Math.max(0, Math.min(1, rawMaster / 100));
+          const rawSfx = localStorage.getItem('meso.audio.sfx');
+          if (rawSfx === '0' || rawSfx === 'false') config.enableSFX = false;
+          else if (rawSfx === '1' || rawSfx === 'true') config.enableSFX = true;
+          config.muted = config.volume <= 0 || !config.enableSFX;
+        }
+      } catch (e) {}
       isInitialized = true;
     } catch (e) {
       console.warn('[SoundManager] Web Audio API not available:', e);
@@ -30,7 +40,7 @@ let SoundManager = (() => {
 
   // Create and play a simple beep tone using Web Audio API
   function playBeep(frequency = 800, duration = 100, volume = 0.3) {
-    if (!config.enableSFX) return;
+    if (!config.enableSFX || config.muted || config.volume <= 0) return;
     
     try {
       if (!audioContext) {
@@ -102,7 +112,7 @@ let SoundManager = (() => {
 
   // Mute/unmute
   function setMuted(muted) {
-    config.muted = muted;
+    config.muted = !!muted;
   }
 
   // Enable/disable SFX

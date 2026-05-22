@@ -411,6 +411,24 @@
           </select>
         </div>
         <div style="font-size:12px;color:#c8b87a;display:flex;align-items:flex-end">Los cambios afectan a la generación inicial del mundo.</div>
+        <div style="grid-column:1 / span 2;padding:10px 12px;border:1px solid rgba(255,255,255,0.08);border-radius:8px;background:rgba(0,0,0,0.18)">
+          <div style="font-size:13px;font-weight:700;color:#f0d790">Audio</div>
+          <div style="font-size:12px;color:#c8b87a;margin-top:4px">Configura volumen general, música y efectos del juego.</div>
+          <div style="display:grid;grid-template-columns:1fr;gap:8px;margin-top:10px">
+            <div>
+              <label style="font-size:13px">Volumen general: <span id="label-audio-master">70%</span></label>
+              <input id="menu-audio-master" type="range" min="0" max="100" step="1" value="70" style="width:100%">
+            </div>
+            <div>
+              <label style="font-size:13px">Volumen música: <span id="label-audio-music">34%</span></label>
+              <input id="menu-audio-music" type="range" min="0" max="100" step="1" value="34" style="width:100%">
+            </div>
+            <label style="font-size:13px;display:flex;align-items:center;gap:8px;color:#fff">
+              <input id="menu-audio-sfx-enabled" type="checkbox" checked>
+              Activar efectos de sonido (SFX)
+            </label>
+          </div>
+        </div>
         <div>
           <label style="font-size:13px">Densidad NPCs: <span id="label-npc">1.0</span></label>
           <input id="menu-density-npcs" type="range" min="0.2" max="3.0" step="0.1" value="1.0" style="width:100%">
@@ -518,6 +536,132 @@
   const _mesoPageParams = new URLSearchParams(window.location.search || '');
   window._standaloneEditorMode = _mesoPageParams.get('editor') === '1';
   window._standaloneEditorEpoch = _mesoPageParams.get('epoch') || '';
+  const AUDIO_MASTER_KEY = 'meso.audio.master';
+  const AUDIO_MUSIC_KEY = 'meso.audio.music';
+  const AUDIO_SFX_KEY = 'meso.audio.sfx';
+  const DEFAULT_AUDIO_SETTINGS = { master: 70, music: 34, sfxEnabled: true };
+  const MENU_MUSIC_SRC = 'data/Sounds/March_of_the_Vanguard.mp3';
+  let _menuMusic = null;
+  let _menuMusicHooked = false;
+  let _menuUiSfxBound = false;
+
+  function clampPercent(v, fallback) {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.max(0, Math.min(100, n));
+  }
+
+  function readAudioSettings() {
+    try {
+      const master = clampPercent(localStorage.getItem(AUDIO_MASTER_KEY), DEFAULT_AUDIO_SETTINGS.master);
+      const music = clampPercent(localStorage.getItem(AUDIO_MUSIC_KEY), DEFAULT_AUDIO_SETTINGS.music);
+      const rawSfx = localStorage.getItem(AUDIO_SFX_KEY);
+      const sfxEnabled = rawSfx == null ? DEFAULT_AUDIO_SETTINGS.sfxEnabled : !(rawSfx === '0' || rawSfx === 'false');
+      return { master, music, sfxEnabled };
+    } catch (e) {
+      return { ...DEFAULT_AUDIO_SETTINGS };
+    }
+  }
+
+  function persistAudioSettings(settings) {
+    try {
+      localStorage.setItem(AUDIO_MASTER_KEY, String(clampPercent(settings.master, DEFAULT_AUDIO_SETTINGS.master)));
+      localStorage.setItem(AUDIO_MUSIC_KEY, String(clampPercent(settings.music, DEFAULT_AUDIO_SETTINGS.music)));
+      localStorage.setItem(AUDIO_SFX_KEY, settings.sfxEnabled ? '1' : '0');
+    } catch (e) {}
+  }
+
+  function applyAudioSettings(settings) {
+    const master = clampPercent(settings.master, DEFAULT_AUDIO_SETTINGS.master);
+    const music = clampPercent(settings.music, DEFAULT_AUDIO_SETTINGS.music);
+    const sfxEnabled = !!settings.sfxEnabled;
+    const masterNorm = master / 100;
+    const musicNorm = music / 100;
+    try {
+      if (_menuMusic) _menuMusic.volume = Math.max(0, Math.min(1, masterNorm * musicNorm));
+    } catch (e) {}
+    try {
+      if (window.SoundManager) {
+        SoundManager.setVolume(masterNorm);
+        SoundManager.setSFXEnabled(sfxEnabled);
+        SoundManager.setMuted(masterNorm <= 0 || !sfxEnabled);
+      }
+    } catch (e) {}
+  }
+
+  function playMenuUiSfx(kind) {
+    try {
+      if (!window.SoundManager) return;
+      if (kind === 'hover') SoundManager.playSFX('click', { volume: 0.45, duration: 0.85 });
+      else SoundManager.playSFX('click', { volume: 0.95, duration: 1.0 });
+    } catch (e) {}
+  }
+
+  function bindMenuUiSfx() {
+    if (_menuUiSfxBound) return;
+    const root = document.getElementById('main-menu-root');
+    if (!root) return;
+    _menuUiSfxBound = true;
+    let lastHoveredBtn = null;
+    root.addEventListener('mouseover', (ev) => {
+      try {
+        const btn = ev.target && ev.target.closest ? ev.target.closest('button') : null;
+        if (!btn || !root.contains(btn) || btn === lastHoveredBtn) return;
+        lastHoveredBtn = btn;
+        playMenuUiSfx('hover');
+      } catch (e) {}
+    });
+    root.addEventListener('click', (ev) => {
+      try {
+        const btn = ev.target && ev.target.closest ? ev.target.closest('button') : null;
+        if (!btn || !root.contains(btn)) return;
+        playMenuUiSfx('click');
+      } catch (e) {}
+    }, true);
+  }
+
+  function stopMenuMusic() {
+    try {
+      if (_menuMusic) {
+        _menuMusic.pause();
+        _menuMusic.currentTime = 0;
+      }
+    } catch (e) {}
+  }
+
+  function initMenuMusic() {
+    try {
+      const root = document.getElementById('main-menu-root');
+      if (!root || root.style.display === 'none' || window._standaloneEditorMode) return;
+      const settings = readAudioSettings();
+      if (!_menuMusic) {
+        _menuMusic = new Audio(MENU_MUSIC_SRC);
+        _menuMusic.loop = true;
+      }
+      applyAudioSettings(settings);
+      const tryPlay = () => {
+        try {
+          if (!_menuMusic) return;
+          const p = _menuMusic.play();
+          if (p && typeof p.catch === 'function') p.catch(() => {});
+        } catch (e) {}
+      };
+      tryPlay();
+      if (!_menuMusicHooked) {
+        _menuMusicHooked = true;
+        const kick = () => {
+          tryPlay();
+          document.removeEventListener('pointerdown', kick, true);
+          document.removeEventListener('keydown', kick, true);
+        };
+        document.addEventListener('pointerdown', kick, true);
+        document.addEventListener('keydown', kick, true);
+      }
+    } catch (e) {}
+  }
+
+  try { applyAudioSettings(readAudioSettings()); } catch (e) {}
+  setTimeout(() => { try { applyAudioSettings(readAudioSettings()); } catch (e) {} }, 250);
   if (window._standaloneEditorMode) {
     try { document.body.classList.add('standalone-editor-preview'); } catch (e) {}
   }
@@ -559,6 +703,7 @@
     })();
     // mark game started and show panels before engine init so module's init() can start the loop
     try { window._gameStarted = true; window._showPanels = true; } catch (e) {}
+    try { stopMenuMusic(); } catch (e) {}
     if (opts && opts.forceNew) localStorage.setItem('meso.forceNew','1');
     // remove menu UI
     try { document.getElementById('main-menu-root').remove(); } catch (e) {}
@@ -716,6 +861,8 @@
     } catch (e) {}
     loadEngineAndStart({ forceNew:false });
   });
+  try { bindMenuUiSfx(); } catch (e) {}
+  try { initMenuMusic(); } catch (e) {}
 
   // Dev: open Juego UR in an in-page modal (attempt several candidate paths, else allow manual file pick)
   try {
@@ -765,6 +912,7 @@
       // Auto-restore if either the menu was shown recently OR the engine was active recently
       // and there's no recent explicit opt-out (blocked)
       if (hasSaved && !blocked && (now - lastMenu < HOUR || now - lastActive < HOUR)) {
+        try { stopMenuMusic(); } catch (e) {}
         try { const root = document.getElementById('main-menu-root'); if (root) root.style.display = 'none'; } catch (e) {}
         // small delay to allow DOM to settle before loading engine
         setTimeout(() => { try { loadEngineAndStart({ forceNew: false }); } catch (e) {} }, 40);
@@ -772,6 +920,7 @@
     } catch (e) { /* ignore */ }
   })();
   if (window._standaloneEditorMode) {
+    try { stopMenuMusic(); } catch (e) {}
     try {
       if (window._standaloneEditorEpoch) localStorage.setItem('meso.currentEpoch', window._standaloneEditorEpoch);
       localStorage.setItem('meso.forceNew', '1');
@@ -1161,6 +1310,11 @@
     const dn = document.getElementById('menu-density-npcs'); const da = document.getElementById('menu-density-animals'); const dv = document.getElementById('menu-density-vegetation');
     const ln = document.getElementById('label-npc'); const la = document.getElementById('label-animals'); const lv = document.getElementById('label-veg');
     const epochSelect = document.getElementById('menu-epoch');
+    const audioMaster = document.getElementById('menu-audio-master');
+    const audioMusic = document.getElementById('menu-audio-music');
+    const audioSfxEnabled = document.getElementById('menu-audio-sfx-enabled');
+    const labelAudioMaster = document.getElementById('label-audio-master');
+    const labelAudioMusic = document.getElementById('label-audio-music');
     const presetSelect = document.getElementById('menu-density-preset');
     const tabCharacter = document.getElementById('menu-start-tab-character');
     const tabOptions = document.getElementById('menu-start-tab-options');
@@ -1206,10 +1360,33 @@
       else if (value === 'alive') setDensityValues(1.6, 1.5, 1.4);
     }
 
+    function readAudioUiSettings() {
+      const base = readAudioSettings();
+      const master = clampPercent(audioMaster && audioMaster.value, base.master);
+      const music = clampPercent(audioMusic && audioMusic.value, base.music);
+      const sfxEnabled = audioSfxEnabled ? !!audioSfxEnabled.checked : base.sfxEnabled;
+      return { master, music, sfxEnabled };
+    }
+
+    function updateAudioUiLabels(settings) {
+      if (labelAudioMaster) labelAudioMaster.textContent = `${Math.round(settings.master)}%`;
+      if (labelAudioMusic) labelAudioMusic.textContent = `${Math.round(settings.music)}%`;
+    }
+
+    function applyAudioUiSettings(settings, persist) {
+      if (audioMaster) audioMaster.value = String(Math.round(settings.master));
+      if (audioMusic) audioMusic.value = String(Math.round(settings.music));
+      if (audioSfxEnabled) audioSfxEnabled.checked = !!settings.sfxEnabled;
+      updateAudioUiLabels(settings);
+      applyAudioSettings(settings);
+      if (persist) persistAudioSettings(settings);
+    }
+
     const savedDens = (() => { try { return JSON.parse(localStorage.getItem('meso.menuDensities') || 'null'); } catch (e) { return null; } })();
     const defaults = (window._DEFAULT_DENSITIES && typeof window._DEFAULT_DENSITIES === 'object') ? window._DEFAULT_DENSITIES : (savedDens || { npc: 1.0, animals: 1.0, vegetation: 1.0 });
     setDensityValues(defaults.npc || 1.0, defaults.animals || 1.0, defaults.vegetation || 1.0);
     syncPresetFromSliders();
+    applyAudioUiSettings(readAudioSettings(), false);
     try {
       const savedEpoch = localStorage.getItem('meso.currentEpoch') || 'mesopotamia';
       if (epochSelect) epochSelect.value = savedEpoch;
@@ -1221,6 +1398,23 @@
     if (da) da.addEventListener('input', () => { if (la) la.textContent = da.value; syncPresetFromSliders(); });
     if (dv) dv.addEventListener('input', () => { if (lv) lv.textContent = dv.value; syncPresetFromSliders(); });
     if (presetSelect) presetSelect.addEventListener('change', () => { applyDensityPreset(presetSelect.value); syncPresetFromSliders(); });
+    if (audioMaster) audioMaster.addEventListener('input', () => {
+      const settings = readAudioUiSettings();
+      updateAudioUiLabels(settings);
+      applyAudioSettings(settings);
+      persistAudioSettings(settings);
+    });
+    if (audioMusic) audioMusic.addEventListener('input', () => {
+      const settings = readAudioUiSettings();
+      updateAudioUiLabels(settings);
+      applyAudioSettings(settings);
+      persistAudioSettings(settings);
+    });
+    if (audioSfxEnabled) audioSfxEnabled.addEventListener('change', () => {
+      const settings = readAudioUiSettings();
+      applyAudioUiSettings(settings, true);
+      if (settings.sfxEnabled) playMenuUiSfx('click');
+    });
     if (epochSelect) epochSelect.addEventListener('change', () => {
       try {
         const ep = epochSelect.value || 'mesopotamia';
