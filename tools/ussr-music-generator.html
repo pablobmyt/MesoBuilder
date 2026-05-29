@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>USSR Music Generator for MesoBuilder</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; background: #222; color: #fff; }
+    button { padding: 10px 20px; background: #2E6FA3; color: white; border: none; border-radius: 6px; cursor: pointer; margin: 10px 0; }
+    button:hover { background: #3a7fbd; }
+    .info { background: rgba(255,255,255,0.1); padding: 10px; border-radius: 6px; margin: 10px 0; }
+    progress { width: 100%; height: 20px; margin: 10px 0; }
+  </style>
+</head>
+<body>
+  <h1>USSR Theme Music Generator</h1>
+  <p>This tool generates a Soviet-themed intro music for MesoBuilder cinematics.</p>
+  
+  <div class="info">
+    <h3>Instructions:</h3>
+    <ol>
+      <li>Click "Generate Music" below</li>
+      <li>Wait for generation to complete (progress bar)</li>
+      <li>Click "Download as MP3" to save the file</li>
+      <li>Place the file in: <code>data/Sounds/ussr.mp3</code></li>
+    </ol>
+  </div>
+
+  <button onclick="generateMusic()">Generate Music (30 seconds)</button>
+  <button onclick="downloadAudio()" id="downloadBtn" disabled>Download as MP3</button>
+  <progress id="progress" value="0" max="100" style="display:none;"></progress>
+  <p id="status"></p>
+  
+  <script>
+    let audioBuffer = null;
+    const sampleRate = 44100;
+    const duration = 30; // 30 seconds
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+    function generateMusic() {
+      const btn = document.querySelector('button');
+      btn.disabled = true;
+      document.getElementById('downloadBtn').disabled = true;
+      document.getElementById('progress').style.display = 'block';
+      document.getElementById('status').textContent = 'Generating...';
+      
+      // Simple USSR-themed music with march rhythm
+      const totalSamples = sampleRate * duration;
+      audioBuffer = audioContext.createBuffer(1, totalSamples, sampleRate);
+      const channelData = audioBuffer.getChannelData(0);
+      
+      // Tempo: 120 BPM
+      const tempo = 120;
+      const beatDuration = (60 / tempo) * sampleRate; // samples per beat
+      
+      // Simple repeating melody + bass
+      let t = 0;
+      for (let i = 0; i < totalSamples; i++) {
+        const time = i / sampleRate;
+        const beatPos = (time * tempo / 60) % 16; // 16-beat pattern
+        
+        // Melody (E4-B4 notes) - Soviet march style
+        const melodyFrequencies = [329.63, 329.63, 359.13, 393.99, 440, 440, 392.00, 349.23]; // E, E, F#, G, A, A, G, F#
+        const melodyNote = Math.floor(beatPos * 8 / 16) % 8;
+        const melodyFreq = melodyFrequencies[melodyNote];
+        const melodyPhase = (i / sampleRate) * melodyFreq * 2 * Math.PI;
+        const melody = Math.sin(melodyPhase) * (Math.sin(beatPos * Math.PI / 8) > 0 ? 0.3 : 0); // Staccato effect
+        
+        // Bass drum kick pattern (on beats 0, 4, 8, 12)
+        const kickBeat = beatPos % 4;
+        const kick = (kickBeat < 0.5 && Math.floor(beatPos) % 4 < 1) ? Math.sin(melodyPhase * 0.5) * 0.4 : 0;
+        
+        // Bass line (60 Hz root note with rhythm)
+        const bass = Math.sin((i / sampleRate) * 65.41 * 2 * Math.PI) * (Math.sin(beatPos * Math.PI / 2) > 0 ? 0.2 : 0);
+        
+        // Envelope to fade in/out
+        const startFade = sampleRate * 1; // 1 second fade in
+        const endFade = sampleRate * (duration - 1); // 1 second fade out
+        let envelope = 1;
+        if (i < startFade) envelope = i / startFade;
+        if (i > endFade) envelope = (totalSamples - i) / sampleRate;
+        
+        // Mix all sounds with reverb decay
+        const mixed = (melody + kick + bass) * 0.5 * envelope;
+        
+        // Simple compression
+        channelData[i] = Math.max(-1, Math.min(1, mixed * 0.8));
+      }
+      
+      // Update UI
+      let progress = 0;
+      const progressInterval = setInterval(() => {
+        progress += Math.random() * 5;
+        if (progress > 100) progress = 100;
+        document.getElementById('progress').value = progress;
+        if (progress >= 100) {
+          clearInterval(progressInterval);
+          document.getElementById('status').textContent = 'Ready to download';
+          document.getElementById('downloadBtn').disabled = false;
+          btn.disabled = false;
+        }
+      }, 50);
+    }
+
+    function downloadAudio() {
+      if (!audioBuffer) {
+        alert('Please generate music first');
+        return;
+      }
+      
+      // Encode to WAV (simple format, can be used directly)
+      const wav = encodeWAV(audioBuffer);
+      const blob = new Blob([wav], { type: 'audio/wav' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'ussr.wav';
+      a.click();
+      
+      setTimeout(() => URL.revokeObjectURL(url), 100);
+      
+      alert('File downloaded as ussr.wav. Note: Save it as ussr.mp3 or convert using an audio tool. The game can also play .wav files.');
+    }
+
+    function encodeWAV(audioBuffer) {
+      const length = audioBuffer.length * audioBuffer.numberOfChannels * 2 + 44;
+      const arrayBuffer = new ArrayBuffer(length);
+      const view = new DataView(arrayBuffer);
+      const channels = [];
+      let offset = 0;
+      let pos = 0;
+
+      // Write WAV header
+      const setUint16 = (data) => { view.setUint16(pos, data, true); pos += 2; };
+      const setUint32 = (data) => { view.setUint32(pos, data, true); pos += 4; };
+
+      setUint32(0x46464952); // "RIFF"
+      setUint32(length - 8); // file length - 8
+      setUint32(0x45564157); // "WAVE"
+
+      setUint32(0x20746d66); // "fmt "
+      setUint32(16); // chunk length
+      setUint16(1); // audio format (PCM)
+      setUint16(audioBuffer.numberOfChannels);
+      setUint32(audioBuffer.sampleRate);
+      setUint32(audioBuffer.sampleRate * 2 * audioBuffer.numberOfChannels); // avg. byte rate
+      setUint16(audioBuffer.numberOfChannels * 2); // block-align
+      setUint16(16); // 16-bit
+
+      setUint32(0x61746164); // "data"
+      setUint32(length - pos - 4); // chunk length
+
+      // Write interleaved data
+      const volume = 0.8;
+      for (let i = 0; i < audioBuffer.length; i++) {
+        for (let channel = 0; channel < audioBuffer.numberOfChannels; channel++) {
+          let sample = audioBuffer.getChannelData(channel)[i] * volume;
+          sample = Math.max(-1, Math.min(1, sample)); // Clamp
+          view.setInt16(pos, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
+          pos += 2;
+        }
+      }
+
+      return arrayBuffer;
+    }
+  </script>
+</body>
+</html>

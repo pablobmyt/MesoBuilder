@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MesoBuilder</title>
 <link rel="stylesheet" href="styles.css">
+<!-- Web Audio Libraries for MIDI playback (deferred to avoid blocking render) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/tone.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/jsmidparser@0.16.1/build/index.min.js" defer></script>
 </head>
 <body class="theme-urw">
 
@@ -812,7 +815,7 @@
         load.style.position = 'fixed'; load.style.left = '0'; load.style.top = '0'; load.style.right = '0'; load.style.bottom = '0';
         load.style.display = 'flex'; load.style.alignItems = 'center'; load.style.justifyContent = 'center';
         load.style.background = 'rgba(0,0,0,0.85)'; load.style.zIndex = 300000; load.style.color = '#FFD27A';
-        load.innerHTML = '<div style="text-align:center;font-family:sans-serif;color:#fff"><div style="font-size:20px;margin-bottom:12px">Cargando partida...</div><div style="width:220px;height:14px;background:#222;border-radius:8px;overflow:hidden;margin:0 auto"><div id="global-loading-bar" style="height:100%;width:0%;background:linear-gradient(90deg,#DAA520,#FFD27A)"></div></div><div id="global-loading-msg" style="margin-top:10px;color:#ccc;font-size:13px">Preparando recursos...</div><div id="global-loading-note" style="margin-top:8px;color:#9aa;font-size:12px">Si la carga se detiene, abre la consola del navegador (F12) para ver errores.</div></div>';
+        load.innerHTML = '<div style="text-align:center;font-family:sans-serif;color:#fff;display:flex;flex-direction:column;align-items:center;gap:12px"><div style="font-size:20px;margin-bottom:0">Cargando partida...</div><div style="width:220px;height:14px;background:#222;border-radius:8px;overflow:hidden;margin:0 auto"><div id="global-loading-bar" style="height:100%;width:0%;background:linear-gradient(90deg,#DAA520,#FFD27A)"></div></div><div id="global-loading-msg" style="margin-top:2px;color:#ccc;font-size:13px">Preparando recursos...</div><div id="global-loading-note" style="margin-top:8px;color:#9aa;font-size:12px">Si la carga se detiene, abre la consola del navegador (F12) para ver errores.</div></div>';
         document.body.appendChild(load);
       }
       load.style.display = 'flex';

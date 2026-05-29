@@ -1036,6 +1036,12 @@ html, body {
 /* When the UI is hidden for screenshots */
 .ui-hidden #topbar, .ui-hidden #toolbar, .ui-hidden #panel, .ui-hidden #char-card, .ui-hidden #notif, .ui-hidden #tooltip, .ui-hidden #ability-bar, .ui-hidden #action-bar { display: none !important; }
 
+/* Top menu bar and stats bar cannot be hidden */
+#top-menubar, #topbar {
+  display: flex !important;
+  visibility: visible !important;
+}
+
 /* Small restore button when panel minimized */
 #panel-restore-btn {
   position: fixed; left: 8px; bottom: 12px; z-index: 12000; padding: 8px 10px; background: rgba(20,20,20,0.9); color: #FFD27A; border: 1px solid #444; border-radius: 6px; cursor: pointer; display: none;

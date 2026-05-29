@@ -39,7 +39,7 @@ let SoundManager = (() => {
   }
 
   // Create and play a simple beep tone using Web Audio API
-  function playBeep(frequency = 800, duration = 100, volume = 0.3) {
+  function playBeep(frequency = 800, duration = 100, volume = 0.3, waveform = 'sine') {
     if (!config.enableSFX || config.muted || config.volume <= 0) return;
     
     try {
@@ -65,7 +65,7 @@ let SoundManager = (() => {
       gain.connect(audioContext.destination);
       
       osc.frequency.value = frequency;
-      osc.type = 'sine';
+      osc.type = waveform || 'sine';
       
       gain.gain.setValueAtTime(volume * config.volume, now);
       gain.gain.exponentialRampToValueAtTime(0.01, now + duration / 1000);
@@ -91,7 +91,10 @@ let SoundManager = (() => {
       footstep: { freq: 150, duration: 40, vol: 0.2 },         // Low
       damage: { freq: 300, duration: 100, vol: 0.35 },         // D4
       heal: { freq: 659, duration: 120, vol: 0.4 },            // E5
-      pickup: { freq: 600, duration: 80, vol: 0.35 }           // B4
+      pickup: { freq: 600, duration: 80, vol: 0.35 },          // B4
+      gunshot: { freq: 180, duration: 90, vol: 0.55 },         // layered shot
+      gunreload: { freq: 520, duration: 120, vol: 0.35 },      // magazine reload
+      gunjam: { freq: 120, duration: 180, vol: 0.3 }           // dry-click / jam
     };
     
     const pattern = patterns[soundId] || patterns.click;
@@ -100,6 +103,19 @@ let SoundManager = (() => {
     if (soundId === 'missionComplete') {
       playBeep(pattern.freq, pattern.duration, pattern.vol);
       setTimeout(() => playBeep(pattern.freq + 100, pattern.duration, pattern.vol * 0.8), 120);
+    } else if (soundId === 'gunshot') {
+      const mulVol = options.volume || 1;
+      const mulDur = options.duration || 1;
+      playBeep(180, 55 * mulDur, pattern.vol * 1.1 * mulVol, 'square');
+      setTimeout(() => playBeep(110, 90 * mulDur, pattern.vol * 0.7 * mulVol, 'sawtooth'), 12);
+      setTimeout(() => playBeep(260, 35 * mulDur, pattern.vol * 0.35 * mulVol, 'triangle'), 26);
+    } else if (soundId === 'gunreload') {
+      playBeep(520, 70, 0.25, 'triangle');
+      setTimeout(() => playBeep(740, 45, 0.18, 'triangle'), 55);
+      setTimeout(() => playBeep(640, 35, 0.12, 'triangle'), 105);
+    } else if (soundId === 'gunjam') {
+      playBeep(160, 110, 0.22, 'square');
+      setTimeout(() => playBeep(110, 70, 0.16, 'square'), 70);
     } else {
       playBeep(pattern.freq, pattern.duration * (options.duration || 1), pattern.vol * (options.volume || 1));
     }

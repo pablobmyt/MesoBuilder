@@ -120,3 +120,47 @@ NOTAS DE IMPLEMENTACIÓN EN MOTOR
    - Primer acto es guiado. Markova/Enlil-Ama dan órdenes directas.
    - Acto II: libertad parcial. Puedes elegir misiones en orden.
    - Acto III: crisis real. Muy poco tiempo. Las prioridades son tú.
+\
+
+════════════════════════════════════════════════════════════════
+ACTO II - URSS: EL TRATO EN LA OSCURIDAD (Ampliacion Makarov PM)
+════════════════════════════════════════════════════════════════
+
+NUEVO ELEMENTO: Makarov PM (Pistola sovietica, 1926)
+
+Origen:
+  El oficial Kozlov opera en el mercado negro de Novozarya.
+  Ex-cuadro del Ejercito Rojo reconvertido en traficante de armas menores.
+  Aparece en Acto II cuando el jugador avanza al capitulo 2 de la historia URSS.
+
+Obtencion:
+  Al avanzar al Acto II, el juego otorga automaticamente 1 Makarov PM y 8 balas.
+  Narrativa: el oficial Kozlov realiza el intercambio en el callejon del mercado.
+  Precio: 3 comida + 2 piedra (representado en los recursos del quest).
+
+Mecanica de Disparo:
+  - Se equipa como cualquier arma (slot de equipo del jugador).
+  - Cuando esta equipada, el cursor del juego se transforma en diana roja.
+  - Click izquierdo = disparar hacia la posicion del cursor.
+  - Danho base: 10 puntos (2 base + 8 bonus Makarov).
+  - PRECISION POR DISTANCIA:
+      Probabilidad de fallo = max(5%, min(88%, distancia_tiles x 8%))
+      A 1 tile: ~8% fallo; A 5 tiles: ~40% fallo; A 10 tiles: ~80% fallo
+  - Con 0 balas: aviso 'Sin municion'.
+
+Consecuencias Narrativas:
+  - Poseer la Makarov aumenta sospecha con Markova (+15 si la ve).
+  - Disparar en zona controlada: -20 confianza con Markova.
+  - En Acto III: pistola sirve para proteger convoy o negociar con resistencia.
+  - Si no se usa al final del Acto II: Kozlov reaparece con opciones narrativas.
+
+NPC Kozlov - oficial_estraperlo:
+  Tipo: 'oficial_estraperlo' en npc-dialogues.json.
+  8 frases de ambiente disponibles (discrecion, mercado negro, supervivencia).
+  Sprite: merchant con contexto URSS.
+
+Integracion en Quest:
+  - Mision: El Trato en la Oscuridad (story_ch2, URSS)
+  - Target: 5 recursos (3 comida + 2 piedra)
+  - Reward: { food:3, stone:2, makarov_pm:1, makarov_ammo:8 }
+

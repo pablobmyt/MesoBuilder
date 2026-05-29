@@ -97,6 +97,128 @@ const clearRuntimeCaches = () => clearRuntimeCachesImpl({
   resetMapCaches: () => { mapCache = null; mapCacheOrtho = null; mapCacheIso = null; mapCacheDirty = true; }
 });
 
+// ═══════════════════════════════════════════════════════════════
+//  MIDI INTRO MUSIC PLAYBACK
+// ═══════════════════════════════════════════════════════════════
+let _introMidiData = null;
+let _introSynths = null;
+
+async function loadIntroMusicMIDI() {
+  try {
+    if (_introMidiData) return true; // Already loaded
+    
+    // Fetch MIDI file
+    const response = await fetch('data/Sounds/ussr.mid');
+    if (!response.ok) throw new Error(`Failed to load MIDI: ${response.status}`);
+    
+    const midiArrayBuffer = await response.arrayBuffer();
+    
+    // Parse MIDI using jsmidparser if available
+    if (typeof MidiParser !== 'undefined' && MidiParser.parse) {
+      _introMidiData = MidiParser.parse(new Uint8Array(midiArrayBuffer));
+      console.log('game-engine: MIDI intro music loaded successfully');
+      return true;
+    } else {
+      console.warn('game-engine: jsmidparser not available, MIDI playback disabled');
+      return false;
+    }
+  } catch (e) {
+    console.warn('game-engine: failed to load MIDI intro music', e);
+    return false;
+  }
+}
+
+async function playIntroMusicMIDI() {
+  try {
+    if (!_introMidiData) {
+      console.warn('game-engine: MIDI data not loaded');
+      return false;
+    }
+    
+    if (!window.Tone) {
+      console.warn('game-engine: Tone.js not loaded');
+      return false;
+    }
+    
+    // Create synths for playback
+    const createPolySynth = () => new Tone.PolySynth(Tone.Synth, {
+      oscillator: { type: 'sine' },
+      envelope: { attack: 0.005, decay: 0.1, sustain: 0.3, release: 0.5 }
+    }).toDestination();
+    
+    _introSynths = createPolySynth();
+    
+    // Get MIDI tracks
+    const tracks = _introMidiData.tracks || [];
+    if (tracks.length === 0) {
+      console.warn('game-engine: No tracks in MIDI file');
+      return false;
+    }
+    
+    // Calculate tempo (default 120 BPM)
+    let tempo = 120;
+    const tempoTrack = tracks[0] || [];
+    for (const event of tempoTrack) {
+      if (event.type === 0xFF && event.data && event.data[0] === 0x51) {
+        // Tempo meta event
+        const microsecondsPerBeat = (event.data[1] << 16) | (event.data[2] << 8) | event.data[3];
+        tempo = Math.round(60000000 / microsecondsPerBeat);
+        break;
+      }
+    }
+    
+    // Play notes from all tracks
+    let currentTime = 0;
+    for (let trackIdx = 0; trackIdx < tracks.length; trackIdx++) {
+      const track = tracks[trackIdx];
+      currentTime = 0;
+      
+      for (const event of track) {
+        // Update time
+        if (event.deltaTime) {
+          currentTime += event.deltaTime;
+        }
+        
+        // Note on event (0x90)
+        if (event.type === 0x90 && event.data) {
+          const pitch = event.data[0];
+          const velocity = event.data[1] / 127; // Normalize 0-127 to 0-1
+          const timeInSeconds = (currentTime / _introMidiData.header.ticksPerBeat / (tempo / 60));
+          
+          if (velocity > 0) {
+            const frequency = midiNoteToFrequency(pitch);
+            _introSynths.triggerAttack(frequency, '+' + timeInSeconds.toFixed(3), velocity);
+          }
+        }
+        
+        // Note off event (0x80)
+        if (event.type === 0x80 && event.data) {
+          const timeInSeconds = (currentTime / _introMidiData.header.ticksPerBeat / (tempo / 60));
+          _introSynths.triggerRelease('+' + timeInSeconds.toFixed(3));
+        }
+      }
+    }
+    
+    console.log('game-engine: MIDI intro music playing');
+    return true;
+  } catch (e) {
+    console.warn('game-engine: failed to play MIDI intro music', e);
+    return false;
+  }
+}
+
+function midiNoteToFrequency(midiNote) {
+  return 440 * Math.pow(2, (midiNote - 69) / 12);
+}
+
+function stopIntroMusicMIDI() {
+  try {
+    if (_introSynths && typeof _introSynths.triggerRelease === 'function') {
+      _introSynths.triggerRelease();
+    }
+  } catch (e) {}
+}
+
 // Check interior doors (enter) when standing on mapped tile
 // Previously auto-entered interiors when standing on door tiles.
 // Entry must now be explicit via the 'E' key to avoid accidental transitions.
@@ -223,6 +345,23 @@ function applyNewGamePanelsHiddenDefaults() {
       }
       el.style.display = 'none';
     });
+    // Hide topbar and toolbar during intro cinematics
+    try {
+      const topbar = document.getElementById('topbar');
+      if (topbar) topbar.style.display = 'none';
+    } catch (e) {}
+    try {
+      const toolbar = document.getElementById('toolbar');
+      if (toolbar) toolbar.style.display = 'none';
+    } catch (e) {}
+    try {
+      const questHud = document.getElementById('quest-hud');
+      if (questHud) questHud.style.display = 'none';
+    } catch (e) {}
+    try {
+      const instructBox = document.getElementById('instruction-box');
+      if (instructBox) instructBox.style.display = 'none';
+    } catch (e) {}
     enforceAbilityBarHorizontal();
     try { saveAppStateDebounced(450); } catch (e) {}
   } catch (e) {}
@@ -1226,9 +1365,10 @@ function saveAppState() {
     // Save minimal grid and biomes (sparse) to reduce size: store full arrays for simplicity
     const state = {
       panels,
-      player: { x: player.x, y: player.y, col: player.col, row: player.row, name: player.name, palette: player.palette, outfit: player.outfit, presetId: player.presetId },
+      player: { x: player.x, y: player.y, col: player.col, row: player.row, name: player.name, palette: player.palette, outfit: player.outfit, presetId: player.presetId, equipped: player.equipped || null },
       char: (typeof char !== 'undefined') ? char : null,
       res: (typeof res !== 'undefined') ? res : null,
+      inventory: (inventory && typeof inventory === 'object') ? { ...inventory } : {},
       // keep turn and flags
       turn: typeof turn === 'number' ? turn : 0,
       epoch: window._currentEpoch || 'mesopotamia',
@@ -1296,7 +1436,13 @@ function loadAppState() {
       try { if (s.player.palette) player.palette = s.player.palette; } catch (e) {}
       try { if (s.player.outfit) player.outfit = s.player.outfit; } catch (e) {}
       try { if (s.player.presetId) player.presetId = s.player.presetId; } catch (e) {}
+      try { player.equipped = s.player.equipped || null; } catch (e) {}
     }
+    try {
+      if (s.inventory && typeof s.inventory === 'object') {
+        inventory = { ...s.inventory };
+      }
+    } catch (e) { console.warn('inventory restore skipped', e); }
     try {
       if (s.entities && Array.isArray(s.entities)) {
         entities.length = 0;
@@ -1420,6 +1566,7 @@ function loadAppState() {
     try { clampCamera(); } catch (e) {}
     try { updateUI(); } catch (e) {}
     try { updateInventory(); } catch (e) {}
+    try { if (window.updateEquippedUI) window.updateEquippedUI(); } catch (e) {}
     try { updateCharCard(); } catch (e) {}
     window._MESO_SAVED_STATE = s;
     try { restoreRegisteredPanelsFromState(s.panels || {}); } catch (e) {}
@@ -1577,6 +1724,7 @@ try {
   char._lastSurvivalTick = char._lastSurvivalTick || Date.now();
 } catch (e) {}
 player.weapon = null; // equipped weapon id (optional)
+player._makarovClip = 0;
 
 // Initialize stamina
 player.stamina = 100;
@@ -1600,6 +1748,9 @@ player._walkTime = 0;
 player._walkFrame = 0;
 player._shakeUntil = 0;
 player._shakeMag = 0;
+
+window._wantedLevel = window._wantedLevel || 0;
+window._wantedDecayAt = window._wantedDecayAt || 0;
 
 function getPetDialogueLine(context, pet) {
   const dogName = (pet && pet.name) || DEFAULT_PET_DOG_NAME;
@@ -2029,14 +2180,7 @@ function findNearestCultivableCell(originCol, originRow, maxRadius = 12) {
 function canTillSoilAt(col, row, fieldType = 'farm_plot') {
   try {
     if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return false;
-    // Block if a building already occupies this cell
-    if (grid[row] && grid[row][col]) return false;
-    // Block river cells
-    if ((rFullMap[row] && rFullMap[row][col]) || isRiver(col, row)) return false;
-    // Only block explicitly non-cultivable biomes (water, road, canal, saline)
-    // Any other biome (grass, alluvial, sand, unknown…) is cultivable
-    const biome = String((tileBiome && tileBiome[row] && tileBiome[row][col]) || '').trim().toLowerCase();
-    if (NON_FARMABLE_BIOMES.has(biome)) return false;
+    // Tilling is intentionally permissive now: any in-bounds tile can be worked.
     return true;
   } catch (e) {
     return false;
@@ -2046,12 +2190,6 @@ function canTillSoilAt(col, row, fieldType = 'farm_plot') {
 function getTillBlockReason(col, row, fieldType = 'farm_plot') {
   try {
     if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return 'fuera_mapa';
-    if (grid[row] && grid[row][col]) return 'ocupado';
-    if (rFullMap[row] && rFullMap[row][col]) return 'rio';
-    const biome = String((tileBiome && tileBiome[row] && tileBiome[row][col]) || '').trim().toLowerCase();
-    if (!isCultivableBiome(biome)) return `bioma:${biome || 'desconocido'}`;
-    if (isRiver(col, row)) return 'rio';
-    if (!canPlaceAt(col, row, fieldType)) return 'ocupado';
     return 'ok';
   } catch (e) {
     return 'error';
@@ -2089,7 +2227,6 @@ function tillFieldRect(rect) {
       addLog(`Labraste ${placed} parcela(s) de cultivo.`);
       notify(`Terreno labrado: ${placed} parcela(s).`);
       gainXP(Math.min(18, placed * 2));
-      try { createFieldNearHome({ silent: true }); } catch (e) {}
       try {
         const prologue = window._homePrologue;
         if (prologue && prologue.active && !prologue.fieldPrepared) {
@@ -2128,14 +2265,10 @@ function tillFieldRect(rect) {
           topReason = reason;
         }
       });
-      if (String(topReason).startsWith('bioma:')) {
-        notify(`No se puede labrar aquí: ${topReason.replace('bioma:', 'bioma ')}.`);
-      } else if (topReason === 'ocupado') {
-        notify('No se puede labrar aquí: la celda está ocupada por construcción.');
-      } else if (topReason === 'rio') {
-        notify('No se puede labrar aquí: zona de río/agua.');
+      if (topReason === 'fuera_mapa') {
+        notify('No se puede labrar fuera del mapa.');
       } else {
-        notify('Selecciona terreno cultivable libre para labrar (evita agua/camino/río).');
+        notify('No se pudo labrar el terreno.');
       }
     }
     return placed;
@@ -2527,8 +2660,182 @@ function markPlayerDowned(reasonText) {
     player.hp = 0;
     player._downedAt = now;
     player._downedReason = reasonText || 'Has sido derrotado';
+    player._deathPenaltyPending = true;
     addLog(reasonText || '¡Has sido derrotado!');
     notify(reasonText || 'Has caído en combate');
+  } catch (e) {}
+}
+
+function isMakarovEquipped() {
+  return String((player && player.equipped) || '').trim() === 'makarov_pm';
+}
+
+function getMakarovClip() {
+  const n = Number(player && player._makarovClip);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(10, Math.floor(n)));
+}
+
+function setMakarovClip(value) {
+  player._makarovClip = Math.max(0, Math.min(10, Math.floor(Number(value) || 0)));
+  return player._makarovClip;
+}
+
+function isNPCWeaponized(npc) {
+  try {
+    if (!npc) return false;
+    const t = String(npc.npcType || '').toLowerCase();
+    if (npc._armed || npc.weapon || npc.equipped) return true;
+    return ['guard', 'commander', 'commissar', 'officer', 'merchant', 'shopkeeper', 'innkeeper', 'survivor'].includes(t);
+  } catch (e) {
+    return false;
+  }
+}
+
+function maybeSubtleProtagonistComment(context = 'shot') {
+  try {
+    const lines = {
+      shot: [
+        'Qué curioso: el orden siempre se ofende primero.',
+        'En este régimen, hasta apuntar ya parece un delito.',
+        'La disciplina estatal se quiebra mucho más fácil de lo que dicen.',
+        'Siempre pagan los mismos cuando el uniforme se impacienta.'
+      ],
+      alert: [
+        'Si molesto al sistema, que al menos se note.',
+        'La obediencia aquí siempre lleva botas ajenas.',
+        'A veces el miedo del régimen habla más fuerte que sus megáfonos.'
+      ],
+      death: [
+        'Nada enseña más que perderlo todo por no bajar la cabeza.',
+        'El régimen nunca perdona; solo archiva consecuencias.',
+        'Caer duele menos que tragarse la mentira entera.'
+      ]
+    };
+    const pool = lines[context] || lines.shot;
+    if (!pool || !pool.length) return;
+    if (Math.random() > 0.22) return;
+    const line = pool[Math.floor(Math.random() * pool.length)];
+    addLog(`Ur-Nammu: ${line}`);
+  } catch (e) {}
+}
+
+function bumpWantedLevel(amount = 1, ttlMs = 22000) {
+  try {
+    const now = Date.now();
+    const cur = Math.max(0, Math.min(5, Number(window._wantedLevel) || 0));
+    window._wantedLevel = Math.max(cur, Math.max(0, Math.min(5, cur + amount)));
+    window._wantedDecayAt = now + ttlMs;
+  } catch (e) {}
+}
+
+function alertNearbyNPCs(sourceNpc, severity = 1) {
+  try {
+    const now = Date.now();
+    const sx = ((typeof sourceNpc.x === 'number' ? sourceNpc.x : sourceNpc.col) || 0) + 0.5;
+    const sy = ((typeof sourceNpc.y === 'number' ? sourceNpc.y : sourceNpc.row) || 0) + 0.5;
+    for (const en of (entities || [])) {
+      if (!en || en === sourceNpc) continue;
+      if (!en.id || en.id.indexOf('npc-') !== 0) continue;
+      if (isDownedEntity(en, now)) continue;
+      const ex = ((typeof en.x === 'number' ? en.x : en.col) || 0) + 0.5;
+      const ey = ((typeof en.y === 'number' ? en.y : en.row) || 0) + 0.5;
+      const dist = Math.hypot(ex - sx, ey - sy);
+      if (dist > 7) continue;
+      if (!isNPCWeaponized(en) && Math.random() > 0.35) continue;
+      en._hostile = true;
+      en._alertedAt = now;
+      en._nextAttack = Math.min(en._nextAttack || 0, now + 700 + Math.floor(Math.random() * 700));
+      en.moveTarget = { x: player.x + 0.5, y: player.y + 0.5 };
+      if (!en._shouted) {
+        en._shouted = true;
+        try { addLog(`${en.name || 'NPC'} se suma al alboroto.`); } catch (e) {}
+      }
+    }
+    bumpWantedLevel(severity, 25000);
+    maybeSubtleProtagonistComment('alert');
+  } catch (e) {}
+}
+
+function applyPlayerDeathConsequences() {
+  try {
+    if (!player._deathPenaltyPending) return;
+    player._deathPenaltyPending = false;
+    // drop all reserve ammo and partial supplies
+    try { delete inventory['makarov_ammo']; } catch (e) {}
+    try { setMakarovClip(0); } catch (e) {}
+    try { player.equipped = null; } catch (e) {}
+    try {
+      Object.keys(inventory || {}).forEach(item => {
+        if (item === 'makarov_pm') return;
+        const qty = Math.max(0, Number(inventory[item]) || 0);
+        if (!qty) return;
+        const keep = Math.max(0, Math.floor(qty * 0.75));
+        if (keep <= 0) delete inventory[item];
+        else inventory[item] = keep;
+      });
+    } catch (e) {}
+    try {
+      res.wheat = Math.max(0, Math.floor((res.wheat || 0) * 0.8));
+      res.brick = Math.max(0, Math.floor((res.brick || 0) * 0.8));
+      res.pop = Math.max(0, Math.floor((res.pop || 0) * 0.95));
+    } catch (e) {}
+    try { window._wantedLevel = 0; window._wantedDecayAt = 0; } catch (e) {}
+    try { if (window.updateEquippedUI) window.updateEquippedUI(); } catch (e) {}
+    try { updateInventory(); } catch (e) {}
+    try { updateUI(); } catch (e) {}
+    try { saveAppStateDebounced(); } catch (e) {}
+    notify('Has perdido suministros y munición al caer en combate.');
+    addLog('Consecuencia de combate: pierdes parte de tus recursos y toda la munición cargada.');
+    maybeSubtleProtagonistComment('death');
+  } catch (e) {}
+}
+
+function handleNpcReactionToShot(npc, severity = 1) {
+  try {
+    if (!npc) return;
+    const now = Date.now();
+    const armed = isNPCWeaponized(npc);
+    const isCivil = !armed;
+    const roll = Math.random();
+
+    // Soldiers / officials / armed shop owners: they may retaliate directly or raise the alarm.
+    if (armed) {
+      if (roll < 0.45) {
+        npc._hostile = true;
+        npc._alertedAt = now;
+        npc._nextAttack = now + 600 + Math.floor(Math.random() * 700);
+        npc.moveTarget = { x: player.x + 0.5, y: player.y + 0.5 };
+        addLog(`${npc.name || 'NPC'} desenfunda y se gira hacia ti.`);
+      }
+      if (roll < 0.88) {
+        alertNearbyNPCs(npc, severity + 1);
+      }
+      if (roll >= 0.88) {
+        npc._panicUntil = now + 2200;
+      }
+      return;
+    }
+
+    // Civilians: flee / attack / call reinforcements with probabilities.
+    if (roll < 0.45) {
+      npc._panicUntil = now + 2500 + Math.floor(Math.random() * 2000);
+      npc._fleeFromPlayerUntil = now + 2500 + Math.floor(Math.random() * 2000);
+      npc._fleeSpeedBoost = 1.25;
+      npc.moveTarget = { x: npc.x + Math.sign((npc.x || npc.col || 0) - (player.x || 0)) * 4, y: npc.y + Math.sign((npc.y || npc.row || 0) - (player.y || 0)) * 4 };
+      addLog(`${npc.name || 'Civil'} huye despavorido.`);
+    } else if (roll < 0.72) {
+      npc._hostile = true;
+      npc._alertedAt = now;
+      npc._nextAttack = now + 900 + Math.floor(Math.random() * 1200);
+      npc.moveTarget = { x: player.x + 0.5, y: player.y + 0.5 };
+      addLog(`${npc.name || 'Civil'} decide plantar cara.`);
+    } else {
+      npc._panicUntil = now + 1800;
+      alertNearbyNPCs(npc, severity);
+      addLog(`${npc.name || 'Civil'} pide refuerzos.`);
+    }
+    if (Math.random() < 0.20) maybeSubtleProtagonistComment('shot');
   } catch (e) {}
 }
 
@@ -2616,6 +2923,7 @@ function cleanupExpiredCorpses(now = Date.now()) {
       window._playerDownedUntil = 0;
       if ((char.hp || 0) <= 0) char.hp = Math.max(1, Math.floor((char.maxHp || 12) * 0.25));
       if ((player.hp || 0) <= 0) player.hp = char.hp;
+      try { applyPlayerDeathConsequences(); } catch (e) {}
       try { addLog('Te reincorporas tras la caída.'); } catch (e) {}
     }
   } catch (e) {}
@@ -2645,17 +2953,167 @@ function triggerPlayerAttackSwing(hit = false, target = null) {
     player._attackAnimUntil = now + 220;
     player._attackHit = !!hit;
 
-    const fxPoint = target
-      ? {
-          x: ((typeof target.x === 'number' ? target.x : target.col) || 0) + 0.5,
-          y: ((typeof target.y === 'number' ? target.y : target.row) || 0) + 0.5
-        }
-      : getPlayerAttackOrigin(0.9);
-    const screen = worldToScreen(fxPoint.x, fxPoint.y);
-    const tSize = getTileSize();
-    if (hit) spawnHitParticles(screen.x + tSize * 0.3, screen.y + tSize * 0.2, 'rgba(220,40,40,0.95)', 10);
-    else spawnHitParticles(screen.x + tSize * 0.2, screen.y + tSize * 0.15, 'rgba(255,210,122,0.85)', 4);
+    if (hit && target) {
+      const x = ((typeof target.x === 'number' ? target.x : target.col) || 0) + 0.5;
+      const y = ((typeof target.y === 'number' ? target.y : target.row) || 0) + 0.5;
+      const tSize = (typeof tileSize === 'number' && tileSize > 0) ? tileSize : 16;
+      const screen = worldToScreen
+        ? worldToScreen(x, y)
+        : { x: x * tSize, y: y * tSize };
+      if (typeof spawnHitParticles === 'function') {
+        spawnHitParticles(screen.x + tSize * 0.2, screen.y + tSize * 0.15, 'rgba(255,210,122,0.85)', 4);
+      }
+    }
   } catch (e) {}
+}
+
+function spawnMakarovProjectile(fromX, fromY, toX, toY, hit = false) {
+  try {
+    const shots = window._shotProjectiles || (window._shotProjectiles = []);
+    shots.push({
+      fromX,
+      fromY,
+      toX,
+      toY,
+      hit: !!hit,
+      startedAt: Date.now(),
+      duration: 90
+    });
+    if (shots.length > 24) shots.splice(0, shots.length - 24);
+  } catch (e) {}
+}
+
+function findMakarovTargetAt(clickCol, clickRow) {
+  try {
+    let best = null;
+    let bestDist = 1.2;
+    const updateBest = (ref, bucket) => {
+      if (!ref || ref === player || isDownedEntity(ref)) return;
+      const tx = ((typeof ref.x === 'number' ? ref.x : ref.col) || 0) + 0.5;
+      const ty = ((typeof ref.y === 'number' ? ref.y : ref.row) || 0) + 0.5;
+      const d = Math.hypot(tx - clickCol, ty - clickRow);
+      if (d < bestDist) {
+        bestDist = d;
+        best = {
+          ref,
+          bucket,
+          label: ref.name || (bucket === 'rabbits' ? 'conejo' : (bucket === 'foxes' ? 'zorro' : 'objetivo'))
+        };
+      }
+    };
+
+    for (const ent of (entities || [])) updateBest(ent, 'entities');
+    for (const rab of (rabbits || [])) updateBest(rab, 'rabbits');
+    for (const fox of (foxes || [])) updateBest(fox, 'foxes');
+    for (const enemy of (enemies || [])) updateBest(enemy, 'enemies');
+    return best;
+  } catch (e) {
+    return null;
+  }
+}
+
+function reloadMakarov() {
+  try {
+    if (!isMakarovEquipped()) {
+      notify('No tienes la pistola equipada.');
+      try { if (SoundManager) SoundManager.playSFX('gunjam'); } catch (e) {}
+      return false;
+    }
+    const clip = getMakarovClip();
+    const reserve = Math.max(0, Number(inventory['makarov_ammo']) || 0);
+    if (clip >= 10) {
+      notify('El cargador ya está lleno.');
+      try { if (SoundManager) SoundManager.playSFX('gunjam'); } catch (e) {}
+      return false;
+    }
+    if (reserve <= 0) {
+      notify('No tienes munición para recargar.');
+      try { if (SoundManager) SoundManager.playSFX('gunjam'); } catch (e) {}
+      return false;
+    }
+    const need = 10 - clip;
+    const loaded = Math.min(need, reserve);
+    setMakarovClip(clip + loaded);
+    inventory['makarov_ammo'] = reserve - loaded;
+    if (inventory['makarov_ammo'] <= 0) delete inventory['makarov_ammo'];
+    try { if (SoundManager) SoundManager.playSFX('gunreload'); } catch (e) {}
+    notify(`Recargas ${loaded} bala${loaded !== 1 ? 's' : ''}. Cargador: ${getMakarovClip()}/10`);
+    try { updateInventory(); } catch (e) {}
+    try { if (window.updateEquippedUI) window.updateEquippedUI(); } catch (e) {}
+    try { saveAppStateDebounced(); } catch (e) {}
+    return true;
+  } catch (e) {
+    console.error('reloadMakarov:', e);
+    return false;
+  }
+}
+
+function fireMakarov(screenX, screenY) {
+  try {
+    if (!isMakarovEquipped()) return;
+    const clip = getMakarovClip();
+    if (clip <= 0) {
+      notify('Cargador vacío. Pulsa R para recargar.');
+      try { if (SoundManager) SoundManager.playSFX('gunjam'); } catch (_) {}
+      return;
+    }
+    setMakarovClip(clip - 1);
+    try {
+      const nowShot = Date.now();
+      player._shakeUntil = Math.max(player._shakeUntil || 0, nowShot + 120);
+      player._shakeMag = Math.max(player._shakeMag || 0, 2.5);
+    } catch (_) {}
+    try { if (SoundManager) SoundManager.playSFX('gunshot', { volume: 1.1 }); } catch (_) {}
+    try { updateInventory(); } catch (_) {}
+    try { if (window.updateEquippedUI) window.updateEquippedUI(); } catch (_) {}
+    // Convert screen pos to world tile coords
+    const wPos = screenToWorldFloat(screenX, screenY);
+    const clickCol = wPos.x;
+    const clickRow = wPos.y;
+    // Distance from player to clicked point
+    const playerCX = (player.x || player.col || 0) + 0.5;
+    const playerCY = (player.y || player.row || 0) + 0.5;
+    const distTiles = Math.hypot(clickCol - playerCX, clickRow - playerCY);
+    // Miss chance: 8% per tile distance, min 5%, max 88%
+    const missChance = Math.max(0.05, Math.min(0.88, distTiles * 0.08));
+    const missed = Math.random() < missChance;
+    const bestTargetInfo = findMakarovTargetAt(clickCol, clickRow);
+    const projectileToX = bestTargetInfo && bestTargetInfo.ref
+      ? (((typeof bestTargetInfo.ref.x === 'number' ? bestTargetInfo.ref.x : bestTargetInfo.ref.col) || 0) + 0.5)
+      : clickCol;
+    const projectileToY = bestTargetInfo && bestTargetInfo.ref
+      ? (((typeof bestTargetInfo.ref.y === 'number' ? bestTargetInfo.ref.y : bestTargetInfo.ref.row) || 0) + 0.5)
+      : clickRow;
+    spawnMakarovProjectile(playerCX, playerCY, projectileToX, projectileToY, !!bestTargetInfo && !missed);
+    // Muzzle flash particles at player position
+    try {
+      const tSize = (typeof tileSize === 'number' && tileSize > 0) ? tileSize : 16;
+      const muzzle = worldToScreen ? worldToScreen(playerCX, playerCY) : { x: playerCX * tSize, y: playerCY * tSize };
+      if (typeof spawnHitParticles === 'function') spawnHitParticles(muzzle.x, muzzle.y, 'rgba(255,220,50,0.9)', 6);
+    } catch (e) {}
+    if (!bestTargetInfo) {
+      notify('\u00a1Fallo! El disparo no dio en ning\u00fan objetivo.' + (getMakarovClip() === 0 ? ' Cargador vacío.' : ''));
+      return;
+    }
+    if (missed) {
+      notify('\u00a1Fallo! La bala no alcanz\u00f3 a ' + (bestTargetInfo.label || 'el objetivo') + '. (dist: ' + distTiles.toFixed(1) + ' tiles)');
+      return;
+    }
+    // Hit!
+    const baseDmg = 2 + Math.floor(((char && char.special && char.special.FUE) || 0) / 2);
+    const dmg = Math.max(1, Math.floor((baseDmg + 8) * 0.75));
+    const targetInfo = bestTargetInfo;
+    triggerPlayerAttackSwing(true, targetInfo.ref);
+    applyPlayerAttackDamage(targetInfo, dmg, 'makarov_pm');
+    if (targetInfo.bucket === 'entities' && isNPCWeaponized(targetInfo.ref)) {
+      try { handleNpcReactionToShot(targetInfo.ref, 2); } catch (e) {}
+    } else if (targetInfo.bucket === 'entities' && String(targetInfo.ref && targetInfo.ref.id || '').indexOf('npc-') === 0) {
+      try { handleNpcReactionToShot(targetInfo.ref, 1); } catch (e) {}
+    }
+    notify('\u00a1Impacto! ' + (targetInfo.label || 'Objetivo') + ' recibe ' + dmg + ' de da\u00f1o.' + (getMakarovClip() === 0 ? ' Cargador vacío.' : ''));
+    maybeSubtleProtagonistComment('shot');
+    updateUI(); updateInventory();
+  } catch (e) { console.error('fireMakarov:', e); }
 }
 
 function drawPlayerAttackSwing(px, py, spriteW, spriteH, tileSize) {
@@ -2929,7 +3387,7 @@ function resolveBuildingSpriteKey(type) {
     ,soviet_block: 'stone_house'
     ,party_hq: 'mesopotamian_villa_detailed'
     ,collective_farm: 'farm'
-    ,farm_plot: 'farm'
+    ,farm_plot: 'farm_plot'
     ,factory: 'temple'
     ,state_warehouse: 'granary'
     ,steel_foundry: 'zigurat_isometrico_escaleras_detalladas_64x64'
@@ -9217,12 +9675,40 @@ function render() {
       if (en._holdUntil && nowNpc < en._holdUntil) continue;
       if (en._holdUntil && nowNpc >= en._holdUntil) delete en._holdUntil;
 
+      if (en._panicUntil && nowNpc >= en._panicUntil) delete en._panicUntil;
+      if (en._fleeFromPlayerUntil && nowNpc >= en._fleeFromPlayerUntil) delete en._fleeFromPlayerUntil;
+
       if (en._hostile && !isNightNpc) {
-        en.moveTarget = { x: player.x + 0.5, y: player.y + 0.5 };
-        en.nextMove = nowNpc + 350;
         const enx = (typeof en.x === 'number' ? en.x : en.col) + 0.5;
         const eny = (typeof en.y === 'number' ? en.y : en.row) + 0.5;
         const distToPlayer = Math.hypot(player.x + 0.5 - enx, player.y + 0.5 - eny);
+        if (en._fleeFromPlayerUntil && nowNpc < en._fleeFromPlayerUntil) {
+          const dx = enx - (player.x + 0.5);
+          const dy = eny - (player.y + 0.5);
+          en.moveTarget = { x: enx + Math.sign(dx || 1) * 4, y: eny + Math.sign(dy || 1) * 4 };
+          en.nextMove = nowNpc + 300;
+          continue;
+        }
+        if (distToPlayer > 2.2 && isNPCWeaponized(en) && nowNpc >= (en._nextAttack || 0)) {
+          // ranged / armed counter-attack
+          en._nextAttack = nowNpc + 1200 + Math.floor(Math.random() * 900);
+          try {
+            const damage = Math.max(1, 2 + Math.floor(Math.random() * 4));
+            char.hp = Math.max(0, (char.hp || 0) - damage);
+            char._flashUntil = nowNpc + 380;
+            player._shakeUntil = nowNpc + 200;
+            player._shakeMag = 4;
+            try { const ps = worldToScreen(player.x + 0.5, player.y - 0.5); spawnDamageText(ps.x, ps.y, '-' + damage, '#FF6655'); } catch (e2) {}
+            addLog(`${en.name || 'Armado'} dispara desde lejos por ${damage} daño.`);
+            maybeSubtleProtagonistComment('shot');
+            if (char.hp <= 0) markPlayerDowned('¡Has sido derrotado!');
+          } catch (e) {}
+          en.moveTarget = { x: player.x + 0.5, y: player.y + 0.5 };
+          en.nextMove = nowNpc + 350;
+          continue;
+        }
+        en.moveTarget = { x: player.x + 0.5, y: player.y + 0.5 };
+        en.nextMove = nowNpc + 350;
         if (distToPlayer < 1.6 && nowNpc >= (en._nextAttack || 0)) {
           en._nextAttack = nowNpc + 1000 + Math.floor(Math.random() * 800);
           const npcDmg = Math.max(1, 2 + Math.floor(Math.random() * 5));
@@ -9236,8 +9722,25 @@ function render() {
             spawnDamageText(ps.x, ps.y, '-' + npcDmg, '#FF6655');
           } catch (e2) {}
           addLog(`${en.name || 'Ciudadano'} te golpea por ${npcDmg} daño.`);
+          maybeSubtleProtagonistComment('shot');
           try { updateUI(); } catch (e3) {}
           if (char.hp <= 0) markPlayerDowned('¡Has sido derrotado!');
+        }
+        continue;
+      }
+
+      if (en._panicUntil && nowNpc < en._panicUntil) {
+        // non-hostile panic behavior: flee from player and maybe call help
+        const enx = (typeof en.x === 'number' ? en.x : en.col) + 0.5;
+        const eny = (typeof en.y === 'number' ? en.y : en.row) + 0.5;
+        const dx = enx - (player.x + 0.5);
+        const dy = eny - (player.y + 0.5);
+        en.moveTarget = { x: enx + Math.sign(dx || 1) * 5, y: eny + Math.sign(dy || 1) * 5 };
+        en.nextMove = nowNpc + 300;
+        if (!en._panicNotified && Math.random() < 0.12) {
+          en._panicNotified = true;
+          addLog(`${en.name || 'NPC'} corre a avisar a otros.`);
+          alertNearbyNPCs(en, 1);
         }
         continue;
       }
@@ -9411,6 +9914,99 @@ function render() {
       const fills = (window._fillRectCalls || 0);
       const ents = (window.entities && window.entities.length) || 0;
       diag.textContent = `Engine: ${fps} FPS | ${ms} ms | draw:${draw} imgs:${imgs} fills:${fills} ents:${ents}`;
+    }
+  } catch (e) {}
+  try {
+    const shots = window._shotProjectiles;
+    if (Array.isArray(shots) && shots.length > 0) {
+      const nowShots = Date.now();
+      for (let i = shots.length - 1; i >= 0; i--) {
+        const shot = shots[i];
+        const duration = Math.max(1, shot.duration || 90);
+        const t = Math.max(0, Math.min(1, (nowShots - shot.startedAt) / duration));
+        if (t >= 1) {
+          shots.splice(i, 1);
+          continue;
+        }
+        const wx = shot.fromX + (shot.toX - shot.fromX) * t;
+        const wy = shot.fromY + (shot.toY - shot.fromY) * t;
+        const from = worldToScreen
+          ? worldToScreen(shot.fromX, shot.fromY)
+          : { x: shot.fromX * getTileSize(), y: shot.fromY * getTileSize() };
+        const cur = worldToScreen
+          ? worldToScreen(wx, wy)
+          : { x: wx * getTileSize(), y: wy * getTileSize() };
+
+        ctx.save();
+        ctx.strokeStyle = `rgba(255,220,70,${0.45 * (1 - t)})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(from.x, from.y);
+        ctx.lineTo(cur.x, cur.y);
+        ctx.stroke();
+        ctx.fillStyle = `rgba(255,235,120,${0.95 - t * 0.35})`;
+        ctx.beginPath();
+        ctx.arc(cur.x, cur.y, 2.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+  } catch (e) {}
+  try {
+    const nowAlert = Date.now();
+    if (window._wantedLevel > 0 && window._wantedDecayAt && nowAlert >= window._wantedDecayAt) {
+      window._wantedLevel = Math.max(0, (Number(window._wantedLevel) || 0) - 1);
+      window._wantedDecayAt = window._wantedLevel > 0 ? nowAlert + 14000 : 0;
+    }
+  } catch (e) {}
+  try {
+    let wanted = document.getElementById('wanted-indicator');
+    if (!wanted) {
+      wanted = document.createElement('div');
+      wanted.id = 'wanted-indicator';
+      wanted.style.position = 'fixed';
+      wanted.style.left = '50%';
+      wanted.style.top = '12px';
+      wanted.style.transform = 'translateX(-50%)';
+      wanted.style.zIndex = '200000';
+      wanted.style.padding = '6px 10px';
+      wanted.style.borderRadius = '10px';
+      wanted.style.background = 'rgba(20,12,10,0.72)';
+      wanted.style.border = '1px solid rgba(255,140,80,0.35)';
+      wanted.style.boxShadow = '0 0 18px rgba(255,100,40,0.12)';
+      wanted.style.pointerEvents = 'none';
+      document.body.appendChild(wanted);
+    }
+  } catch (e) {}
+  // Draw makarov crosshair when equipped
+  try {
+    const _eqW = player && player.equipped;
+    if (_eqW === 'makarov_pm') {
+      document.body.style.cursor = 'none';
+      const _cx = window._mouseCanvasX || W / 2;
+      const _cy = window._mouseCanvasY || H / 2;
+      const _ammo = (inventory && inventory['makarov_ammo']) || 0;
+      ctx.save();
+      ctx.strokeStyle = _ammo > 0 ? 'rgba(220,30,30,0.92)' : 'rgba(120,120,120,0.7)';
+      ctx.lineWidth = 1.5;
+      // Outer circle
+      ctx.beginPath(); ctx.arc(_cx, _cy, 14, 0, Math.PI * 2); ctx.stroke();
+      // Cross lines
+      ctx.beginPath(); ctx.moveTo(_cx - 20, _cy); ctx.lineTo(_cx - 16, _cy); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(_cx + 16, _cy); ctx.lineTo(_cx + 20, _cy); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(_cx, _cy - 20); ctx.lineTo(_cx, _cy - 16); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(_cx, _cy + 16); ctx.lineTo(_cx, _cy + 20); ctx.stroke();
+      // Center dot
+      ctx.fillStyle = _ammo > 0 ? 'rgba(220,30,30,0.85)' : 'rgba(120,120,120,0.7)';
+      ctx.beginPath(); ctx.arc(_cx, _cy, 2, 0, Math.PI * 2); ctx.fill();
+      // Ammo counter
+      ctx.fillStyle = 'rgba(255,255,255,0.75)';
+      ctx.font = 'bold 11px monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText(_ammo + ' bala' + (_ammo !== 1 ? 's' : ''), _cx + 18, _cy + 4);
+      ctx.restore();
+    } else {
+      document.body.style.cursor = '';
     }
   } catch (e) {}
   if (window._gameStarted && _renderLoopActive) requestAnimationFrame(render);
@@ -9830,6 +10426,33 @@ function updateUI() {
   const tn = document.getElementById('turn-num'); if (tn) tn.textContent = dayCount;
   updateProduction();
   updateCharCard();
+  try {
+    const wanted = document.getElementById('wanted-indicator');
+    if (wanted) {
+      const lvl = Math.max(0, Math.min(5, Number(window._wantedLevel) || 0));
+      wanted.style.display = lvl > 0 ? 'block' : 'none';
+      wanted.innerHTML = '';
+      const head = document.createElement('div');
+      head.textContent = 'ALERTA';
+      head.style.fontSize = '10px';
+      head.style.letterSpacing = '1px';
+      head.style.color = '#ffcf66';
+      head.style.fontWeight = 'bold';
+      wanted.appendChild(head);
+      const row = document.createElement('div');
+      row.style.display = 'flex';
+      row.style.gap = '3px';
+      row.style.marginTop = '4px';
+      for (let i = 0; i < 5; i++) {
+        const d = document.createElement('span');
+        d.textContent = i < lvl ? '◆' : '◇';
+        d.style.color = i < lvl ? '#ff6b3d' : '#7a5b38';
+        d.style.fontSize = '12px';
+        row.appendChild(d);
+      }
+      wanted.appendChild(row);
+    }
+  } catch (e) {}
 }
 
 function refreshBuildButtonsFromDefinitions() {
@@ -9871,6 +10494,7 @@ function addToInventory(item, qty) {
   notify(`+${qty} ${item}`);
   updateInventory();
   try { if (window.updateEquippedUI) window.updateEquippedUI(); } catch (e) {}
+  try { saveAppStateDebounced(); } catch (e) {}
   // update missions that watch this item
   try {
     if (window._missions && window._missions.length > 0) {
@@ -9905,6 +10529,8 @@ function completeSideMission(mission) {
     addLog(`Misión secundaria completada: ${mission.title}`);
     notify(`Completada: ${mission.title}`);
     try { updateInventory(); } catch (e) {}
+    try { if (window.updateEquippedUI) window.updateEquippedUI(); } catch (e) {}
+    try { saveAppStateDebounced(); } catch (e) {}
     try { if (window.renderMissions) window.renderMissions(); } catch (e) {}
   } catch (e) {}
 }
@@ -9994,6 +10620,19 @@ function drawItemIcon(ctx, itemId, w = 28, h = 28) {
     ctx.fillStyle = '#6b4a2f'; ctx.beginPath(); ctx.arc(14, 6, 4, 0, Math.PI * 2); ctx.fill();
     return;
   }
+  if (id === 'makarov_pm') {
+    // Body
+    ctx.fillStyle = '#343236'; ctx.fillRect(4, 8, 18, 7);
+    ctx.fillStyle = '#1a1919'; ctx.fillRect(5, 9, 16, 5);
+    // Barrel tip
+    ctx.fillStyle = '#0a0707'; ctx.fillRect(20, 10, 4, 3);
+    // Grip
+    ctx.fillStyle = '#4f2c25'; ctx.fillRect(10, 15, 8, 10);
+    ctx.fillStyle = '#693e36'; ctx.fillRect(11, 16, 6, 8);
+    // Trigger guard
+    ctx.fillStyle = '#121111'; ctx.fillRect(8, 14, 3, 4);
+    return;
+  }
   if (id === 'campfire') {
     ctx.fillStyle = '#7a4a2a'; ctx.fillRect(7, 16, 14, 2); ctx.fillRect(9, 14, 10, 2);
     ctx.fillStyle = '#E67E22'; ctx.beginPath(); ctx.moveTo(14, 8); ctx.lineTo(18, 15); ctx.lineTo(10, 15); ctx.closePath(); ctx.fill();
@@ -10070,7 +10709,7 @@ function craftItem(recipeId, qty = 1) {
   return true;
 }
 
-const EQUIPPABLE_ITEMS = new Set(['stone-axe','stone-pick','stone-hoe','stone-sword','plank','stick','campfire','furnace','brick-block','beacon','axe','sword','spear','club']);
+const EQUIPPABLE_ITEMS = new Set(['stone-axe','stone-pick','stone-hoe','stone-sword','plank','stick','campfire','furnace','brick-block','beacon','axe','sword','spear','club','makarov_pm']);
 
 function isEquippableItem(itemId) {
   return EQUIPPABLE_ITEMS.has(String(itemId || '').toLowerCase());
@@ -10244,9 +10883,29 @@ function updateInventory() {
     equippedHint.textContent = equipped ? 'Arrastra otro ítem aquí para cambiarlo' : 'Arrastra aquí un arma u objeto equipable';
     equippedIcon.innerHTML = '';
     if (equipped) {
+      const iconContainer = document.createElement('div');
+      iconContainer.style.display = 'flex';
+      iconContainer.style.flexDirection = 'column';
+      iconContainer.style.alignItems = 'center';
+      iconContainer.style.justifyContent = 'center';
+      iconContainer.style.gap = '4px';
+      
       const cv = document.createElement('canvas'); cv.width = 48; cv.height = 48; cv.style.width = '48px'; cv.style.height = '48px';
       drawItemIcon(cv.getContext('2d'), equipped, 48, 48);
-      equippedIcon.appendChild(cv);
+      iconContainer.appendChild(cv);
+      
+      // Add ammo counter if equipped is makarov_pm
+      if (equipped === 'makarov_pm') {
+        const ammoCount = (inventory && inventory['makarov_ammo']) || 0;
+        const counter = document.createElement('div');
+        counter.textContent = ammoCount + ' bala' + (ammoCount !== 1 ? 's' : '');
+        counter.style.fontSize = '11px';
+        counter.style.color = ammoCount > 0 ? '#63FF63' : '#FF6363';
+        counter.style.fontWeight = 'bold';
+        iconContainer.appendChild(counter);
+      }
+      
+      equippedIcon.appendChild(iconContainer);
     }
   }
   refreshInventoryDropTargets();
@@ -11463,12 +12122,36 @@ function createAbilityBarAndMissions() {
     const cctx = cv.getContext('2d');
     drawItemIcon(cctx, it, 40, 28);
     if (icon) icon.appendChild(cv);
-    if (label) label.textContent = it;
+    if (label) {
+      if (it === 'makarov_pm') {
+          const reserve = (inventory && inventory['makarov_ammo']) || 0;
+          label.textContent = `${it} (${getMakarovClip()}/10 | R:${reserve})`;
+      } else {
+        label.textContent = it;
+      }
+    }
 
     if (invIcon) {
+      invIcon.innerHTML = '';
+      const invWrap = document.createElement('div');
+      invWrap.style.display = 'flex';
+      invWrap.style.flexDirection = 'column';
+      invWrap.style.alignItems = 'center';
+      invWrap.style.justifyContent = 'center';
+      invWrap.style.gap = '4px';
       const big = document.createElement('canvas'); big.width = 48; big.height = 48; big.style.width = '48px'; big.style.height = '48px';
       drawItemIcon(big.getContext('2d'), it, 48, 48);
-      invIcon.appendChild(big);
+      invWrap.appendChild(big);
+      if (it === 'makarov_pm') {
+        const ammoCount = (inventory && inventory['makarov_ammo']) || 0;
+        const counter = document.createElement('div');
+        counter.textContent = `${getMakarovClip()}/10 +${ammoCount}`;
+        counter.style.fontSize = '11px';
+        counter.style.fontWeight = 'bold';
+        counter.style.color = ammoCount > 0 ? '#63FF63' : '#FF6363';
+        invWrap.appendChild(counter);
+      }
+      invIcon.appendChild(invWrap);
     }
     if (invLabel) invLabel.textContent = it;
     if (invHint) invHint.textContent = 'Arrastra otro ítem aquí para cambiarlo';
@@ -11484,6 +12167,7 @@ function createAbilityBarAndMissions() {
     if ((inventory[itemId] || 0) <= 0) { notify('No tienes ese objeto para equipar'); return false; }
     if (!isEquippableItem(itemId)) { notify('Ese objeto no se puede equipar'); return false; }
     player.equipped = itemId;
+    if (itemId === 'makarov_pm' && !Number.isFinite(Number(player._makarovClip))) setMakarovClip(0);
     updateEquippedUI();
     notify('Equipado: ' + itemId);
     return true;
@@ -12206,7 +12890,7 @@ function createMenuBar() {
     'wood', 'stone', 'wheat', 'brick', 'food', 'water', 'meat',
     'plank', 'stick', 'stone-pick', 'stone-axe', 'stone-sword',
     'campfire', 'furnace', 'brick-block', 'beacon',
-    'sword', 'spear', 'club', 'axe'
+    'sword', 'spear', 'club', 'axe', 'makarov_pm', 'makarov_ammo'
   ];
 
   function addDevItemControls(itemId) {
@@ -13957,9 +14641,9 @@ function buildStoryQuestsForEpoch(epochId) {
         desc: 'Reúnete en Novozarya con la comisaria del distrito y activa el protocolo de invierno.',
         target: 1, progress: 0, reward: { food: 2, stone: 1 },
         watch: null, isStory: true },
-      { id: 'story_ch2', title: 'Racionamiento de Invierno',
-        desc: 'Entrega 5 comida y 3 piedra en la Casa del Soviet para asegurar calefacción y refugio.',
-        target: 8, progress: 0, reward: { food: 5, stone: 2 },
+      { id: 'story_ch2', title: 'El Trato en la Oscuridad',
+        desc: 'Busca al oficial Kozlov en el mercado negro de Novozarya. A cambio de 3 comida y 2 piedra, te entregar\u00e1 una Makarov PM con 8 balas. Protege el convoy de suministros.',
+        target: 5, progress: 0, reward: { food: 3, stone: 2, makarov_pm: 1, makarov_ammo: 8 },
         watch: null, isStory: true },
       { id: 'story_ch3', title: '¡Novozarya aguanta el frente!',
         desc: 'El pueblo ha resistido la tormenta: la red de suministro sigue en pie.',
@@ -14025,6 +14709,17 @@ function advanceStoryChapter(chapter) {
   // Chapter title notification
   const titles = getStoryChapterTitles(window._currentEpoch || 'mesopotamia');
   try { notify(titles[chapter] || 'Nueva misión de historia'); } catch (e) {}
+  // Special: URSS Acto II grants Makarov PM to the player
+  if (chapter === 2 && (window._currentEpoch || 'mesopotamia') === 'urss') {
+    try {
+      window.inventory['makarov_pm'] = (window.inventory['makarov_pm'] || 0) + 1;
+      inventory['makarov_ammo'] = (inventory['makarov_ammo'] || 0) + 8;
+      setTimeout(() => {
+        notify('\u00a1El oficial Kozlov te entreg\u00f3 una Makarov PM y 8 balas! Eq\u00edpala y prot\u00e9ge el convoy.');
+        if (typeof updateInventory === 'function') updateInventory();
+      }, 1200);
+    } catch (e) {}
+  }
 }
 
 // Complete current mission and display cinematic, then advance story
@@ -14601,16 +15296,63 @@ function makeDraggable(el, handle) {
 }
 
 function startIntroSequence() {
-  window._introSeq = { phase: 0, phaseStart: performance.now(), done: false };
+  window._introSeq = { phase: 0, phaseStart: performance.now(), done: false, musicStarted: false };
+  // Prepare intro music - play on first user gesture to bypass autoplay policy
+  const introAudio = new Audio('data/Sounds/ussr.wav');
+  introAudio.id = 'intro-music-player';
+  introAudio.loop = false;
+  introAudio.volume = 0.7;
+  window._introAudio = introAudio;
+  // Try to play immediately (works if triggered by a user gesture)
+  const tryPlay = () => {
+    if (window._introAudio && !window._introSeq.musicStarted) {
+      window._introAudio.play().then(() => {
+        window._introSeq.musicStarted = true;
+      }).catch(() => {});
+    }
+  };
+  tryPlay();
+  // Also hook into first user interaction as fallback
+  const onFirstInteraction = () => {
+    tryPlay();
+    document.removeEventListener('pointerdown', onFirstInteraction);
+    document.removeEventListener('keydown', onFirstInteraction);
+  };
+  document.addEventListener('pointerdown', onFirstInteraction, { once: true });
+  document.addEventListener('keydown', onFirstInteraction, { once: true });
 }
 function advanceIntroSequence() {
   const seq = window._introSeq;
   if (!seq || seq.done) return;
-  const PHASES = 4;
+  const PHASES = 5;  // phases 0-3: story, phase 4: flag animation
   seq.phase = (seq.phase || 0) + 1;
   seq.phaseStart = performance.now();
   if (seq.phase >= PHASES) {
     seq.done = true;
+    // Stop intro music
+    try {
+      if (window._introAudio) { window._introAudio.pause(); window._introAudio = null; }
+      const audioEl = document.getElementById('intro-music-player');
+      if (audioEl) audioEl.pause();
+      if (typeof stopIntroMusicMIDI === 'function') stopIntroMusicMIDI();
+    } catch (e) {}
+    // Show panels again after intro
+    try {
+      const topbar = document.getElementById('topbar');
+      if (topbar) topbar.style.display = 'flex';
+    } catch (e) {}
+    try {
+      const toolbar = document.getElementById('toolbar');
+      if (toolbar) toolbar.style.display = 'flex';
+    } catch (e) {}
+    try {
+      const questHud = document.getElementById('quest-hud');
+      if (questHud) questHud.style.display = 'block';
+    } catch (e) {}
+    try {
+      const instructBox = document.getElementById('instruction-box');
+      if (instructBox) instructBox.style.display = 'block';
+    } catch (e) {}
     // When the intro ends ensure the player is not stuck on a building tile
     if (!window.currentInterior) {
       try {
@@ -14627,6 +15369,97 @@ function advanceIntroSequence() {
 }
 function skipIntro() {
   if (window._introSeq && !window._introSeq.done) window._introSeq.done = true;
+}
+
+function drawAnimatedUSSRFlagSequence(ctx, W, H, t, isLastPhase) {
+  // USSR flag construction animation
+  const flagCx = W / 2;
+  const flagCy = H / 2 - 60;
+  const flagWidth = 180;
+  const flagHeight = 120;
+  
+  // Animation progress (0 to 1)
+  const animDuration = isLastPhase ? 3000 : 2800;
+  const animProgress = Math.min(1, t / animDuration);
+  
+  // Phase 1: Red background appears
+  ctx.fillStyle = '#E63946';
+  ctx.fillRect(flagCx - flagWidth/2, flagCy - flagHeight/2, flagWidth * Math.min(1, animProgress * 1.2), flagHeight);
+  
+  // Phase 2: Yellow hammer and sickle appear (after 40% done)
+  if (animProgress > 0.4) {
+    const hammerProgress = Math.min(1, (animProgress - 0.4) / 0.4);
+    ctx.fillStyle = '#FFD60A';
+    ctx.globalAlpha = 0.9;
+    
+    // Draw simplified hammer
+    const hammerX = flagCx - 40;
+    const hammerY = flagCy - 20;
+    const hammerSize = 25 * hammerProgress;
+    
+    // Hammer handle
+    ctx.fillRect(hammerX, hammerY + hammerSize * 0.6, hammerSize * 0.8, hammerSize * 0.4);
+    // Hammer head
+    ctx.fillRect(hammerX - hammerSize * 0.3, hammerY, hammerSize * 0.8, hammerSize * 0.5);
+    
+    // Draw simplified sickle (crescent)
+    const sickleX = flagCx + 35;
+    const sickleY = flagCy - 15;
+    const sickleRadius = 20 * hammerProgress;
+    
+    ctx.beginPath();
+    ctx.arc(sickleX, sickleY, sickleRadius, 0, Math.PI * 2);
+    ctx.fillStyle = '#FFD60A';
+    ctx.fill();
+    
+    // Inner arc to create sickle shape
+    ctx.fillStyle = '#000000';
+    ctx.globalAlpha = 0.96;
+    ctx.beginPath();
+    ctx.arc(sickleX + sickleRadius * 0.4, sickleY, sickleRadius * 0.6, 0, Math.PI * 2);
+    ctx.fill();
+    
+    ctx.globalAlpha = 1.0;
+  }
+  
+  // Phase 3: Star appears at top (after 70% done)
+  if (animProgress > 0.7) {
+    const starProgress = Math.min(1, (animProgress - 0.7) / 0.3);
+    ctx.fillStyle = '#FFD60A';
+    ctx.globalAlpha = starProgress;
+    
+    // Draw 5-pointed star
+    const starX = flagCx;
+    const starY = flagCy - flagHeight/2 + 25;
+    const starSize = 18 * starProgress;
+    
+    ctx.beginPath();
+    for (let i = 0; i < 5; i++) {
+      const angle = (i * 4 * Math.PI) / 5 - Math.PI / 2;
+      const radius = i % 2 === 0 ? starSize : starSize * 0.4;
+      const x = starX + radius * Math.cos(angle);
+      const y = starY + radius * Math.sin(angle);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1.0;
+  }
+  
+  // At the end, show title text
+  if (animProgress > 0.85) {
+    const textAlpha = Math.min(1, (animProgress - 0.85) / 0.15);
+    ctx.globalAlpha = textAlpha * 0.8;
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 24px serif';
+    ctx.fillStyle = '#FFD60A';
+    ctx.fillText('NOVOZARYA', flagCx, H / 2 + 80);
+    ctx.font = '14px serif';
+    ctx.fillStyle = 'rgba(255,214,10,0.7)';
+    ctx.fillText('Under construction. The future is yours to build.', flagCx, H / 2 + 110);
+    ctx.globalAlpha = 1.0;
+  }
 }
 
 function drawIntroSequence(ctx, W, H) {
@@ -14650,6 +15483,19 @@ function drawIntroSequence(ctx, W, H) {
   const homePrologueMode = !!window._homePrologueIntro;
   const protagonistName = (window.player && window.player.name) ? window.player.name : 'el camarada';
   const protagonistTitle = (window.player && window.player.title) ? window.player.title : 'responsable del distrito';
+  // Phase 5-6: Show USSR flag animation after story
+  if (seq.phase >= 4) {
+    ctx.globalAlpha = alpha;
+    // Draw animated USSR flag being constructed
+    drawAnimatedUSSRFlagSequence(ctx, W, H, t, seq.phase === 6);
+    ctx.globalAlpha = 1.0;
+    ctx.textAlign = 'center';
+    ctx.font = '12px monospace';
+    ctx.fillStyle = 'rgba(200,200,200,0.6)';
+    ctx.fillText('[ Enter / Espacio / E / Click para continuar ]', cx, H - 30);
+    ctx.restore();
+    return;
+  }
   if (seq.phase === 0) {
     ctx.textAlign = 'center';
     ctx.fillStyle = '#c8a96e';
@@ -15320,6 +16166,15 @@ function advanceDialogue() {
   }
 }
 
+function rewindDialogue() {
+  const dlg = window._activeDialogue;
+  if (!dlg) return;
+  if (dlg.idx > 0) {
+    dlg.idx--;
+    if (dlg.npcRef) dlg.npcRef._dialogueLine = dlg.idx;
+  }
+}
+
 function drawDialoguePanel(ctx, W, H) {
   const dlg = window._activeDialogue;
   if (!dlg) return;
@@ -15641,6 +16496,9 @@ canvas.addEventListener('mousemove', e => {
   const myCss = ptr.cssY;
   petRadialPointer.x = mx;
   petRadialPointer.y = my;
+  // Track pointer for makarov crosshair
+  window._mouseCanvasX = mx;
+  window._mouseCanvasY = my;
 
   if (isZooming) {
     markCameraInput();
@@ -15832,12 +16690,8 @@ canvas.addEventListener('mousedown', e => {
             _setSelectedEntities([clicked], false);
           }
           notify(`Seleccionadas: ${_getSelectedEntities().length}`);
-        } else if (clicked) {
-          showEntityInfo(clicked);
         } else if (_getSelectedEntities().length > 0) {
           _issueGroupMoveCommand(pos.x, pos.y, { radius: 0.5 });
-        } else {
-          notify('No hay entidad en el punto');
         }
       } catch (err) { /* ignore */ }
       return;
@@ -15957,7 +16811,16 @@ let zoomAnimating = false;
 
 try {
   canvas.tabIndex = 0;
-  canvas.addEventListener('pointerdown', () => { try { canvas.focus({ preventScroll: true }); } catch (e) {} });
+  canvas.addEventListener('click', e => {
+  try {
+    if (player && player.equipped === 'makarov_pm' && window._gameStarted && !startLocked) {
+      const ptr = getCanvasPointerPosition(e);
+      fireMakarov(ptr.x, ptr.y);
+      e.stopPropagation();
+    }
+  } catch (ex) {}
+});
+canvas.addEventListener('pointerdown', () => { try { canvas.focus({ preventScroll: true }); } catch (e) {} });
 } catch (e) {}
 
 canvas.addEventListener('wheel', (ev) => {
@@ -16258,16 +17121,6 @@ document.addEventListener('keydown', e => {
       }
     }
   }
-  if (e.key === 'F10') {
-    const mb = document.getElementById('top-menubar');
-    if (mb) {
-      const hidden = mb.style.display === 'none';
-      mb.style.display = hidden ? 'flex' : 'none';
-      try { saveAppStateDebounced(); } catch (err) {}
-      e.preventDefault();
-      return;
-    }
-  }
   if (isCinematicActive() && e.key && e.key.toLowerCase() === 'm') {
     e.preventDefault();
     return;
@@ -16278,6 +17131,14 @@ document.addEventListener('keydown', e => {
       try {
         if (window._activeDialogue) advanceDialogue();
         else if (window._introSeq && !window._introSeq.done) advanceIntroSequence();
+      } catch (_) {}
+      try { e.stopImmediatePropagation(); } catch (_) {}
+      e.preventDefault();
+      return;
+    }
+    if (key === 'q') {
+      try {
+        if (window._activeDialogue) rewindDialogue();
       } catch (_) {}
       try { e.stopImmediatePropagation(); } catch (_) {}
       e.preventDefault();
@@ -16410,12 +17271,23 @@ document.addEventListener('keydown', e => {
     e.preventDefault();
   }
   if (!editMode && e.key && e.key.toLowerCase() === 'r') {
+    if (isMakarovEquipped()) {
+      reloadMakarov();
+      e.preventDefault();
+      return;
+    }
     const units = _getSelectedEntities();
     if (units.length > 0) {
       _issueGroupMoveCommand(player.x, player.y, { radius: 1.3 });
       notify('Reagrupar alrededor del jugador');
     }
     e.preventDefault();
+    return;
+  }
+  if (!editMode && e.key && e.key.toLowerCase() === 'p') {
+    try { applyPlayerDeathConsequences(); } catch (err) {}
+    e.preventDefault();
+    return;
   }
   // toggle camera follow with 'l'
   if (e.key && e.key.toLowerCase() === 'l') {
@@ -16832,6 +17704,15 @@ function init() {
             await generateSpriteImages(prog);
             console.log && console.log('game-engine: sprite images generation complete');
             try { if (window._onEngineProgress) window._onEngineProgress(55, 'Sprites listos'); } catch (e) {}
+            // Load intro MIDI music
+            try { if (window._onEngineProgress) window._onEngineProgress(57, 'Cargando música de intro...'); } catch (e) {}
+            const midiLoaded = await loadIntroMusicMIDI();
+            if (midiLoaded) {
+              console.log && console.log('game-engine: intro MIDI music loaded');
+              try { if (window._onEngineProgress) window._onEngineProgress(59, 'Música lista'); } catch (e) {}
+            } else {
+              console.warn('game-engine: intro MIDI music failed to load, continuing without music');
+            }
           } catch (e) {}
           try { if (window._onEngineProgress) window._onEngineProgress(60, 'Generando mapa...'); } catch (e) {}
           console.log && console.log('game-engine: generating map');
