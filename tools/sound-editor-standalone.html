@@ -1,0 +1,1480 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MesoBuilder Sound Editor</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #1a1a1a;
+      color: #e4e4e4;
+      font-family: 'Courier New', monospace;
+      height: 100vh;
+      overflow: hidden;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 300px 1fr 300px;
+      height: 100vh;
+    }
+    .panel {
+      background: #252525;
+      border-right: 1px solid #3a3a3a;
+      padding: 12px;
+      overflow: auto;
+    }
+    .panel.right { border-right: 0; border-left: 1px solid #3a3a3a; }
+    .center {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      background: #181818;
+    }
+    .title {
+      font-size: 14px;
+      color: #00d9ff;
+      font-weight: bold;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+    .sub {
+      color: #9a9a9a;
+      font-size: 12px;
+      margin-bottom: 10px;
+      line-height: 1.4;
+    }
+    .group {
+      border: 1px solid #3a3a3a;
+      background: #202020;
+      border-radius: 6px;
+      padding: 10px;
+      margin-bottom: 10px;
+    }
+    .group-title {
+      font-size: 12px;
+      font-weight: bold;
+      color: #7be9ff;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+    }
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .row:last-child { margin-bottom: 0; }
+    label { font-size: 12px; color: #bfbfbf; min-width: 88px; }
+    input, select, button, textarea {
+      background: #2f2f2f;
+      color: #e4e4e4;
+      border: 1px solid #444;
+      border-radius: 4px;
+      font: inherit;
+      font-size: 12px;
+      padding: 6px 8px;
+    }
+    input[type='number'] { width: 100%; }
+    input[type='range'] { width: 100%; }
+    select { width: 100%; }
+    textarea {
+      width: 100%;
+      min-height: 80px;
+      resize: vertical;
+      font-family: Consolas, monospace;
+    }
+    button {
+      cursor: pointer;
+      border-color: #4f4f4f;
+      transition: 120ms;
+      background: #333;
+    }
+    button:hover { background: #00d9ff; color: #111; border-color: #00d9ff; }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+    .btn-row { display: flex; gap: 6px; flex-wrap: wrap; }
+    .btn-row > button { flex: 1; min-width: 84px; }
+
+    .transport {
+      border-bottom: 1px solid #353535;
+      padding: 10px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      background: #202020;
+    }
+    .transport-left {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .transport-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 12px;
+      color: #b0b0b0;
+    }
+
+    .roll-wrap {
+      position: relative;
+      flex: 1;
+      overflow: auto;
+      background: #111;
+      border-top: 1px solid #333;
+    }
+    .roll-inner {
+      position: relative;
+      min-width: max-content;
+      min-height: max-content;
+    }
+    #pianoCanvas, #gridCanvas {
+      display: block;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
+    #pianoCanvas {
+      position: sticky;
+      left: 0;
+      top: 0;
+      z-index: 5;
+      background: #161616;
+      border-right: 1px solid #444;
+    }
+    #gridCanvas {
+      position: absolute;
+      top: 0;
+      left: 84px;
+      z-index: 1;
+      cursor: crosshair;
+    }
+    .status {
+      border-top: 1px solid #343434;
+      background: #1d1d1d;
+      padding: 8px 10px;
+      font-size: 12px;
+      color: #9ecad4;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .track-item {
+      border: 1px solid #454545;
+      border-radius: 5px;
+      padding: 7px;
+      margin-bottom: 7px;
+      background: #2b2b2b;
+      cursor: pointer;
+    }
+    .track-item.active {
+      border-color: #00d9ff;
+      box-shadow: 0 0 0 1px rgba(0,217,255,.4) inset;
+      background: #25363c;
+    }
+    .track-meta { font-size: 11px; color: #9ca2a5; margin-top: 4px; }
+
+    .tiny { font-size: 11px; color: #8f8f8f; line-height: 1.35; }
+    .accent { color: #8cf1ff; }
+
+    .json-import-wrap {
+      position: relative;
+      flex: 1;
+      min-width: 110px;
+    }
+    .json-import-wrap > button {
+      width: 100%;
+    }
+    .dropdown-menu {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      z-index: 60;
+      width: 170px;
+      background: #232323;
+      border: 1px solid #4a4a4a;
+      border-radius: 6px;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.55);
+      padding: 6px;
+      display: none;
+      gap: 6px;
+      flex-direction: column;
+    }
+    .dropdown-menu.open { display: flex; }
+    .dropdown-menu button {
+      width: 100%;
+      text-align: left;
+      background: #2f2f2f;
+      border: 1px solid #444;
+      padding: 7px 8px;
+    }
+
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 120;
+      background: rgba(0, 0, 0, 0.68);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    .modal-overlay.hidden { display: none; }
+    .modal-card {
+      width: min(760px, 96vw);
+      background: #222;
+      border: 1px solid #4a4a4a;
+      border-radius: 8px;
+      padding: 12px;
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5);
+    }
+    .modal-title {
+      font-size: 13px;
+      font-weight: bold;
+      color: #8cf1ff;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+    }
+    #jsonTextInput {
+      width: 100%;
+      min-height: 220px;
+      resize: vertical;
+      margin-bottom: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="panel left">
+      <div class="title">Sound Editor</div>
+      <div class="sub">Editor estilo MIDI para montar canciones con piano roll y pistas.</div>
+
+      <div class="group">
+        <div class="group-title">Proyecto</div>
+        <div class="row"><label for="songName">Nombre</label><input id="songName" type="text" value="Nueva canción" style="width:100%"></div>
+        <div class="row"><label for="bpm">BPM</label><input id="bpm" type="number" min="30" max="280" value="120"></div>
+        <div class="row"><label for="measures">Compases</label><input id="measures" type="number" min="1" max="256" value="8"></div>
+        <div class="row"><label for="stepsPerBeat">Resolución</label>
+          <select id="stepsPerBeat">
+            <option value="1">Negras (1)</option>
+            <option value="2">Corcheas (2)</option>
+            <option value="4" selected>Semicorcheas (4)</option>
+            <option value="8">1/32 (8)</option>
+          </select>
+        </div>
+        <div class="row"><label for="masterVol">Volumen</label><input id="masterVol" type="range" min="0" max="1" step="0.01" value="0.7"></div>
+      </div>
+
+      <div class="group">
+        <div class="group-title">Archivos</div>
+        <div class="btn-row">
+          <button id="newSongBtn">Nuevo</button>
+          <button id="demoSongBtn">Canción de prueba</button>
+          <div class="json-import-wrap">
+            <button id="loadJsonBtn">Importar JSON</button>
+            <div id="jsonImportMenu" class="dropdown-menu">
+              <button id="jsonImportFileBtn">Desde fichero</button>
+              <button id="jsonImportTextBtn">Pegar texto JSON</button>
+            </div>
+          </div>
+          <button id="saveJsonBtn">Exportar JSON</button>
+        </div>
+        <div style="height:6px"></div>
+        <div class="btn-row">
+          <button id="loadMidiBtn">Importar MIDI</button>
+          <button id="saveMidiBtn">Exportar MIDI</button>
+        </div>
+        <input id="fileInput" type="file" accept=".json,.mid,.midi" style="display:none">
+      </div>
+
+      <div class="group">
+        <div class="group-title">Tips</div>
+        <div class="tiny">
+          - Click izquierdo: crear nota.<br>
+          - Arrastrar al crear: longitud.<br>
+          - Click derecho sobre nota: borrar.<br>
+          - Reproducción usa WebAudio tipo sintetizador.<br>
+          - MIDI import/export básico (note on/off + tempo).
+        </div>
+      </div>
+    </aside>
+
+    <main class="center">
+      <div class="transport">
+        <div class="transport-left">
+          <button id="playBtn">▶ Play</button>
+          <button id="stopBtn">■ Stop</button>
+          <button id="rewindBtn">↺ Inicio</button>
+          <button id="loopBtn">Loop: OFF</button>
+          <span class="tiny">Track activa: <span id="activeTrackLabel" class="accent">—</span></span>
+        </div>
+        <div class="transport-right">
+          <span id="playheadText">Paso: 0</span>
+          <span id="timeText">00:00.000</span>
+        </div>
+      </div>
+
+      <div id="rollWrap" class="roll-wrap">
+        <div id="rollInner" class="roll-inner">
+          <canvas id="pianoCanvas"></canvas>
+          <canvas id="gridCanvas"></canvas>
+        </div>
+      </div>
+
+      <div id="status" class="status">Listo.</div>
+    </main>
+
+    <aside class="panel right">
+      <div class="title">Pistas</div>
+
+      <div class="group">
+        <div class="btn-row">
+          <button id="addTrackBtn">+ Pista</button>
+          <button id="removeTrackBtn">- Pista</button>
+        </div>
+        <div id="trackList" style="margin-top:8px"></div>
+      </div>
+
+      <div class="group">
+        <div class="group-title">Configuración de pista</div>
+        <div class="row"><label for="trackName">Nombre</label><input id="trackName" type="text" style="width:100%"></div>
+        <div class="row"><label for="trackWave">Onda</label>
+          <select id="trackWave">
+            <option>sine</option>
+            <option>square</option>
+            <option>sawtooth</option>
+            <option>triangle</option>
+          </select>
+        </div>
+        <div class="row"><label for="trackVolume">Volumen</label><input id="trackVolume" type="range" min="0" max="1" step="0.01" value="0.8"></div>
+        <div class="row"><label for="trackMuted">Mute</label><input id="trackMuted" type="checkbox"></div>
+      </div>
+
+      <div class="group">
+        <div class="group-title">Nota seleccionada</div>
+        <div class="row"><label for="notePitch">Pitch</label><input id="notePitch" type="number" min="0" max="127"></div>
+        <div class="row"><label for="noteStart">Inicio</label><input id="noteStart" type="number" min="0"></div>
+        <div class="row"><label for="noteLength">Longitud</label><input id="noteLength" type="number" min="1"></div>
+        <div class="row"><label for="noteVelocity">Velocidad</label><input id="noteVelocity" type="number" min="1" max="127"></div>
+        <div class="btn-row">
+          <button id="applyNoteBtn">Aplicar</button>
+          <button id="deleteNoteBtn">Borrar nota</button>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <div id="jsonTextModal" class="modal-overlay hidden" aria-hidden="true">
+    <div class="modal-card">
+      <div class="modal-title">Importar JSON por texto</div>
+      <div class="tiny" style="margin-bottom:8px;">Pega aquí el JSON completo del proyecto y pulsa Importar.</div>
+      <textarea id="jsonTextInput" placeholder="{&#10;  &quot;version&quot;: 1,&#10;  ...&#10;}"></textarea>
+      <div class="btn-row">
+        <button id="jsonTextImportBtn">Importar texto</button>
+        <button id="jsonTextCancelBtn">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const NOTE_MIN = 36;   // C2
+    const NOTE_MAX = 95;   // B6
+    const PIANO_W = 84;
+    const CELL_W = 24;
+    const CELL_H = 16;
+    const PPQ = 480;
+
+    const state = {
+      song: {
+        version: 1,
+        name: 'Nueva canción',
+        bpm: 120,
+        ppq: PPQ,
+        timeSig: [4, 4],
+        stepsPerBeat: 4,
+        measures: 8,
+        tracks: [
+          { name: 'Pista 1', wave: 'sine', volume: 0.8, muted: false, notes: [] }
+        ]
+      },
+      activeTrack: 0,
+      selectedNote: null,
+      isPlaying: false,
+      loop: false,
+      playStartCtxTime: 0,
+      playStartStep: 0,
+      playbackRAF: 0,
+      currentStep: 0,
+      creatingNote: null,
+      audioCtx: null,
+      masterGain: null,
+      scheduled: [],
+      fileImportMode: null
+    };
+
+    function getDemoSong() {
+      return {
+        version: 1,
+        name: 'Demo Meso Theme',
+        bpm: 118,
+        ppq: PPQ,
+        timeSig: [4, 4],
+        stepsPerBeat: 4,
+        measures: 8,
+        tracks: [
+          {
+            name: 'Melodía',
+            wave: 'triangle',
+            volume: 0.78,
+            muted: false,
+            notes: [
+              { pitch: 60, start: 0, length: 4, velocity: 110 },
+              { pitch: 62, start: 4, length: 4, velocity: 108 },
+              { pitch: 64, start: 8, length: 4, velocity: 108 },
+              { pitch: 67, start: 12, length: 8, velocity: 114 },
+              { pitch: 64, start: 20, length: 4, velocity: 104 },
+              { pitch: 62, start: 24, length: 4, velocity: 104 },
+              { pitch: 60, start: 28, length: 8, velocity: 110 },
+              { pitch: 64, start: 40, length: 4, velocity: 106 },
+              { pitch: 67, start: 44, length: 4, velocity: 112 },
+              { pitch: 69, start: 48, length: 8, velocity: 116 },
+              { pitch: 67, start: 56, length: 4, velocity: 108 },
+              { pitch: 64, start: 60, length: 4, velocity: 106 },
+              { pitch: 62, start: 64, length: 8, velocity: 108 },
+              { pitch: 60, start: 72, length: 8, velocity: 112 },
+              { pitch: 67, start: 80, length: 4, velocity: 112 },
+              { pitch: 69, start: 84, length: 4, velocity: 114 },
+              { pitch: 71, start: 88, length: 8, velocity: 116 },
+              { pitch: 69, start: 96, length: 4, velocity: 112 },
+              { pitch: 67, start: 100, length: 4, velocity: 110 },
+              { pitch: 64, start: 104, length: 8, velocity: 108 },
+              { pitch: 62, start: 112, length: 8, velocity: 106 },
+              { pitch: 60, start: 120, length: 8, velocity: 112 }
+            ]
+          },
+          {
+            name: 'Bajo',
+            wave: 'sawtooth',
+            volume: 0.62,
+            muted: false,
+            notes: [
+              { pitch: 36, start: 0, length: 8, velocity: 102 },
+              { pitch: 36, start: 8, length: 8, velocity: 102 },
+              { pitch: 41, start: 16, length: 8, velocity: 100 },
+              { pitch: 41, start: 24, length: 8, velocity: 100 },
+              { pitch: 38, start: 32, length: 8, velocity: 102 },
+              { pitch: 38, start: 40, length: 8, velocity: 102 },
+              { pitch: 43, start: 48, length: 8, velocity: 100 },
+              { pitch: 43, start: 56, length: 8, velocity: 100 },
+              { pitch: 36, start: 64, length: 8, velocity: 102 },
+              { pitch: 36, start: 72, length: 8, velocity: 102 },
+              { pitch: 41, start: 80, length: 8, velocity: 100 },
+              { pitch: 41, start: 88, length: 8, velocity: 100 },
+              { pitch: 38, start: 96, length: 8, velocity: 102 },
+              { pitch: 38, start: 104, length: 8, velocity: 102 },
+              { pitch: 43, start: 112, length: 8, velocity: 100 },
+              { pitch: 43, start: 120, length: 8, velocity: 100 }
+            ]
+          },
+          {
+            name: 'Acordes',
+            wave: 'sine',
+            volume: 0.46,
+            muted: false,
+            notes: [
+              { pitch: 48, start: 0, length: 16, velocity: 88 },
+              { pitch: 52, start: 0, length: 16, velocity: 84 },
+              { pitch: 55, start: 0, length: 16, velocity: 84 },
+              { pitch: 53, start: 16, length: 16, velocity: 86 },
+              { pitch: 57, start: 16, length: 16, velocity: 84 },
+              { pitch: 60, start: 16, length: 16, velocity: 84 },
+              { pitch: 50, start: 32, length: 16, velocity: 88 },
+              { pitch: 53, start: 32, length: 16, velocity: 84 },
+              { pitch: 57, start: 32, length: 16, velocity: 84 },
+              { pitch: 55, start: 48, length: 16, velocity: 88 },
+              { pitch: 59, start: 48, length: 16, velocity: 84 },
+              { pitch: 62, start: 48, length: 16, velocity: 84 },
+              { pitch: 48, start: 64, length: 16, velocity: 88 },
+              { pitch: 52, start: 64, length: 16, velocity: 84 },
+              { pitch: 55, start: 64, length: 16, velocity: 84 },
+              { pitch: 53, start: 80, length: 16, velocity: 86 },
+              { pitch: 57, start: 80, length: 16, velocity: 84 },
+              { pitch: 60, start: 80, length: 16, velocity: 84 },
+              { pitch: 50, start: 96, length: 16, velocity: 88 },
+              { pitch: 53, start: 96, length: 16, velocity: 84 },
+              { pitch: 57, start: 96, length: 16, velocity: 84 },
+              { pitch: 48, start: 112, length: 16, velocity: 90 },
+              { pitch: 52, start: 112, length: 16, velocity: 86 },
+              { pitch: 55, start: 112, length: 16, velocity: 86 }
+            ]
+          }
+        ]
+      };
+    }
+
+    const ui = {
+      songName: document.getElementById('songName'),
+      bpm: document.getElementById('bpm'),
+      measures: document.getElementById('measures'),
+      stepsPerBeat: document.getElementById('stepsPerBeat'),
+      masterVol: document.getElementById('masterVol'),
+      fileInput: document.getElementById('fileInput'),
+      loadJsonBtn: document.getElementById('loadJsonBtn'),
+      jsonImportMenu: document.getElementById('jsonImportMenu'),
+      jsonImportFileBtn: document.getElementById('jsonImportFileBtn'),
+      jsonImportTextBtn: document.getElementById('jsonImportTextBtn'),
+      jsonTextModal: document.getElementById('jsonTextModal'),
+      jsonTextInput: document.getElementById('jsonTextInput'),
+      jsonTextImportBtn: document.getElementById('jsonTextImportBtn'),
+      jsonTextCancelBtn: document.getElementById('jsonTextCancelBtn'),
+      status: document.getElementById('status'),
+      playBtn: document.getElementById('playBtn'),
+      stopBtn: document.getElementById('stopBtn'),
+      rewindBtn: document.getElementById('rewindBtn'),
+      loopBtn: document.getElementById('loopBtn'),
+      playheadText: document.getElementById('playheadText'),
+      timeText: document.getElementById('timeText'),
+      activeTrackLabel: document.getElementById('activeTrackLabel'),
+      trackList: document.getElementById('trackList'),
+      trackName: document.getElementById('trackName'),
+      trackWave: document.getElementById('trackWave'),
+      trackVolume: document.getElementById('trackVolume'),
+      trackMuted: document.getElementById('trackMuted'),
+      notePitch: document.getElementById('notePitch'),
+      noteStart: document.getElementById('noteStart'),
+      noteLength: document.getElementById('noteLength'),
+      noteVelocity: document.getElementById('noteVelocity'),
+      pianoCanvas: document.getElementById('pianoCanvas'),
+      gridCanvas: document.getElementById('gridCanvas'),
+      rollWrap: document.getElementById('rollWrap'),
+      rollInner: document.getElementById('rollInner')
+    };
+
+    const gctx = ui.gridCanvas.getContext('2d');
+    const pctx = ui.pianoCanvas.getContext('2d');
+
+    function totalSteps() {
+      const beatsPerBar = state.song.timeSig[0] || 4;
+      return state.song.measures * beatsPerBar * state.song.stepsPerBeat;
+    }
+
+    function clampSong() {
+      state.song.bpm = Math.max(30, Math.min(280, Number(state.song.bpm) || 120));
+      state.song.measures = Math.max(1, Math.min(256, Number(state.song.measures) || 8));
+      state.song.stepsPerBeat = Math.max(1, Math.min(8, Number(state.song.stepsPerBeat) || 4));
+      state.song.tracks = Array.isArray(state.song.tracks) && state.song.tracks.length ? state.song.tracks : [{ name:'Pista 1', wave:'sine', volume:0.8, muted:false, notes:[] }];
+      for (const t of state.song.tracks) {
+        t.name = String(t.name || 'Pista');
+        t.wave = ['sine','square','sawtooth','triangle'].includes(t.wave) ? t.wave : 'sine';
+        t.volume = Math.max(0, Math.min(1, Number(t.volume) || 0.8));
+        t.muted = !!t.muted;
+        t.notes = (Array.isArray(t.notes) ? t.notes : []).map(n => ({
+          pitch: Math.max(0, Math.min(127, Math.floor(n.pitch ?? 60))),
+          start: Math.max(0, Math.floor(n.start ?? 0)),
+          length: Math.max(1, Math.floor(n.length ?? 1)),
+          velocity: Math.max(1, Math.min(127, Math.floor(n.velocity ?? 96)))
+        }));
+      }
+      state.activeTrack = Math.max(0, Math.min(state.song.tracks.length - 1, state.activeTrack));
+    }
+
+    function noteName(midi) {
+      const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+      const n = Math.max(0, Math.min(127, midi|0));
+      const oct = Math.floor(n / 12) - 1;
+      return names[n % 12] + oct;
+    }
+
+    function stepToSeconds(step) {
+      return (step / state.song.stepsPerBeat) * (60 / state.song.bpm);
+    }
+
+    function log(msg) {
+      ui.status.textContent = msg;
+    }
+
+    function ensureAudio() {
+      if (!state.audioCtx) {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) throw new Error('WebAudio no disponible');
+        state.audioCtx = new AC();
+        state.masterGain = state.audioCtx.createGain();
+        state.masterGain.connect(state.audioCtx.destination);
+      }
+      if (state.audioCtx.state === 'suspended') state.audioCtx.resume();
+      state.masterGain.gain.value = Number(ui.masterVol.value);
+    }
+
+    function buildDimensions() {
+      const rows = NOTE_MAX - NOTE_MIN + 1;
+      const cols = totalSteps();
+      const gridW = cols * CELL_W;
+      const gridH = rows * CELL_H;
+
+      ui.pianoCanvas.width = PIANO_W;
+      ui.pianoCanvas.height = gridH;
+      ui.gridCanvas.width = gridW;
+      ui.gridCanvas.height = gridH;
+
+      ui.rollInner.style.width = (PIANO_W + gridW) + 'px';
+      ui.rollInner.style.height = gridH + 'px';
+    }
+
+    function pitchToRow(pitch) {
+      return NOTE_MAX - pitch;
+    }
+
+    function rowToPitch(row) {
+      return NOTE_MAX - row;
+    }
+
+    function drawPiano() {
+      const rows = NOTE_MAX - NOTE_MIN + 1;
+      pctx.clearRect(0, 0, ui.pianoCanvas.width, ui.pianoCanvas.height);
+      pctx.font = '11px monospace';
+      pctx.textAlign = 'left';
+      pctx.textBaseline = 'middle';
+
+      for (let row = 0; row < rows; row++) {
+        const pitch = rowToPitch(row);
+        const y = row * CELL_H;
+        const key = pitch % 12;
+        const isBlack = [1,3,6,8,10].includes(key);
+        pctx.fillStyle = isBlack ? '#2a2a2a' : '#343434';
+        pctx.fillRect(0, y, PIANO_W, CELL_H);
+        pctx.strokeStyle = '#444';
+        pctx.strokeRect(0, y, PIANO_W, CELL_H);
+        if (key === 0 || key === 9) {
+          pctx.fillStyle = '#d8d8d8';
+          pctx.fillText(noteName(pitch), 6, y + CELL_H / 2);
+        }
+      }
+    }
+
+    function noteColor(trackIndex, active) {
+      const palette = ['#00d9ff','#ff7f50','#9cff5e','#d48bff','#ffd34f','#73b8ff','#ff6ca6'];
+      const base = palette[trackIndex % palette.length];
+      return active ? base : hexWithAlpha(base, 0.45);
+    }
+
+    function hexWithAlpha(hex, alpha) {
+      const h = hex.replace('#','');
+      const r = parseInt(h.slice(0,2),16);
+      const g = parseInt(h.slice(2,4),16);
+      const b = parseInt(h.slice(4,6),16);
+      return `rgba(${r},${g},${b},${alpha})`;
+    }
+
+    function drawGrid() {
+      const rows = NOTE_MAX - NOTE_MIN + 1;
+      const cols = totalSteps();
+      const beatsPerBar = state.song.timeSig[0] || 4;
+      const beatEvery = state.song.stepsPerBeat;
+      const barEvery = beatsPerBar * beatEvery;
+
+      gctx.clearRect(0, 0, ui.gridCanvas.width, ui.gridCanvas.height);
+
+      for (let r = 0; r < rows; r++) {
+        const pitch = rowToPitch(r);
+        const isBlack = [1,3,6,8,10].includes(pitch % 12);
+        gctx.fillStyle = isBlack ? '#121212' : '#171717';
+        gctx.fillRect(0, r * CELL_H, cols * CELL_W, CELL_H);
+      }
+
+      for (let c = 0; c <= cols; c++) {
+        const x = c * CELL_W;
+        const isBar = (c % barEvery === 0);
+        const isBeat = (c % beatEvery === 0);
+        gctx.strokeStyle = isBar ? '#3f8a98' : (isBeat ? '#2f4f57' : '#262626');
+        gctx.lineWidth = isBar ? 2 : 1;
+        gctx.beginPath();
+        gctx.moveTo(x + 0.5, 0);
+        gctx.lineTo(x + 0.5, rows * CELL_H);
+        gctx.stroke();
+      }
+
+      for (let r = 0; r <= rows; r++) {
+        const y = r * CELL_H + 0.5;
+        gctx.strokeStyle = '#272727';
+        gctx.lineWidth = 1;
+        gctx.beginPath();
+        gctx.moveTo(0, y);
+        gctx.lineTo(cols * CELL_W, y);
+        gctx.stroke();
+      }
+
+      state.song.tracks.forEach((track, ti) => {
+        const activeTrack = ti === state.activeTrack;
+        const fill = noteColor(ti, activeTrack);
+        for (const n of track.notes) {
+          if (n.pitch < NOTE_MIN || n.pitch > NOTE_MAX) continue;
+          const x = n.start * CELL_W;
+          const w = Math.max(1, n.length * CELL_W - 1);
+          const y = pitchToRow(n.pitch) * CELL_H + 1;
+          const h = CELL_H - 2;
+          gctx.fillStyle = fill;
+          gctx.fillRect(x + 1, y, w, h);
+          gctx.strokeStyle = activeTrack ? '#ffffff77' : '#00000066';
+          gctx.strokeRect(x + 1.5, y + 0.5, Math.max(1, w - 1), Math.max(1, h - 1));
+        }
+      });
+
+      if (state.selectedNote) {
+        const { trackIndex, noteIndex } = state.selectedNote;
+        const tr = state.song.tracks[trackIndex];
+        if (tr && tr.notes[noteIndex]) {
+          const n = tr.notes[noteIndex];
+          const x = n.start * CELL_W;
+          const y = pitchToRow(n.pitch) * CELL_H;
+          gctx.strokeStyle = '#ffe781';
+          gctx.lineWidth = 2;
+          gctx.strokeRect(x + 1, y + 1, Math.max(2, n.length * CELL_W - 2), CELL_H - 2);
+        }
+      }
+
+      if (state.isPlaying) {
+        const px = state.currentStep * CELL_W;
+        gctx.strokeStyle = '#ff4d6d';
+        gctx.lineWidth = 2;
+        gctx.beginPath();
+        gctx.moveTo(px + 1, 0);
+        gctx.lineTo(px + 1, ui.gridCanvas.height);
+        gctx.stroke();
+      }
+    }
+
+    function renderTrackList() {
+      ui.trackList.innerHTML = '';
+      state.song.tracks.forEach((t, i) => {
+        const item = document.createElement('div');
+        item.className = 'track-item' + (i === state.activeTrack ? ' active' : '');
+        item.innerHTML = `<div>${t.name}</div><div class="track-meta">${t.wave} · vol ${t.volume.toFixed(2)}${t.muted ? ' · mute' : ''}</div>`;
+        item.onclick = () => { state.activeTrack = i; state.selectedNote = null; refresh(); };
+        ui.trackList.appendChild(item);
+      });
+      ui.activeTrackLabel.textContent = state.song.tracks[state.activeTrack]?.name || '—';
+      const t = state.song.tracks[state.activeTrack];
+      if (t) {
+        ui.trackName.value = t.name;
+        ui.trackWave.value = t.wave;
+        ui.trackVolume.value = t.volume;
+        ui.trackMuted.checked = !!t.muted;
+      }
+    }
+
+    function updateSelectedNoteUI() {
+      if (!state.selectedNote) {
+        ui.notePitch.value = '';
+        ui.noteStart.value = '';
+        ui.noteLength.value = '';
+        ui.noteVelocity.value = '';
+        return;
+      }
+      const t = state.song.tracks[state.selectedNote.trackIndex];
+      const n = t?.notes[state.selectedNote.noteIndex];
+      if (!n) return;
+      ui.notePitch.value = n.pitch;
+      ui.noteStart.value = n.start;
+      ui.noteLength.value = n.length;
+      ui.noteVelocity.value = n.velocity;
+    }
+
+    function refresh() {
+      clampSong();
+      ui.songName.value = state.song.name;
+      ui.bpm.value = state.song.bpm;
+      ui.measures.value = state.song.measures;
+      ui.stepsPerBeat.value = state.song.stepsPerBeat;
+      buildDimensions();
+      drawPiano();
+      drawGrid();
+      renderTrackList();
+      updateSelectedNoteUI();
+      updateTransportInfo();
+    }
+
+    function getCanvasCellFromEvent(ev) {
+      const rect = ui.gridCanvas.getBoundingClientRect();
+      const x = ev.clientX - rect.left;
+      const y = ev.clientY - rect.top;
+      const step = Math.max(0, Math.min(totalSteps() - 1, Math.floor(x / CELL_W)));
+      const row = Math.max(0, Math.min((NOTE_MAX - NOTE_MIN), Math.floor(y / CELL_H)));
+      const pitch = rowToPitch(row);
+      return { x, y, step, row, pitch };
+    }
+
+    function findNoteAt(step, pitch) {
+      for (let ti = 0; ti < state.song.tracks.length; ti++) {
+        const notes = state.song.tracks[ti].notes;
+        for (let ni = notes.length - 1; ni >= 0; ni--) {
+          const n = notes[ni];
+          if (n.pitch === pitch && step >= n.start && step < n.start + n.length) return { trackIndex: ti, noteIndex: ni };
+        }
+      }
+      return null;
+    }
+
+    function addNote(trackIndex, pitch, start, length, velocity = 100) {
+      const t = state.song.tracks[trackIndex];
+      if (!t) return;
+      const maxSteps = totalSteps();
+      const note = {
+        pitch: Math.max(0, Math.min(127, pitch|0)),
+        start: Math.max(0, Math.min(maxSteps - 1, start|0)),
+        length: Math.max(1, Math.min(maxSteps, length|0)),
+        velocity: Math.max(1, Math.min(127, velocity|0))
+      };
+      if (note.start + note.length > maxSteps) note.length = Math.max(1, maxSteps - note.start);
+      t.notes.push(note);
+      t.notes.sort((a,b) => a.start - b.start || a.pitch - b.pitch);
+    }
+
+    function deleteSelectedNote() {
+      if (!state.selectedNote) return;
+      const { trackIndex, noteIndex } = state.selectedNote;
+      const t = state.song.tracks[trackIndex];
+      if (!t || !t.notes[noteIndex]) return;
+      t.notes.splice(noteIndex, 1);
+      state.selectedNote = null;
+      refresh();
+    }
+
+    function stopPlayback() {
+      state.isPlaying = false;
+      if (state.playbackRAF) cancelAnimationFrame(state.playbackRAF);
+      state.playbackRAF = 0;
+      state.playStartCtxTime = 0;
+      state.playStartStep = state.currentStep;
+      for (const item of state.scheduled) {
+        try { item.osc.stop(); } catch (e) {}
+      }
+      state.scheduled = [];
+      drawGrid();
+    }
+
+    function schedulePlaybackFrom(stepOffset) {
+      ensureAudio();
+      const t0 = state.audioCtx.currentTime + 0.03;
+      state.playStartCtxTime = t0;
+      state.playStartStep = stepOffset;
+
+      const secPerStep = stepToSeconds(1);
+      const songEnd = totalSteps();
+
+      state.song.tracks.forEach((track, ti) => {
+        if (track.muted || track.volume <= 0) return;
+        for (const n of track.notes) {
+          if (n.start + n.length <= stepOffset) continue;
+          const start = Math.max(n.start, stepOffset);
+          const clippedLen = (n.start + n.length) - start;
+          const when = t0 + (start - stepOffset) * secPerStep;
+          const dur = Math.max(0.03, clippedLen * secPerStep);
+          const freq = 440 * Math.pow(2, (n.pitch - 69) / 12);
+
+          const osc = state.audioCtx.createOscillator();
+          const gain = state.audioCtx.createGain();
+          osc.type = track.wave || 'sine';
+          osc.frequency.setValueAtTime(freq, when);
+
+          const vel = (n.velocity / 127);
+          const amp = Math.min(1, Math.max(0, vel * track.volume * Number(ui.masterVol.value)));
+          gain.gain.setValueAtTime(0.0001, when);
+          gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, amp), when + 0.01);
+          gain.gain.exponentialRampToValueAtTime(0.0001, when + dur);
+
+          osc.connect(gain);
+          gain.connect(state.masterGain);
+          osc.start(when);
+          osc.stop(when + dur + 0.02);
+          state.scheduled.push({ osc, gain });
+        }
+      });
+
+      state.isPlaying = true;
+
+      function tick() {
+        if (!state.isPlaying) return;
+        const elapsed = Math.max(0, state.audioCtx.currentTime - state.playStartCtxTime);
+        const nowStep = state.playStartStep + Math.floor(elapsed / secPerStep);
+        state.currentStep = Math.max(0, Math.min(songEnd, nowStep));
+
+        updateTransportInfo();
+        drawGrid();
+
+        if (state.currentStep >= songEnd) {
+          if (state.loop) {
+            stopPlayback();
+            state.currentStep = 0;
+            schedulePlaybackFrom(0);
+            return;
+          }
+          stopPlayback();
+          state.currentStep = songEnd;
+          updateTransportInfo();
+          drawGrid();
+          return;
+        }
+        state.playbackRAF = requestAnimationFrame(tick);
+      }
+
+      state.playbackRAF = requestAnimationFrame(tick);
+    }
+
+    function updateTransportInfo() {
+      ui.playheadText.textContent = `Paso: ${state.currentStep}`;
+      const sec = stepToSeconds(state.currentStep);
+      const mm = Math.floor(sec / 60).toString().padStart(2, '0');
+      const ss = Math.floor(sec % 60).toString().padStart(2, '0');
+      const ms = Math.floor((sec % 1) * 1000).toString().padStart(3, '0');
+      ui.timeText.textContent = `${mm}:${ss}.${ms}`;
+    }
+
+    function toProjectJSON() {
+      clampSong();
+      return JSON.stringify(state.song, null, 2);
+    }
+
+    function download(filename, blob) {
+      const a = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    }
+
+    function parseProjectJSON(text) {
+      const data = JSON.parse(text);
+      if (!data || typeof data !== 'object') throw new Error('JSON inválido');
+      state.song = {
+        version: Number(data.version) || 1,
+        name: String(data.name || 'Canción'),
+        bpm: Number(data.bpm) || 120,
+        ppq: Number(data.ppq) || PPQ,
+        timeSig: Array.isArray(data.timeSig) ? data.timeSig : [4,4],
+        stepsPerBeat: Number(data.stepsPerBeat) || 4,
+        measures: Number(data.measures) || 8,
+        tracks: Array.isArray(data.tracks) ? data.tracks : []
+      };
+      state.activeTrack = 0;
+      state.selectedNote = null;
+      state.currentStep = 0;
+      clampSong();
+      refresh();
+      log('Proyecto JSON cargado.');
+    }
+
+    function setJsonMenuOpen(open) {
+      ui.jsonImportMenu.classList.toggle('open', !!open);
+    }
+
+    function setJsonTextModalOpen(open) {
+      ui.jsonTextModal.classList.toggle('hidden', !open);
+      ui.jsonTextModal.setAttribute('aria-hidden', open ? 'false' : 'true');
+      if (open) {
+        setTimeout(() => {
+          try { ui.jsonTextInput.focus(); } catch (e) {}
+        }, 0);
+      }
+    }
+
+    function writeVarLen(n) {
+      let value = n >>> 0;
+      let buffer = value & 0x7F;
+      const out = [];
+      while ((value >>= 7)) {
+        buffer <<= 8;
+        buffer |= ((value & 0x7F) | 0x80);
+      }
+      while (true) {
+        out.push(buffer & 0xFF);
+        if (buffer & 0x80) buffer >>= 8;
+        else break;
+      }
+      return out;
+    }
+
+    function exportMidi() {
+      clampSong();
+      const ppq = state.song.ppq || PPQ;
+      const allEvents = [];
+
+      const tempo = Math.round(60000000 / state.song.bpm);
+      allEvents.push({ tick: 0, bytes: [0xFF, 0x51, 0x03, (tempo >> 16) & 0xFF, (tempo >> 8) & 0xFF, tempo & 0xFF], order: 0 });
+      allEvents.push({ tick: 0, bytes: [0xFF, 0x58, 0x04, state.song.timeSig[0] || 4, 2, 24, 8], order: 0 });
+
+      state.song.tracks.forEach((track, ti) => {
+        const ch = ti % 16;
+        for (const n of track.notes) {
+          const startTick = Math.round((n.start / state.song.stepsPerBeat) * ppq);
+          const endTick = Math.max(startTick + 1, Math.round(((n.start + n.length) / state.song.stepsPerBeat) * ppq));
+          const vel = Math.max(1, Math.min(127, n.velocity|0));
+          const pitch = Math.max(0, Math.min(127, n.pitch|0));
+          allEvents.push({ tick: startTick, bytes: [0x90 | ch, pitch, vel], order: 2 });
+          allEvents.push({ tick: endTick, bytes: [0x80 | ch, pitch, 0], order: 1 });
+        }
+      });
+
+      allEvents.sort((a,b) => a.tick - b.tick || a.order - b.order);
+
+      let prev = 0;
+      const trackBytes = [];
+      for (const ev of allEvents) {
+        const delta = Math.max(0, ev.tick - prev);
+        trackBytes.push(...writeVarLen(delta), ...ev.bytes);
+        prev = ev.tick;
+      }
+      trackBytes.push(0x00, 0xFF, 0x2F, 0x00);
+
+      const header = [
+        0x4D,0x54,0x68,0x64,
+        0x00,0x00,0x00,0x06,
+        0x00,0x00,
+        0x00,0x01,
+        (ppq >> 8) & 0xFF, ppq & 0xFF
+      ];
+
+      const trkLen = trackBytes.length;
+      const trackHeader = [0x4D,0x54,0x72,0x6B, (trkLen >>> 24)&0xFF, (trkLen >>> 16)&0xFF, (trkLen >>> 8)&0xFF, trkLen & 0xFF];
+
+      const out = new Uint8Array(header.length + trackHeader.length + trackBytes.length);
+      out.set(header, 0);
+      out.set(trackHeader, header.length);
+      out.set(trackBytes, header.length + trackHeader.length);
+
+      const fileName = (state.song.name || 'song').replace(/[^a-z0-9-_]+/gi, '_') + '.mid';
+      download(fileName, new Blob([out], { type: 'audio/midi' }));
+      log('MIDI exportado.');
+    }
+
+    function readVarLen(bytes, posObj) {
+      let value = 0;
+      while (posObj.pos < bytes.length) {
+        const b = bytes[posObj.pos++];
+        value = (value << 7) | (b & 0x7F);
+        if ((b & 0x80) === 0) break;
+      }
+      return value >>> 0;
+    }
+
+    function parseMidiArrayBuffer(buf) {
+      const bytes = new Uint8Array(buf);
+      let pos = 0;
+
+      function readU8() { return bytes[pos++]; }
+      function readU16() { const v = (bytes[pos] << 8) | bytes[pos+1]; pos += 2; return v; }
+      function readU32() { const v = (bytes[pos] << 24) | (bytes[pos+1] << 16) | (bytes[pos+2] << 8) | bytes[pos+3]; pos += 4; return v >>> 0; }
+      function readStr(len) { let s=''; for (let i=0;i<len;i++) s += String.fromCharCode(readU8()); return s; }
+
+      if (readStr(4) !== 'MThd') throw new Error('Cabecera MIDI inválida');
+      const hLen = readU32();
+      const format = readU16();
+      const nTracks = readU16();
+      const division = readU16();
+      pos += Math.max(0, hLen - 6);
+
+      if ((division & 0x8000) !== 0) throw new Error('MIDI SMPTE no soportado');
+      const ppq = division || PPQ;
+
+      const tracks = [];
+      let globalTempo = 500000;
+
+      for (let ti = 0; ti < nTracks; ti++) {
+        if (readStr(4) !== 'MTrk') throw new Error('Track MIDI inválida');
+        const len = readU32();
+        const end = pos + len;
+        let tick = 0;
+        let running = 0;
+
+        const open = new Map();
+        const notes = [];
+        let trackName = `Track ${ti + 1}`;
+
+        while (pos < end) {
+          const posObj = { pos };
+          const delta = readVarLen(bytes, posObj);
+          pos = posObj.pos;
+          tick += delta;
+
+          let status = bytes[pos];
+          if (status < 0x80) {
+            if (!running) throw new Error('Running status inválido');
+            status = running;
+          } else {
+            status = readU8();
+            if (status < 0xF0) running = status;
+          }
+
+          if (status === 0xFF) {
+            const metaType = readU8();
+            const lenObj = { pos };
+            const mLen = readVarLen(bytes, lenObj);
+            pos = lenObj.pos;
+            const data = bytes.slice(pos, pos + mLen);
+            pos += mLen;
+
+            if (metaType === 0x51 && mLen === 3 && ti === 0) {
+              globalTempo = (data[0] << 16) | (data[1] << 8) | data[2];
+            } else if (metaType === 0x03 && mLen > 0) {
+              trackName = new TextDecoder().decode(data);
+            }
+            continue;
+          }
+
+          if (status === 0xF0 || status === 0xF7) {
+            const lenObj = { pos };
+            const sLen = readVarLen(bytes, lenObj);
+            pos = lenObj.pos + sLen;
+            continue;
+          }
+
+          const kind = status >> 4;
+          const ch = status & 0x0F;
+
+          if (kind === 0x8 || kind === 0x9) {
+            const note = readU8();
+            const vel = readU8();
+            const key = `${ch}:${note}`;
+            if (kind === 0x9 && vel > 0) {
+              if (!open.has(key)) open.set(key, []);
+              open.get(key).push({ tick, vel });
+            } else {
+              const stack = open.get(key);
+              if (stack && stack.length) {
+                const start = stack.pop();
+                const dur = Math.max(1, tick - start.tick);
+                notes.push({ pitch: note, tick: start.tick, durTick: dur, velocity: start.vel });
+              }
+            }
+          } else if (kind === 0xA || kind === 0xB || kind === 0xE) {
+            readU8(); readU8();
+          } else if (kind === 0xC || kind === 0xD) {
+            readU8();
+          }
+        }
+
+        if (notes.length) tracks.push({ name: trackName, notes });
+      }
+
+      if (!tracks.length) throw new Error('MIDI sin notas');
+
+      const bpm = Math.max(30, Math.min(280, Math.round(60000000 / globalTempo)));
+      const stepsPerBeat = 4;
+
+      const newTracks = tracks.map((tr, i) => ({
+        name: tr.name || `Pista ${i + 1}`,
+        wave: ['sine','square','triangle','sawtooth'][i % 4],
+        volume: 0.8,
+        muted: false,
+        notes: tr.notes.map(n => ({
+          pitch: Math.max(0, Math.min(127, n.pitch)),
+          start: Math.max(0, Math.round((n.tick / ppq) * stepsPerBeat)),
+          length: Math.max(1, Math.round((n.durTick / ppq) * stepsPerBeat)),
+          velocity: Math.max(1, Math.min(127, n.velocity || 96))
+        }))
+      }));
+
+      let maxStep = 0;
+      newTracks.forEach(t => t.notes.forEach(n => { maxStep = Math.max(maxStep, n.start + n.length); }));
+      const beatsPerBar = 4;
+      const measures = Math.max(1, Math.ceil(maxStep / (stepsPerBeat * beatsPerBar)));
+
+      state.song = {
+        version: 1,
+        name: 'Importado MIDI',
+        bpm,
+        ppq,
+        timeSig: [4,4],
+        stepsPerBeat,
+        measures,
+        tracks: newTracks
+      };
+
+      state.activeTrack = 0;
+      state.selectedNote = null;
+      state.currentStep = 0;
+      clampSong();
+      refresh();
+      log(`MIDI cargado (${format === 1 ? 'multitrack' : 'single'}) con ${newTracks.length} pista(s).`);
+    }
+
+    function hookEvents() {
+      ui.songName.addEventListener('change', () => { state.song.name = ui.songName.value || 'Canción'; refresh(); });
+      ui.bpm.addEventListener('change', () => { state.song.bpm = Number(ui.bpm.value); refresh(); });
+      ui.measures.addEventListener('change', () => { state.song.measures = Number(ui.measures.value); refresh(); });
+      ui.stepsPerBeat.addEventListener('change', () => { state.song.stepsPerBeat = Number(ui.stepsPerBeat.value); refresh(); });
+      ui.masterVol.addEventListener('input', () => {
+        if (state.masterGain) state.masterGain.gain.value = Number(ui.masterVol.value);
+      });
+
+      document.getElementById('newSongBtn').onclick = () => {
+        stopPlayback();
+        state.song = {
+          version: 1,
+          name: 'Nueva canción',
+          bpm: 120,
+          ppq: PPQ,
+          timeSig: [4,4],
+          stepsPerBeat: 4,
+          measures: 8,
+          tracks: [{ name: 'Pista 1', wave: 'sine', volume: 0.8, muted: false, notes: [] }]
+        };
+        state.activeTrack = 0;
+        state.selectedNote = null;
+        state.currentStep = 0;
+        refresh();
+        log('Proyecto nuevo creado.');
+      };
+
+      document.getElementById('demoSongBtn').onclick = () => {
+        stopPlayback();
+        state.song = getDemoSong();
+        state.activeTrack = 0;
+        state.selectedNote = null;
+        state.currentStep = 0;
+        refresh();
+        log('Canción de prueba cargada. Pulsa Play para escuchar el formato.');
+      };
+
+      document.getElementById('saveJsonBtn').onclick = () => {
+        const fileName = (state.song.name || 'song').replace(/[^a-z0-9-_]+/gi, '_') + '.json';
+        download(fileName, new Blob([toProjectJSON()], { type: 'application/json' }));
+        log('JSON exportado.');
+      };
+
+      ui.loadJsonBtn.onclick = (ev) => {
+        ev.stopPropagation();
+        const willOpen = !ui.jsonImportMenu.classList.contains('open');
+        setJsonMenuOpen(willOpen);
+      };
+
+      ui.jsonImportFileBtn.onclick = () => {
+        setJsonMenuOpen(false);
+        state.fileImportMode = 'json';
+        ui.fileInput.value = '';
+        ui.fileInput.accept = '.json';
+        ui.fileInput.click();
+      };
+
+      ui.jsonImportTextBtn.onclick = () => {
+        setJsonMenuOpen(false);
+        ui.jsonTextInput.value = '';
+        setJsonTextModalOpen(true);
+      };
+
+      ui.jsonTextImportBtn.onclick = () => {
+        const raw = String(ui.jsonTextInput.value || '').trim();
+        if (!raw) {
+          log('Pega un JSON antes de importar.');
+          return;
+        }
+        try {
+          parseProjectJSON(raw);
+          setJsonTextModalOpen(false);
+        } catch (e) {
+          log('Error al importar texto JSON: ' + (e.message || e));
+        }
+      };
+
+      ui.jsonTextCancelBtn.onclick = () => setJsonTextModalOpen(false);
+
+      document.getElementById('loadMidiBtn').onclick = () => {
+        state.fileImportMode = 'midi';
+        ui.fileInput.value = '';
+        ui.fileInput.accept = '.mid,.midi';
+        ui.fileInput.click();
+      };
+
+      document.getElementById('saveMidiBtn').onclick = exportMidi;
+
+      ui.fileInput.onchange = async () => {
+        const file = ui.fileInput.files && ui.fileInput.files[0];
+        if (!file) return;
+        try {
+          if (state.fileImportMode === 'json') {
+            parseProjectJSON(await file.text());
+          } else {
+            parseMidiArrayBuffer(await file.arrayBuffer());
+          }
+        } catch (e) {
+          console.error(e);
+          log('Error al importar: ' + (e.message || e));
+        }
+      };
+
+      document.addEventListener('click', (ev) => {
+        if (!ui.jsonImportMenu.classList.contains('open')) return;
+        const target = ev.target;
+        if (!(target instanceof Element)) return;
+        const inWrap = target.closest('.json-import-wrap');
+        if (!inWrap) setJsonMenuOpen(false);
+      });
+
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          setJsonMenuOpen(false);
+          if (!ui.jsonTextModal.classList.contains('hidden')) setJsonTextModalOpen(false);
+        }
+      });
+
+      ui.jsonTextModal.addEventListener('click', (ev) => {
+        if (ev.target === ui.jsonTextModal) setJsonTextModalOpen(false);
+      });
+
+      ui.playBtn.onclick = () => {
+        try {
+          if (state.isPlaying) return;
+          schedulePlaybackFrom(state.currentStep || 0);
+          log('Reproduciendo...');
+        } catch (e) {
+          log('No se pudo iniciar audio: ' + (e.message || e));
+        }
+      };
+
+      ui.stopBtn.onclick = () => {
+        stopPlayback();
+        log('Detenido.');
+      };
+
+      ui.rewindBtn.onclick = () => {
+        stopPlayback();
+        state.currentStep = 0;
+        drawGrid();
+        updateTransportInfo();
+      };
+
+      ui.loopBtn.onclick = () => {
+        state.loop = !state.loop;
+        ui.loopBtn.textContent = `Loop: ${state.loop ? 'ON' : 'OFF'}`;
+      };
+
+      document.getElementById('addTrackBtn').onclick = () => {
+        state.song.tracks.push({
+          name: `Pista ${state.song.tracks.length + 1}`,
+          wave: 'sine',
+          volume: 0.8,
+          muted: false,
+          notes: []
+        });
+        state.activeTrack = state.song.tracks.length - 1;
+        state.selectedNote = null;
+        refresh();
+      };
+
+      document.getElementById('removeTrackBtn').onclick = () => {
+        if (state.song.tracks.length <= 1) return log('Debe quedar al menos 1 pista.');
+        state.song.tracks.splice(state.activeTrack, 1);
+        state.activeTrack = Math.max(0, state.activeTrack - 1);
+        state.selectedNote = null;
+        refresh();
+      };
+
+      ui.trackName.onchange = () => {
+        const t = state.song.tracks[state.activeTrack];
+        if (!t) return;
+        t.name = ui.trackName.value || `Pista ${state.activeTrack + 1}`;
+        refresh();
+      };
+      ui.trackWave.onchange = () => {
+        const t = state.song.tracks[state.activeTrack];
+        if (!t) return;
+        t.wave = ui.trackWave.value;
+        refresh();
+      };
+      ui.trackVolume.oninput = () => {
+        const t = state.song.tracks[state.activeTrack];
+        if (!t) return;
+        t.volume = Number(ui.trackVolume.value);
+        refresh();
+      };
+      ui.trackMuted.onchange = () => {
+        const t = state.song.tracks[state.activeTrack];
+        if (!t) return;
+        t.muted = ui.trackMuted.checked;
+        refresh();
+      };
+
+      document.getElementById('applyNoteBtn').onclick = () => {
+        if (!state.selectedNote) return;
+        const t = state.song.tracks[state.selectedNote.trackIndex];
+        const n = t?.notes[state.selectedNote.noteIndex];
+        if (!n) return;
+        n.pitch = Math.max(0, Math.min(127, Number(ui.notePitch.value) || n.pitch));
+        n.start = Math.max(0, Number(ui.noteStart.value) || n.start);
+        n.length = Math.max(1, Number(ui.noteLength.value) || n.length);
+        n.velocity = Math.max(1, Math.min(127, Number(ui.noteVelocity.value) || n.velocity));
+        refresh();
+      };
+
+      document.getElementById('deleteNoteBtn').onclick = deleteSelectedNote;
+
+      ui.gridCanvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+      ui.gridCanvas.addEventListener('mousedown', (e) => {
+        const cell = getCanvasCellFromEvent(e);
+        const hit = findNoteAt(cell.step, cell.pitch);
+
+        if (e.button === 2) {
+          if (hit) {
+            state.song.tracks[hit.trackIndex].notes.splice(hit.noteIndex, 1);
+            state.selectedNote = null;
+            refresh();
+            return;
+          }
+          return;
+        }
+
+        if (hit) {
+          state.selectedNote = hit;
+          state.activeTrack = hit.trackIndex;
+          refresh();
+          return;
+        }
+
+        const trackIndex = state.activeTrack;
+        const track = state.song.tracks[trackIndex];
+        if (!track) return;
+
+        const note = { pitch: cell.pitch, start: cell.step, length: 1, velocity: 100 };
+        track.notes.push(note);
+        track.notes.sort((a,b) => a.start - b.start || a.pitch - b.pitch);
+        const noteIndex = track.notes.indexOf(note);
+        state.selectedNote = { trackIndex, noteIndex };
+        state.creatingNote = { trackIndex, noteRef: note, startStep: cell.step };
+        refresh();
+      });
+
+      ui.gridCanvas.addEventListener('mousemove', (e) => {
+        if (!state.creatingNote) return;
+        const cell = getCanvasCellFromEvent(e);
+        const { noteRef, startStep } = state.creatingNote;
+        noteRef.length = Math.max(1, cell.step - startStep + 1);
+        refresh();
+      });
+
+      window.addEventListener('mouseup', () => {
+        state.creatingNote = null;
+      });
+
+      window.addEventListener('keydown', (e) => {
+        if (e.code === 'Space') {
+          e.preventDefault();
+          if (state.isPlaying) {
+            stopPlayback();
+          } else {
+            try { schedulePlaybackFrom(state.currentStep || 0); } catch (err) { log('Audio bloqueado por navegador. Haz click primero en la página.'); }
+          }
+        } else if (e.key === 'Delete') {
+          deleteSelectedNote();
+        }
+      });
+    }
+
+    hookEvents();
+    refresh();
+  </script>
+</body>
+</html>

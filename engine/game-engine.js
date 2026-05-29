@@ -612,7 +612,8 @@ const BUILDINGS = {
   hut:     { name:'Choza',   costBrick:1, costWheat:0, prodPop:1, prodWheat:0, prodBrick:0, color:'#D9C08A', roofColor:'#F2D16B', desc:'Choza de paja.', size:{ w:2, h:2 } },
   longhouse: { name:'Casa comunal', costBrick:10, costWheat:2, prodPop:6, prodWheat:0, prodBrick:0, color:'#C9B07A', roofColor:'#8A5F2A', desc:'Vivienda larga comunal.', size:{ w:5, h:2 } },
   stone_house: { name:'Casa de piedra', costBrick:14, costWheat:2, prodPop:6, prodWheat:0, prodBrick:0, color:'#9A9EA3', roofColor:'#6E6E6E', desc:'Construcción en piedra.', size:{ w:3, h:3 } },
-  farm:     { name:'Granja',  costBrick:1,  costWheat:3,  prodPop:0,  prodWheat:4, prodBrick:0, color:'#4A7C3F', roofColor:'#2E5028', desc:'Produce 4 trigo/turno.' },
+  farm:     { name:'Granja',  costBrick:1,  costWheat:3,  prodPop:0,  prodWheat:4, prodBrick:0, color:'#4A7C3F', roofColor:'#2E5028', desc:'Produce 4 trigo/turno.', size:{ w:2, h:2 } },
+  farm_plot:{ name:'Parcela', costBrick:0, costWheat:0, prodPop:0, prodWheat:1, prodBrick:0, color:'#4A7C3F', roofColor:'#2E5028', desc:'Parcela cultivada con azada.', size:{ w:1, h:1 } },
   temple:   { name:'Templo',  costBrick:15, costWheat:5,  prodPop:5,  prodWheat:1, prodBrick:1, color:'#E8D5A3', roofColor:'#A0522D', desc:'+5 pop, +1 trigo, +1 ladrillo.' },
   market:   { name:'Mercado', costBrick:8,  costWheat:4,  prodPop:2,  prodWheat:2, prodBrick:2, color:'#D2691E', roofColor:'#8B4513', desc:'+2 trigo, +2 ladrillos.' },
   granary:  { name:'Granero', costBrick:6,  costWheat:0,  prodPop:0,  prodWheat:0, prodBrick:3, color:'#B8860B', roofColor:'#8B6914', desc:'+3 ladrillos/turno.' },
@@ -627,7 +628,7 @@ BUILDINGS.mesopotamian_villa_detailed = { name: 'Villa mesopotámica', costBrick
 BUILDINGS.mesopotamian_house = { name: 'Casa mesopotámica', costBrick: 10, costWheat: 2, prodPop: 6, prodWheat:0, prodBrick:0, color:'#C9A058', roofColor:'#8B5A28', desc:'Vivienda tradicional de ladrillo cocido.', size: { w:3, h:3 } };
 BUILDINGS.mesopotamian_arch  = { name: 'Arco monumental', costBrick: 8, costWheat: 0, prodPop: 0, prodWheat:0, prodBrick:0, color:'#C8A84B', roofColor:'#8B6914', desc:'Arco de entrada a la ciudad.', size: { w:2, h:1 } };
 BUILDINGS.mesopotamian_baths = { name: 'Baños públicos', costBrick: 16, costWheat: 4, prodPop: 3, prodWheat:0, prodBrick:0, color:'#6B9EC8', roofColor:'#3A6B8A', desc:'Instalación de baños para la comunidad.', size: { w:3, h:2 } };
-BUILDINGS.house_isolated = { name:'Casa aislada', costBrick:0, costWheat:0, prodPop:0, prodWheat:0, prodBrick:0, color:'#C19A6B', roofColor:'#6F4D2A', desc:'Refugio personal del protagonista.', size:{ w:5, h:3 } };
+BUILDINGS.house_isolated = { name:'Casa aislada', costBrick:0, costWheat:0, prodPop:0, prodWheat:0, prodBrick:0, color:'#C19A6B', roofColor:'#6F4D2A', desc:'Refugio personal del protagonista.', size:{ w:8, h:5 } };
 
 // Road definition: small footprint, player-can-build
 BUILDINGS.road = { name: 'Camino', costBrick:0, costWheat:0, prodPop:0, prodWheat:0, prodBrick:0, color:'#8B7B5B', roofColor:'#8B7B5B', desc:'Conecta edificios.', size: { w:1, h:1 } };
@@ -1581,6 +1582,7 @@ player.weapon = null; // equipped weapon id (optional)
 player.stamina = 100;
 player._maxStamina = 100;
 player._isSprinting = false;
+player._jumpUntil = 0;
 
 player.x = player.col;
 player.y = player.row;
@@ -1988,15 +1990,71 @@ let isHoeDragging = false;
 let hoeDragStart = null;
 let hoeDragRect = null;
 
-function canTillSoilAt(col, row, fieldType = 'farm') {
+// Known cultivable biomes + permissive fallback for older maps.
+const FARMABLE_BIOMES = new Set(['grass', 'alluvial', 'steppe', 'riparian', 'sand', 'forest']);
+const NON_FARMABLE_BIOMES = new Set(['water', 'road', 'concrete_road', 'canal_road', 'saline']);
+
+function isCultivableBiome(biome) {
+  const b = String(biome || '').trim().toLowerCase();
+  if (!b) return true;
+  if (FARMABLE_BIOMES.has(b)) return true;
+  if (NON_FARMABLE_BIOMES.has(b)) return false;
+  return true;
+}
+
+function findNearestCultivableCell(originCol, originRow, maxRadius = 12) {
+  try {
+    const oc = Math.max(0, Math.min(COLS - 1, Math.floor(originCol)));
+    const or = Math.max(0, Math.min(ROWS - 1, Math.floor(originRow)));
+    for (let rad = 0; rad <= maxRadius; rad++) {
+      for (let rr = or - rad; rr <= or + rad; rr++) {
+        if (rr < 0 || rr >= ROWS) continue;
+        for (let cc = oc - rad; cc <= oc + rad; cc++) {
+          if (cc < 0 || cc >= COLS) continue;
+          if (Math.max(Math.abs(cc - oc), Math.abs(rr - or)) !== rad) continue;
+          const biome = (tileBiome && tileBiome[rr] && tileBiome[rr][cc]) || '';
+          if (!isCultivableBiome(biome)) continue;
+          if ((grid[rr] && grid[rr][cc]) || (rFullMap[rr] && rFullMap[rr][cc])) continue;
+          if (isRiver(cc, rr)) continue;
+          return { col: cc, row: rr };
+        }
+      }
+    }
+    return null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function canTillSoilAt(col, row, fieldType = 'farm_plot') {
   try {
     if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return false;
-    if ((grid[row] && grid[row][col]) || (rFullMap[row] && rFullMap[row][col])) return false;
-    const biome = (tileBiome && tileBiome[row] && tileBiome[row][col]) || '';
-    if (biome !== 'grass') return false;
-    return canPlaceAt(col, row, fieldType);
+    // Block if a building already occupies this cell
+    if (grid[row] && grid[row][col]) return false;
+    // Block river cells
+    if ((rFullMap[row] && rFullMap[row][col]) || isRiver(col, row)) return false;
+    // Only block explicitly non-cultivable biomes (water, road, canal, saline)
+    // Any other biome (grass, alluvial, sand, unknown…) is cultivable
+    const biome = String((tileBiome && tileBiome[row] && tileBiome[row][col]) || '').trim().toLowerCase();
+    if (NON_FARMABLE_BIOMES.has(biome)) return false;
+    return true;
   } catch (e) {
     return false;
+  }
+}
+
+function getTillBlockReason(col, row, fieldType = 'farm_plot') {
+  try {
+    if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return 'fuera_mapa';
+    if (grid[row] && grid[row][col]) return 'ocupado';
+    if (rFullMap[row] && rFullMap[row][col]) return 'rio';
+    const biome = String((tileBiome && tileBiome[row] && tileBiome[row][col]) || '').trim().toLowerCase();
+    if (!isCultivableBiome(biome)) return `bioma:${biome || 'desconocido'}`;
+    if (isRiver(col, row)) return 'rio';
+    if (!canPlaceAt(col, row, fieldType)) return 'ocupado';
+    return 'ok';
+  } catch (e) {
+    return 'error';
   }
 }
 
@@ -2013,7 +2071,7 @@ function tillFieldRect(rect) {
       notify('No tienes semillas. Consíguelas rompiendo hierbajos.');
       return 0;
     }
-    const fieldType = 'farm';
+    const fieldType = 'farm_plot';
     let placed = 0;
     for (let rr = rect.minR; rr <= rect.maxR; rr++) {
       for (let cc = rect.minC; cc <= rect.maxC; cc++) {
@@ -2031,17 +2089,54 @@ function tillFieldRect(rect) {
       addLog(`Labraste ${placed} parcela(s) de cultivo.`);
       notify(`Terreno labrado: ${placed} parcela(s).`);
       gainXP(Math.min(18, placed * 2));
+      try { createFieldNearHome({ silent: true }); } catch (e) {}
       try {
         const prologue = window._homePrologue;
         if (prologue && prologue.active && !prologue.fieldPrepared) {
           prologue.fieldPrepared = true;
           prologue.stage = 'family-concern';
-          notify('Cultivo preparado. Vuelve con tu familia.');
+          startMission(
+            'Reunirse con la familia',
+            'Vuelve a casa para tranquilizar a tu familia.',
+            prologue.homeDoorCol,
+            prologue.homeDoorRow,
+            [
+              'Acércate a la puerta de tu casa.',
+              'Entra al interior.',
+              'Habla con tu familia.'
+            ]
+          );
           setTimeout(() => { try { startHomePrologueFamilyBriefing(); } catch (e) {} }, 350);
         }
       } catch (e) {}
     } else {
-      notify('Selecciona césped libre para labrar.');
+      const reasonCount = new Map();
+      const inspectMax = 25;
+      let inspected = 0;
+      for (let rr = rect.minR; rr <= rect.maxR && inspected < inspectMax; rr++) {
+        for (let cc = rect.minC; cc <= rect.maxC && inspected < inspectMax; cc++) {
+          const reason = getTillBlockReason(cc, rr, fieldType);
+          reasonCount.set(reason, (reasonCount.get(reason) || 0) + 1);
+          inspected++;
+        }
+      }
+      let topReason = 'desconocido';
+      let topCount = -1;
+      reasonCount.forEach((count, reason) => {
+        if (count > topCount) {
+          topCount = count;
+          topReason = reason;
+        }
+      });
+      if (String(topReason).startsWith('bioma:')) {
+        notify(`No se puede labrar aquí: ${topReason.replace('bioma:', 'bioma ')}.`);
+      } else if (topReason === 'ocupado') {
+        notify('No se puede labrar aquí: la celda está ocupada por construcción.');
+      } else if (topReason === 'rio') {
+        notify('No se puede labrar aquí: zona de río/agua.');
+      } else {
+        notify('Selecciona terreno cultivable libre para labrar (evita agua/camino/río).');
+      }
     }
     return placed;
   } catch (e) {
@@ -2694,16 +2789,18 @@ function drawEntitySpriteAt(name, x, y, w, h, options) {
     try { ctx.imageSmoothingEnabled = false; } catch (e) {}
     if (img) {
       // draw a subtle shadow so sprites feel grounded
-      try {
-        const sx = Math.round(x);
-        const sy = Math.round(y - Math.max(6, drawH * 0.06));
-        ctx.save();
-        ctx.fillStyle = 'rgba(0,0,0,0.28)';
-        ctx.beginPath();
-        ctx.ellipse(sx, sy, Math.round(drawW * 0.45), Math.max(4, Math.round(drawH * 0.08)), 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-      } catch (e) {}
+      if (!(options && options.noShadow)) {
+        try {
+          const sx = Math.round(x);
+          const sy = Math.round(y - Math.max(6, drawH * 0.06));
+          ctx.save();
+          ctx.fillStyle = 'rgba(0,0,0,0.28)';
+          ctx.beginPath();
+          ctx.ellipse(sx, sy, Math.round(drawW * 0.45), Math.max(4, Math.round(drawH * 0.08)), 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        } catch (e) {}
+      }
       const px = Math.round(x - drawW/2);
       const py = Math.round(y - drawH + (drawH*0.08));
       ctx.drawImage(img, px, py, drawW, drawH);
@@ -2737,6 +2834,48 @@ function hasRegisteredSprite(name) {
     );
   } catch (e) {
     return false;
+  }
+}
+
+function getRegisteredSpriteAspect(name) {
+  try {
+    const img = (window._SPRITE_IMAGES && window._SPRITE_IMAGES[name]) || (window._ICON_BITMAPS && window._ICON_BITMAPS[name]) || (window._ENTITY_BITMAPS && window._ENTITY_BITMAPS[name]);
+    if (img && img.width > 0 && img.height > 0) return img.width / img.height;
+  } catch (e) {}
+  try {
+    const def = window.ENTITY_PIXEL_LIBRARY && window.ENTITY_PIXEL_LIBRARY[name];
+    if (!def || !Array.isArray(def.pixels) || def.pixels.length === 0) return 1;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of def.pixels) {
+      const px = Number(p && p[0]);
+      const py = Number(p && p[1]);
+      if (!Number.isFinite(px) || !Number.isFinite(py)) continue;
+      if (px < minX) minX = px;
+      if (py < minY) minY = py;
+      if (px > maxX) maxX = px;
+      if (py > maxY) maxY = py;
+    }
+    const w = (maxX - minX + 1);
+    const h = (maxY - minY + 1);
+    if (w > 0 && h > 0) return w / h;
+  } catch (e) {}
+  return 1;
+}
+
+function resolveTreeSpriteVariant(variant, col, row) {
+  try {
+    const raw = String(variant || '').toLowerCase();
+    const isTreeTemplate = /^tree\d+$/.test(raw);
+    if (!isTreeTemplate) return variant;
+    const isUrss = (window._currentEpoch || 'mesopotamia') === 'urss';
+    const preferred = isUrss ? ['tree0', 'tree1', 'tree2', 'tree3'] : ['tree0', 'tree1', 'tree2', 'tree3', 'tree4'];
+    const available = preferred.filter(k => hasRegisteredSprite(k));
+    if (!available.length) return variant;
+    const seed = tileNoise(col || 0, row || 0, 33, 34);
+    const idx = Math.max(0, Math.min(available.length - 1, Math.floor(seed * available.length)));
+    return available[idx] || variant;
+  } catch (e) {
+    return variant;
   }
 }
 
@@ -2790,6 +2929,7 @@ function resolveBuildingSpriteKey(type) {
     ,soviet_block: 'stone_house'
     ,party_hq: 'mesopotamian_villa_detailed'
     ,collective_farm: 'farm'
+    ,farm_plot: 'farm'
     ,factory: 'temple'
     ,state_warehouse: 'granary'
     ,steel_foundry: 'zigurat_isometrico_escaleras_detalladas_64x64'
@@ -2882,6 +3022,11 @@ function drawWheatIcon(ctx, w, h) {
         if (!res.ok) throw new Error('entity-pixels.json not found');
         const json = await res.json();
         window.ENTITY_PIXEL_LIBRARY = json.icons || json || {};
+        try {
+          if (!window.ENTITY_PIXEL_LIBRARY.ma_g && window.ENTITY_PIXEL_LIBRARY.ussr_flag) {
+            window.ENTITY_PIXEL_LIBRARY.ma_g = window.ENTITY_PIXEL_LIBRARY.ussr_flag;
+          }
+        } catch (e) {}
         augmentSovietBlockVariants(window.ENTITY_PIXEL_LIBRARY);
         const keys = Object.keys(window.ENTITY_PIXEL_LIBRARY);
         for (const k of keys) {
@@ -3090,7 +3235,7 @@ function createCraftingPanel() {
       <div style="font-weight:700;color:#9fe39f;margin-bottom:4px;">Gestionar agricultura</div>
       <div style="margin-bottom:4px;">1) Craftea <b>stone-hoe</b> (azada de piedra).</div>
       <div style="margin-bottom:4px;">2) Equipa la azada desde inventario.</div>
-      <div style="margin-bottom:4px;">3) En modo libre, mantén clic izquierdo y arrastra con la azada sobre césped para labrar.</div>
+      <div style="margin-bottom:4px;">3) En modo libre, mantén clic izquierdo y arrastra con la azada sobre terreno verde para labrar.</div>
       <div style="margin-bottom:4px;">4) Consigue <b>semillas</b> rompiendo hierbajos y úsalas para cada parcela.</div>
       <div>5) Amplía producción con granjas y almacenes para sostener misiones largas.</div>
     </div>`;
@@ -3409,8 +3554,8 @@ function setupHomePrologueSpawn(anchorCol, anchorRow) {
   try {
     const spawnC = Math.max(2, Math.min(COLS - 3, Math.floor(anchorCol)));
     const spawnR = Math.max(2, Math.min(ROWS - 3, Math.floor(anchorRow)));
-    const homeW = (BUILDINGS.house_isolated && BUILDINGS.house_isolated.size && BUILDINGS.house_isolated.size.w) || 5;
-    const homeH = (BUILDINGS.house_isolated && BUILDINGS.house_isolated.size && BUILDINGS.house_isolated.size.h) || 2;
+    const homeW = (BUILDINGS.house_isolated && BUILDINGS.house_isolated.size && BUILDINGS.house_isolated.size.w) || 8;
+    const homeH = (BUILDINGS.house_isolated && BUILDINGS.house_isolated.size && BUILDINGS.house_isolated.size.h) || 5;
     const rawHomeCol = Math.floor(spawnC - Math.floor(homeW / 2));
     const rawHomeRow = Math.floor(spawnR - homeH - 1);
     const homeCol = Math.max(2, Math.min(COLS - homeW - 3, rawHomeCol));
@@ -3418,13 +3563,21 @@ function setupHomePrologueSpawn(anchorCol, anchorRow) {
     const homeDoorCol = homeCol + Math.floor((homeW - 1) / 2);
     const homeDoorRow = homeRow + homeH - 1;
 
+    // Clear the wider area of entities/buildings (the +1 border), but only set biome='road'
+    // on the actual house footprint — the surrounding tiles should keep their natural biome
+    // so the player can till soil right below/beside the house.
     for (let rr = homeRow - 1; rr <= homeRow + homeH + 1; rr++) {
       if (rr < 0 || rr >= ROWS) continue;
       for (let cc = homeCol - 1; cc <= homeCol + homeW + 1; cc++) {
         if (cc < 0 || cc >= COLS) continue;
         try {
           if (grid[rr][cc]) grid[rr][cc] = null;
-          if (tileBiome[rr] && tileBiome[rr][cc] !== 'water') tileBiome[rr][cc] = 'road';
+          // Only force 'road' biome on the exact house footprint, not the surrounding ring
+          const inHouseFootprint = rr >= homeRow && rr < homeRow + homeH &&
+                                   cc >= homeCol && cc < homeCol + homeW;
+          if (inHouseFootprint && tileBiome[rr] && tileBiome[rr][cc] !== 'water') {
+            tileBiome[rr][cc] = 'road';
+          }
         } catch (e) {}
       }
     }
@@ -3461,11 +3614,13 @@ function setupHomePrologueSpawn(anchorCol, anchorRow) {
       enteredInterior: false,
       enteringInterior: false,
       guardsSpawned: false,
+      pendingMilitaryBriefing: false,
       stage: 'prepare-field',
       fieldPrepared: false,
       familyBriefed: false,
       sleepReady: false,
       slept: false,
+      instructionShown: false,
       objectiveHintShownAt: 0,
       homeCol,
       homeRow,
@@ -3476,6 +3631,42 @@ function setupHomePrologueSpawn(anchorCol, anchorRow) {
         { name: 'Cabo Naram', col: Math.min(COLS - 1, homeDoorCol + 2), row: Math.min(ROWS - 1, homeDoorRow + 1) }
       ]
     };
+    // Remove any guard/story NPCs that may have been spawned near home from world gen
+    try {
+      for (let i = entities.length - 1; i >= 0; i--) {
+        const ent = entities[i];
+        if (!ent) continue;
+        const ec = ent.col != null ? ent.col : (ent.x != null ? Math.floor(ent.x) : null);
+        const er = ent.row != null ? ent.row : (ent.y != null ? Math.floor(ent.y) : null);
+        if (ec == null || er == null) continue;
+        const nearHome = ec >= homeCol - 4 && ec <= homeCol + homeW + 4 &&
+                         er >= homeRow - 4 && er <= homeRow + homeH + 6;
+        if (nearHome && (ent.npcType === 'guard' || ent.isStoryNPC)) {
+          entities.splice(i, 1);
+        }
+      }
+    } catch (e) {}
+    // Show initial prologue instruction and set first objective
+    setTimeout(() => {
+      try {
+        if (window._homePrologue && !window._homePrologue.instructionShown) {
+          window._homePrologue.instructionShown = true;
+          const fallbackTarget = { col: spawnC + 2, row: spawnR + 2 };
+          const firstField = findNearestCultivableCell(fallbackTarget.col, fallbackTarget.row, 14) || fallbackTarget;
+          startMission(
+            'Preparar cultivo',
+            'Labra al menos una parcela cerca de casa.',
+            firstField.col,
+            firstField.row,
+            [
+              'Equipa la azada de piedra.',
+              'Ten al menos 1 semilla.',
+              'Haz clic y arrastra sobre suelo cultivable.'
+            ]
+          );
+        }
+      } catch (e) {}
+    }, 800);
     try {
       inventory = inventory || {};
       if (!inventory['stone-hoe']) inventory['stone-hoe'] = 1;
@@ -3501,10 +3692,11 @@ function startHomePrologueFamilyBriefing() {
     prologue.lockMovementForIntro = true;
     window._activeDialogue = {
       lines: [
-        'Madre: Por fin volviste... Estamos preocupados. Afuera no paran de pasar patrullas.',
-        'Hermana: Hoy el campo quedó raro, como si alguien hubiera pasado por la noche.',
-        'Tú: Ya he dejado un cultivo preparado. Intentad descansar y manteneros juntos.',
-        'Madre: Haz lo mismo tú. Duerme dentro de casa y mañana pensaremos con la cabeza fría.'
+        'Madre: Por fin volviste... Estamos muy preocupados. Afuera hay patrullas extrañas.',
+        'Hermana: Hoy notamos algo raro en el campo. Como si alguien lo hubiera tocado.',
+        'Tú: No os preocupéis. He labrado la tierra y sembrado lo que pude. Es un buen comienzo.',
+        'Padre: Bien hecho, pero no es suficiente. Debes descansar esta noche en casa.',
+        'Tú: Tendré cuidado. Mañana seguiré trabajando el campo.'
       ],
       idx: 0,
       npcName: 'Familia',
@@ -3515,7 +3707,17 @@ function startHomePrologueFamilyBriefing() {
           p.sleepReady = true;
           p.stage = 'sleep-in-house';
           p.lockMovementForIntro = false;
-          notify('Objetivo: entra en casa para dormir y calmar a la familia.');
+          startMission(
+            'Dormir en casa',
+            'Tu familia necesita que descanses dentro esta noche.',
+            p.homeDoorCol,
+            p.homeDoorRow,
+            [
+              'Ve hasta la puerta de tu casa.',
+              'Entra al interior.',
+              'Espera al amanecer.'
+            ]
+          );
         } catch (e) {}
       }
     };
@@ -4704,7 +4906,7 @@ function canPlaceAt(baseCol, baseRow, type) {
     for (let c = 0; c < size.w; c++) {
       const col = baseCol + c;
       const row = baseRow + r;
-      if (isRiver(col)) return false;
+      if (isRiver(col, row)) return false;
       if (grid[row][col]) return false;
     }
   }
@@ -5037,22 +5239,13 @@ function generateMap(mapType) {
 
     try { setupHomePrologueSpawn(spawnC, spawnR); } catch (e) {}
     try {
-      let weedsNearSpawn = 0;
-      for (let i = 0; i < 10; i++) {
-        const wc = Math.max(1, Math.min(COLS - 2, spawnC + Math.floor(Math.random() * 15) - 7));
-        const wr = Math.max(1, Math.min(ROWS - 2, spawnR + Math.floor(Math.random() * 15) - 7));
+      for (let i = 0; i < 25; i++) {
+        const wc = Math.max(1, Math.min(COLS - 2, spawnC + Math.floor(Math.random() * 20) - 10));
+        const wr = Math.max(1, Math.min(ROWS - 2, spawnR + Math.floor(Math.random() * 20) - 10));
         if (grid[wr][wc] || rFullMap[wr][wc] || isRiver(wc)) continue;
         const b = tileBiome[wr] && tileBiome[wr][wc];
         if (b !== 'grass' && b !== 'alluvial' && b !== 'forest' && b !== 'riparian' && b !== 'steppe') continue;
-        if (Math.random() > 0.33) continue;
-        placeTree(wc, wr, 'weed');
-        weedsNearSpawn++;
-      }
-      if (weedsNearSpawn <= 0) {
-        const safeFallback = findNearestWalkable(spawnC + 2, spawnR + 2);
-        if (safeFallback && !isRiver(safeFallback.col, safeFallback.row)) {
-          placeTree(safeFallback.col, safeFallback.row, 'weed');
-        }
+        placeResource(wc, wr, 'weed');
       }
     } catch (e) {}
   } catch(e){}
@@ -5067,12 +5260,12 @@ function generateMap(mapType) {
     placeResource(c,r,type);
   }
   // ── 9b. Weed patches (seed source) ──
-  for (let i = 0; i < 55; i++) {
+  for (let i = 0; i < 220; i++) {
     const c = Math.floor(Math.random() * COLS), r = Math.floor(Math.random() * ROWS);
     if (grid[r][c] || rFullMap[r][c] || isRiver(c)) continue;
     const b = tileBiome[r] && tileBiome[r][c];
     if (b !== 'grass' && b !== 'alluvial' && b !== 'forest' && b !== 'riparian' && b !== 'steppe') continue;
-    if (Math.random() < 0.30) placeTree(c, r, 'weed');
+    if (Math.random() < 0.55) placeResource(c, r, 'weed');
   }
   // ── 10. Animals ──
   try {
@@ -5210,9 +5403,10 @@ function drawBuilding(col, row, type, alpha) {
       let spriteH = H;
       let spriteAnchorY = y + H;
       if (type === 'house_isolated') {
-        spriteW = W * 0.98;
-        spriteH = H * 1.85;
-        spriteAnchorY = y + H * 1.12;
+        // Keep visual fully grounded to footprint (no floating / no pass-under illusion).
+        spriteW = W;
+        spriteH = H;
+        spriteAnchorY = y + H;
       }
       // If zoomed out, draw a simplified block for performance and to avoid floating look
       if (viewMode === 'iso' && zoom < 0.6) {
@@ -5223,7 +5417,7 @@ function drawBuilding(col, row, type, alpha) {
           ctx.restore();
         } catch (e) {}
       } else {
-        drawEntitySpriteAt(useKey, x + W * 0.5, spriteAnchorY, spriteW, spriteH, { ignoreEntityScale: true });
+        drawEntitySpriteAt(useKey, x + W * 0.5, spriteAnchorY, spriteW, spriteH, { ignoreEntityScale: true, noShadow: type === 'house_isolated' });
       }
       ctx.restore();
       return;
@@ -5456,7 +5650,7 @@ function drawBuilding(col, row, type, alpha) {
     ctx.fillStyle = '#3A6F9A'; ctx.fillRect(x + DT * 0.66, y + DT * 0.48, winW, winH);
     ctx.fillStyle = '#7FC3F0'; ctx.fillRect(x + DT * 0.66 + 2, y + DT * 0.48 + 2, Math.max(2, winW - 4), Math.max(2, winH - 4));
 
-  } else if (type === 'farm') {
+  } else if (type === 'farm' || type === 'farm_plot') {
     // Soil
     ctx.fillStyle = '#5C3A1A';
     ctx.fillRect(x + pad, y + DT * 0.48, DT - pad * 2, DT * 0.48);
@@ -5696,6 +5890,7 @@ function getWorldMapBuildingColor(type) {
   if (type === 'soviet_block') return '#B7BDC8';
   if (type === 'party_hq') return '#CC5454';
   if (type === 'collective_farm') return '#7D9B5A';
+  if (type === 'farm_plot') return '#7FB24A';
   if (type === 'factory') return '#8D939E';
   if (type === 'state_warehouse') return '#A58A6B';
   if (type === 'steel_foundry') return '#9EA3AD';
@@ -5835,7 +6030,10 @@ function drawPlayer() {
     const inWater = movementMultiplier(pCol, pRow) < 1;
     const headRows = getHumanoidHeadRows();
     const headH = headRows * scale;
-    const py = inWater ? Math.floor(y + h - headH) : Math.floor(y + h - spriteH);
+    const _jDur = 380, _jNow = Date.now();
+    const _jPct = (player._jumpUntil && player._jumpUntil > _jNow) ? Math.max(0, Math.min(1, (_jNow - (player._jumpUntil - _jDur)) / _jDur)) : 0;
+    const _jumpOff = _jPct > 0 ? Math.round(Math.sin(_jPct * Math.PI) * Math.max(4, spriteH * 0.55)) : 0;
+    const py = (inWater ? Math.floor(y + h - headH) : Math.floor(y + h - spriteH)) - _jumpOff;
     const walkFrame = player._walkFrame || 0;
     const dir = player.dir || 'down';
     const downed = isPlayerDowned(now);
@@ -5908,7 +6106,10 @@ function drawPlayer() {
     const inWater = movementMultiplier(pCol, pRow) < 1;
     const headRows = getHumanoidHeadRows();
     const headH = headRows * scale;
-    const py = inWater ? Math.floor(y + tileSize - headH) : Math.floor(y + tileSize - spriteH);
+    const _jDur2 = 380, _jNow2 = Date.now();
+    const _jPct2 = (player._jumpUntil && player._jumpUntil > _jNow2) ? Math.max(0, Math.min(1, (_jNow2 - (player._jumpUntil - _jDur2)) / _jDur2)) : 0;
+    const _jumpOff2 = _jPct2 > 0 ? Math.round(Math.sin(_jPct2 * Math.PI) * Math.max(4, spriteH * 0.55)) : 0;
+    const py = (inWater ? Math.floor(y + tileSize - headH) : Math.floor(y + tileSize - spriteH)) - _jumpOff2;
     const walkFrame = player._walkFrame || 0;
     const dir = player.dir || 'down';
     const downed = isPlayerDowned(now);
@@ -6191,7 +6392,7 @@ function render() {
         }
       } else {
       // apply movement speed factor when crossing water
-      const sprintPath = (keyState['Shift'] && player.stamina > 0 && !player._staminaCooldown) ? 1.6 : 1.0;
+      const sprintPath = ((keyState['ShiftLeft'] || keyState['ShiftRight']) && player.stamina > 0 && !player._staminaCooldown) ? 1.6 : 1.0;
       if (sprintPath > 1) player._isSprinting = true;
       const baseNx = (dx / dist) * player.speed * gdt * TILE * sprintPath;
       const baseNy = (dy / dist) * player.speed * gdt * TILE * sprintPath;
@@ -6219,7 +6420,7 @@ function render() {
         // reached
         moveTarget = null;
       } else {
-        const sprintTarget = (keyState['Shift'] && player.stamina > 0 && !player._staminaCooldown) ? 1.6 : 1.0;
+        const sprintTarget = ((keyState['ShiftLeft'] || keyState['ShiftRight']) && player.stamina > 0 && !player._staminaCooldown) ? 1.6 : 1.0;
         if (sprintTarget > 1) player._isSprinting = true;
         const baseNx = (dx / dist) * player.speed * gdt * TILE * sprintTarget;
         const baseNy = (dy / dist) * player.speed * gdt * TILE * sprintTarget;
@@ -6241,10 +6442,10 @@ function render() {
     } else {
       // screen movement axes (user input)
       let screenMvx = 0, screenMvy = 0;
-      if (keyState['ArrowUp'] || keyState['w']) screenMvy -= 1;
-      if (keyState['ArrowDown'] || keyState['s']) screenMvy += 1;
-      if (keyState['ArrowLeft'] || keyState['a']) screenMvx -= 1;
-      if (keyState['ArrowRight'] || keyState['d']) screenMvx += 1;
+      if (keyState['ArrowUp'] || keyState['KeyW']) screenMvy -= 1;
+      if (keyState['ArrowDown'] || keyState['KeyS']) screenMvy += 1;
+      if (keyState['ArrowLeft'] || keyState['KeyA']) screenMvx -= 1;
+      if (keyState['ArrowRight'] || keyState['KeyD']) screenMvx += 1;
       if (screenMvx !== 0 || screenMvy !== 0) {
         // cancel auto path/target when player takes direct control
         moveTarget = null; movePath = null;
@@ -6260,9 +6461,10 @@ function render() {
         }
           const len = Math.hypot(mvx, mvy) || 1;
           mvx /= len; mvy /= len;
-          const sprintDirect = (keyState['Shift'] && player.stamina > 0 && !player._staminaCooldown) ? 1.6 : 1.0;
+          const _isShift = (keyState['ShiftLeft'] || keyState['ShiftRight']);
+          const sprintDirect = (_isShift && player.stamina > 0 && !player._staminaCooldown) ? 1.6 : 1.0;
           // track sprint state for stamina drain
-          player._isSprinting = (keyState['Shift'] && player.stamina > 0 && !player._staminaCooldown);
+          player._isSprinting = (_isShift && player.stamina > 0 && !player._staminaCooldown);
           const baseDX = mvx * player.speed * gdt * TILE * sprintDirect;
           const baseDY = mvy * player.speed * gdt * TILE * sprintDirect;
           const curFactor = movementMultiplier(Math.floor(player.x), Math.floor(player.y));
@@ -6532,19 +6734,85 @@ function render() {
         if (pct >= 1) { const cb = fo.onDone; window._interiorFadeOut = null; try { cb(); } catch(e) {} }
       }
 
+      const backWallHeight = Math.max(10, Math.floor(ts * 0.9));
+      const interiorPaintingKey = hasRegisteredSprite('ma_g')
+        ? 'ma_g'
+        : (hasRegisteredSprite('ussr_flag') ? 'ussr_flag' : null);
+      const drawInteriorPaintingAt = (name, sx, sy, sw, sh) => {
+        if (!name) return false;
+        try {
+          let img = (window._ENTITY_BITMAPS && window._ENTITY_BITMAPS[name])
+            || (window._ICON_BITMAPS && window._ICON_BITMAPS[name])
+            || (window._SPRITE_IMAGES && window._SPRITE_IMAGES[name]);
+          if (!img && window.ENTITY_PIXEL_LIBRARY && window.ENTITY_PIXEL_LIBRARY[name]) {
+            try { img = window.createCanvasFromPixelDef(window.ENTITY_PIXEL_LIBRARY[name], name, Math.max(sw, sh)); } catch (e) {}
+          }
+          if (!img) return false;
+          ctx.imageSmoothingEnabled = false;
+          ctx.drawImage(img, Math.floor(sx), Math.floor(sy), Math.floor(sw), Math.floor(sh));
+          return true;
+        } catch (e) {
+          return false;
+        }
+      };
+
       // Draw floor and walls
       for (let r = 0; r < iRows; r++) {
         for (let c = 0; c < iCols; c++) {
           const { x, y } = worldToScreen(c, r);
           const t = (interior.tiles && interior.tiles[r] && interior.tiles[r][c]) || 'floor';
+          const isBackWall = (t === 'wall' && r === 0);
           // Base tile
           if (t === 'wall') {
-            ctx.fillStyle = '#5C3A2A'; ctx.fillRect(x, y, ts, ts);
-            // brick texture lines
-            ctx.strokeStyle = 'rgba(0,0,0,0.2)'; ctx.lineWidth = 1;
-            ctx.strokeRect(x+1, y+1, ts-2, ts-2);
-            ctx.fillStyle = '#7A4D38'; ctx.fillRect(x+2, y+2, ts-4, ts*0.42);
-            ctx.fillStyle = '#6B4030'; ctx.fillRect(x+2, y+ts*0.5, ts-4, ts*0.4);
+            if (isBackWall) {
+              // floor strip at wall base
+              ctx.fillStyle = '#C8A87A';
+              ctx.fillRect(x, y, ts, ts);
+
+              // vertical back wall face
+              const wy = y - backWallHeight;
+              ctx.fillStyle = '#7A4D38';
+              ctx.fillRect(x, wy, ts, backWallHeight + 1);
+
+              // subtle paneling / bricks
+              ctx.fillStyle = '#6B4030';
+              ctx.fillRect(x + 1, wy + 1, ts - 2, Math.max(2, Math.floor(backWallHeight * 0.42)));
+              ctx.fillStyle = '#8A5A41';
+              ctx.fillRect(x + 1, wy + Math.max(3, Math.floor(backWallHeight * 0.48)), ts - 2, Math.max(2, Math.floor(backWallHeight * 0.44)));
+
+              // top cap shadow/highlight
+              ctx.fillStyle = 'rgba(0,0,0,0.25)';
+              ctx.fillRect(x, wy, ts, 2);
+              ctx.fillStyle = 'rgba(255,230,190,0.25)';
+              ctx.fillRect(x, wy + 2, ts, 1);
+
+              // framed painting in the middle of the back wall
+              if (c === Math.floor(iCols / 2)) {
+                const fw = Math.max(8, Math.floor(ts * 0.52));
+                const fh = Math.max(7, Math.floor(backWallHeight * 0.38));
+                const fx = Math.floor(x + (ts - fw) * 0.5);
+                const fy = Math.floor(wy + backWallHeight * 0.28);
+                ctx.fillStyle = '#3A2512';
+                ctx.fillRect(fx - 1, fy - 1, fw + 2, fh + 2);
+                ctx.fillStyle = '#D8B16B';
+                ctx.fillRect(fx, fy, fw, fh);
+                const painted = drawInteriorPaintingAt(interiorPaintingKey, fx + 1, fy + 1, Math.max(1, fw - 2), Math.max(1, fh - 2));
+                if (!painted) {
+                  ctx.fillStyle = '#6E2A1F';
+                  ctx.fillRect(fx + 1, fy + 1, fw - 2, fh - 2);
+                }
+              }
+
+              ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 1;
+              ctx.strokeRect(x+0.5, y+0.5, ts-1, ts-1);
+            } else {
+              ctx.fillStyle = '#5C3A2A'; ctx.fillRect(x, y, ts, ts);
+              // brick texture lines
+              ctx.strokeStyle = 'rgba(0,0,0,0.2)'; ctx.lineWidth = 1;
+              ctx.strokeRect(x+1, y+1, ts-2, ts-2);
+              ctx.fillStyle = '#7A4D38'; ctx.fillRect(x+2, y+2, ts-4, ts*0.42);
+              ctx.fillStyle = '#6B4030'; ctx.fillRect(x+2, y+ts*0.5, ts-4, ts*0.4);
+            }
           } else if (t === 'door') {
             ctx.fillStyle = '#C8A87A'; ctx.fillRect(x, y, ts, ts);
             // door frame
@@ -7057,6 +7325,7 @@ function render() {
   }
 
   // ── ENTITIES (resources) ─────────────────────────────────
+  window._deferredTrees = []; // reset depth-deferred tree list each frame
   const _entitySource = (entities || []);
   const _entityList = lowDetail ? _entitySource : _entitySource.slice().sort((A, B) => {
     const ax = (typeof A.x === 'number') ? A.x : (A.col || 0);
@@ -7165,6 +7434,10 @@ function render() {
           ctx.fillStyle = '#8B5A38'; ctx.fillRect(lx, ly, lw, lh);
           ctx.fillStyle = '#7A4A2A';
           for (let i=0;i<3;i++) ctx.fillRect(lx + 2 + i* (lw/4), ly + 2 + (i%2), 1, lh-4);
+        } else if (subtype === 'weed') {
+          const { w: ww, h: wh } = getIsoTileSize();
+          const sz = Math.max(ww * 0.55, Math.round(ww * 0.95 * 1.38));
+          drawEntitySpriteAt('weed', x + ww * 0.5, y + wh * 0.95, sz, sz * 1.05);
         } else if (subtype === 'stone') {
           const rw = Math.max(10, Math.floor(w * 0.7 * pulse));
           const rh = Math.max(10, Math.floor(h * 0.7 * pulse));
@@ -7248,6 +7521,9 @@ function render() {
           ctx.fillStyle = '#8B5A38'; ctx.fillRect(cx, cy + sz*0.15, sz, sz*0.7);
           ctx.fillStyle = '#7A4A2A';
           for (let i=0;i<3;i++) ctx.fillRect(cx + 2 + i*(sz/4), cy + sz*0.2, 1, sz*0.6);
+        } else if (subtype === 'weed') {
+          const wSz = Math.max(tileSize * 0.46, Math.round(tileSize * 0.95 * 1.38));
+          drawEntitySpriteAt('weed', x + tileSize * 0.5, y + tileSize * 0.98, wSz, wSz * 1.05);
         } else if (subtype === 'stone') {
           const stoneSprite = (window._ENTITY_BITMAPS && window._ENTITY_BITMAPS['stone']) || (window._SPRITE_IMAGES && window._SPRITE_IMAGES['stone']);
           if (stoneSprite) {
@@ -7558,14 +7834,25 @@ function render() {
       } catch (e) {}
     } else if (ent.kind === 'tree') {
       if (isOffscreen) return;
+      // Y-depth sort: trees at or below the player row are deferred to draw IN FRONT of the player
+      {
+        const _entDepthY = typeof ent.y === 'number' ? ent.y : (ent.row || 0);
+        if (_entDepthY >= (player.y || 0)) {
+          window._deferredTrees.push(ent);
+          return;
+        }
+      }
       // Tree LOD / density reduction: deterministic skip based on per-entity seed
+      // weed and tallgrass are small ground plants — always render them, never skip
       try {
-        if (ent._dropSeed === undefined) ent._dropSeed = Math.random();
-        const seed = ent._dropSeed;
-        // when zoomed out, skip many trees for performance and lower apparent density
-        if (zoom < GRAPHICS_CONFIG.treeSkip.near && seed > 0.5) return;
-        if (zoom < GRAPHICS_CONFIG.treeSkip.mid && seed > 0.75) return;
-        if (zoom < GRAPHICS_CONFIG.treeSkip.far && seed > 0.92) return;
+        const _v = (ent.variant || 'oak');
+        if (_v !== 'weed' && _v !== 'tallgrass') {
+          if (ent._dropSeed === undefined) ent._dropSeed = Math.random();
+          const seed = ent._dropSeed;
+          if (zoom < GRAPHICS_CONFIG.treeSkip.near && seed > 0.5) return;
+          if (zoom < GRAPHICS_CONFIG.treeSkip.mid && seed > 0.75) return;
+          if (zoom < GRAPHICS_CONFIG.treeSkip.far && seed > 0.92) return;
+        }
       } catch (e) {}
       // variant-aware pixel-art tree/vegetation drawing
       const tileSize = getTileSize();
@@ -7584,9 +7871,10 @@ function render() {
       }
       // small grass/weed variants: draw a tiny tuft
       if (variant === 'tallgrass' || variant === 'weed') {
-        if (variant === 'tallgrass' && (window._currentEpoch || 'mesopotamia') === 'urss') return;
+        if ((window._currentEpoch || 'mesopotamia') === 'urss' && variant === 'tallgrass') return;
+        // weed: prefer sprite path (legacy tree-kind weed saved in old games)
         if (variant === 'weed' && hasRegisteredSprite('weed')) {
-          const sz = Math.max(tileSize * 0.46, Math.round(tileSize * (ent.size || 0.6) * 1.38));
+          const sz = Math.max(tileSize * 0.46, Math.round(tileSize * (ent.size || 0.95) * 1.38));
           drawEntitySpriteAt('weed', x + tileSize * 0.5, y + tileSize * 0.98, sz, sz * 1.05);
           return;
         }
@@ -7620,11 +7908,14 @@ function render() {
         }
       } else {
         // If the variant has a registered pixel-art sprite, use it directly
-        if (hasRegisteredSprite(variant)) {
+        const renderVariant = resolveTreeSpriteVariant(variant, ent.col || 0, ent.row || 0);
+        if (hasRegisteredSprite(renderVariant)) {
           const lodFactor = zoom >= GRAPHICS_CONFIG.smoothingThreshold ? 1 : 0.8;
-          const sz = Math.max(tileSize * 0.6, Math.round(tileSize * (ent.size || 1) * 1.3 * lodFactor));
+          const spriteH = Math.max(tileSize * 0.72, Math.round(tileSize * (ent.size || 1) * 1.28 * lodFactor));
+          const aspect = Math.max(0.45, Math.min(1.9, getRegisteredSpriteAspect(renderVariant)));
+          const spriteW = Math.max(tileSize * 0.46, Math.round(spriteH * aspect));
           const jitterX = Math.floor((tileNoise(ent.col||0, ent.row||0, 7, 8) - 0.5) * tileSize * 0.18);
-          drawEntitySpriteAt(variant, x + tileSize * 0.5 + jitterX, y + tileSize, sz, sz * 1.15);
+          drawEntitySpriteAt(renderVariant, x + tileSize * 0.5 + jitterX, y + tileSize, spriteW, spriteH, { noShadow: true });
         } else {
         // try atlas draw first (use atlasDrawn flag to skip fallback)
         let atlasDrawn = false;
@@ -8532,6 +8823,7 @@ function render() {
   if (targetCam) {
     camX = lerp(camX, targetCam.x, 0.12);
     camY = lerp(camY, targetCam.y, 0.12);
+    clampCamera();
     if (Math.hypot(camX-targetCam.x, camY-targetCam.y) < 0.5) targetCam = null;
   }
 
@@ -8558,7 +8850,22 @@ function render() {
       window._deferredBuildings = [];
     }
   } catch(e) {}
-  try { if (!window.currentInterior) drawTreesInFrontOfPlayer(); } catch (e) {}
+  // Y-depth sorted trees: draw all trees in front of (at/below) player, sorted by row
+  try {
+    if (!window.currentInterior && window._deferredTrees && window._deferredTrees.length) {
+      window._occlusionMarkers = [];
+      window._deferredTrees.sort((a, b) => {
+        const ay = typeof a.y === 'number' ? a.y : (a.row || 0);
+        const by = typeof b.y === 'number' ? b.y : (b.row || 0);
+        return ay - by;
+      });
+      for (const _dt of window._deferredTrees) {
+        const _m = drawTreeOcclusionOverlay(_dt);
+        if (_m) window._occlusionMarkers.push(_m);
+      }
+      window._deferredTrees = [];
+    }
+  } catch (e) {}
 
   // ── NIGHT TORCH VIGNETTE ─────────────────────────────────
   // Radial gradient: transparent at player centre → dark at edges.
@@ -8586,6 +8893,8 @@ function render() {
     }
   } catch(e) {}
   try { drawPlayerOcclusionIndicators(); } catch (e) {}
+  try { drawMissionMarker(); } catch (e) {}
+  try { drawMissionStatus(); } catch (e) {}
 
   try {
     window._interactionTarget = null;
@@ -8769,7 +9078,7 @@ function render() {
   if (isHoeDragging && hoeDragRect && !editMode) {
     for (let rr = hoeDragRect.minR; rr <= hoeDragRect.maxR; rr++) {
       for (let cc = hoeDragRect.minC; cc <= hoeDragRect.maxC; cc++) {
-        const ok = canTillSoilAt(cc, rr, 'farm') && (inventory.seed || 0) > 0;
+        const ok = canTillSoilAt(cc, rr, 'farm_plot') && (inventory.seed || 0) > 0;
         drawTileHighlight(
           cc,
           rr,
@@ -9088,6 +9397,8 @@ function render() {
       drawDialoguePanel(ctx, W, H);
     }
   } catch (e) {}
+  // Objective arrow compass
+  try { if (window._activeObjective) drawObjectiveArrow(ctx, W, H); } catch (e) {}
 
   // update diagnostic overlay with simple performance counters
   try {
@@ -9359,11 +9670,12 @@ function demolishCell(col, row) {
   notify(`${b.name} demolida.`);
 }
 
-function createFieldNearHome() {
+function createFieldNearHome(options = {}) {
   try {
+    const silent = !!(options && options.silent);
     if (startLocked && !window._standaloneEditorMode) return false;
     if ((player.equipped || '') !== 'stone-hoe') {
-      notify('Equipa la azada de piedra para preparar un campo.');
+      if (!silent) notify('Equipa la azada de piedra para preparar un campo.');
       return false;
     }
     let nearestHome = null;
@@ -9380,7 +9692,7 @@ function createFieldNearHome() {
       }
     }
     if (!nearestHome || nearestDist > 14) {
-      notify('Acércate a una casa para crear el campo.');
+      if (!silent) notify('Acércate a una casa para crear el campo.');
       return false;
     }
 
@@ -9403,8 +9715,8 @@ function createFieldNearHome() {
     for (const pos of candidates) {
       if (!canPlaceAt(pos.c, pos.r, fieldType)) continue;
       setBuildingCells(pos.c, pos.r, fieldType);
-      addLog(`Campo preparado cerca de casa (${getBuildingDisplay(fieldType).name}).`);
-      notify('Campo creado con la azada.');
+      if (!silent) addLog(`Campo preparado cerca de casa (${getBuildingDisplay(fieldType).name}).`);
+      if (!silent) notify('Campo creado con la azada.');
       gainXP(6);
       try {
         if (window._missions && window._missions.length > 0) {
@@ -9430,10 +9742,10 @@ function createFieldNearHome() {
       return true;
     }
 
-    notify('No hay espacio libre para un campo cerca de la casa.');
+    if (!silent) notify('No hay espacio libre para un campo cerca de la casa.');
     return false;
   } catch (e) {
-    notify('No se pudo preparar el campo.');
+    if (!(options && options.silent)) notify('No se pudo preparar el campo.');
     return false;
   }
 }
@@ -10144,8 +10456,10 @@ function performAction(actionId) {
       const ent = entities[i];
       if (Math.abs(ent.col - player.col) <= 1 && Math.abs(ent.row - player.row) <= 1) {
         addToInventory(ent.subtype, 1);
+        if (ent.subtype === 'weed') addToInventory('seed', 1);
         entities.splice(i,1);
-        addLog(`Recolectaste: ${ent.subtype}`);
+        if (ent.subtype === 'weed') addLog('Recolectaste: weed + seed');
+        else addLog(`Recolectaste: ${ent.subtype}`);
         picked = true;
       }
     }
@@ -10278,6 +10592,186 @@ function notify(msg) {
   notifTimer = setTimeout(() => { el.style.opacity = '0'; }, 2000);
 }
 try { window.notify = notify; } catch (e) {}
+
+// Show instruction box with title and text (robust version)
+function showInstruction(title, text, duration = 7000) {
+  try {
+    let box = document.getElementById('instruction-box');
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'instruction-box';
+      box.className = 'instruction-box';
+      box.innerHTML = '<div class="instruction-title"></div><div class="instruction-text"></div>';
+      const appDiv = document.getElementById('app');
+      if (appDiv) appDiv.insertBefore(box, appDiv.firstChild);
+      else document.body.appendChild(box);
+    }
+    const titleEl = box.querySelector('.instruction-title');
+    const textEl = box.querySelector('.instruction-text');
+    if (titleEl) titleEl.textContent = title;
+    if (textEl) textEl.innerHTML = text;
+    // Reset animation classes, force reflow, then re-add 'visible'
+    box.classList.remove('visible', 'hiding');
+    void box.offsetHeight; // force browser reflow to restart animation
+    box.classList.add('visible');
+    if (box._instructionTimer) clearTimeout(box._instructionTimer);
+    if (duration > 0) {
+      box._instructionTimer = setTimeout(() => {
+        try {
+          box.classList.remove('visible');
+          box.classList.add('hiding');
+          setTimeout(() => { try { box.classList.remove('hiding'); } catch (e) {} }, 350);
+        } catch (e) {}
+      }, duration);
+    }
+  } catch (e) { console.warn('showInstruction', e); }
+}
+try { window.showInstruction = showInstruction; } catch (e) {}
+
+// ── ACTIVE OBJECTIVE / QUEST SYSTEM ──────────────────────────
+// window._activeObjective = { title, desc, target: { col, row } } or null
+function setActiveObjective(title, desc, targetCol, targetRow, steps = []) {
+  try {
+    const normalizedSteps = Array.isArray(steps) ? steps.filter(Boolean).map(s => String(s)) : [];
+    window._activeObjective = {
+      title: title || '',
+      desc: desc || '',
+      steps: normalizedSteps,
+      target: (targetCol != null && targetRow != null) ? { col: targetCol, row: targetRow } : null
+    };
+    const hud = document.getElementById('quest-hud');
+    const hudTitle = document.getElementById('quest-hud-title');
+    const hudDesc = document.getElementById('quest-hud-desc');
+    if (hudTitle) hudTitle.textContent = title || '';
+    if (hudDesc) {
+      const stepsText = normalizedSteps.length
+        ? `\n\nPasos:\n${normalizedSteps.map((s, i) => `${i + 1}. ${s}`).join('\n')}`
+        : '';
+      hudDesc.textContent = (desc || '') + stepsText;
+    }
+    if (hud) {
+      hud.classList.remove('active');
+      void hud.offsetHeight;
+      hud.classList.add('active');
+    }
+  } catch (e) { console.warn('setActiveObjective', e); }
+}
+try { window.setActiveObjective = setActiveObjective; } catch (e) {}
+
+function startMission(title, desc, targetCol, targetRow, steps = [], duration = 10000) {
+  try {
+    setActiveObjective(title, desc, targetCol, targetRow, steps);
+    const checklist = Array.isArray(steps) && steps.length
+      ? `\n\nPasos:\n${steps.map((s, i) => `${i + 1}. ${s}`).join('\n')}`
+      : '';
+    showInstruction(`Misión: ${title}`, `${desc || ''}${checklist}`, duration);
+  } catch (e) { console.warn('startMission', e); }
+}
+try { window.startMission = startMission; } catch (e) {}
+
+function clearActiveObjective() {
+  try {
+    window._activeObjective = null;
+    const hud = document.getElementById('quest-hud');
+    if (hud) hud.classList.remove('active');
+  } catch (e) {}
+}
+try { window.clearActiveObjective = clearActiveObjective; } catch (e) {}
+
+// Draw compass arrow on canvas pointing toward active objective
+function drawObjectiveArrow(ctx, W, H) {
+  try {
+    const obj = window._activeObjective;
+    if (!obj || !obj.target) return;
+    if (!player || player.col == null) return;
+    if (window._introSeq && !window._introSeq.done) return;
+    if (window.currentInterior) return;
+
+    const tileSize = typeof getTileSize === 'function' ? getTileSize() : 16;
+    // Player screen position
+    const pScreen = worldToScreen(player.col + 0.5, player.row + 0.5);
+    // Target screen position
+    const tScreen = worldToScreen(obj.target.col + 0.5, obj.target.row + 0.5);
+
+    const dx = tScreen.x - pScreen.x;
+    const dy = tScreen.y - pScreen.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    // If target is on-screen (within visible canvas), draw a pulsating marker
+    const onScreenX = tScreen.x > 20 && tScreen.x < W - 20;
+    const onScreenY = tScreen.y > 20 && tScreen.y < H - 20;
+    const now = performance.now();
+    const pulse = 0.5 + 0.5 * Math.sin(now / 400);
+
+    ctx.save();
+    if (onScreenX && onScreenY && dist < Math.max(W, H)) {
+      // Draw pulsating diamond over target
+      const mx = tScreen.x;
+      const my = tScreen.y - tileSize * 2;
+      const sz = 8 + pulse * 4;
+      ctx.globalAlpha = 0.7 + pulse * 0.3;
+      ctx.strokeStyle = '#FFD700';
+      ctx.fillStyle = 'rgba(255,215,0,0.3)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(mx, my - sz);
+      ctx.lineTo(mx + sz, my);
+      ctx.lineTo(mx, my + sz);
+      ctx.lineTo(mx - sz, my);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      // Vertical line from diamond to ground
+      ctx.globalAlpha = 0.4 + pulse * 0.2;
+      ctx.strokeStyle = '#FFD700';
+      ctx.setLineDash([3, 4]);
+      ctx.beginPath();
+      ctx.moveTo(mx, my + sz);
+      ctx.lineTo(mx, tScreen.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    } else if (dist > 30) {
+      // Draw edge-clamped directional arrow
+      const angle = Math.atan2(dy, dx);
+      const margin = 48;
+      const ex = W / 2 + Math.cos(angle) * (Math.min(W, H) / 2 - margin);
+      const ey = H / 2 + Math.sin(angle) * (Math.min(W, H) / 2 - margin);
+      const arrowLen = 20;
+      const headLen = 10;
+
+      ctx.globalAlpha = 0.75 + pulse * 0.25;
+      ctx.strokeStyle = '#FFD700';
+      ctx.fillStyle = '#FFD700';
+      ctx.lineWidth = 2.5;
+      ctx.shadowColor = 'rgba(255,200,0,0.8)';
+      ctx.shadowBlur = 6;
+
+      // Arrow stem
+      ctx.beginPath();
+      ctx.moveTo(ex - Math.cos(angle) * arrowLen, ey - Math.sin(angle) * arrowLen);
+      ctx.lineTo(ex, ey);
+      ctx.stroke();
+
+      // Arrowhead
+      ctx.beginPath();
+      ctx.moveTo(ex, ey);
+      ctx.lineTo(
+        ex - Math.cos(angle - 0.4) * headLen,
+        ey - Math.sin(angle - 0.4) * headLen
+      );
+      ctx.lineTo(
+        ex - Math.cos(angle + 0.4) * headLen,
+        ey - Math.sin(angle + 0.4) * headLen
+      );
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.shadowBlur = 0;
+    }
+    ctx.restore();
+  } catch (e) {}
+}
+try { window.drawObjectiveArrow = drawObjectiveArrow; } catch (e) {}
 
 // ── CHARACTER SELECTION ───────────────────────────────────
 let selectedPresetId = null;
@@ -11060,8 +11554,8 @@ function createAbilityBarAndMissions() {
   }
 
   // helper to estimate facing direction from last key input
-  function facingDirX() { if (keyState['d'] || keyState['ArrowRight']) return 1; if (keyState['a'] || keyState['ArrowLeft']) return -1; return 1; }
-  function facingDirY() { if (keyState['s'] || keyState['ArrowDown']) return 1; if (keyState['w'] || keyState['ArrowUp']) return -1; return 0; }
+  function facingDirX() { if (keyState['KeyD'] || keyState['ArrowRight']) return 1; if (keyState['KeyA'] || keyState['ArrowLeft']) return -1; return 1; }
+  function facingDirY() { if (keyState['KeyS'] || keyState['ArrowDown']) return 1; if (keyState['KeyW'] || keyState['ArrowUp']) return -1; return 0; }
 
   // missions removed: simplified hybrid flow uses EventManager + event history
 
@@ -11520,7 +12014,7 @@ function createMenuBar() {
         try {
           const prologue = window._homePrologue;
           if (id === 'house_player_home' && prologue && prologue.active && !prologue.sleepReady) {
-            if (!prologue.fieldPrepared) notify('Antes de dormir, prepara un cultivo cerca de casa (F con azada).');
+            if (!prologue.fieldPrepared) notify('Antes de dormir, prepara un cultivo cerca de casa usando la azada.');
             else notify('Tu familia quiere hablar contigo primero.');
             return;
           }
@@ -11568,7 +12062,12 @@ function createMenuBar() {
                 onComplete: () => {
                   try {
                     const p = window._homePrologue;
-                    if (p) p.lockMovementForIntro = false;
+                    if (p) {
+                      p.lockMovementForIntro = false;
+                      p.pendingMilitaryBriefing = true;
+                      clearActiveObjective();
+                      showInstruction('Nuevo d\u00eda', 'Sal de casa... Hay alguien esperando en la puerta.');
+                    }
                     setTimeout(() => { try { if (window.exitInterior) window.exitInterior(); } catch (e) {} }, 450);
                   } catch (e) {}
                 }
@@ -11582,6 +12081,7 @@ function createMenuBar() {
     window.exitInterior = function() {
       try {
         if (!window.currentInterior) return;
+        const exitingInteriorId = (window.currentInterior && window.currentInterior._interiorId) || '';
         // fade out, then restore
         window._interiorFadeOut = { start: Date.now(), dur: 400, onDone: function() {
           entities.length = 0;
@@ -11599,9 +12099,35 @@ function createMenuBar() {
           window.currentInterior = null;
           try { targetCam = null; centerCameraOnPlayer(); } catch (e) {}
           try {
-            const prologue = window._homePrologue;
-            if (prologue && prologue.active && !prologue.guardsSpawned) {
+            if (prologue && prologue.active && !prologue.guardsSpawned && prologue.slept) {
+              prologue.pendingMilitaryBriefing = true;
+            }
+            if (
+              prologue &&
+              prologue.active &&
+              !prologue.guardsSpawned &&
+              prologue.pendingMilitaryBriefing &&
+              prologue.fieldPrepared &&
+              prologue.slept &&
+              exitingInteriorId === 'house_player_home'
+            ) {
               prologue.guardsSpawned = true;
+              prologue.pendingMilitaryBriefing = false;
+              // Set objective pointing to the door area where guards will appear
+              try {
+                startMission(
+                  'Salir de casa',
+                  'Hay visitantes en la puerta. Sal y habla con ellos.',
+                  prologue.homeDoorCol,
+                  prologue.homeDoorRow + 2,
+                  [
+                    'Sal del interior de la casa.',
+                    'Acércate a los visitantes.',
+                    'Escucha el briefing militar.'
+                  ],
+                  10000
+                );
+              } catch (e) {}
               const list = Array.isArray(prologue.military) ? prologue.military : [];
               const spawned = [];
               for (const soldierDef of list) {
@@ -11637,6 +12163,14 @@ function createMenuBar() {
                         window._activeDialogue.onComplete = function() {
                           try { if (typeof prevComplete === 'function') prevComplete(); } catch (e) {}
                           try { if ((window._storyChapter || 0) < 1) advanceStoryChapter(1); } catch (e) {}
+                          try {
+                            // Mark prologue complete and give a gameplay objective
+                            const p = window._homePrologue;
+                            if (p) { p.lockMovementForIntro = false; p.active = false; }
+                            window._homePrologueIntro = false;
+                            clearActiveObjective();
+                            showInstruction('Prólogo completado', 'El período de crisis ha comenzado.\nExplora, construye y expande tu asentamiento.', 9000);
+                          } catch (e) {}
                         };
                       }
                     } catch (e) {}
@@ -12327,7 +12861,12 @@ function drawTreeOcclusionOverlay(ent) {
     const variant = ent.variant || 'oak';
 
     if (variant === 'tallgrass' || variant === 'weed') {
-      if ((window._currentEpoch || 'mesopotamia') === 'urss') return null;
+      if (variant === 'tallgrass' && (window._currentEpoch || 'mesopotamia') === 'urss') return null;
+      if (variant === 'weed' && hasRegisteredSprite('weed')) {
+        const sz = Math.max(tileSize * 0.46, Math.round(tileSize * (ent.size || 0.95) * 1.38));
+        drawEntitySpriteAt('weed', x + tileSize * 0.5, y + tileSize * 0.98, sz, sz * 1.05);
+        return { x: x + tileSize * 0.5, y: y + tileSize * 0.98 - sz, dist: Math.hypot(ex - player.x, ey - player.y) };
+      }
       const tpl = GLOBAL_TREE_TEMPLATES[6];
       const scale = Math.max(1, Math.floor(tileSize / 7 * (ent.size || 0.6)));
       const cx = Math.floor(x + tileSize * 0.5);
@@ -12360,12 +12899,15 @@ function drawTreeOcclusionOverlay(ent) {
       return { x: cx, y: sy - 10, dist: Math.hypot(ex - player.x, ey - player.y) };
     }
 
-    if (hasRegisteredSprite(variant)) {
+    const renderVariant = resolveTreeSpriteVariant(variant, ent.col || 0, ent.row || 0);
+    if (hasRegisteredSprite(renderVariant)) {
       const lodFactor = zoom >= GRAPHICS_CONFIG.smoothingThreshold ? 1 : 0.8;
-      const sz = Math.max(tileSize * 0.6, Math.round(tileSize * (ent.size || 1) * 1.3 * lodFactor));
+      const spriteH = Math.max(tileSize * 0.72, Math.round(tileSize * (ent.size || 1) * 1.28 * lodFactor));
+      const aspect = Math.max(0.45, Math.min(1.9, getRegisteredSpriteAspect(renderVariant)));
+      const spriteW = Math.max(tileSize * 0.46, Math.round(spriteH * aspect));
       const jitterX = Math.floor((tileNoise(ent.col || 0, ent.row || 0, 7, 8) - 0.5) * tileSize * 0.18);
-      drawEntitySpriteAt(variant, x + tileSize * 0.5 + jitterX, y + tileSize, sz, sz * 1.15);
-      return { x: x + tileSize * 0.5 + jitterX, y: y - sz * 0.35, dist: Math.hypot(ex - player.x, ey - player.y) };
+      drawEntitySpriteAt(renderVariant, x + tileSize * 0.5 + jitterX, y + tileSize, spriteW, spriteH, { noShadow: true });
+      return { x: x + tileSize * 0.5 + jitterX, y: y - spriteH * 0.35, dist: Math.hypot(ex - player.x, ey - player.y) };
     }
 
     let idx = pickForestTreeTemplateIndex(variant, ent.col || 0, ent.row || 0);
@@ -12394,6 +12936,88 @@ function drawTreeOcclusionOverlay(ent) {
   } catch (e) {
     return null;
   }
+}
+
+// Render mission marker on HUD
+function drawMissionMarker() {
+  try {
+    if (!window._missions || window._missions.length === 0) return;
+    const mission = window._missions[0];
+    if (!mission || !mission.target) return;
+    
+    // Only show marker if target is off-screen
+    const targetScreenPos = worldToScreen(mission.target.col, mission.target.row);
+    if (targetScreenPos.x >= 0 && targetScreenPos.x <= canvas.width 
+        && targetScreenPos.y >= 0 && targetScreenPos.y <= canvas.height) {
+      return; // Target is on screen, don't show marker
+    }
+    
+    // Draw direction arrow from screen center towards mission
+    const cx = canvas.width / 2;
+    const cy = canvas.height / 2;
+    const angle = Math.atan2(targetScreenPos.y - cy, targetScreenPos.x - cx);
+    const arrowDist = 40;
+    const arrowX = cx + Math.cos(angle) * arrowDist;
+    const arrowY = cy + Math.sin(angle) * arrowDist;
+    
+    ctx.save();
+    ctx.fillStyle = '#FFD700';
+    ctx.strokeStyle = '#AA8800';
+    ctx.lineWidth = 2;
+    
+    // Draw arrow
+    ctx.translate(arrowX, arrowY);
+    ctx.rotate(angle);
+    ctx.beginPath();
+    ctx.moveTo(0, -12);
+    ctx.lineTo(-8, 8);
+    ctx.lineTo(0, 4);
+    ctx.lineTo(8, 8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    
+    // Draw mission name
+    ctx.rotate(-angle);
+    ctx.fillStyle = '#E8D5A3';
+    ctx.font = 'bold 11px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.shadowColor = 'rgba(0,0,0,0.8)';
+    ctx.shadowBlur = 4;
+    ctx.fillText(mission.title || 'Misión', 0, -14);
+    
+    ctx.restore();
+  } catch (e) { /* ignore */ }
+}
+
+// Draw mission marker in top-left corner of HUD
+function drawMissionStatus() {
+  try {
+    if (!window._missions || window._missions.length === 0) return;
+    const mission = window._missions[0];
+    if (!mission) return;
+    
+    // Draw status text
+    ctx.save();
+    ctx.fillStyle = 'rgba(26, 18, 8, 0.8)';
+    ctx.fillRect(10, 10, 220, 50);
+    ctx.strokeStyle = '#C8A84B';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(10, 10, 220, 50);
+    
+    ctx.fillStyle = '#FFD700';
+    ctx.font = 'bold 12px Arial';
+    ctx.textAlign = 'left';
+    ctx.fillText('MISIÓN:', 16, 26);
+    
+    ctx.fillStyle = '#E8D5A3';
+    ctx.font = 'normal 11px Arial';
+    ctx.fillText(mission.title || 'Sin título', 16, 41);
+    if (mission.description) ctx.fillText(mission.description, 16, 53);
+    
+    ctx.restore();
+  } catch (e) { /* ignore */ }
 }
 
 function drawPlayerOcclusionIndicators() {
@@ -13559,7 +14183,7 @@ function drawStoryObjectiveHUD(ctx, W, H) {
       }
       const content = panel.querySelector('.story-objective-content');
       if (content) {
-        let prologueDesc = 'Prepara un cultivo junto a casa con la azada de piedra (tecla F).';
+        let prologueDesc = 'Prepara un cultivo junto a casa con la azada de piedra (arrastrando sobre terreno verde).';
         if (prologue.fieldPrepared && !prologue.sleepReady) prologueDesc = 'Habla con tu familia y escucha su preocupación.';
         else if (prologue.sleepReady && !prologue.slept) prologueDesc = 'Entra en casa y duerme para calmar los ánimos.';
         else if (prologue.slept) prologueDesc = 'La noche termina. Prepárate para el briefing militar.';
@@ -15769,10 +16393,6 @@ document.addEventListener('keydown', e => {
     _sendSelectedNPCsToGather();
     e.preventDefault();
   }
-  if (!editMode && e.key && e.key.toLowerCase() === 'f') {
-    createFieldNearHome();
-    e.preventDefault();
-  }
   if (!editMode && e.key && e.key.toLowerCase() === 'h') {
     const units = _getSelectedEntities();
     if (units.length > 0) {
@@ -15816,11 +16436,23 @@ document.addEventListener('keydown', e => {
   }
 });
 
-// Continuous movement key handling
+// Continuous movement key handling — uses e.code so Shift+W doesn't corrupt keyState
+const _MOVE_CODES = new Set(['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight','Space']);
 document.addEventListener('keydown', e => {
-  // movement keys (including Shift for sprint)
-  if (['w','a','s','d','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Shift'].includes(e.key)) {
-    keyState[e.key] = true;
+  if (_MOVE_CODES.has(e.code)) {
+    keyState[e.code] = true;
+    // Jump: Space pressed while player is on ground, not downed, not in extended water
+    if (e.code === 'Space' && !editMode && !worldMapOverlayVisible) {
+      try {
+        const now2 = Date.now();
+        const pCol = Math.floor(player.x), pRow = Math.floor(player.y);
+        const inDeepWater = movementMultiplier(pCol, pRow) < 0.5;
+        if (!isPlayerDowned(now2) && !inDeepWater && !(player._jumpUntil && player._jumpUntil > now2)) {
+          player._jumpUntil = now2 + 380;
+        }
+      } catch (_je) {}
+      e.preventDefault();
+    }
   }
 });
 document.addEventListener('keyup', e => {
@@ -15832,8 +16464,8 @@ document.addEventListener('keyup', e => {
     e.preventDefault();
     return;
   }
-  if (['w','a','s','d','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Shift'].includes(e.key)) {
-    keyState[e.key] = false;
+  if (_MOVE_CODES.has(e.code)) {
+    keyState[e.code] = false;
   }
 });
 window.addEventListener('blur', () => {
@@ -15961,10 +16593,10 @@ document.addEventListener('keydown', e => {
       if ((inventory[equipped] || 0) <= 0) { notify('No tienes ese objeto para colocar'); return true; }
 
       let dx = 0, dy = 1;
-      if (keyState['w'] || keyState['ArrowUp']) { dx = 0; dy = -1; }
-      else if (keyState['s'] || keyState['ArrowDown']) { dx = 0; dy = 1; }
-      else if (keyState['a'] || keyState['ArrowLeft']) { dx = -1; dy = 0; }
-      else if (keyState['d'] || keyState['ArrowRight']) { dx = 1; dy = 0; }
+      if (keyState['KeyW'] || keyState['ArrowUp']) { dx = 0; dy = -1; }
+      else if (keyState['KeyS'] || keyState['ArrowDown']) { dx = 0; dy = 1; }
+      else if (keyState['KeyA'] || keyState['ArrowLeft']) { dx = -1; dy = 0; }
+      else if (keyState['KeyD'] || keyState['ArrowRight']) { dx = 1; dy = 0; }
 
       const col = Math.max(0, Math.min(COLS - 1, Math.floor(player.col + dx)));
       const row = Math.max(0, Math.min(ROWS - 1, Math.floor(player.row + dy)));
@@ -16022,8 +16654,10 @@ document.addEventListener('keydown', e => {
               const map = { wood: 'wood', stone: 'stone', wheat: 'food', berry: 'food', bush: 'food', food: 'food', water: 'water' };
               const item = map[ent.subtype] || ent.subtype || 'item';
               addToInventory(item, 1);
+              if (ent.subtype === 'weed') addToInventory('seed', 1);
               entities.splice(i, 1);
-              notify(`Recolectaste: ${item}`);
+              if (ent.subtype === 'weed') notify('Recolectaste: weed + seed');
+              else notify(`Recolectaste: ${item}`);
               break;
             }
           }

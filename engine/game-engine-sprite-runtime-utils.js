@@ -34,7 +34,8 @@ export async function generateSpriteImages(progress) {
       const raw = localStorage.getItem(SPRITE_CACHE_KEY);
       if (raw) spriteCache = Object.assign(spriteCache, JSON.parse(raw));
     } catch (e) { spriteCache = { ts: Date.now(), sprites: {}, size: 0 }; }
-    window._spriteServerAvailable = (window._spriteServerAvailable === undefined) ? true : window._spriteServerAvailable;
+    const enableSpriteServerExport = !!window.ENABLE_SPRITE_SERVER_EXPORT;
+    window._spriteServerAvailable = enableSpriteServerExport && (window._spriteServerAvailable !== false);
     const keys = Object.keys(cache);
     if (keys.length === 0) { if (progress && progress.update) progress.update(60, 'Sprites: none'); return; }
     for (let i = 0; i < keys.length; i++) {

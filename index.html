@@ -7,7 +7,30 @@
 <link rel="stylesheet" href="styles.css">
 </head>
 <body class="theme-urw">
+
+<!-- SPLASH SCREEN WITH LOGO -->
+<div id="splash-screen">
+  <div class="splash-content">
+    <img src="data/logo.jpg" alt="MesoBuilder Logo" class="splash-logo">
+    <div class="splash-text">MesoBuilder</div>
+    <div class="splash-loading">Cargando...</div>
+  </div>
+</div>
+
 <div id="app">
+
+  <!-- INSTRUCTION BOX -->
+  <div id="instruction-box" class="instruction-box">
+    <div class="instruction-title"></div>
+    <div class="instruction-text"></div>
+  </div>
+
+  <!-- QUEST HUD -->
+  <div id="quest-hud">
+    <div class="quest-hud-label">&#x25CF; Objetivo activo</div>
+    <div class="quest-hud-title" id="quest-hud-title"></div>
+    <div class="quest-hud-desc" id="quest-hud-desc"></div>
+  </div>
 
   <!-- TOP BAR -->
   <div id="topbar">
@@ -493,10 +516,39 @@
     } catch (e) { console.warn('cursor create failed', e); }
   })();
 
-  // draw a simple composited scene: trees + big pixel player
+  // draw a simple composited scene: trees + big pixel player OR soviet flag
   (function() {
     const c = document.getElementById('menu-scene'); if (!c) return; const ctx = c.getContext('2d'); ctx.imageSmoothingEnabled = false;
     const W = c.width, H = c.height;
+    
+    // Helper to draw the ussr_flag sprite from entity-pixels.json
+    function drawUSSRFlag() {
+      ctx.clearRect(0,0,W,H);
+      // Red background
+      ctx.fillStyle = '#d13636';
+      ctx.fillRect(0,0,W,H);
+      
+      // Try to fetch and render the ussr_flag sprite if available
+      try {
+        if (window.ENTITY_PIXELS && window.ENTITY_PIXELS.icons && window.ENTITY_PIXELS.icons.ussr_flag) {
+          const flagData = window.ENTITY_PIXELS.icons.ussr_flag;
+          if (flagData.pixels && Array.isArray(flagData.pixels)) {
+            const grid = flagData.grid || 64;
+            const pixelSize = Math.min(W, H) / grid;
+            const offsetX = (W - grid * pixelSize) / 2;
+            const offsetY = (H - grid * pixelSize) / 2;
+            
+            flagData.pixels.forEach(([px, py, color]) => {
+              if (color && color !== 'transparent' && color !== '#00000000') {
+                ctx.fillStyle = color;
+                ctx.fillRect(offsetX + px * pixelSize, offsetY + py * pixelSize, pixelSize, pixelSize);
+              }
+            });
+          }
+        }
+      } catch (e) {}
+    }
+    
     // sky / gradient handled by CSS background; draw simple stylized trees and central player
     function drawTree(x,y,scale,colorLeaf='#2e8b3a'){
       ctx.fillStyle = '#6b3f1f'; ctx.fillRect(x-2*scale,y+20*scale,4*scale,20*scale);
@@ -504,7 +556,7 @@
       ctx.beginPath(); ctx.moveTo(x, y+6*scale); ctx.lineTo(x-16*scale, y+34*scale); ctx.lineTo(x+16*scale, y+34*scale); ctx.closePath(); ctx.fill();
     }
     function clear(){ ctx.clearRect(0,0,W,H); ctx.fillStyle='rgba(0,0,0,0)'; ctx.fillRect(0,0,W,H); }
-    function drawScene(){ clear();
+    function drawMesopotamiaScene(){ clear();
       // grass base
       ctx.fillStyle = '#4aa02c'; ctx.fillRect(0,H*0.6,W,H*0.4);
       // draw trees background
@@ -527,15 +579,60 @@
       ];
       for(let r=0;r<pattern.length;r++){ for(let c0=0;c0<pattern[r].length;c0++){ const v = pattern[r][c0]; if(v===0) continue; let col = palette.skin; if(v===1) col=palette.hair; if(v===2) col=palette.cloth; if(v===3) col=palette.cloth; if(v===4) col=palette.trim; ctx.fillStyle=col; const bx = px + (c0 - 3)*S; const by = py + (r-5)*S; ctx.fillRect(bx, by, S-1, S-1); }}
     }
-    drawScene();
-    // subtle animation: sway trees slightly
-    let t = 0; setInterval(() => { t+=0.08; const ctx2 = c.getContext('2d'); ctx2.imageSmoothingEnabled=false; // animate slight horizontal shift of leaves
-      ctx2.save(); ctx2.translate(Math.sin(t)*1.5,0); drawScene(); ctx2.restore(); }, 140);
+    
+    // Global function to render scene based on epoch
+    window._drawMenuScene = function(epoch) {
+      if (epoch === 'urss') {
+        if (window._menuAnimationTimer) clearInterval(window._menuAnimationTimer);
+        drawUSSRFlag();
+      } else {
+        if (window._menuAnimationTimer) clearInterval(window._menuAnimationTimer);
+        drawMesopotamiaScene();
+        // subtle animation: sway trees slightly
+        let t = 0; 
+        window._menuAnimationTimer = setInterval(() => { 
+          t+=0.08; 
+          const ctx2 = c.getContext('2d'); 
+          ctx2.imageSmoothingEnabled=false; 
+          ctx2.save(); 
+          ctx2.translate(Math.sin(t)*1.5,0); 
+          drawMesopotamiaScene(); 
+          ctx2.restore(); 
+        }, 140);
+      }
+    };
+    
+    // Initial draw based on saved epoch or default
+    try {
+      const saved = JSON.parse(localStorage.getItem('meso.appState') || 'null');
+      const epoch = (saved && saved.epoch) || 'mesopotamia';
+      window._drawMenuScene(epoch);
+    } catch (e) {
+      window._drawMenuScene('mesopotamia');
+    }
   })();
 
   const _mesoPageParams = new URLSearchParams(window.location.search || '');
   window._standaloneEditorMode = _mesoPageParams.get('editor') === '1';
   window._standaloneEditorEpoch = _mesoPageParams.get('epoch') || '';
+  
+  // Load entity-pixels for menu rendering
+  (function() {
+    try {
+      fetch('data/entity-pixels.json?v=' + Date.now())
+        .then(res => res.json())
+        .then(data => {
+          window.ENTITY_PIXELS = data;
+          try {
+            const saved = JSON.parse(localStorage.getItem('meso.appState') || 'null');
+            const epoch = (saved && saved.epoch) || 'mesopotamia';
+            if (window._drawMenuScene) window._drawMenuScene(epoch);
+          } catch (e) {}
+        })
+        .catch(e => console.warn('Could not load entity-pixels.json for menu', e));
+    } catch (e) {}
+  })();
+  
   const AUDIO_MASTER_KEY = 'meso.audio.master';
   const AUDIO_MUSIC_KEY = 'meso.audio.music';
   const AUDIO_SFX_KEY = 'meso.audio.sfx';
@@ -1559,11 +1656,59 @@
 
   // populate saves list
   try {
-    const savesList = document.getElementById('menu-saves-list'); if (savesList) {
-      const key = 'meso.appState'; const raw = localStorage.getItem(key);
-      if (!raw) { const n = document.createElement('div'); n.style.color='#ccc'; n.textContent = 'No hay partidas guardadas en caché.'; savesList.appendChild(n); }
+    const savesList = document.getElementById('menu-saves-list'); 
+    if (savesList) {
+      const key = 'meso.appState'; 
+      const raw = localStorage.getItem(key);
+      if (!raw) { 
+        const n = document.createElement('div'); 
+        n.style.color='#ccc'; 
+        n.textContent = 'No hay partidas guardadas en caché.'; 
+        savesList.appendChild(n); 
+      }
       else {
-        try { const s = document.createElement('div'); s.style.display='flex'; s.style.justifyContent='space-between'; s.style.alignItems='center'; s.style.gap='8px'; s.style.background='rgba(0,0,0,0.04)'; s.style.padding='6px'; s.style.borderRadius='6px'; const meta = JSON.parse(raw); const label = document.createElement('div'); label.textContent = (meta && meta.player && meta.player.name) ? ('Jugador: ' + meta.player.name) : 'Partida guardada'; s.appendChild(label); const btn = document.createElement('button'); btn.textContent='Cargar'; btn.style.padding='6px 8px'; btn.addEventListener('click', () => { loadEngineAndStart({ forceNew:false }); }); s.appendChild(btn); savesList.appendChild(s); } catch (e) { const n = document.createElement('div'); n.style.color='#ccc'; n.textContent = 'Partida guardada (metadata no parseable)'; savesList.appendChild(n); }
+        try { 
+          const meta = JSON.parse(raw); 
+          const s = document.createElement('div'); 
+          s.style.display='flex'; 
+          s.style.justifyContent='space-between'; 
+          s.style.alignItems='center'; 
+          s.style.gap='8px'; 
+          s.style.background='rgba(0,0,0,0.04)'; 
+          s.style.padding='6px'; 
+          s.style.borderRadius='6px';
+          
+          const label = document.createElement('div'); 
+          label.textContent = (meta && meta.player && meta.player.name) ? ('Jugador: ' + meta.player.name) : 'Partida guardada';
+          const epoch = (meta && meta.epoch) || 'mesopotamia';
+          
+          // Add epoch indicator
+          if (epoch === 'urss') {
+            label.textContent += ' (URSS)';
+            label.style.color = '#FFD97A';
+          }
+          
+          s.addEventListener('mouseenter', () => {
+            if (window._drawMenuScene) window._drawMenuScene(epoch);
+          });
+          
+          s.appendChild(label); 
+          
+          const btn = document.createElement('button'); 
+          btn.textContent='Cargar'; 
+          btn.style.padding='6px 8px'; 
+          btn.addEventListener('click', () => { loadEngineAndStart({ forceNew:false }); }); 
+          s.appendChild(btn); 
+          savesList.appendChild(s);
+          
+          // Draw the saved epoch on initial load
+          if (window._drawMenuScene) window._drawMenuScene(epoch);
+        } catch (e) { 
+          const n = document.createElement('div'); 
+          n.style.color='#ccc'; 
+          n.textContent = 'Partida guardada (metadata no parseable)'; 
+          savesList.appendChild(n); 
+        }
       }
     }
   } catch (e) {}
@@ -1598,6 +1743,16 @@
       showGameNotification(title, desc, 8000);
       // allow the engine to also respond; we simply provide a friendly UX layer
     } catch (e) {}
+  });
+
+  // Remove splash screen after animation completes
+  window.addEventListener('load', () => {
+    const splashScreen = document.getElementById('splash-screen');
+    if (splashScreen) {
+      setTimeout(() => {
+        try { splashScreen.remove(); } catch (e) {}
+      }, 4000); // Remove after fadeOutSplash animation (3.5s + 0.5s buffer)
+    }
   });
 </script>
 <!-- Sound Manager (Web Audio API) -->

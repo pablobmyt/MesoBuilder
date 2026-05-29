@@ -533,6 +533,14 @@
                         <input id="bgOpacitySlider" type="range" min="0" max="100" value="50" style="flex:1;">
                         <span id="bgOpacityValue" style="width:30px;">50%</span>
                     </div>
+                    <div style="border-top:1px solid #2a2a2a; padding-top:8px; margin-top:4px;">
+                        <div style="font-size:10px; margin-bottom:6px;">🖼➜🎨 Convertir imagen a pixel art:</div>
+                        <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
+                            <label style="font-size:9px; white-space:nowrap;">Max colores:</label>
+                            <input id="imgConvertColors" type="number" min="2" max="64" value="16" style="width:50px; padding:3px; background:#1f1f1f; color:#e0e0e0; border:1px solid #3a3a3a; font-size:9px;">
+                        </div>
+                        <button class="tool-button" id="convertToPxArtBtn" style="width:100%; padding:5px; font-size:9px;">🎨 Convertir al editor</button>
+                    </div>
                 </div>
                 <div style="margin-top:10px; border-top:1px solid #3a3a3a; padding-top:8px;">
                     <label style="font-size:10px;">🗂 Capas:</label>
@@ -1231,6 +1239,72 @@
             state.bgOpacity = parseInt(e.target.value);
             document.getElementById('bgOpacityValue').textContent = state.bgOpacity + '%';
             draw();
+        });
+
+        // Image → Pixel Art converter
+        document.getElementById('convertToPxArtBtn').addEventListener('click', () => {
+            const img = state.backgroundImage;
+            if (!img) { showToast('Carga primero una imagen de fondo', true); return; }
+            const G = state.gridSize;
+            const maxColors = Math.max(2, Math.min(64, parseInt(document.getElementById('imgConvertColors').value) || 16));
+
+            // Step 1: downscale image to G×G into an offscreen canvas
+            const tmp = document.createElement('canvas');
+            tmp.width = G; tmp.height = G;
+            const tc = tmp.getContext('2d');
+            tc.imageSmoothingEnabled = true;
+            tc.imageSmoothingQuality = 'high';
+            tc.drawImage(img, 0, 0, G, G);
+            const raw = tc.getImageData(0, 0, G, G).data;
+
+            // Step 2: collect all opaque pixel colors
+            const srcColors = [];
+            for (let i = 0; i < G * G; i++) {
+                const a = raw[i * 4 + 3];
+                if (a < 32) { srcColors.push(null); continue; }
+                srcColors.push([raw[i*4], raw[i*4+1], raw[i*4+2]]);
+            }
+
+            // Step 3: k-means color quantization to reduce palette
+            const opaque = srcColors.filter(Boolean);
+            if (!opaque.length) { showToast('La imagen no tiene píxeles visibles', true); return; }
+
+            function hexColor(r, g, b) { return '#' + [r,g,b].map(v => Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,'0')).join(''); }
+            function colorDist(a, b) { return (a[0]-b[0])**2 + (a[1]-b[1])**2 + (a[2]-b[2])**2; }
+
+            // pick initial centroids via random unique samples
+            const k = Math.min(maxColors, opaque.length);
+            let centroids = [];
+            const step = Math.max(1, Math.floor(opaque.length / k));
+            for (let i = 0; i < k; i++) centroids.push([...opaque[i * step]]);
+
+            // 12 iterations of k-means
+            for (let iter = 0; iter < 12; iter++) {
+                const sums = centroids.map(() => [0,0,0,0]); // r,g,b,count
+                for (const c of opaque) {
+                    let best = 0, bestD = Infinity;
+                    for (let j = 0; j < k; j++) { const d = colorDist(c, centroids[j]); if (d < bestD) { bestD = d; best = j; } }
+                    sums[best][0] += c[0]; sums[best][1] += c[1]; sums[best][2] += c[2]; sums[best][3]++;
+                }
+                centroids = sums.map((s, i) => s[3] > 0 ? [s[0]/s[3], s[1]/s[3], s[2]/s[3]] : centroids[i]);
+            }
+
+            // Step 4: map each pixel to nearest centroid and build pixel list
+            const newPixels = [];
+            for (let y = 0; y < G; y++) {
+                for (let x = 0; x < G; x++) {
+                    const src = srcColors[y * G + x];
+                    if (!src) continue;
+                    let best = 0, bestD = Infinity;
+                    for (let j = 0; j < k; j++) { const d = colorDist(src, centroids[j]); if (d < bestD) { bestD = d; best = j; } }
+                    newPixels.push({ x, y, color: hexColor(...centroids[best]) });
+                }
+            }
+
+            // Step 5: replace current layer pixels
+            getCurrentLayer().pixels = newPixels;
+            draw();
+            showToast(`Convertido: ${newPixels.length} píxeles, ${k} colores`);
         });
         
         // Layer handlers
