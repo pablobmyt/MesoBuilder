@@ -1,3 +1,8 @@
+---
+modified: 2026-05-29T11:37:25.487Z
+title: Introducción Cinematográfica de MesoBuilder
+---
+
 # Introducción Cinematográfica de MesoBuilder
 
 ## Cambios Implementados

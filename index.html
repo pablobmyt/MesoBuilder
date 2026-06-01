@@ -617,6 +617,8 @@
 
   const _mesoPageParams = new URLSearchParams(window.location.search || '');
   window._standaloneEditorMode = _mesoPageParams.get('editor') === '1';
+  // Pure map editor is now the DEFAULT mode (no NPCs, no saved state loading)
+  window._pureMapEditorMode = _mesoPageParams.get('gameplay') !== '1';
   window._standaloneEditorEpoch = _mesoPageParams.get('epoch') || '';
   
   // Load entity-pixels for menu rendering

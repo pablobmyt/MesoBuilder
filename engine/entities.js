@@ -35,10 +35,11 @@ export function placeTree(col, row, variant) {
     if (col < 0 || row < 0 || col >= COLS || row >= ROWS) return;
     if ((typeof isRiver === 'function' && isRiver(col, row)) || (tileBiome[row] && tileBiome[row][col] === 'water')) return;
   } catch (e) { return; }
-  // Mesopotamian flora types (primary) + legacy types for backward compat
+  // Mesopotamian flora types (primary) + template trees + legacy types for backward compat
   const types = [
     'birch','willow','aspen','pine','fir',
-    'steppe_shrub','hay','sedge','scrub','bush','shrub','winter_grass'
+    'steppe_shrub','hay','sedge','scrub','bush','shrub','winter_grass',
+    'tree0','tree1','tree2','tree3'
   ];
   const chosen = variant || types[Math.floor(Math.random() * types.length)];
   const id = 'tree-' + Date.now() + '-' + Math.random().toString(36).slice(2,6);

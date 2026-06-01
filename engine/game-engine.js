@@ -1212,7 +1212,7 @@ function getBuildingDisplay(type) {
 function getEpochBuildPalette(epochId) {
   const key = epochId || window._currentEpoch || 'mesopotamia';
   if (key === 'urss') {
-    return ['soviet_block', 'party_hq', 'collective_farm', 'factory', 'state_warehouse', 'soviet_superblock', 'steel_foundry', 'concrete_road'];
+    return ['soviet_block', 'party_hq', 'collective_farm', 'factory', 'state_warehouse', 'soviet_superblock', 'soviet_superblock_b', 'steel_foundry'];
   }
   return ['house', 'mesopotamian_villa_detailed', 'farm', 'temple', 'market', 'granary', 'ziggurat', 'road'];
 }
@@ -2017,7 +2017,7 @@ function executePetRadialSelection() {
     if (idx < 0 || idx >= options.length) return true;
     const option = options[idx];
     if (option && typeof option.run === 'function') option.run();
-    return !(petRadialMenuMode === 'play' && option && option.id === 'play');
+    return true;
   } catch (e) {}
   return true;
 }
@@ -2686,7 +2686,12 @@ function isNPCWeaponized(npc) {
     if (!npc) return false;
     const t = String(npc.npcType || '').toLowerCase();
     if (npc._armed || npc.weapon || npc.equipped) return true;
-    return ['guard', 'commander', 'commissar', 'officer', 'merchant', 'shopkeeper', 'innkeeper', 'survivor'].includes(t);
+    return [
+      'guard', 'commander', 'commissar', 'officer', 'commissariat', 'soldier', 'militia',
+      'merchant', 'shopkeeper', 'innkeeper', 'survivor', 'hunter', 'farmer', 'priest',
+      'noble', 'landowner', 'chieftain', 'elder', 'sage', 'militia_leader', 'bandit',
+      'brigand', 'bouncer', 'bodyguard', 'protector', 'defender'
+    ].includes(t);
   } catch (e) {
     return false;
   }
@@ -4245,6 +4250,9 @@ function assignSovietVillagerProfile(npc) {
 }
 
 function spawnVillage(baseCol, baseRow, opts) {
+  // In pure map editor mode, still generate buildings but skip NPC spawning
+  const skipNpcSpawning = window._pureMapEditorMode === true;
+  
   opts = opts || {};
   const villageType = opts.villageType || 'village'; // 'origin' | 'capital' | 'military_base' | 'trading_post' | 'village'
   const epochNow = window._currentEpoch || 'mesopotamia';
@@ -4332,13 +4340,13 @@ function spawnVillage(baseCol, baseRow, opts) {
           core: ['party_hq', 'state_clinic', 'soviet_block', 'soviet_superblock', 'soviet_superblock_b'],
           civic: ['state_clinic', 'party_hq', 'soviet_block', 'soviet_superblock', 'soviet_superblock_b', 'checkpoint_gate'],
           industrial: ['state_warehouse', 'factory', 'collective_farm', 'soviet_block', 'soviet_superblock', 'soviet_superblock_b'],
-          residential: ['soviet_block', 'soviet_superblock', 'soviet_superblock_b', 'soviet_block', 'soviet_superblock', 'house_small', 'house_garden']
+          residential: ['soviet_block', 'soviet_superblock', 'soviet_superblock_b', 'house_small', 'house_garden', 'house', 'house_isolated']
         }
       : {
           core: ['mesopotamian_villa_detailed', 'temple', 'mesopotamian_house'],
           civic: ['temple', 'mesopotamian_baths', 'mesopotamian_villa_detailed', 'mesopotamian_arch'],
           industrial: ['market', 'granary', 'farm', 'house_small'],
-          residential: ['mesopotamian_house', 'house', 'house_garden', 'house_small', 'stone_house', 'longhouse']
+          residential: ['mesopotamian_house', 'house', 'house_garden', 'house_small', 'stone_house', 'longhouse', 'house_large']
         };
     const pickDistrictBuilding = (tx, ty, fallback) => {
       const district = districtAt(tx, ty);
@@ -5101,6 +5109,8 @@ function spawnVillage(baseCol, baseRow, opts) {
 
   // Spawn role-appropriate NPCs
   try {
+    // Skip NPC spawning in pure map editor mode
+    if (!skipNpcSpawning) {
     window._LAST_VILLAGE_ID = vid;
     const npcDensity = (window._DEFAULT_DENSITIES && window._DEFAULT_DENSITIES.npc) ? window._DEFAULT_DENSITIES.npc : 1.0;
 
@@ -5333,6 +5343,7 @@ function spawnVillage(baseCol, baseRow, opts) {
         }
       }
     }
+    } // end if (!skipNpcSpawning)
     window._LAST_VILLAGE_ID = null;
   } catch (e) {}
 }
@@ -7220,6 +7231,8 @@ function render() {
           const { x, y } = worldToScreen(c, r);
           const t = (interior.tiles && interior.tiles[r] && interior.tiles[r][c]) || 'floor';
           const isBackWall = (t === 'wall' && r === 0);
+          const isLeftWall = (t === 'wall' && c === 0);
+          const isRightWall = (t === 'wall' && c === iCols - 1);
           // Base tile
           if (t === 'wall') {
             if (isBackWall) {
@@ -7263,6 +7276,29 @@ function render() {
 
               ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 1;
               ctx.strokeRect(x+0.5, y+0.5, ts-1, ts-1);
+            } else if (isLeftWall || isRightWall) {
+              // Side walls: render with vertical perspective
+              ctx.fillStyle = '#C8A87A';
+              ctx.fillRect(x, y, ts, ts);
+              
+              // vertical side wall face (shorter than back wall)
+              const sideWallHeight = Math.max(6, Math.floor(backWallHeight * 0.55));
+              const wy = y - sideWallHeight;
+              ctx.fillStyle = isLeftWall ? '#6B4030' : '#8A5A41'; // slightly different tone per side
+              ctx.fillRect(x, wy, ts, sideWallHeight);
+              
+              // subtle brick texture
+              ctx.fillStyle = isLeftWall ? '#5A3825' : '#7A5535';
+              for (let i = 0; i < 2; i++) {
+                ctx.fillRect(x + 1, wy + 1 + i * Math.floor(sideWallHeight * 0.45), ts - 2, Math.max(1, Math.floor(sideWallHeight * 0.38)));
+              }
+              
+              // shadow/depth
+              ctx.fillStyle = 'rgba(0,0,0,0.3)';
+              ctx.fillRect(x, wy, 2, sideWallHeight);
+              
+              ctx.strokeStyle = 'rgba(0,0,0,0.15)'; ctx.lineWidth = 1;
+              ctx.strokeRect(x+0.5, wy+0.5, ts-1, sideWallHeight-1);
             } else {
               ctx.fillStyle = '#5C3A2A'; ctx.fillRect(x, y, ts, ts);
               // brick texture lines
@@ -8057,7 +8093,27 @@ function render() {
             if (dist <= step) {
               ent.x = ent.moveTarget.x; ent.y = ent.moveTarget.y; ent.col = Math.floor(ent.x); ent.row = Math.floor(ent.y); delete ent.moveTarget;
             } else {
-              ent.x += (dx / dist) * step; ent.y += (dy / dist) * step; ent.col = Math.floor(ent.x); ent.row = Math.floor(ent.y);
+              // Calculate next position with collision check
+              let nextX = ent.x + (dx / dist) * step;
+              let nextY = ent.y + (dy / dist) * step;
+              const nextCol = Math.floor(nextX);
+              const nextRow = Math.floor(nextY);
+              
+              // Validate next position doesn't hit a building or river
+              let canMove = true;
+              if (nextCol >= 0 && nextCol < COLS && nextRow >= 0 && nextRow < ROWS) {
+                if (grid[nextRow] && grid[nextRow][nextCol]) canMove = false;
+                if (isRiver(nextCol, nextRow)) canMove = false;
+              } else {
+                canMove = false;
+              }
+              
+              if (canMove) {
+                ent.x = nextX; ent.y = nextY; ent.col = nextCol; ent.row = nextRow;
+              } else {
+                // Stop moving if collision detected
+                delete ent.moveTarget;
+              }
             }
             // update simple walking frame
             ent._walkTime = (ent._walkTime || 0) + dt;
@@ -12783,6 +12839,7 @@ function createMenuBar() {
           window.currentInterior = null;
           try { targetCam = null; centerCameraOnPlayer(); } catch (e) {}
           try {
+            const prologue = window._homePrologue;
             if (prologue && prologue.active && !prologue.guardsSpawned && prologue.slept) {
               prologue.pendingMilitaryBriefing = true;
             }
@@ -15097,6 +15154,11 @@ function interactWithPet(dog) {
       return null;
     };
     
+    function closeDialoguePanel() {
+      window._activeDialogue = null;
+      document.body.classList.remove('dialogue-active');
+    }
+    
     window._activeDialogue = {
       lines,
       idx: 0,
@@ -15112,16 +15174,14 @@ function interactWithPet(dog) {
             dlg.idx = 0;
             dlg.options = null;
             dlg.onComplete = () => {
-              window._activeDialogue = null;
-              document.body.classList.remove('dialogue-active');
+              closeDialoguePanel();
             };
           }
         }},
         { num: 2, text: 'Jugar', action: () => {
           const dlg = window._activeDialogue;
           const petRef = dlg.petRef;
-          window._activeDialogue = null;
-          document.body.classList.remove('dialogue-active');
+          closeDialoguePanel();
           
           if (petRef) {
             notify(`¡${petName} está listo para jugar! Lleva al perro cerca de donde quieras que busque.`);
@@ -15130,8 +15190,7 @@ function interactWithPet(dog) {
           }
         }},
         { num: 3, text: 'Dejar', action: () => {
-          window._activeDialogue = null;
-          document.body.classList.remove('dialogue-active');
+          closeDialoguePanel();
         }}
       ]
     };
@@ -16438,7 +16497,7 @@ function drawPetRadialMenu(ctx, W, H) {
     ctx.fillStyle = 'rgba(255,255,255,0.9)';
     ctx.font = '12px sans-serif';
 
-    ctx.fillText(petRadialMenuMode === 'play' ? 'Suelta K para elegir juego' : 'Suelta K para confirmar', cx, cy + outerR + 20);
+    ctx.fillText(petRadialMenuMode === 'play' ? 'Clic para elegir juego' : 'Suelta K para confirmar', cx, cy + outerR + 20);
 
     const panelW = 210;
     const panelH = 170;
@@ -16601,6 +16660,14 @@ canvas.addEventListener('mousemove', e => {
 
 canvas.addEventListener('mousedown', e => {
   if (startLocked && !window._standaloneEditorMode) return;
+  if (e.button === 0 && petRadialMenuActive) {
+    if (petRadialMenuMode === 'play') {
+      const shouldClose = executePetRadialSelection();
+      if (shouldClose) closePetRadialMenu();
+    }
+    e.preventDefault();
+    return;
+  }
   if (e.button === 1 || (e.button === 0 && panMode)) {
     markCameraInput();
     isPanning = true;
@@ -17020,6 +17087,26 @@ const btnCenterPlayer = document.getElementById('btn-center-player');
 
 function centerCameraOnPlayer() {
   const tileSize = getTileSize();
+  
+  // In interior, center specifically on the interior bounds
+  if (window.currentInterior) {
+    const interior = window.currentInterior;
+    const iCols = interior.width || (interior.tiles && interior.tiles[0] ? interior.tiles[0].length : 8);
+    const iRows = interior.height || (interior.tiles ? interior.tiles.length : 6);
+    
+    if (viewMode === 'iso') {
+      const p = projectIso(player.x, player.y);
+      const { w, h } = getIsoTileSize();
+      camX = canvas.width / 2 - (p.x + w / 2);
+      camY = canvas.height / 2 - (p.y + h);
+    } else {
+      // In ortho mode: center on player without clamping to allow full interior view
+      camX = canvas.width / 2 - (player.x * tileSize + tileSize / 2);
+      camY = canvas.height / 2 - (player.y * tileSize + tileSize / 2);
+    }
+    return;
+  }
+  
   if (viewMode === 'iso') {
     const p = projectIso(player.x, player.y);
     const { w, h } = getIsoTileSize();
@@ -17330,8 +17417,12 @@ document.addEventListener('keydown', e => {
 document.addEventListener('keyup', e => {
   if (e.key && e.key.toLowerCase() === 'k') {
     if (petRadialMenuActive) {
-      const shouldClose = executePetRadialSelection();
-      if (shouldClose) closePetRadialMenu();
+      if (petRadialMenuMode === 'play') {
+        closePetRadialMenu();
+      } else {
+        const shouldClose = executePetRadialSelection();
+        if (shouldClose) closePetRadialMenu();
+      }
     }
     e.preventDefault();
     return;
@@ -17374,6 +17465,14 @@ document.addEventListener('keydown', e => {
     return;
   }
 
+  // ── DIALOGUE FIRST (before interior checks) ──
+  // If dialogue panel is open, E-key advances it and does nothing else
+  if (window._activeDialogue) {
+    try { advanceDialogue(); } catch (_) {}
+    e.preventDefault();
+    return;
+  }
+
   // ── interior interactions ──
   if (window.currentInterior) {
     const interior = window.currentInterior;
@@ -17382,9 +17481,11 @@ document.addEventListener('keydown', e => {
     const doorCol = interior.entryCol || 1;
     const hasExitDoor = !!(interior.tiles && interior.tiles[doorRow] && interior.tiles[doorRow][doorCol] === 'door');
     const px2 = Math.floor(player.x), py2 = Math.floor(player.y);
-    // Exit if near door row
+    // Exit if near door row (but NOT if a dialogue is active)
     if (hasExitDoor && py2 >= doorRow && Math.abs(px2 - doorCol) <= 1) {
-      try { if (window.exitInterior) window.exitInterior(); } catch(e) {}
+      if (!window._activeDialogue) {
+        try { if (window.exitInterior) window.exitInterior(); } catch(e) {}
+      }
       e.preventDefault(); return;
     }
     const nearStairsUp = interior._furniture && interior._furniture.find(f => f.kind === 'stairs_up' &&
@@ -17492,8 +17593,6 @@ document.addEventListener('keydown', e => {
   }
 
   try {
-    // If dialogue panel is open, E-key advances it and does nothing else
-    if (window._activeDialogue) { try { advanceDialogue(); } catch (_) {} e.preventDefault(); return; }
     // Intro cinematic advances one screen at a time
     if (window._introSeq && !window._introSeq.done) { try { advanceIntroSequence(); } catch (_) {} e.preventDefault(); return; }
     const it = window._interactionTarget;
@@ -17682,6 +17781,13 @@ function init() {
   // Procedural map generation with biomes, resources and animals
   // Try to restore a previously saved app state (map, player, panels)
   try {
+    // Pure map editor is the default: always generate a fresh map without loading saved state
+    // Use ?gameplay=1 to enable normal gameplay mode with NPCs and saved state
+    if (window._pureMapEditorMode) {
+      try { localStorage.removeItem('meso.forceNew'); } catch (e) {}
+      localStorage.setItem('meso.forceNew', '1');
+    }
+    
     const forceNewGame = localStorage.getItem('meso.forceNew') === '1';
     const hasSavedAppState = !!localStorage.getItem(APP_STATE_KEY);
     // if forced new game, generate fresh map and open char selection

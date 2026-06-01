@@ -3,2132 +3,1479 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MesoBuilder · Editor procedural</title>
+  <title>MesoBuilder · World Editor</title>
   <style>
     :root {
-      --bg: #0e131b;
-      --panel: #171f2b;
-      --panel-2: #1f2a3a;
-      --border: rgba(114, 156, 224, 0.24);
-      --accent: #4f86d9;
-      --accent-2: #79a8eb;
-      --text: #e6edf8;
-      --muted: #9caec8;
-      --danger: #b45b4f;
+      --bg: #0d1117;
+      --panel: #131a23;
+      --panel-2: #1a2330;
+      --panel-3: #0f151e;
+      --panel-4: #0b1017;
+      --line: #2a3645;
+      --line-soft: #202a37;
+      --text: #e6edf6;
+      --muted: #9aadc3;
+      --accent: #4da3ff;
+      --accent-2: #88c1ff;
+      --danger: #d16e6e;
+      --ok: #68c088;
+      --warn: #d3b064;
+      --viewport-grid: rgba(85, 115, 145, 0.16);
+      --tile-size: 22;
     }
 
     * { box-sizing: border-box; }
-
     html, body {
       margin: 0;
       width: 100%;
       height: 100%;
+      color: var(--text);
       background:
-        radial-gradient(circle at top, rgba(79,134,217,0.2), transparent 30%),
-        linear-gradient(180deg, #0c1119 0%, #0a0f16 100%);
-      color: var(--text);
-      font-family: "Segoe UI", Tahoma, sans-serif;
+        radial-gradient(circle at 88% -8%, #213653 0%, transparent 32%),
+        radial-gradient(circle at 10% 120%, #101826 0%, transparent 44%),
+        var(--bg);
+      font-family: "Segoe UI", "Inter", Tahoma, sans-serif;
       overflow: hidden;
+      user-select: none;
+      font-feature-settings: "cv11", "ss01";
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
     }
 
-    body {
+    .app {
+      height: 100%;
       display: grid;
-      grid-template-columns: 360px 1fr;
+      grid-template-rows: 40px 1fr 24px;
     }
 
-    .sidebar {
-      height: 100vh;
-      overflow-y: auto;
-      padding: 18px;
-      border-right: 1px solid var(--border);
-      background: linear-gradient(180deg, rgba(19,26,37,0.98), rgba(14,19,28,0.98));
-    }
-
-    .brand {
-      margin-bottom: 16px;
-    }
-
-    .brand h1 {
-      margin: 0 0 6px;
-      font-size: 28px;
-      color: var(--accent-2);
-      letter-spacing: 0.4px;
-    }
-
-    .brand p {
-      margin: 0;
-      color: var(--muted);
-      line-height: 1.45;
-      font-size: 14px;
-    }
-
-    .panel {
-      border: 1px solid var(--border);
-      background: rgba(28,37,52,0.9);
-      border-radius: 14px;
-      padding: 14px;
-      margin-bottom: 12px;
-      box-shadow: 0 12px 28px rgba(0,0,0,0.34);
-    }
-
-    .panel h2 {
-      margin: 0 0 10px;
-      font-size: 12px;
-      color: var(--accent);
-      text-transform: uppercase;
-      letter-spacing: 1.4px;
-    }
-
-    .field {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      margin-bottom: 10px;
-    }
-
-    .field label,
-    .hint,
-    .status,
-    .meta-label {
-      font-size: 12px;
-      color: var(--muted);
-    }
-
-    input[type="text"],
-    select,
-    input[type="range"] {
-      width: 100%;
-    }
-
-    input[type="text"],
-    select {
-      border: 1px solid rgba(121,168,235,0.24);
-      background: rgba(11,16,24,0.92);
-      color: var(--text);
-      border-radius: 10px;
-      padding: 10px 12px;
-      font-size: 14px;
-    }
-
-    input[type="range"] {
-      accent-color: var(--accent);
-    }
-
-    .button-row,
-    .button-grid {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-
-    .button-row.tight {
-      gap: 6px;
-    }
-
-    button {
-      appearance: none;
-      border: 1px solid rgba(121,168,235,0.24);
-      background: linear-gradient(180deg, rgba(36,50,70,0.96), rgba(24,34,48,0.96));
-      color: var(--text);
-      border-radius: 10px;
-      padding: 9px 12px;
-      cursor: pointer;
-      font-size: 13px;
-      transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
-    }
-
-    button:hover {
-      transform: translateY(-1px);
-      border-color: rgba(121,168,235,0.62);
-      background: linear-gradient(180deg, rgba(49,67,93,0.96), rgba(29,40,56,0.96));
-    }
-
-    button.primary {
-      background: linear-gradient(180deg, var(--accent-2), var(--accent));
-      color: #071424;
-      font-weight: 700;
-      border-color: rgba(201,225,255,0.4);
-    }
-
-    button.danger {
-      background: linear-gradient(180deg, rgba(121,52,42,0.96), rgba(73,28,22,0.96));
-      border-color: rgba(180,91,79,0.42);
-      color: #ffe1dc;
-    }
-
-    .terrain-grid,
-    .build-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 8px;
-    }
-
-    .terrain-btn,
-    .build-btn {
-      text-align: left;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      min-height: 42px;
-    }
-
-    .terrain-btn.active,
-    .build-btn.active,
-    .tool-btn.active {
-      border-color: rgba(121,168,235,0.72);
-      box-shadow: inset 0 0 0 1px rgba(121,168,235,0.24);
-      background: linear-gradient(180deg, rgba(52,74,104,0.96), rgba(29,42,60,0.96));
-    }
-
-    .visual-tools {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 8px;
-    }
-
-    .precision-toggle {
+    .topbar {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 8px;
-      margin-bottom: 8px;
+      padding: 0 10px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, #131c28, #0f1620);
+      box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.28);
+      font-size: 11px;
+      letter-spacing: 0.2px;
     }
 
-    .precision-body.hidden {
-      display: none;
-    }
-
-    .selected-object {
-      margin-top: 10px;
-      font-size: 12px;
-      line-height: 1.45;
-      color: var(--muted);
-      border: 1px dashed rgba(121,168,235,0.25);
-      border-radius: 10px;
-      padding: 8px;
-      background: rgba(10,16,24,0.42);
-    }
-
-    .swatch {
-      width: 14px;
-      height: 14px;
-      border-radius: 4px;
-      border: 1px solid rgba(0,0,0,0.34);
-      flex-shrink: 0;
-    }
-
-    .meta {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 10px;
-    }
-
-    .meta strong {
-      display: block;
-      margin-top: 4px;
-      font-size: 16px;
-      color: var(--accent-2);
-    }
-
-    .status {
-      line-height: 1.45;
-      min-height: 38px;
-    }
-
-    .selection-grid {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 8px;
-    }
-
-    .selection-grid .field {
-      margin-bottom: 0;
-    }
-
-    .selection-summary {
-      margin-top: 8px;
-      font-size: 12px;
-      color: var(--muted);
-      line-height: 1.45;
-    }
-
-    .inline-select {
-      width: auto;
-      min-width: 120px;
-      max-width: 160px;
-      padding: 8px 10px;
-      border-radius: 8px;
-    }
-
-    dialog.meso-dialog {
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 0;
-      width: min(540px, 92vw);
-      background: linear-gradient(180deg, rgba(24,34,48,0.98), rgba(16,23,33,0.98));
-      color: var(--text);
-      box-shadow: 0 20px 50px rgba(0,0,0,0.45);
-    }
-
-    dialog.meso-dialog::backdrop {
-      background: rgba(0,0,0,0.56);
-      backdrop-filter: blur(2px);
-    }
-
-    .dialog-body {
-      padding: 16px;
-    }
-
-    .dialog-title {
-      margin: 0 0 8px;
-      color: var(--accent-2);
-      font-size: 16px;
-    }
-
-    .dialog-message {
-      margin: 0;
-      color: var(--text);
-      line-height: 1.45;
-      font-size: 14px;
-    }
-
-    .dialog-actions {
-      margin-top: 14px;
+    .topbar .left,
+    .topbar .right {
       display: flex;
-      gap: 8px;
-      justify-content: flex-end;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .topbar strong {
+      font-size: 12px;
+      letter-spacing: 0.35px;
+    }
+
+    .badge {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 2px 7px;
+      color: var(--muted);
+      background: #101722;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.015);
+      font-size: 10px;
+      letter-spacing: 0.45px;
+      text-transform: uppercase;
     }
 
     .workspace {
-      min-width: 0;
-      height: 100vh;
-      display: grid;
-      grid-template-rows: auto 1fr;
-    }
-
-    .workspace-topbar {
-      padding: 14px 16px;
-      border-bottom: 1px solid var(--border);
-      background: rgba(16,23,33,0.92);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 16px;
-    }
-
-    .workspace-topbar h3 {
-      margin: 0;
-      font-size: 15px;
-      color: var(--accent-2);
-    }
-
-    .workspace-topbar p {
-      margin: 4px 0 0;
-      color: var(--muted);
-      font-size: 12px;
-    }
-
-    .iframe-wrap {
       min-height: 0;
-      padding: 16px;
-      position: relative;
+      display: grid;
+      grid-template-columns: 58px 300px 1fr 310px;
+      gap: 0;
     }
 
-    .frame-stack {
+    .rail {
+      border-right: 1px solid var(--line);
+      background: linear-gradient(180deg, #0f1722, #0b1119);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 5px;
+      overflow-y: auto;
+      box-shadow: inset -1px 0 0 rgba(255,255,255,0.02);
+    }
+
+    .rail-btn {
+      width: 46px;
+      height: 38px;
+      border-radius: 7px;
+      border: 1px solid #2c3948;
+      background: linear-gradient(180deg, #1b2734, #121c28);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.45px;
+      text-transform: uppercase;
+      line-height: 1.05;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      padding: 4px 3px;
+      transition: border-color .12s ease, background .12s ease, transform .08s ease;
+    }
+
+    .rail-btn:hover {
+      border-color: #4e6a86;
+      background: linear-gradient(180deg, #223245, #172635);
+    }
+
+    .rail-btn:active {
+      transform: translateY(1px);
+    }
+
+    .rail-btn.active {
+      border-color: #8bc4ff;
+      box-shadow: inset 0 0 0 1px rgba(139,196,255,0.34), 0 0 0 1px rgba(52,127,208,0.2);
+      background: linear-gradient(180deg, #2a4058, #1b2f45);
+    }
+
+    .left-panel,
+    .right-panel {
+      min-width: 0;
+      background: var(--panel);
+      border-right: 1px solid var(--line);
+      overflow: auto;
+      padding: 10px;
+      box-shadow: inset -1px 0 0 rgba(255,255,255,0.015);
+    }
+
+    .right-panel {
+      border-right: none;
+      border-left: 1px solid var(--line);
+      background: linear-gradient(180deg, #0f151e, #0d131b);
+    }
+
+    .section {
+      margin-bottom: 9px;
+      border: 1px solid var(--line-soft);
+      border-radius: 8px;
+      background: linear-gradient(180deg, #172131, #121a26);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.025);
+      padding: 9px;
+    }
+
+    .section h3 {
+      margin: 0 0 9px;
+      color: var(--accent-2);
+      font-size: 10px;
+      letter-spacing: 1.1px;
+      text-transform: uppercase;
+      font-weight: 700;
+      padding-bottom: 5px;
+      border-bottom: 1px solid rgba(122, 157, 194, 0.22);
+    }
+
+    .field {
+      margin-bottom: 7px;
+    }
+
+    .field label {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--muted);
+      font-size: 10px;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+    }
+
+    input[type="text"],
+    input[type="number"],
+    select,
+    textarea {
       width: 100%;
-      height: 100%;
-      position: relative;
+      border: 1px solid #2c3d50;
+      border-radius: 6px;
+      padding: 7px 8px;
+      background: #0e1520;
+      color: var(--text);
+      font-size: 12px;
+      line-height: 1.1;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.02);
     }
 
-    iframe {
+    input[type="text"]:focus,
+    input[type="number"]:focus,
+    select:focus,
+    textarea:focus {
+      outline: none;
+      border-color: #6ca4df;
+      box-shadow: 0 0 0 2px rgba(77, 163, 255, 0.16);
+    }
+
+    input[type="range"] {
       width: 100%;
-      height: 100%;
-      border: 1px solid var(--border);
-      border-radius: 18px;
-      background: #000;
-      box-shadow: 0 18px 38px rgba(0,0,0,0.34);
+      accent-color: var(--accent);
     }
 
-    #frameOverlay {
+    .btn-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    button.action {
+      border: 1px solid #30465c;
+      border-radius: 6px;
+      background: linear-gradient(180deg, #243448, #162433);
+      color: var(--text);
+      padding: 6px 9px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.25px;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: background .12s ease, border-color .12s ease, transform .08s ease;
+    }
+
+    button.action:hover {
+      border-color: #4d6d8f;
+      background: linear-gradient(180deg, #2c3f55, #1b2b3c);
+    }
+
+    button.action:active {
+      transform: translateY(1px);
+    }
+
+    button.action.primary {
+      color: #08131f;
+      font-weight: 700;
+      border-color: #8bc4ff;
+      background: linear-gradient(180deg, #9cd0ff, #5ba7f2);
+    }
+
+    button.action.danger {
+      border-color: #895555;
+      background: linear-gradient(180deg, #6a3d3d, #4a2b2b);
+    }
+
+    .center {
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      grid-template-rows: 36px 1fr;
+      background: var(--panel-4);
+    }
+
+    .center-toolbar {
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 10px;
+      font-size: 11px;
+      color: var(--muted);
+      background: linear-gradient(180deg, #131c28, #0f1722);
+      letter-spacing: 0.2px;
+    }
+
+    .view-grid {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr 1fr;
+      gap: 1px;
+      background: var(--line);
+    }
+
+    .view {
+      position: relative;
+      background: #0b1118;
+      overflow: hidden;
+    }
+
+    .view .title {
+      position: absolute;
+      top: 7px;
+      left: 7px;
+      z-index: 3;
+      font-size: 10px;
+      color: #c8d7e8;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      background: rgba(8, 12, 18, 0.88);
+      border: 1px solid #2b3948;
+      border-radius: 5px;
+      padding: 2px 7px;
+    }
+
+    .canvas-wrap {
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(to right, rgba(26, 39, 55, 0.26) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(26, 39, 55, 0.26) 1px, transparent 1px),
+        linear-gradient(to right, var(--viewport-grid) 1px, transparent 1px),
+        linear-gradient(to bottom, var(--viewport-grid) 1px, transparent 1px);
+      background-size: 96px 96px, 96px 96px, 24px 24px, 24px 24px;
+    }
+
+    .canvas-wrap::after {
+      content: '';
       position: absolute;
       inset: 0;
       pointer-events: none;
-      z-index: 5;
+      background: radial-gradient(circle at 50% 50%, transparent 63%, rgba(0, 0, 0, 0.3) 100%);
     }
 
-    #selectedOverlayBox {
+    canvas {
       position: absolute;
-      border: 2px solid rgba(121,168,235,0.95);
-      background: rgba(79,134,217,0.16);
-      box-shadow: 0 0 0 1px rgba(10,16,24,0.8);
-      border-radius: 8px;
-      display: none;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
     }
 
-    .loading {
-      font-size: 13px;
+    .terrain-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px;
+    }
+
+    .terrain-btn {
+      border: 1px solid #33495f;
+      border-radius: 6px;
+      background: #162130;
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.2px;
+      padding: 6px 7px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .terrain-btn.active {
+      border-color: #97cbff;
+      box-shadow: inset 0 0 0 1px rgba(151,203,255,0.35);
+      background: #203246;
+    }
+
+    .sw {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+      border: 1px solid rgba(0,0,0,0.45);
+      flex-shrink: 0;
+    }
+
+    #groupList {
+      width: 100%;
+      min-height: 130px;
+      border: 1px solid #304155;
+      border-radius: 6px;
+      background: #0f1722;
+      color: var(--text);
+      font-size: 12px;
+      padding: 4px;
+    }
+
+    .footer {
+      border-top: 1px solid var(--line);
+      background: linear-gradient(180deg, #101822, #0d141d);
       color: var(--muted);
+      font-size: 11px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 9px;
+      gap: 10px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      letter-spacing: 0.2px;
     }
 
-    @media (max-width: 1200px) {
-      body {
-        grid-template-columns: 1fr;
-        grid-template-rows: auto 1fr;
-      }
+    .good { color: var(--ok); }
+    .warn { color: var(--warn); }
 
-      .sidebar {
-        height: auto;
-        max-height: 48vh;
-        border-right: none;
-        border-bottom: 1px solid var(--border);
-      }
+    @media (max-width: 1400px) {
+      .workspace { grid-template-columns: 52px 264px 1fr 274px; }
     }
   </style>
 </head>
 <body>
-  <aside class="sidebar">
-    <div class="brand">
-      <h1>Editor procedural</h1>
-      <p>Este editor usa el mismo mundo procedural del juego. Puedes cambiar de época, regenerar el mapa real, pintar terreno y colocar edificios.</p>
+  <div class="app">
+    <header class="topbar">
+      <div class="left">
+        <strong>MesoBuilder · World Editor</strong>
+        <span class="badge">From scratch</span>
+        <span class="badge" id="projectBadge">Mapa sin título</span>
+      </div>
+      <div class="right">
+        <span class="badge" id="epochBadge">Mesopotamia</span>
+        <span class="badge" id="cursorBadge">-, -</span>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <nav class="rail" id="toolRail">
+        <button class="rail-btn active" data-tool="brush">Pincel</button>
+        <button class="rail-btn" data-tool="fill">Relleno</button>
+        <button class="rail-btn" data-tool="rect">Rect</button>
+        <button class="rail-btn" data-tool="select">Selecc</button>
+        <button class="rail-btn" data-tool="group">Grupo</button>
+      </nav>
+
+      <aside class="left-panel">
+        <section class="section">
+          <h3>Proyecto</h3>
+          <div class="field">
+            <label for="designName">Nombre del diseño</label>
+            <input id="designName" type="text" value="Mapa sin título" maxlength="80">
+          </div>
+          <div class="field">
+            <label for="epochSelect">Época</label>
+            <select id="epochSelect">
+              <option value="mesopotamia">Mesopotamia</option>
+              <option value="urss">Antigua URSS</option>
+              <option value="medieval">Edad Media</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Tamaño pincel: <strong id="brushSizeValue">2</strong></label>
+            <input id="brushSize" type="range" min="1" max="8" step="1" value="2">
+          </div>
+          <div class="btn-row">
+            <button id="btnNew" class="action">Nuevo</button>
+            <button id="btnGenerate" class="action primary">Generar biomas</button>
+          </div>
+        </section>
+
+        <section class="section">
+          <h3>Biomas</h3>
+          <div id="terrainGrid" class="terrain-grid"></div>
+        </section>
+
+        <section class="section">
+          <h3>Selección</h3>
+          <div class="field">
+            <label for="selMin">Rectángulo (min col,row)</label>
+            <input id="selMin" type="text" value="0,0">
+          </div>
+          <div class="field">
+            <label for="selMax">Rectángulo (max col,row)</label>
+            <input id="selMax" type="text" value="0,0">
+          </div>
+          <div class="btn-row">
+            <button id="btnApplySelection" class="action">Aplicar</button>
+            <button id="btnSelectAll" class="action">Todo</button>
+          </div>
+        </section>
+      </aside>
+
+      <main class="center">
+        <div class="center-toolbar">
+          <div id="toolLabel">Herramienta: Pincel</div>
+          <div id="viewInfo">Zoom 1.00x · Arrastrar: pan · Rueda: zoom</div>
+        </div>
+        <div class="view-grid">
+          <div class="view" id="viewMain">
+            <div class="title">Top / Editor</div>
+            <div class="canvas-wrap"><canvas id="mainCanvas"></canvas></div>
+          </div>
+          <div class="view">
+            <div class="title">Distribución de biomas</div>
+            <div class="canvas-wrap"><canvas id="biomeCanvas"></canvas></div>
+          </div>
+          <div class="view">
+            <div class="title">Mapa de altura</div>
+            <div class="canvas-wrap"><canvas id="heightCanvas"></canvas></div>
+          </div>
+          <div class="view">
+            <div class="title">Preview de conjunto</div>
+            <div class="canvas-wrap"><canvas id="groupCanvas"></canvas></div>
+          </div>
+        </div>
+      </main>
+
+      <aside class="right-panel">
+        <section class="section">
+          <h3>Conjuntos</h3>
+          <div class="field">
+            <label for="groupName">Nombre conjunto</label>
+            <input id="groupName" type="text" value="Base militar" maxlength="64">
+          </div>
+          <div class="field">
+            <label for="groupList">Biblioteca</label>
+            <select id="groupList" size="6"></select>
+          </div>
+          <div class="btn-row">
+            <button id="btnCaptureGroup" class="action">Capturar selección</button>
+            <button id="btnDeleteGroup" class="action danger">Borrar</button>
+            <button id="btnUseGroup" class="action">Modo colocar</button>
+          </div>
+          <div class="field" style="margin-top:8px;">
+            <label for="groupOffset">Offset de colocación (dx,dy)</label>
+            <input id="groupOffset" type="text" value="0,0">
+          </div>
+          <div id="groupSummary" class="badge" style="display:block;margin-top:8px;">Sin conjuntos guardados.</div>
+        </section>
+
+        <section class="section">
+          <h3>Archivo</h3>
+          <div class="btn-row">
+            <button id="btnSavePending" class="action primary">Guardar partida</button>
+            <button id="btnLoadPending" class="action">Cargar partida</button>
+            <button id="btnExport" class="action">Exportar JSON</button>
+            <button id="btnImport" class="action">Importar JSON</button>
+            <button id="btnClearPending" class="action danger">Limpiar guardado</button>
+            <button id="btnOpenGame" class="action">Abrir juego</button>
+          </div>
+          <input id="fileInput" type="file" accept=".json,application/json" hidden>
+        </section>
+
+        <section class="section">
+          <h3>Historial</h3>
+          <div class="btn-row">
+            <button id="btnUndo" class="action">Deshacer</button>
+            <button id="btnRedo" class="action">Rehacer</button>
+          </div>
+          <div class="badge" id="historyInfo" style="display:block;margin-top:8px;">Undo: 0 · Redo: 0</div>
+        </section>
+      </aside>
     </div>
 
-    <section class="panel">
-      <h2>Sesión</h2>
-      <div class="field">
-        <label for="epochSelect">Época</label>
-        <select id="epochSelect">
-          <option value="mesopotamia">Mesopotamia</option>
-          <option value="urss">Antigua URSS</option>
-          <option value="medieval">Edad Media</option>
-        </select>
-      </div>
-      <div class="field">
-        <label for="designName">Nombre del diseño</label>
-        <input id="designName" type="text" value="Diseño procedural" maxlength="64">
-      </div>
-      <div class="field">
-        <label for="buildingScale">Escala edificios: <strong id="buildingScaleLabel">1.00x</strong></label>
-        <input id="buildingScale" type="range" min="0.5" max="2.5" step="0.05" value="1">
-      </div>
-      <div class="field">
-        <label for="entityScale">Escala entidades/sprites: <strong id="entityScaleLabel">1.00x</strong></label>
-        <input id="entityScale" type="range" min="0.5" max="2.5" step="0.05" value="1">
-      </div>
-      <div class="button-row">
-        <button id="btnRegenerate" class="primary">Generar mapa procedural</button>
-        <button id="btnOpenMain">Abrir juego</button>
-      </div>
-    </section>
-
-    <section class="panel">
-      <h2>Herramientas visuales</h2>
-      <div class="visual-tools" id="visualToolGrid">
-        <button id="toolSelect" class="tool-btn active" data-vtool="select">Seleccionar</button>
-        <button id="toolMove" class="tool-btn" data-vtool="move">Mover</button>
-        <button id="toolDelete" class="tool-btn" data-vtool="delete">Eliminar</button>
-        <button id="toolTerrain" class="tool-btn" data-vtool="terrain">Pintar terreno</button>
-      </div>
-      <div class="hint" style="margin-top:8px">Flujo tipo editor 3D: elige herramienta, haz clic en el objeto, y aplica acción en el mapa.</div>
-      <div class="selected-object" id="selectedObjectSummary">Nada seleccionado.</div>
-    </section>
-
-    <section class="panel">
-      <h2>Terreno</h2>
-      <div class="field">
-        <label for="brushSize">Tamaño del pincel: <strong id="brushSizeLabel">2</strong></label>
-        <input id="brushSize" type="range" min="1" max="6" step="1" value="2">
-      </div>
-      <div class="terrain-grid" id="terrainGrid"></div>
-      <div class="button-row" style="margin-top:10px">
-        <button id="btnDisableTerrain" class="tool-btn">Desactivar pincel</button>
-      </div>
-      <div class="hint" style="margin-top:8px">Selecciona un terreno y pinta directamente sobre el mapa del juego dentro del visor.</div>
-    </section>
-
-    <section class="panel">
-      <h2>Selección y transformaciones</h2>
-      <div class="precision-toggle">
-        <div class="hint">Panel de precisión por coordenadas</div>
-        <button id="btnTogglePrecision" class="tool-btn" type="button">Mostrar</button>
-      </div>
-      <div id="precisionPanel" class="precision-body hidden">
-        <div class="selection-grid">
-          <div class="field"><label for="selC1">Col inicio</label><input id="selC1" type="text" value="0"></div>
-          <div class="field"><label for="selR1">Fila inicio</label><input id="selR1" type="text" value="0"></div>
-          <div class="field"><label for="selC2">Col fin</label><input id="selC2" type="text" value="0"></div>
-          <div class="field"><label for="selR2">Fila fin</label><input id="selR2" type="text" value="0"></div>
-        </div>
-        <div class="button-row tight" style="margin-top:10px">
-          <button id="btnApplySelection" class="tool-btn">Aplicar selección</button>
-          <button id="btnSelectAll" class="tool-btn">Seleccionar todo</button>
-        </div>
-        <div class="button-row tight" style="margin-top:8px">
-          <button id="btnFillSelection" class="tool-btn">Rellenar selección (terreno activo)</button>
-          <button id="btnClearSelectionBuildings" class="tool-btn danger">Limpiar edificios en selección</button>
-        </div>
-        <div class="button-row tight" style="margin-top:8px;align-items:center">
-          <button id="btnScaleHalf" class="tool-btn">Escalar selección 0.5x</button>
-          <button id="btnScaleDouble" class="tool-btn">Escalar selección 2x</button>
-        </div>
-        <div class="button-row tight" style="margin-top:8px;align-items:center">
-          <button id="btnCopySelection" class="tool-btn">Copiar selección</button>
-          <button id="btnPasteSelection" class="tool-btn">Pegar con offset</button>
-          <label class="hint" for="pasteOffsetX">dx</label>
-          <input id="pasteOffsetX" class="inline-select" type="text" value="0">
-          <label class="hint" for="pasteOffsetY">dy</label>
-          <input id="pasteOffsetY" class="inline-select" type="text" value="0">
-        </div>
-      </div>
-      <div class="selection-summary" id="selectionSummary">Sin selección activa.</div>
-    </section>
-
-    <section class="panel">
-      <h2>Plantillas de zona</h2>
-      <div class="field">
-        <label for="zonePresetType">Tipo de zona</label>
-        <select id="zonePresetType">
-          <option value="military_base">Base militar</option>
-          <option value="capital">Capital</option>
-          <option value="trading_post">Puesto comercial</option>
-          <option value="origin">Aldea origen</option>
-          <option value="village">Aldea</option>
-        </select>
-      </div>
-      <div class="button-row tight">
-        <button id="btnZonePresetCapture" class="tool-btn">Guardar desde selección</button>
-        <button id="btnZonePresetClear" class="tool-btn danger">Borrar plantilla</button>
-        <button id="btnZonePresetExport" class="tool-btn">Exportar JSON</button>
-        <button id="btnZonePresetImport" class="tool-btn">Importar JSON</button>
-        <button id="btnOpenZonePresetEditor" class="tool-btn">Editor aparte</button>
-      </div>
-      <div class="hint" style="margin-top:8px">Selecciona un área ya montada y guárdala para que esa zona aparezca así al generar partida nueva.</div>
-      <div class="selection-summary" id="zonePresetStatus" style="margin-top:8px">Sin plantilla para este tipo de zona.</div>
-    </section>
-
-    <section class="panel">
-      <h2>Edificios</h2>
-      <div class="build-grid" id="buildGrid"></div>
-      <div class="button-row" style="margin-top:10px">
-        <button id="btnDemolish" class="tool-btn danger">Demoler</button>
-        <button id="btnClearTool" class="tool-btn">Quitar herramienta</button>
-      </div>
-      <div class="hint" style="margin-top:8px">Tras elegir un edificio, haz clic en el mapa dentro del visor para colocarlo como en una partida normal.</div>
-    </section>
-
-    <section class="panel">
-      <h2>Diseño</h2>
-      <div class="button-grid">
-        <button id="btnImport">Importar JSON</button>
-        <button id="btnExport">Exportar JSON</button>
-        <button id="btnSavePending" class="primary">Guardar para nueva partida</button>
-        <button id="btnClearPending" class="danger">Limpiar guardado</button>
-      </div>
-      <div class="button-row" style="margin-top:10px">
-        <button id="btnUndo" class="tool-btn">Deshacer (Ctrl+Z)</button>
-        <button id="btnRedo" class="tool-btn">Rehacer (Ctrl+Y)</button>
-      </div>
-      <div class="status" id="pendingStatus" style="margin-top:10px">Sin diseño guardado para nuevas partidas.</div>
-    </section>
-
-    <section class="panel">
-      <h2>Estado</h2>
-      <div class="meta">
-        <div class="meta-label">Época activa<strong id="metaEpoch">Mesopotamia</strong></div>
-        <div class="meta-label">Herramienta<strong id="metaTool">Ninguna</strong></div>
-      </div>
-      <div class="loading" id="statusLine" style="margin-top:10px">Cargando el motor del juego...</div>
-    </section>
-  </aside>
-
-  <main class="workspace">
-    <div class="workspace-topbar">
-      <div>
-        <h3>Visor del mapa real</h3>
-        <p>El mundo se genera con el mismo sistema que la partida. Todo lo que edites aquí puede exportarse o reutilizarse al empezar una nueva partida.</p>
-      </div>
-      <div class="button-row">
-        <button id="btnReloadFrame">Recargar visor</button>
-      </div>
-    </div>
-    <div class="iframe-wrap">
-      <div class="frame-stack">
-        <iframe id="editorFrame" title="Editor procedural de MesoBuilder"></iframe>
-        <div id="frameOverlay">
-          <div id="selectedOverlayBox"></div>
-        </div>
-      </div>
-    </div>
-  </main>
-
-  <input id="fileInput" type="file" accept=".json,application/json" hidden>
-  <input id="zonePresetFileInput" type="file" accept=".json,application/json" hidden>
-  <dialog id="confirmDialog" class="meso-dialog">
-    <form method="dialog" class="dialog-body">
-      <h3 class="dialog-title" id="confirmDialogTitle">Confirmar acción</h3>
-      <p class="dialog-message" id="confirmDialogMessage"></p>
-      <div class="dialog-actions">
-        <button value="cancel">Cancelar</button>
-        <button value="accept" class="primary" id="confirmDialogAccept">Aceptar</button>
-      </div>
-    </form>
-  </dialog>
+    <footer class="footer">
+      <div id="status" class="good">Editor inicializado.</div>
+      <div>Atajos: B pincel · F relleno · R rect · S selección · G grupo · Ctrl+Z / Ctrl+Y</div>
+    </footer>
+  </div>
 
   <script>
-    const STORAGE_KEY = 'meso.pendingMapDesign';
-    const META_KEY = 'meso.pendingMapDesignMeta';
-    const ZONE_PRESETS_STORAGE_KEY = 'meso.zoneSpawnPresets';
-    const BUILDING_SCALE_KEY = 'meso.standaloneEditorBuildingScale';
-    const ENTITY_SCALE_KEY = 'meso.standaloneEditorEntityScale';
-    const terrainDefs = [
-      { id: 'alluvial', label: 'Aluvial', color: '#D1A86A' },
-      { id: 'riparian', label: 'Ribera', color: '#5A8C38' },
-      { id: 'marsh', label: 'Pantano', color: '#3A6B52' },
-      { id: 'saline', label: 'Salino', color: '#E8D8B8' },
-      { id: 'steppe', label: 'Estepa', color: '#C8A055' },
-      { id: 'hills', label: 'Colinas', color: '#B09060' },
-      { id: 'forest', label: 'Bosque', color: '#4A8A3A' },
-      { id: 'water', label: 'Agua', color: '#2A72C3' },
-      { id: 'road', label: 'Camino', color: '#9E8B6B' }
-    ];
-    const epochLabels = {
-      mesopotamia: 'Mesopotamia',
-      urss: 'Antigua URSS',
-      medieval: 'Edad Media'
-    };
+    (function () {
+      const STORAGE_KEY = 'meso.pendingMapDesign';
+      const META_KEY = 'meso.pendingMapDesignMeta';
+      const GROUPS_KEY = 'meso.structureGroups';
+      const DEFAULT_COLS = 180;
+      const DEFAULT_ROWS = 120;
 
-    const frame = document.getElementById('editorFrame');
-    const epochSelect = document.getElementById('epochSelect');
-    const brushSize = document.getElementById('brushSize');
-    const brushSizeLabel = document.getElementById('brushSizeLabel');
-    const buildingScaleInput = document.getElementById('buildingScale');
-    const buildingScaleLabel = document.getElementById('buildingScaleLabel');
-    const entityScaleInput = document.getElementById('entityScale');
-    const entityScaleLabel = document.getElementById('entityScaleLabel');
-    const terrainGrid = document.getElementById('terrainGrid');
-    const buildGrid = document.getElementById('buildGrid');
-    const designNameInput = document.getElementById('designName');
-    const fileInput = document.getElementById('fileInput');
-    const pendingStatus = document.getElementById('pendingStatus');
-    const statusLine = document.getElementById('statusLine');
-    const metaEpoch = document.getElementById('metaEpoch');
-    const metaTool = document.getElementById('metaTool');
-    const selectionSummary = document.getElementById('selectionSummary');
-    const zonePresetType = document.getElementById('zonePresetType');
-    const zonePresetStatus = document.getElementById('zonePresetStatus');
-    const confirmDialog = document.getElementById('confirmDialog');
-    const confirmDialogTitle = document.getElementById('confirmDialogTitle');
-    const confirmDialogMessage = document.getElementById('confirmDialogMessage');
-    const confirmDialogAccept = document.getElementById('confirmDialogAccept');
-    const selectedObjectSummary = document.getElementById('selectedObjectSummary');
-    const selectedOverlayBox = document.getElementById('selectedOverlayBox');
-    const precisionPanel = document.getElementById('precisionPanel');
-    const btnTogglePrecision = document.getElementById('btnTogglePrecision');
+      const terrains = [
+        { id: 'alluvial', label: 'Aluvial', color: '#b58d54', height: 0.12 },
+        { id: 'riparian', label: 'Ribera', color: '#6d9a5a', height: 0.14 },
+        { id: 'marsh', label: 'Pantano', color: '#5b7a64', height: 0.08 },
+        { id: 'saline', label: 'Salino', color: '#c9c1ad', height: 0.18 },
+        { id: 'steppe', label: 'Estepa', color: '#b79f62', height: 0.42 },
+        { id: 'hills', label: 'Colinas', color: '#8d7b66', height: 0.78 },
+        { id: 'forest', label: 'Bosque', color: '#416745', height: 0.34 },
+        { id: 'water', label: 'Agua', color: '#326ea6', height: 0.02 },
+        { id: 'road', label: 'Camino', color: '#746a5d', height: 0.10 }
+      ];
+      const terrainById = new Map(terrains.map(t => [t.id, t]));
 
-    let activeTerrain = null;
-    let activeBuild = null;
-    let visualTool = 'select';
-    let frameReady = false;
-    let regenerateAfterLoad = false;
-    let activeSelection = null;
-    let selectedObject = null;
-    let frameCanvasInteractionBound = false;
-    let selectionClipboard = null;
-    const undoStack = [];
-    const redoStack = [];
-    const HISTORY_LIMIT = 20;
-    const zonePresetTypeLabels = {
-      military_base: 'Base militar',
-      capital: 'Capital',
-      trading_post: 'Puesto comercial',
-      origin: 'Aldea origen',
-      village: 'Aldea'
-    };
-
-    function clampScale(raw) {
-      if (!Number.isFinite(raw)) return 1;
-      return Math.max(0.5, Math.min(2.5, raw));
-    }
-
-    function getDesiredBuildingScale() {
-      return clampScale(Number(buildingScaleInput && buildingScaleInput.value));
-    }
-
-    function getDesiredEntityScale() {
-      return clampScale(Number(entityScaleInput && entityScaleInput.value));
-    }
-
-    function updateScaleLabels() {
-      buildingScaleLabel.textContent = `${getDesiredBuildingScale().toFixed(2)}x`;
-      entityScaleLabel.textContent = `${getDesiredEntityScale().toFixed(2)}x`;
-    }
-
-    function applyScaleToFrame() {
-      const api = getFrameApi();
-      if (!api) return;
-      if (typeof api.setBuildingScale === 'function') api.setBuildingScale(getDesiredBuildingScale());
-      if (typeof api.setEntityScale === 'function') api.setEntityScale(getDesiredEntityScale());
-    }
-
-    function setStatus(text) {
-      statusLine.textContent = text;
-    }
-
-    function setSelectedObjectSummary(text) {
-      selectedObjectSummary.textContent = text || 'Nada seleccionado.';
-    }
-
-    function updateVisualToolButtons() {
-      document.querySelectorAll('[data-vtool]').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.vtool === visualTool);
-      });
-    }
-
-    function setVisualTool(toolId) {
-      visualTool = toolId || 'select';
-      updateVisualToolButtons();
-      if (visualTool === 'terrain') {
-        setActiveToolLabel(activeTerrain ? `Terreno · ${activeTerrain}` : 'Pintar terreno');
-        setStatus('Modo terreno activo. Usa clic y arrastre sobre el mapa para pintar.');
-      } else if (visualTool === 'move') {
-        setActiveToolLabel('Mover objeto');
-        setStatus('Selecciona un objeto y luego haz clic en el destino para moverlo.');
-      } else if (visualTool === 'delete') {
-        setActiveToolLabel('Eliminar objeto');
-        setStatus('Haz clic en el objeto que quieres eliminar.');
-      } else {
-        setActiveToolLabel('Seleccionar objeto');
-        setStatus('Haz clic en un edificio o entidad para seleccionarlo.');
-      }
-    }
-
-    function clearOverlay() {
-      if (!selectedOverlayBox) return;
-      selectedOverlayBox.style.display = 'none';
-    }
-
-    function clearSelectedObject() {
-      selectedObject = null;
-      setSelectedObjectSummary('Nada seleccionado.');
-      clearOverlay();
-    }
-
-    async function confirmAction(message, options = {}) {
-      const title = options.title || 'Confirmar acción';
-      const acceptText = options.acceptText || 'Aceptar';
-      if (!confirmDialog || typeof confirmDialog.showModal !== 'function') {
-        return window.confirm(message);
-      }
-      confirmDialogTitle.textContent = title;
-      confirmDialogMessage.textContent = message;
-      confirmDialogAccept.textContent = acceptText;
-      return await new Promise(resolve => {
-        const onClose = () => {
-          confirmDialog.removeEventListener('close', onClose);
-          resolve(confirmDialog.returnValue === 'accept');
-        };
-        confirmDialog.addEventListener('close', onClose);
-        confirmDialog.showModal();
-      });
-    }
-
-    function getFrameApi() {
-      try {
-        return frame.contentWindow && frame.contentWindow.MESO_MAP_EDITOR_API;
-      } catch (e) {
-        return null;
-      }
-    }
-
-    function getFrameSrc() {
-      const epoch = encodeURIComponent(epochSelect.value || 'mesopotamia');
-      return `../../index.html?editor=1&epoch=${epoch}`;
-    }
-
-    function describeSelectedObject(obj) {
-      if (!obj) return 'Nada seleccionado.';
-      if (obj.kind === 'building') {
-        return `Edificio: ${obj.type} en (${obj.baseCol}, ${obj.baseRow}) · ${obj.width}x${obj.height}`;
-      }
-      if (obj.kind === 'entity') {
-        const label = obj.subtype ? `${obj.kindName}:${obj.subtype}` : obj.kindName;
-        return `Entidad: ${label} en (${obj.col}, ${obj.row})`;
-      }
-      return `Terreno en (${obj.col}, ${obj.row})`;
-    }
-
-    function getSelectedCells(obj) {
-      if (!obj) return [];
-      const cells = [];
-      if (obj.kind === 'building') {
-        for (let r = 0; r < obj.height; r++) {
-          for (let c = 0; c < obj.width; c++) cells.push({ col: obj.baseCol + c, row: obj.baseRow + r });
-        }
-        return cells;
-      }
-      if (obj.kind === 'entity' || obj.kind === 'terrain') return [{ col: obj.col, row: obj.row }];
-      return cells;
-    }
-
-    function updateSelectedOverlay() {
-      const api = getFrameApi();
-      if (!api || !selectedObject) {
-        clearOverlay();
-        return;
-      }
-      const cells = getSelectedCells(selectedObject);
-      if (!cells.length) {
-        clearOverlay();
-        return;
-      }
-      let minL = Number.POSITIVE_INFINITY;
-      let minT = Number.POSITIVE_INFINITY;
-      let maxR = Number.NEGATIVE_INFINITY;
-      let maxB = Number.NEGATIVE_INFINITY;
-      for (const cell of cells) {
-        const frameRect = api.getCellClientFrame(cell.col, cell.row);
-        if (!frameRect) continue;
-        minL = Math.min(minL, frameRect.left);
-        minT = Math.min(minT, frameRect.top);
-        maxR = Math.max(maxR, frameRect.left + frameRect.width);
-        maxB = Math.max(maxB, frameRect.top + frameRect.height);
-      }
-      if (!Number.isFinite(minL) || !Number.isFinite(minT)) {
-        clearOverlay();
-        return;
-      }
-      const stackRect = document.querySelector('.frame-stack').getBoundingClientRect();
-      selectedOverlayBox.style.display = 'block';
-      selectedOverlayBox.style.left = `${Math.round(minL - stackRect.left)}px`;
-      selectedOverlayBox.style.top = `${Math.round(minT - stackRect.top)}px`;
-      selectedOverlayBox.style.width = `${Math.max(2, Math.round(maxR - minL))}px`;
-      selectedOverlayBox.style.height = `${Math.max(2, Math.round(maxB - minT))}px`;
-    }
-
-    function selectFromPick(pick) {
-      if (!pick) {
-        clearSelectedObject();
-        return;
-      }
-      if (pick.building) {
-        selectedObject = {
-          kind: 'building',
-          type: pick.building.type,
-          baseCol: pick.building.baseCol,
-          baseRow: pick.building.baseRow,
-          width: pick.building.width,
-          height: pick.building.height
-        };
-        activeSelection = {
-          minC: selectedObject.baseCol,
-          minR: selectedObject.baseRow,
-          maxC: selectedObject.baseCol + selectedObject.width - 1,
-          maxR: selectedObject.baseRow + selectedObject.height - 1
-        };
-      } else if (pick.entity) {
-        selectedObject = {
-          kind: 'entity',
-          id: pick.entity.id || null,
-          index: pick.entity.index,
-          kindName: pick.entity.kind || 'entity',
-          subtype: pick.entity.subtype || null,
-          col: pick.entity.col,
-          row: pick.entity.row
-        };
-        activeSelection = { minC: selectedObject.col, minR: selectedObject.row, maxC: selectedObject.col, maxR: selectedObject.row };
-      } else {
-        selectedObject = { kind: 'terrain', col: pick.col, row: pick.row, terrain: pick.terrain || null };
-        activeSelection = { minC: pick.col, minR: pick.row, maxC: pick.col, maxR: pick.row };
-      }
-      setSelectionInputs(activeSelection);
-      updateSelectionSummary();
-      setSelectedObjectSummary(describeSelectedObject(selectedObject));
-      updateSelectedOverlay();
-    }
-
-    function setBuildingFootprintAt(design, baseCol, baseRow, type, width, height) {
-      for (let r = 0; r < height; r++) {
-        for (let c = 0; c < width; c++) {
-          const col = baseCol + c;
-          const row = baseRow + r;
-          if (!design.grid[row]) continue;
-          if (r === 0 && c === 0) design.grid[row][col] = type;
-          else design.grid[row][col] = { type, baseCol, baseRow };
-        }
-      }
-    }
-
-    function clearBuildingAt(design, building) {
-      let changed = false;
-      for (let r = 0; r < building.height; r++) {
-        for (let c = 0; c < building.width; c++) {
-          const col = building.baseCol + c;
-          const row = building.baseRow + r;
-          if (!design.grid[row]) continue;
-          const cell = design.grid[row][col];
-          if (!cell) continue;
-          if (typeof cell === 'string') {
-            if (row === building.baseRow && col === building.baseCol && cell === building.type) {
-              design.grid[row][col] = null;
-              changed = true;
-            }
-            continue;
-          }
-          if (cell.type === building.type && cell.baseCol === building.baseCol && cell.baseRow === building.baseRow) {
-            design.grid[row][col] = null;
-            changed = true;
-          }
-        }
-      }
-      return changed;
-    }
-
-    function moveSelectedObjectToCell(targetCol, targetRow) {
-      if (!selectedObject) throw new Error('No hay objeto seleccionado.');
-      if (selectedObject.kind === 'terrain') throw new Error('El terreno no se mueve.');
-      runDesignMutation('Mover objeto seleccionado', design => {
-        if (selectedObject.kind === 'entity') {
-          if (!Array.isArray(design.entities)) return false;
-          const idx = design.entities.findIndex((ent, i) => {
-            if (!ent) return false;
-            if (selectedObject.id && ent.id) return ent.id === selectedObject.id;
-            if (i === selectedObject.index) return true;
-            const ec = typeof ent.col === 'number' ? ent.col : Math.floor(Number(ent.x) || 0);
-            const er = typeof ent.row === 'number' ? ent.row : Math.floor(Number(ent.y) || 0);
-            return ec === selectedObject.col && er === selectedObject.row && String(ent.kind || '') === String(selectedObject.kindName || '');
-          });
-          if (idx < 0) return false;
-          design.entities[idx].col = targetCol;
-          design.entities[idx].row = targetRow;
-          design.entities[idx].x = targetCol;
-          design.entities[idx].y = targetRow;
-          selectedObject.col = targetCol;
-          selectedObject.row = targetRow;
-          return true;
-        }
-        if (selectedObject.kind === 'building') {
-          if (!Array.isArray(design.grid)) return false;
-          const width = selectedObject.width;
-          const height = selectedObject.height;
-          if (targetCol < 0 || targetRow < 0 || (targetCol + width - 1) >= design.cols || (targetRow + height - 1) >= design.rows) {
-            throw new Error('Destino fuera del mapa.');
-          }
-          for (let r = 0; r < height; r++) {
-            for (let c = 0; c < width; c++) {
-              const col = targetCol + c;
-              const row = targetRow + r;
-              const insideOld = col >= selectedObject.baseCol && col < selectedObject.baseCol + width && row >= selectedObject.baseRow && row < selectedObject.baseRow + height;
-              if (insideOld) continue;
-              if (design.grid[row] && design.grid[row][col]) throw new Error('Destino ocupado por otro edificio.');
-            }
-          }
-          clearBuildingAt(design, selectedObject);
-          setBuildingFootprintAt(design, targetCol, targetRow, selectedObject.type, width, height);
-          selectedObject.baseCol = targetCol;
-          selectedObject.baseRow = targetRow;
-          return true;
-        }
-        return false;
-      });
-      selectFromPick({
-        col: targetCol,
-        row: targetRow,
-        building: selectedObject.kind === 'building' ? {
-          type: selectedObject.type,
-          baseCol: selectedObject.baseCol,
-          baseRow: selectedObject.baseRow,
-          width: selectedObject.width,
-          height: selectedObject.height
-        } : null,
-        entity: selectedObject.kind === 'entity' ? {
-          id: selectedObject.id,
-          index: selectedObject.index,
-          kind: selectedObject.kindName,
-          subtype: selectedObject.subtype,
-          col: selectedObject.col,
-          row: selectedObject.row
-        } : null
-      });
-    }
-
-    function deleteFromPick(pick) {
-      if (!pick) return;
-      runDesignMutation('Eliminar objeto', design => {
-        if (pick.building) return clearBuildingAt(design, {
-          type: pick.building.type,
-          baseCol: pick.building.baseCol,
-          baseRow: pick.building.baseRow,
-          width: pick.building.width,
-          height: pick.building.height
-        });
-        if (pick.entity && Array.isArray(design.entities)) {
-          const before = design.entities.length;
-          design.entities = design.entities.filter((ent, i) => {
-            if (!ent) return true;
-            if (pick.entity.id && ent.id) return ent.id !== pick.entity.id;
-            if (i === pick.entity.index) return false;
-            const ec = typeof ent.col === 'number' ? ent.col : Math.floor(Number(ent.x) || 0);
-            const er = typeof ent.row === 'number' ? ent.row : Math.floor(Number(ent.y) || 0);
-            return !(ec === pick.entity.col && er === pick.entity.row && String(ent.kind || '') === String(pick.entity.kind || ''));
-          });
-          return design.entities.length !== before;
-        }
-        return false;
-      });
-      clearSelectedObject();
-      updateSelectionSummary();
-    }
-
-    function bindFrameCanvasInteractions() {
-      if (frameCanvasInteractionBound) return;
-      const canvasInFrame = frame.contentWindow && frame.contentWindow.document && frame.contentWindow.document.getElementById('gameCanvas');
-      if (!canvasInFrame) return;
-      const handler = (ev) => {
-        if (!frameReady) return;
-        const api = getFrameApi();
-        if (!api || typeof api.pickFromClient !== 'function') return;
-        const pick = api.pickFromClient(ev.clientX, ev.clientY);
-        if (!pick) return;
-        if (visualTool === 'terrain') return;
-        ev.preventDefault();
-        ev.stopPropagation();
-        if (typeof ev.stopImmediatePropagation === 'function') ev.stopImmediatePropagation();
-        try {
-          if (visualTool === 'select') {
-            selectFromPick(pick);
-            setStatus('Objeto seleccionado desde el visor.');
-          } else if (visualTool === 'move') {
-            moveSelectedObjectToCell(pick.col, pick.row);
-            setStatus(`Objeto movido a (${pick.col}, ${pick.row}).`);
-          } else if (visualTool === 'delete') {
-            deleteFromPick(pick);
-            setStatus('Objeto eliminado desde el visor.');
-          }
-        } catch (error) {
-          setStatus(`Acción visual no aplicada: ${error && error.message ? error.message : error}`);
-        } finally {
-          updateSelectedOverlay();
-        }
+      const state = {
+        cols: DEFAULT_COLS,
+        rows: DEFAULT_ROWS,
+        tool: 'brush',
+        terrain: 'alluvial',
+        brush: 2,
+        zoom: 1,
+        panX: 0,
+        panY: 0,
+        drawing: false,
+        panning: false,
+        rectStart: null,
+        hover: { col: -1, row: -1 },
+        selection: { minC: 0, minR: 0, maxC: 0, maxR: 0 },
+        epoch: 'mesopotamia',
+        name: 'Mapa sin título',
+        groups: [],
+        groupId: null,
+        history: [],
+        future: []
       };
-      canvasInFrame.addEventListener('click', handler, true);
-      frameCanvasInteractionBound = true;
-    }
 
-    function updatePendingStatus() {
-      try {
+      let tileBiome = [];
+      let heightMap = [];
+      let pendingAction = null;
+
+      const el = {
+        rail: document.getElementById('toolRail'),
+        terrainGrid: document.getElementById('terrainGrid'),
+        brush: document.getElementById('brushSize'),
+        brushValue: document.getElementById('brushSizeValue'),
+        designName: document.getElementById('designName'),
+        projectBadge: document.getElementById('projectBadge'),
+        epochSelect: document.getElementById('epochSelect'),
+        epochBadge: document.getElementById('epochBadge'),
+        cursorBadge: document.getElementById('cursorBadge'),
+        toolLabel: document.getElementById('toolLabel'),
+        viewInfo: document.getElementById('viewInfo'),
+        status: document.getElementById('status'),
+        historyInfo: document.getElementById('historyInfo'),
+        selMin: document.getElementById('selMin'),
+        selMax: document.getElementById('selMax'),
+        groupName: document.getElementById('groupName'),
+        groupList: document.getElementById('groupList'),
+        groupSummary: document.getElementById('groupSummary'),
+        groupOffset: document.getElementById('groupOffset'),
+        fileInput: document.getElementById('fileInput')
+      };
+
+      const canv = {
+        main: document.getElementById('mainCanvas'),
+        biome: document.getElementById('biomeCanvas'),
+        height: document.getElementById('heightCanvas'),
+        group: document.getElementById('groupCanvas')
+      };
+      const ctx = {
+        main: canv.main.getContext('2d'),
+        biome: canv.biome.getContext('2d'),
+        height: canv.height.getContext('2d'),
+        group: canv.group.getContext('2d')
+      };
+
+      function setStatus(text, tone) {
+        el.status.textContent = text;
+        el.status.className = tone === 'warn' ? 'warn' : 'good';
+      }
+
+      function parsePair(text, fallbackA = 0, fallbackB = 0) {
+        const raw = String(text || '');
+        const parts = raw.split(',').map(p => Number(p.trim()));
+        const a = Number.isFinite(parts[0]) ? parts[0] : fallbackA;
+        const b = Number.isFinite(parts[1]) ? parts[1] : fallbackB;
+        return [a, b];
+      }
+
+      function clamp(value, min, max) {
+        return Math.max(min, Math.min(max, value));
+      }
+
+      function make2D(rows, cols, val) {
+        return Array.from({ length: rows }, () => Array(cols).fill(val));
+      }
+
+      function resetMap(terrain = 'alluvial') {
+        const info = terrainById.get(terrain) || terrains[0];
+        tileBiome = make2D(state.rows, state.cols, info.id);
+        heightMap = make2D(state.rows, state.cols, info.height);
+        state.history = [];
+        state.future = [];
+        updateHistory();
+      }
+
+      function beginAction() {
+        pendingAction = { changes: [] };
+      }
+
+      function setCell(col, row, terrain) {
+        if (col < 0 || row < 0 || col >= state.cols || row >= state.rows) return;
+        const meta = terrainById.get(terrain) || terrains[0];
+        const oldBiome = tileBiome[row][col];
+        const oldHeight = heightMap[row][col];
+        if (oldBiome === meta.id && oldHeight === meta.height) return;
+        tileBiome[row][col] = meta.id;
+        heightMap[row][col] = meta.height;
+        if (pendingAction) {
+          pendingAction.changes.push({ col, row, oldBiome, oldHeight, newBiome: meta.id, newHeight: meta.height });
+        }
+      }
+
+      function commitAction() {
+        if (!pendingAction || !pendingAction.changes.length) {
+          pendingAction = null;
+          return;
+        }
+        state.history.push(pendingAction);
+        if (state.history.length > 180) state.history.shift();
+        state.future = [];
+        pendingAction = null;
+        updateHistory();
+      }
+
+      function applyAction(action, reverse) {
+        const list = reverse ? [...action.changes].reverse() : action.changes;
+        for (const ch of list) {
+          tileBiome[ch.row][ch.col] = reverse ? ch.oldBiome : ch.newBiome;
+          heightMap[ch.row][ch.col] = reverse ? ch.oldHeight : ch.newHeight;
+        }
+      }
+
+      function undo() {
+        const action = state.history.pop();
+        if (!action) return;
+        applyAction(action, true);
+        state.future.push(action);
+        updateHistory();
+        renderAll();
+      }
+
+      function redo() {
+        const action = state.future.pop();
+        if (!action) return;
+        applyAction(action, false);
+        state.history.push(action);
+        updateHistory();
+        renderAll();
+      }
+
+      function updateHistory() {
+        el.historyInfo.textContent = `Undo: ${state.history.length} · Redo: ${state.future.length}`;
+      }
+
+      function terrainButtons() {
+        el.terrainGrid.innerHTML = '';
+        terrains.forEach(t => {
+          const b = document.createElement('button');
+          b.className = 'terrain-btn';
+          b.dataset.terrain = t.id;
+          b.innerHTML = `<span class="sw" style="background:${t.color}"></span><span>${t.label}</span>`;
+          b.addEventListener('click', () => {
+            state.terrain = t.id;
+            updateTerrainUi();
+            renderAll();
+          });
+          el.terrainGrid.appendChild(b);
+        });
+        updateTerrainUi();
+      }
+
+      function updateTerrainUi() {
+        el.terrainGrid.querySelectorAll('.terrain-btn').forEach(btn => {
+          btn.classList.toggle('active', btn.dataset.terrain === state.terrain);
+        });
+      }
+
+      function getToolLabel(tool) {
+        const labels = {
+          brush: 'Pincel',
+          fill: 'Relleno',
+          rect: 'Rectángulo',
+          select: 'Selección',
+          group: 'Colocar conjunto'
+        };
+        return labels[tool] || tool;
+      }
+
+      function updateViewInfo() {
+        el.viewInfo.textContent = `Zoom ${state.zoom.toFixed(2)}x · Arrastrar: pan · Rueda: zoom`;
+      }
+
+      function updateToolUi() {
+        el.rail.querySelectorAll('.rail-btn').forEach(btn => {
+          btn.classList.toggle('active', btn.dataset.tool === state.tool);
+        });
+        el.toolLabel.textContent = `Herramienta: ${getToolLabel(state.tool)}`;
+      }
+
+      function resizeCanvases() {
+        Object.values(canv).forEach(canvas => {
+          const rect = canvas.getBoundingClientRect();
+          const dpr = Math.max(1, window.devicePixelRatio || 1);
+          canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+          canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+          const c = canvas.getContext('2d');
+          c.setTransform(dpr, 0, 0, dpr, 0, 0);
+          c.imageSmoothingEnabled = false;
+        });
+        if (state.panX === 0 && state.panY === 0) centerMainView();
+        updateViewInfo();
+        renderAll();
+      }
+
+      function centerMainView() {
+        const rect = canv.main.getBoundingClientRect();
+        const ts = Number(getComputedStyle(document.documentElement).getPropertyValue('--tile-size')) * state.zoom;
+        state.panX = (rect.width - state.cols * ts) * 0.5;
+        state.panY = (rect.height - state.rows * ts) * 0.5;
+      }
+
+      function screenToCell(clientX, clientY) {
+        const rect = canv.main.getBoundingClientRect();
+        const sx = clientX - rect.left;
+        const sy = clientY - rect.top;
+        const ts = Number(getComputedStyle(document.documentElement).getPropertyValue('--tile-size')) * state.zoom;
+        return {
+          col: Math.floor((sx - state.panX) / ts),
+          row: Math.floor((sy - state.panY) / ts)
+        };
+      }
+
+      function paintCircle(col, row, terrain) {
+        const radius = Math.max(0, state.brush - 1);
+        for (let r = row - radius; r <= row + radius; r++) {
+          for (let c = col - radius; c <= col + radius; c++) {
+            if (radius > 0 && Math.hypot(c - col, r - row) > radius + 0.2) continue;
+            setCell(c, r, terrain);
+          }
+        }
+      }
+
+      function fillFlood(col, row, terrain) {
+        const target = tileBiome[row] && tileBiome[row][col];
+        if (!target || target === terrain) return;
+        const q = [[col, row]];
+        const seen = new Set([`${col},${row}`]);
+        while (q.length) {
+          const [c, r] = q.shift();
+          if (tileBiome[r][c] !== target) continue;
+          setCell(c, r, terrain);
+          [[c - 1, r], [c + 1, r], [c, r - 1], [c, r + 1]].forEach(([nc, nr]) => {
+            if (nc < 0 || nr < 0 || nc >= state.cols || nr >= state.rows) return;
+            const key = `${nc},${nr}`;
+            if (seen.has(key)) return;
+            seen.add(key);
+            q.push([nc, nr]);
+          });
+        }
+      }
+
+      function fillRect(c1, r1, c2, r2, terrain) {
+        const minC = Math.min(c1, c2);
+        const maxC = Math.max(c1, c2);
+        const minR = Math.min(r1, r2);
+        const maxR = Math.max(r1, r2);
+        for (let r = minR; r <= maxR; r++) {
+          for (let c = minC; c <= maxC; c++) setCell(c, r, terrain);
+        }
+      }
+
+      function drawMain() {
+        const c = ctx.main;
+        const rect = canv.main.getBoundingClientRect();
+        c.clearRect(0, 0, rect.width, rect.height);
+
+        const ts = Number(getComputedStyle(document.documentElement).getPropertyValue('--tile-size')) * state.zoom;
+        const startC = Math.max(0, Math.floor((-state.panX) / ts) - 1);
+        const startR = Math.max(0, Math.floor((-state.panY) / ts) - 1);
+        const endC = Math.min(state.cols - 1, Math.ceil((rect.width - state.panX) / ts) + 1);
+        const endR = Math.min(state.rows - 1, Math.ceil((rect.height - state.panY) / ts) + 1);
+
+        for (let r = startR; r <= endR; r++) {
+          for (let cIdx = startC; cIdx <= endC; cIdx++) {
+            const b = tileBiome[r][cIdx] || 'alluvial';
+            const t = terrainById.get(b) || terrains[0];
+            const x = cIdx * ts + state.panX;
+            const y = r * ts + state.panY;
+            c.fillStyle = t.color;
+            c.fillRect(x, y, ts, ts);
+            if (state.zoom > 0.6) {
+              c.strokeStyle = 'rgba(0,0,0,0.22)';
+              c.strokeRect(x + 0.5, y + 0.5, ts - 1, ts - 1);
+            }
+          }
+        }
+
+        if (state.hover.col >= 0 && state.hover.row >= 0 && state.hover.col < state.cols && state.hover.row < state.rows) {
+          const hx = state.hover.col * ts + state.panX;
+          const hy = state.hover.row * ts + state.panY;
+          c.strokeStyle = '#ffffff';
+          c.lineWidth = 1;
+          c.strokeRect(hx + 0.5, hy + 0.5, ts - 1, ts - 1);
+        }
+
+        const s = state.selection;
+        if (s && (state.tool === 'select' || state.tool === 'group')) {
+          const x = s.minC * ts + state.panX;
+          const y = s.minR * ts + state.panY;
+          const w = (s.maxC - s.minC + 1) * ts;
+          const h = (s.maxR - s.minR + 1) * ts;
+          c.fillStyle = 'rgba(128,188,255,0.14)';
+          c.fillRect(x, y, w, h);
+          c.strokeStyle = 'rgba(128,188,255,0.9)';
+          c.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+        }
+      }
+
+      function drawBiomeStats() {
+        const c = ctx.biome;
+        const rect = canv.biome.getBoundingClientRect();
+        c.clearRect(0, 0, rect.width, rect.height);
+
+        const counts = new Map();
+        terrains.forEach(t => counts.set(t.id, 0));
+        for (let r = 0; r < state.rows; r++) {
+          for (let col = 0; col < state.cols; col++) {
+            const b = tileBiome[r][col] || 'alluvial';
+            counts.set(b, (counts.get(b) || 0) + 1);
+          }
+        }
+        const total = state.rows * state.cols;
+        const barH = Math.max(14, (rect.height - 20) / terrains.length - 4);
+        terrains.forEach((t, i) => {
+          const v = (counts.get(t.id) || 0) / total;
+          const y = 12 + i * (barH + 4);
+          c.fillStyle = '#1b2635';
+          c.fillRect(12, y, rect.width - 24, barH);
+          c.fillStyle = t.color;
+          c.fillRect(12, y, Math.max(1, (rect.width - 24) * v), barH);
+          c.fillStyle = '#dce7f5';
+          c.font = '11px Segoe UI';
+          c.fillText(`${t.label} ${(v * 100).toFixed(1)}%`, 16, y + barH - 3);
+        });
+      }
+
+      function drawHeightView() {
+        const c = ctx.height;
+        const rect = canv.height.getBoundingClientRect();
+        c.clearRect(0, 0, rect.width, rect.height);
+        const cellW = rect.width / state.cols;
+        const cellH = rect.height / state.rows;
+        for (let r = 0; r < state.rows; r++) {
+          for (let col = 0; col < state.cols; col++) {
+            const h = heightMap[r][col] || 0;
+            const shade = Math.round(35 + h * 200);
+            c.fillStyle = `rgb(${shade},${shade},${shade})`;
+            c.fillRect(col * cellW, r * cellH, cellW + 0.6, cellH + 0.6);
+          }
+        }
+      }
+
+      function drawGroupPreview() {
+        const c = ctx.group;
+        const rect = canv.group.getBoundingClientRect();
+        c.clearRect(0, 0, rect.width, rect.height);
+        const group = state.groups.find(g => g.id === state.groupId);
+        if (!group) {
+          c.fillStyle = '#9cb0c6';
+          c.font = '12px Segoe UI';
+          c.fillText('Sin conjunto seleccionado.', 12, 24);
+          return;
+        }
+        const w = group.data.width;
+        const h = group.data.height;
+        const ts = Math.max(4, Math.min(28, Math.floor(Math.min((rect.width - 24) / w, (rect.height - 24) / h))));
+        const ox = Math.floor((rect.width - (w * ts)) * 0.5);
+        const oy = Math.floor((rect.height - (h * ts)) * 0.5);
+        for (let r = 0; r < h; r++) {
+          for (let col = 0; col < w; col++) {
+            const b = group.data.tileBiome[r][col] || 'alluvial';
+            const color = (terrainById.get(b) || terrains[0]).color;
+            c.fillStyle = color;
+            c.fillRect(ox + col * ts, oy + r * ts, ts, ts);
+            c.strokeStyle = 'rgba(0,0,0,0.2)';
+            c.strokeRect(ox + col * ts + 0.5, oy + r * ts + 0.5, ts - 1, ts - 1);
+          }
+        }
+        c.fillStyle = '#dce7f5';
+        c.font = '11px Segoe UI';
+        c.fillText(`${group.name} (${w}x${h})`, 10, rect.height - 10);
+      }
+
+      function renderAll() {
+        drawMain();
+        drawBiomeStats();
+        drawHeightView();
+        drawGroupPreview();
+      }
+
+      function exportPayload() {
+        return {
+          meta: {
+            type: 'mesobuilder-map-design',
+            version: 4,
+            name: state.name,
+            savedAt: new Date().toISOString()
+          },
+          epoch: state.epoch,
+          cols: state.cols,
+          rows: state.rows,
+          tileBiome: tileBiome.map(r => r.slice()),
+          heightMap: heightMap.map(r => r.slice()),
+          zoneSpawnPresets: {}
+        };
+      }
+
+      function importPayload(raw) {
+        const src = (raw && Array.isArray(raw.tileBiome))
+          ? raw
+          : (raw && raw.mapDesign && Array.isArray(raw.mapDesign.tileBiome) ? raw.mapDesign : null);
+        if (!src) throw new Error('Formato de mapa inválido');
+        const cols = Math.max(1, Number(src.cols) || DEFAULT_COLS);
+        const rows = Math.max(1, Number(src.rows) || DEFAULT_ROWS);
+        const nextBiome = make2D(rows, cols, 'alluvial');
+        const nextHeight = make2D(rows, cols, 0.12);
+        for (let r = 0; r < rows; r++) {
+          const rb = Array.isArray(src.tileBiome[r]) ? src.tileBiome[r] : [];
+          const rh = Array.isArray(src.heightMap && src.heightMap[r]) ? src.heightMap[r] : [];
+          for (let c = 0; c < cols; c++) {
+            const b = terrainById.has(rb[c]) ? rb[c] : 'alluvial';
+            nextBiome[r][c] = b;
+            const hv = Number(rh[c]);
+            nextHeight[r][c] = Number.isFinite(hv) ? clamp(hv, 0, 1) : (terrainById.get(b) || terrains[0]).height;
+          }
+        }
+        state.cols = cols;
+        state.rows = rows;
+        state.name = (src.meta && src.meta.name) || 'Mapa importado';
+        state.epoch = src.epoch || state.epoch;
+        tileBiome = nextBiome;
+        heightMap = nextHeight;
+        state.history = [];
+        state.future = [];
+        updateHistory();
+        refreshProjectUi();
+        centerMainView();
+        renderAll();
+      }
+
+      function savePending() {
+        const payload = exportPayload();
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+        localStorage.setItem(META_KEY, JSON.stringify({
+          name: state.name,
+          epoch: state.epoch,
+          savedAt: new Date().toISOString(),
+          source: 'world-editor-from-scratch'
+        }));
+        try {
+          if (window.opener && !window.opener.closed) window.opener.postMessage({ type: 'meso-map-design-updated' }, '*');
+        } catch (e) {}
+        setStatus(`Guardado para nueva partida: ${state.name}.`, 'good');
+      }
+
+      function loadPending() {
         const raw = localStorage.getItem(STORAGE_KEY);
         if (!raw) {
-          pendingStatus.textContent = 'Sin diseño guardado para nuevas partidas.';
+          setStatus('No hay diseño pendiente guardado.', 'warn');
           return;
         }
-        const meta = JSON.parse(localStorage.getItem(META_KEY) || 'null') || {};
-        pendingStatus.textContent = `Diseño guardado: ${meta.name || 'Sin nombre'} · ${meta.savedAt ? new Date(meta.savedAt).toLocaleString() : 'sin fecha'}`;
-      } catch (e) {
-        pendingStatus.textContent = 'No se pudo leer el diseño guardado.';
-      }
-    }
-
-    function toInt(value, fallback = 0) {
-      const parsed = parseInt(String(value || '').trim(), 10);
-      return Number.isFinite(parsed) ? parsed : fallback;
-    }
-
-    function clamp(value, min, max) {
-      return Math.max(min, Math.min(max, value));
-    }
-
-    function getSelectionInputs() {
-      return {
-        c1: document.getElementById('selC1'),
-        r1: document.getElementById('selR1'),
-        c2: document.getElementById('selC2'),
-        r2: document.getElementById('selR2')
-      };
-    }
-
-    function getCurrentDesign() {
-      const api = getFrameApi();
-      if (!api) throw new Error('El motor aún no está listo.');
-      const design = api.exportMapDesignData();
-      if (!design || !Array.isArray(design.tileBiome) || !Array.isArray(design.heightMap)) {
-        throw new Error('El diseño actual no es válido.');
-      }
-      return design;
-    }
-
-    function cloneDesign(design) {
-      return JSON.parse(JSON.stringify(design));
-    }
-
-    function getCurrentZonePresetType() {
-      return String((zonePresetType && zonePresetType.value) || 'military_base');
-    }
-
-    function getZonePresetsFromDesign(design) {
-      const src = (design && design.zoneSpawnPresets && typeof design.zoneSpawnPresets === 'object')
-        ? design.zoneSpawnPresets
-        : {};
-      return src;
-    }
-
-    function createZonePresetFromSelection(design, selection, zoneType) {
-      if (!selection) throw new Error('Primero aplica una selección para capturar la plantilla.');
-      const minC = selection.minC;
-      const maxC = selection.maxC;
-      const minR = selection.minR;
-      const maxR = selection.maxR;
-      const anchorCol = Math.floor((minC + maxC) / 2);
-      const anchorRow = Math.floor((minR + maxR) / 2);
-      const terrain = [];
-      const buildingsMap = new Map();
-      const entitiesOut = [];
-
-      for (let r = minR; r <= maxR; r++) {
-        for (let c = minC; c <= maxC; c++) {
-          const biome = design.tileBiome[r] && design.tileBiome[r][c] ? design.tileBiome[r][c] : 'alluvial';
-          const height = Number(design.heightMap[r] && design.heightMap[r][c]);
-          terrain.push({
-            dc: c - anchorCol,
-            dr: r - anchorRow,
-            biome,
-            height: Number.isFinite(height) ? height : 0.12
-          });
-
-          const cell = design.grid[r] && design.grid[r][c];
-          if (!cell) continue;
-          let type = null;
-          let baseCol = c;
-          let baseRow = r;
-          if (typeof cell === 'string') {
-            type = cell;
-          } else if (typeof cell === 'object') {
-            type = cell.type || null;
-            baseCol = Number.isFinite(Number(cell.baseCol)) ? Number(cell.baseCol) : c;
-            baseRow = Number.isFinite(Number(cell.baseRow)) ? Number(cell.baseRow) : r;
-          }
-          if (!type) continue;
-          if (baseCol < minC || baseCol > maxC || baseRow < minR || baseRow > maxR) continue;
-          const key = `${type}|${baseCol}|${baseRow}`;
-          if (!buildingsMap.has(key)) {
-            buildingsMap.set(key, {
-              type,
-              dc: baseCol - anchorCol,
-              dr: baseRow - anchorRow
-            });
-          }
-        }
+        importPayload(JSON.parse(raw));
+        setStatus('Diseño pendiente cargado.', 'good');
       }
 
-      const entities = Array.isArray(design.entities) ? design.entities : [];
-      for (const ent of entities) {
-        if (!ent || typeof ent !== 'object') continue;
-        const col = (typeof ent.col === 'number') ? ent.col : Math.floor(Number(ent.x) || -9999);
-        const row = (typeof ent.row === 'number') ? ent.row : Math.floor(Number(ent.y) || -9999);
-        if (col < minC || col > maxC || row < minR || row > maxR) continue;
-        if (ent.kind !== 'ambient') continue;
-        entitiesOut.push({
-          kind: 'ambient',
-          subtype: ent.subtype || null,
-          name: ent.name || null,
-          size: Number.isFinite(Number(ent.size)) ? Number(ent.size) : 1,
-          dc: col - anchorCol,
-          dr: row - anchorRow,
-          nonInteractive: true
-        });
+      function exportJsonFile() {
+        const payload = exportPayload();
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+        a.href = url;
+        a.download = `meso-map-${stamp}.json`;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+          try { a.remove(); URL.revokeObjectURL(url); } catch (e) {}
+        }, 120);
       }
 
-      return {
-        type: zoneType,
-        anchor: { col: anchorCol, row: anchorRow },
-        selection: { minC, minR, maxC, maxR },
-        terrain,
-        buildings: Array.from(buildingsMap.values()),
-        entities: entitiesOut,
-        updatedAt: new Date().toISOString()
-      };
-    }
-
-    function updateZonePresetStatus() {
-      if (!zonePresetStatus) return;
-      try {
-        const design = getCurrentDesign();
-        const presets = getZonePresetsFromDesign(design);
-        const zt = getCurrentZonePresetType();
-        const p = presets[zt];
-        if (!p) {
-          zonePresetStatus.textContent = 'Sin plantilla para este tipo de zona.';
-          return;
-        }
-        const label = zonePresetTypeLabels[zt] || zt;
-        const buildings = Array.isArray(p.buildings) ? p.buildings.length : 0;
-        const terrain = Array.isArray(p.terrain) ? p.terrain.length : 0;
-        const ambients = Array.isArray(p.entities) ? p.entities.length : 0;
-        zonePresetStatus.textContent = `${label}: ${buildings} edificios, ${ambients} ambient, ${terrain} celdas de terreno.`;
-      } catch (e) {
-        zonePresetStatus.textContent = 'Sin plantilla para este tipo de zona.';
-      }
-    }
-
-    function persistZonePresetsToStorage() {
-      try {
-        const design = getCurrentDesign();
-        const presets = getZonePresetsFromDesign(design);
-        localStorage.setItem(ZONE_PRESETS_STORAGE_KEY, JSON.stringify(presets || {}));
-      } catch (e) {}
-    }
-
-    function downloadZonePresetsJson() {
-      const design = getCurrentDesign();
-      const presets = getZonePresetsFromDesign(design);
-      const payload = {
-        meta: {
-          type: 'mesobuilder-zone-spawn-presets',
-          version: 1,
-          exportedAt: new Date().toISOString()
-        },
-        zoneSpawnPresets: presets
-      };
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `meso-zone-spawn-presets-${stamp}.json`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    }
-
-    function normalizeZonePresetPayload(parsed) {
-      if (!parsed || typeof parsed !== 'object') throw new Error('Archivo JSON inválido.');
-      const src = (parsed.zoneSpawnPresets && typeof parsed.zoneSpawnPresets === 'object')
-        ? parsed.zoneSpawnPresets
-        : parsed;
-      if (!src || typeof src !== 'object') throw new Error('No contiene plantillas de zona válidas.');
-      return src;
-    }
-
-    function importZonePresetsObject(presetsObj) {
-      runDesignMutation('Importar plantillas de zona', design => {
-        design.zoneSpawnPresets = cloneDesign(presetsObj || {});
-        return true;
-      });
-      persistZonePresetsToStorage();
-      updateZonePresetStatus();
-    }
-
-    function pushUndoSnapshot(snapshot) {
-      undoStack.push(cloneDesign(snapshot));
-      while (undoStack.length > HISTORY_LIMIT) undoStack.shift();
-      redoStack.length = 0;
-    }
-
-    function updateHistoryButtons() {
-      document.getElementById('btnUndo').disabled = undoStack.length === 0;
-      document.getElementById('btnRedo').disabled = redoStack.length === 0;
-    }
-
-    function normalizeSelection(raw, cols, rows) {
-      const minC = clamp(Math.min(raw.c1, raw.c2), 0, Math.max(0, cols - 1));
-      const maxC = clamp(Math.max(raw.c1, raw.c2), 0, Math.max(0, cols - 1));
-      const minR = clamp(Math.min(raw.r1, raw.r2), 0, Math.max(0, rows - 1));
-      const maxR = clamp(Math.max(raw.r1, raw.r2), 0, Math.max(0, rows - 1));
-      return { minC, maxC, minR, maxR };
-    }
-
-    function setSelectionInputs(sel) {
-      const { c1, r1, c2, r2 } = getSelectionInputs();
-      c1.value = String(sel.minC);
-      r1.value = String(sel.minR);
-      c2.value = String(sel.maxC);
-      r2.value = String(sel.maxR);
-    }
-
-    function selectionToText(sel) {
-      if (!sel) return 'Sin selección activa.';
-      const width = (sel.maxC - sel.minC + 1);
-      const height = (sel.maxR - sel.minR + 1);
-      return `Selección activa: (${sel.minC}, ${sel.minR}) → (${sel.maxC}, ${sel.maxR}) · ${width}x${height} celdas.`;
-    }
-
-    function updateSelectionSummary() {
-      selectionSummary.textContent = selectionToText(activeSelection);
-      updateSelectedOverlay();
-    }
-
-    function getActiveSelectionOrThrow() {
-      if (!activeSelection) throw new Error('Primero aplica una selección.');
-      return activeSelection;
-    }
-
-    function applySelectionFromInputs() {
-      const design = getCurrentDesign();
-      const cols = Number(design.cols || (design.tileBiome[0] && design.tileBiome[0].length) || 0);
-      const rows = Number(design.rows || design.tileBiome.length || 0);
-      if (!cols || !rows) throw new Error('No se pudo leer el tamaño del mapa.');
-      const { c1, r1, c2, r2 } = getSelectionInputs();
-      activeSelection = normalizeSelection({
-        c1: toInt(c1.value, 0),
-        r1: toInt(r1.value, 0),
-        c2: toInt(c2.value, cols - 1),
-        r2: toInt(r2.value, rows - 1)
-      }, cols, rows);
-      setSelectionInputs(activeSelection);
-      updateSelectionSummary();
-      setStatus('Selección aplicada. Ya puedes usar operaciones de región.');
-    }
-
-    function iterateSelectionCells(sel, fn) {
-      for (let r = sel.minR; r <= sel.maxR; r++) {
-        for (let c = sel.minC; c <= sel.maxC; c++) fn(c, r);
-      }
-    }
-
-    function isCellInsideSelection(c, r, sel) {
-      return c >= sel.minC && c <= sel.maxC && r >= sel.minR && r <= sel.maxR;
-    }
-
-    function importDesignBack(payload) {
-      const api = getFrameApi();
-      if (!api) throw new Error('El motor aún no está listo.');
-      api.importMapDesignData(payload);
-    }
-
-    function runDesignMutation(label, mutateFn) {
-      const original = getCurrentDesign();
-      const working = cloneDesign(original);
-      const changed = mutateFn(working) === true;
-      if (!changed) {
-        setStatus(`Sin cambios: ${label}.`);
-        return false;
-      }
-      pushUndoSnapshot(original);
-      importDesignBack(working);
-      updateHistoryButtons();
-      updateZonePresetStatus();
-      setStatus(`Aplicado: ${label}.`);
-      return true;
-    }
-
-    function saveZonePresetFromSelection() {
-      const zt = getCurrentZonePresetType();
-      const label = zonePresetTypeLabels[zt] || zt;
-      const changed = runDesignMutation(`Guardar plantilla de ${label}`, design => {
-        const preset = createZonePresetFromSelection(design, activeSelection, zt);
-        const presets = getZonePresetsFromDesign(design);
-        design.zoneSpawnPresets = { ...presets, [zt]: preset };
-        return true;
-      });
-      if (changed) persistZonePresetsToStorage();
-      updateZonePresetStatus();
-    }
-
-    async function clearZonePreset() {
-      const zt = getCurrentZonePresetType();
-      const label = zonePresetTypeLabels[zt] || zt;
-      const accepted = await confirmAction(`Se eliminará la plantilla guardada para ${label}. ¿Continuar?`, {
-        title: 'Eliminar plantilla de zona',
-        acceptText: 'Eliminar'
-      });
-      if (!accepted) return;
-      const changed = runDesignMutation(`Eliminar plantilla de ${label}`, design => {
-        const presets = { ...getZonePresetsFromDesign(design) };
-        if (!Object.prototype.hasOwnProperty.call(presets, zt)) return false;
-        delete presets[zt];
-        design.zoneSpawnPresets = presets;
-        return true;
-      });
-      if (changed) persistZonePresetsToStorage();
-      updateZonePresetStatus();
-    }
-
-    function fillTerrainInSelection() {
-      const terrain = activeTerrain;
-      if (!terrain) throw new Error('Selecciona primero un terreno activo.');
-      const targetHeight = {
-        alluvial: 0.12,
-        riparian: 0.14,
-        marsh: 0.08,
-        saline: 0.18,
-        steppe: 0.42,
-        hills: 0.78,
-        forest: 0.34,
-        water: 0.02,
-        road: 0.1
-      }[terrain];
-      const sel = getActiveSelectionOrThrow();
-      runDesignMutation(`Rellenar selección con ${terrain}`, design => {
-        let changed = false;
-        iterateSelectionCells(sel, (c, r) => {
-          if (design.tileBiome[r][c] !== terrain) {
-            design.tileBiome[r][c] = terrain;
-            changed = true;
-          }
-          if (typeof targetHeight === 'number' && design.heightMap[r][c] !== targetHeight) {
-            design.heightMap[r][c] = targetHeight;
-            changed = true;
-          }
-        });
-        return changed;
-      });
-    }
-
-    async function clearBuildingsInSelection() {
-      const sel = getActiveSelectionOrThrow();
-      const accepted = await confirmAction('Se eliminarán edificios y entidades dentro de la selección. ¿Continuar?', {
-        title: 'Limpiar selección',
-        acceptText: 'Limpiar'
-      });
-      if (!accepted) return;
-      runDesignMutation('Limpiar edificios en selección', design => {
-        let changed = false;
-        if (Array.isArray(design.grid)) {
-          iterateSelectionCells(sel, (c, r) => {
-            if (design.grid[r] && design.grid[r][c]) {
-              design.grid[r][c] = null;
-              changed = true;
-            }
-          });
-        }
-        if (Array.isArray(design.entities)) {
-          const before = design.entities.length;
-          design.entities = design.entities.filter(ent => {
-            const col = typeof ent.col === 'number' ? ent.col : Math.floor(Number(ent.x) || 0);
-            const row = typeof ent.row === 'number' ? ent.row : Math.floor(Number(ent.y) || 0);
-            return !isCellInsideSelection(col, row, sel);
-          });
-          if (design.entities.length !== before) changed = true;
-        }
-        return changed;
-      });
-    }
-
-    function scaleSelectionTerrain(factor) {
-      const sel = getActiveSelectionOrThrow();
-      const safeFactor = Number(factor);
-      if (!Number.isFinite(safeFactor) || safeFactor <= 0) throw new Error('Factor de escala inválido.');
-      runDesignMutation(`Escalar selección ${safeFactor.toFixed(2)}x`, design => {
-        const width = sel.maxC - sel.minC + 1;
-        const height = sel.maxR - sel.minR + 1;
-        const srcBiome = [];
-        const srcHeight = [];
-        for (let y = 0; y < height; y++) {
-          const biomeRow = [];
-          const heightRow = [];
-          for (let x = 0; x < width; x++) {
-            biomeRow.push(design.tileBiome[sel.minR + y][sel.minC + x]);
-            heightRow.push(design.heightMap[sel.minR + y][sel.minC + x]);
-          }
-          srcBiome.push(biomeRow);
-          srcHeight.push(heightRow);
-        }
-        let changed = false;
-        for (let y = 0; y < height; y++) {
-          for (let x = 0; x < width; x++) {
-            const srcX = clamp(Math.floor(x / safeFactor), 0, width - 1);
-            const srcY = clamp(Math.floor(y / safeFactor), 0, height - 1);
-            const nextBiome = srcBiome[srcY][srcX];
-            const nextHeight = srcHeight[srcY][srcX];
-            const rr = sel.minR + y;
-            const cc = sel.minC + x;
-            if (design.tileBiome[rr][cc] !== nextBiome) {
-              design.tileBiome[rr][cc] = nextBiome;
-              changed = true;
-            }
-            if (design.heightMap[rr][cc] !== nextHeight) {
-              design.heightMap[rr][cc] = nextHeight;
-              changed = true;
-            }
-          }
-        }
-        return changed;
-      });
-    }
-
-    function copySelection() {
-      const sel = getActiveSelectionOrThrow();
-      const design = getCurrentDesign();
-      const width = sel.maxC - sel.minC + 1;
-      const height = sel.maxR - sel.minR + 1;
-      const tileBiome = [];
-      const heightMap = [];
-      const grid = [];
-      for (let r = sel.minR; r <= sel.maxR; r++) {
-        tileBiome.push(design.tileBiome[r].slice(sel.minC, sel.maxC + 1));
-        heightMap.push(design.heightMap[r].slice(sel.minC, sel.maxC + 1));
-        grid.push((design.grid[r] || []).slice(sel.minC, sel.maxC + 1));
-      }
-      const entities = (Array.isArray(design.entities) ? design.entities : []).filter(ent => {
-        const col = typeof ent.col === 'number' ? ent.col : Math.floor(Number(ent.x) || 0);
-        const row = typeof ent.row === 'number' ? ent.row : Math.floor(Number(ent.y) || 0);
-        return isCellInsideSelection(col, row, sel);
-      }).map(ent => {
-        const out = cloneDesign(ent);
-        out.col = (typeof out.col === 'number' ? out.col : Math.floor(Number(out.x) || 0)) - sel.minC;
-        out.row = (typeof out.row === 'number' ? out.row : Math.floor(Number(out.y) || 0)) - sel.minR;
-        out.x = out.col;
-        out.y = out.row;
-        return out;
-      });
-      selectionClipboard = { width, height, tileBiome, heightMap, grid, entities };
-      setStatus(`Selección copiada (${width}x${height}).`);
-    }
-
-    function pasteSelectionWithOffset() {
-      if (!selectionClipboard) throw new Error('No hay selección copiada.');
-      const offsetX = toInt(document.getElementById('pasteOffsetX').value, 0);
-      const offsetY = toInt(document.getElementById('pasteOffsetY').value, 0);
-      runDesignMutation(`Pegar selección (dx=${offsetX}, dy=${offsetY})`, design => {
-        let changed = false;
-        for (let r = 0; r < selectionClipboard.height; r++) {
-          for (let c = 0; c < selectionClipboard.width; c++) {
-            const tr = r + offsetY;
-            const tc = c + offsetX;
-            if (tr < 0 || tc < 0 || tr >= design.rows || tc >= design.cols) continue;
-            const b = selectionClipboard.tileBiome[r][c];
-            const h = selectionClipboard.heightMap[r][c];
-            const g = selectionClipboard.grid[r][c] || null;
-            if (design.tileBiome[tr][tc] !== b) {
-              design.tileBiome[tr][tc] = b;
-              changed = true;
-            }
-            if (design.heightMap[tr][tc] !== h) {
-              design.heightMap[tr][tc] = h;
-              changed = true;
-            }
-            if (Array.isArray(design.grid) && design.grid[tr] && design.grid[tr][tc] !== g) {
-              design.grid[tr][tc] = g ? cloneDesign(g) : null;
-              changed = true;
-            }
-          }
-        }
-        if (selectionClipboard.entities && Array.isArray(design.entities)) {
-          selectionClipboard.entities.forEach(src => {
-            const ent = cloneDesign(src);
-            ent.col = ent.col + offsetX;
-            ent.row = ent.row + offsetY;
-            if (ent.col < 0 || ent.row < 0 || ent.col >= design.cols || ent.row >= design.rows) return;
-            ent.x = ent.col;
-            ent.y = ent.row;
-            design.entities.push(ent);
-            changed = true;
-          });
-        }
-        return changed;
-      });
-    }
-
-    function undoDesignChange() {
-      if (!undoStack.length) return;
-      const current = getCurrentDesign();
-      const prev = undoStack.pop();
-      redoStack.push(cloneDesign(current));
-      while (redoStack.length > HISTORY_LIMIT) redoStack.shift();
-      importDesignBack(prev);
-      updateHistoryButtons();
-      updateZonePresetStatus();
-      setStatus('Cambio deshecho.');
-    }
-
-    function redoDesignChange() {
-      if (!redoStack.length) return;
-      const current = getCurrentDesign();
-      const next = redoStack.pop();
-      undoStack.push(cloneDesign(current));
-      while (undoStack.length > HISTORY_LIMIT) undoStack.shift();
-      importDesignBack(next);
-      updateHistoryButtons();
-      updateZonePresetStatus();
-      setStatus('Cambio rehecho.');
-    }
-
-    function setActiveToolLabel(text) {
-      metaTool.textContent = text || 'Ninguna';
-    }
-
-    function renderTerrainButtons() {
-      terrainGrid.innerHTML = '';
-      terrainDefs.forEach(def => {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'terrain-btn tool-btn';
-        btn.dataset.terrain = def.id;
-        btn.innerHTML = `<span class="swatch" style="background:${def.color}"></span>${def.label}`;
-        btn.addEventListener('click', () => {
-          const api = getFrameApi();
-          if (!api) return;
-          activeBuild = null;
-          activeTerrain = def.id;
-          api.enableTerrainBrush(def.id, Number(brushSize.value || 2));
-          setVisualTool('terrain');
-          updateTerrainSelection();
-          updateBuildSelection();
-          setActiveToolLabel(`Terreno · ${def.label}`);
-          setStatus(`Pincel activo: ${def.label}. Pinta directamente sobre el mapa.`);
-        });
-        terrainGrid.appendChild(btn);
-      });
-    }
-
-    function updateTerrainSelection() {
-      terrainGrid.querySelectorAll('.terrain-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.terrain === activeTerrain));
-      document.getElementById('btnDisableTerrain').classList.toggle('active', !activeTerrain && !activeBuild);
-    }
-
-    function updateBuildSelection() {
-      buildGrid.querySelectorAll('.build-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.build === activeBuild));
-      document.getElementById('btnDemolish').classList.toggle('active', activeBuild === 'demolish');
-      document.getElementById('btnClearTool').classList.toggle('active', !activeTerrain && !activeBuild);
-    }
-
-    async function renderBuildButtons() {
-      const api = getFrameApi();
-      if (!api) return;
-      const palette = api.getBuildPalette(epochSelect.value || 'mesopotamia') || [];
-      buildGrid.innerHTML = '';
-      palette.forEach(item => {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'build-btn tool-btn';
-        btn.dataset.build = item.id;
-        btn.innerHTML = `<span>${item.name || item.id}</span>`;
-        btn.title = item.desc || '';
-        btn.addEventListener('click', () => {
-          const liveApi = getFrameApi();
-          if (!liveApi) return;
-          activeTerrain = null;
-          activeBuild = item.id;
-          liveApi.selectBuildTool(item.id);
-          setVisualTool('select');
-          updateTerrainSelection();
-          updateBuildSelection();
-          setActiveToolLabel(`Edificio · ${item.name || item.id}`);
-          setStatus(`Herramienta activa: ${item.name || item.id}. Haz clic en el mapa para colocarlo.`);
-        });
-        buildGrid.appendChild(btn);
-      });
-      updateBuildSelection();
-    }
-
-    async function waitForApi(maxMs = 30000) {
-      const start = Date.now();
-      while (Date.now() - start < maxMs) {
-        const api = getFrameApi();
-        if (api && api.ready) return api;
-        await new Promise(resolve => setTimeout(resolve, 250));
-      }
-      throw new Error('El motor no respondió a tiempo.');
-    }
-
-    function initializeFrame(regenerate = false) {
-      frameReady = false;
-      regenerateAfterLoad = !!regenerate;
-      setStatus('Cargando el motor del juego...');
-      metaEpoch.textContent = epochLabels[epochSelect.value] || epochSelect.value;
-      frame.src = getFrameSrc();
-    }
-
-    function normalizeIncomingDesign(obj) {
-      const source = (obj && Array.isArray(obj.tileBiome))
-        ? obj
-        : (obj && obj.mapDesign && Array.isArray(obj.mapDesign.tileBiome) ? obj.mapDesign : null);
-      if (!source) throw new Error('Formato de diseño no válido');
-      return source;
-    }
-
-    function downloadJson(payload) {
-      const safeName = (designNameInput.value.trim() || 'diseno-procedural')
-        .replace(/[^a-z0-9-_]+/gi, '-')
-        .replace(/^-+|-+$/g, '')
-        .toLowerCase() || 'diseno-procedural';
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${safeName}.json`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    }
-
-    async function exportCurrentDesign() {
-      const api = getFrameApi();
-      if (!api) throw new Error('El motor aún no está listo.');
-      const payload = api.exportMapDesignData();
-      payload.meta = payload.meta || {};
-      payload.meta.name = designNameInput.value.trim() || 'Diseño procedural';
-      downloadJson(payload);
-      setStatus('Diseño exportado a JSON.');
-    }
-
-    async function savePendingDesign() {
-      const api = getFrameApi();
-      if (!api) throw new Error('El motor aún no está listo.');
-      const payload = api.exportMapDesignData();
-      payload.meta = payload.meta || {};
-      payload.meta.name = designNameInput.value.trim() || 'Diseño procedural';
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-      localStorage.setItem(META_KEY, JSON.stringify({
-        name: payload.meta.name,
-        savedAt: new Date().toISOString(),
-        epoch: payload.epoch || epochSelect.value,
-        source: 'standalone-procedural-editor'
-      }));
-      updatePendingStatus();
-      try { if (window.opener && !window.opener.closed) window.opener.postMessage({ type: 'meso-map-design-updated' }, '*'); } catch (e) {}
-      setStatus(`Diseño guardado para nuevas partidas: ${payload.meta.name}.`);
-    }
-
-    async function importDesignFile(file) {
-      const api = getFrameApi();
-      if (!api) throw new Error('El motor aún no está listo.');
-      const text = await file.text();
-      const payload = normalizeIncomingDesign(JSON.parse(text));
-      if (payload.epoch) {
-        epochSelect.value = payload.epoch;
-      }
-      if (payload.meta && payload.meta.name) {
-        designNameInput.value = payload.meta.name;
-      }
-      api.importMapDesignData(payload);
-      undoStack.length = 0;
-      redoStack.length = 0;
-      updateHistoryButtons();
-      activeTerrain = null;
-      activeBuild = null;
-      updateTerrainSelection();
-      updateBuildSelection();
-      await renderBuildButtons();
-      metaEpoch.textContent = epochLabels[payload.epoch || epochSelect.value] || (payload.epoch || epochSelect.value);
-      setActiveToolLabel('Ninguna');
-      persistZonePresetsToStorage();
-      updateZonePresetStatus();
-      setStatus('Diseño importado en el mapa real.');
-    }
-
-    epochSelect.addEventListener('change', async () => {
-      metaEpoch.textContent = epochLabels[epochSelect.value] || epochSelect.value;
-      if (!frameReady) return;
-      const api = getFrameApi();
-      if (!api) return;
-      api.regenerateProceduralMap(epochSelect.value);
-      activeTerrain = null;
-      activeBuild = null;
-      updateTerrainSelection();
-      await renderBuildButtons();
-      setActiveToolLabel('Ninguna');
-      setStatus(`Mapa procedural regenerado para ${epochLabels[epochSelect.value] || epochSelect.value}.`);
-    });
-
-    brushSize.addEventListener('input', () => {
-      brushSizeLabel.textContent = String(brushSize.value);
-      const api = getFrameApi();
-      if (api) api.setBrushSize(Number(brushSize.value || 2));
-    });
-
-    buildingScaleInput.addEventListener('input', () => {
-      updateScaleLabels();
-      try { localStorage.setItem(BUILDING_SCALE_KEY, String(getDesiredBuildingScale())); } catch (e) {}
-      applyScaleToFrame();
-    });
-
-    entityScaleInput.addEventListener('input', () => {
-      updateScaleLabels();
-      try { localStorage.setItem(ENTITY_SCALE_KEY, String(getDesiredEntityScale())); } catch (e) {}
-      applyScaleToFrame();
-    });
-
-    document.getElementById('btnDisableTerrain').addEventListener('click', () => {
-      const api = getFrameApi();
-      if (!api) return;
-      api.disableTerrainBrush();
-      activeTerrain = null;
-      if (visualTool === 'terrain') setVisualTool('select');
-      updateTerrainSelection();
-      setActiveToolLabel(activeBuild ? metaTool.textContent : 'Ninguna');
-      if (!activeBuild) setStatus('Pincel de terreno desactivado.');
-    });
-
-    document.getElementById('btnDemolish').addEventListener('click', () => {
-      const api = getFrameApi();
-      if (!api) return;
-      activeTerrain = null;
-      activeBuild = 'demolish';
-      api.selectBuildTool('demolish');
-      setVisualTool('select');
-      updateTerrainSelection();
-      updateBuildSelection();
-      setActiveToolLabel('Demoler');
-      setStatus('Herramienta activa: Demoler. Haz clic en el mapa para retirar edificios.');
-    });
-
-    document.getElementById('btnClearTool').addEventListener('click', () => {
-      const api = getFrameApi();
-      if (!api) return;
-      api.clearTool();
-      api.disableTerrainBrush();
-      activeTerrain = null;
-      activeBuild = null;
-      setVisualTool('select');
-      updateTerrainSelection();
-      updateBuildSelection();
-      setActiveToolLabel('Ninguna');
-      setStatus('Sin herramienta activa.');
-    });
-
-    document.getElementById('btnRegenerate').addEventListener('click', async () => {
-      const api = getFrameApi();
-      if (!api) return;
-      const accepted = await confirmAction('Se regenerará el mundo procedural y se perderán cambios no exportados. ¿Continuar?', {
-        title: 'Regenerar mapa',
-        acceptText: 'Regenerar'
-      });
-      if (!accepted) return;
-      api.regenerateProceduralMap(epochSelect.value);
-      undoStack.length = 0;
-      redoStack.length = 0;
-      updateHistoryButtons();
-      activeTerrain = null;
-      activeBuild = null;
-      updateTerrainSelection();
-      updateBuildSelection();
-      await renderBuildButtons();
-      clearSelectedObject();
-      setActiveToolLabel('Ninguna');
-      setStatus(`Mapa procedural regenerado para ${epochLabels[epochSelect.value] || epochSelect.value}.`);
-    });
-
-    document.getElementById('visualToolGrid').addEventListener('click', (ev) => {
-      const btn = ev.target && ev.target.closest && ev.target.closest('[data-vtool]');
-      if (!btn) return;
-      const tool = btn.dataset.vtool || 'select';
-      setVisualTool(tool);
-      const api = getFrameApi();
-      if (!api) return;
-      if (tool === 'terrain') {
-        if (activeTerrain) api.enableTerrainBrush(activeTerrain, Number(brushSize.value || 2));
-      } else {
-        api.disableTerrainBrush();
-      }
-      updateTerrainSelection();
-    });
-
-    btnTogglePrecision.addEventListener('click', () => {
-      const hidden = precisionPanel.classList.toggle('hidden');
-      btnTogglePrecision.textContent = hidden ? 'Mostrar' : 'Ocultar';
-    });
-
-    document.getElementById('btnReloadFrame').addEventListener('click', () => {
-      initializeFrame(true);
-    });
-
-    document.getElementById('btnOpenMain').addEventListener('click', () => {
-      window.open('../../index.html', '_blank', 'noopener,noreferrer');
-    });
-
-    document.getElementById('btnImport').addEventListener('click', () => {
-      fileInput.value = '';
-      fileInput.click();
-    });
-
-    fileInput.addEventListener('change', async (ev) => {
-      const file = ev.target && ev.target.files && ev.target.files[0];
-      if (!file) return;
-      try {
-        await importDesignFile(file);
-      } catch (e) {
-        setStatus(`No se pudo importar el diseño: ${e && e.message ? e.message : e}`);
-      }
-    });
-
-    document.getElementById('btnExport').addEventListener('click', async () => {
-      try {
-        await exportCurrentDesign();
-      } catch (e) {
-        setStatus(`No se pudo exportar: ${e && e.message ? e.message : e}`);
-      }
-    });
-
-    document.getElementById('btnSavePending').addEventListener('click', async () => {
-      try {
-        await savePendingDesign();
-      } catch (e) {
-        setStatus(`No se pudo guardar el diseño: ${e && e.message ? e.message : e}`);
-      }
-    });
-
-    document.getElementById('btnClearPending').addEventListener('click', () => {
-      (async () => {
-      try {
-        const accepted = await confirmAction('Se eliminará el diseño pendiente para nuevas partidas. ¿Continuar?', {
-          title: 'Limpiar guardado',
-          acceptText: 'Eliminar'
-        });
-        if (!accepted) return;
+      function clearPending() {
         localStorage.removeItem(STORAGE_KEY);
         localStorage.removeItem(META_KEY);
-        updatePendingStatus();
-        setStatus('Diseño pendiente eliminado.');
-      } catch (e) {
-        setStatus('No se pudo limpiar el diseño pendiente.');
+        try {
+          if (window.opener && !window.opener.closed) window.opener.postMessage({ type: 'meso-map-design-updated' }, '*');
+        } catch (e) {}
+        setStatus('Guardado pendiente eliminado.', 'warn');
       }
-      })();
-    });
 
-    document.getElementById('btnApplySelection').addEventListener('click', () => {
-      try {
-        applySelectionFromInputs();
-      } catch (e) {
-        setStatus(`No se pudo aplicar la selección: ${e && e.message ? e.message : e}`);
+      function refreshProjectUi() {
+        el.designName.value = state.name;
+        el.projectBadge.textContent = state.name;
+        el.epochSelect.value = state.epoch;
+        el.epochBadge.textContent = state.epoch;
       }
-    });
 
-    document.getElementById('btnSelectAll').addEventListener('click', () => {
-      try {
-        const design = getCurrentDesign();
-        activeSelection = {
-          minC: 0,
-          minR: 0,
-          maxC: Math.max(0, Number(design.cols || 1) - 1),
-          maxR: Math.max(0, Number(design.rows || 1) - 1)
+      function syncSelectionToInputs() {
+        const s = state.selection;
+        el.selMin.value = `${s.minC},${s.minR}`;
+        el.selMax.value = `${s.maxC},${s.maxR}`;
+      }
+
+      function applyInputsToSelection() {
+        const [c1, r1] = parsePair(el.selMin.value, 0, 0);
+        const [c2, r2] = parsePair(el.selMax.value, 0, 0);
+        state.selection = {
+          minC: clamp(Math.min(c1, c2), 0, state.cols - 1),
+          minR: clamp(Math.min(r1, r2), 0, state.rows - 1),
+          maxC: clamp(Math.max(c1, c2), 0, state.cols - 1),
+          maxR: clamp(Math.max(r1, r2), 0, state.rows - 1)
         };
-        setSelectionInputs(activeSelection);
-        updateSelectionSummary();
-        setStatus('Selección aplicada a todo el mapa.');
-      } catch (e) {
-        setStatus(`No se pudo seleccionar todo: ${e && e.message ? e.message : e}`);
+        syncSelectionToInputs();
+        renderAll();
       }
-    });
 
-    document.getElementById('btnFillSelection').addEventListener('click', () => {
-      try {
-        fillTerrainInSelection();
-      } catch (e) {
-        setStatus(`No se pudo rellenar la selección: ${e && e.message ? e.message : e}`);
+      function captureGroup() {
+        const s = state.selection;
+        const width = s.maxC - s.minC + 1;
+        const height = s.maxR - s.minR + 1;
+        const data = {
+          width,
+          height,
+          tileBiome: [],
+          heightMap: []
+        };
+        for (let r = s.minR; r <= s.maxR; r++) {
+          data.tileBiome.push(tileBiome[r].slice(s.minC, s.maxC + 1));
+          data.heightMap.push(heightMap[r].slice(s.minC, s.maxC + 1));
+        }
+        const name = (el.groupName.value || '').trim() || `Conjunto ${state.groups.length + 1}`;
+        const group = {
+          id: `grp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          name,
+          epoch: state.epoch,
+          createdAt: new Date().toISOString(),
+          data
+        };
+        state.groups.push(group);
+        state.groupId = group.id;
+        persistGroups();
+        rebuildGroupList();
+        setStatus(`Conjunto guardado: ${name} (${width}x${height}).`, 'good');
       }
-    });
 
-    document.getElementById('btnClearSelectionBuildings').addEventListener('click', async () => {
-      try {
-        await clearBuildingsInSelection();
-      } catch (e) {
-        setStatus(`No se pudo limpiar la selección: ${e && e.message ? e.message : e}`);
+      function deleteGroup() {
+        const selected = state.groups.find(g => g.id === state.groupId);
+        if (!selected) {
+          setStatus('No hay conjunto seleccionado.', 'warn');
+          return;
+        }
+        state.groups = state.groups.filter(g => g.id !== selected.id);
+        state.groupId = state.groups[0] ? state.groups[0].id : null;
+        persistGroups();
+        rebuildGroupList();
+        setStatus(`Conjunto eliminado: ${selected.name}.`, 'warn');
       }
-    });
 
-    document.getElementById('btnScaleHalf').addEventListener('click', () => {
-      try {
-        scaleSelectionTerrain(0.5);
-      } catch (e) {
-        setStatus(`No se pudo escalar selección: ${e && e.message ? e.message : e}`);
+      function placeGroupAt(anchorCol, anchorRow) {
+        const group = state.groups.find(g => g.id === state.groupId);
+        if (!group) {
+          setStatus('Selecciona un conjunto.', 'warn');
+          return;
+        }
+        const [dx, dy] = parsePair(el.groupOffset.value, 0, 0);
+        beginAction();
+        for (let r = 0; r < group.data.height; r++) {
+          for (let c = 0; c < group.data.width; c++) {
+            const tr = anchorRow + dy + r;
+            const tc = anchorCol + dx + c;
+            if (tr < 0 || tc < 0 || tr >= state.rows || tc >= state.cols) continue;
+            const b = group.data.tileBiome[r][c];
+            setCell(tc, tr, b);
+          }
+        }
+        commitAction();
+        renderAll();
       }
-    });
 
-    document.getElementById('btnScaleDouble').addEventListener('click', () => {
-      try {
-        scaleSelectionTerrain(2);
-      } catch (e) {
-        setStatus(`No se pudo escalar selección: ${e && e.message ? e.message : e}`);
+      function rebuildGroupList() {
+        el.groupList.innerHTML = '';
+        state.groups.forEach(g => {
+          const o = document.createElement('option');
+          o.value = g.id;
+          o.textContent = `${g.name} (${g.data.width}x${g.data.height})`;
+          o.selected = g.id === state.groupId;
+          el.groupList.appendChild(o);
+        });
+        const selected = state.groups.find(g => g.id === state.groupId);
+        el.groupSummary.textContent = selected
+          ? `Activo: ${selected.name} · ${selected.data.width}x${selected.data.height}`
+          : 'Sin conjuntos guardados.';
+        renderAll();
       }
-    });
 
-    document.getElementById('btnCopySelection').addEventListener('click', () => {
-      try {
-        copySelection();
-      } catch (e) {
-        setStatus(`No se pudo copiar la selección: ${e && e.message ? e.message : e}`);
+      function persistGroups() {
+        localStorage.setItem(GROUPS_KEY, JSON.stringify(state.groups || []));
       }
-    });
 
-    document.getElementById('btnPasteSelection').addEventListener('click', () => {
-      try {
-        pasteSelectionWithOffset();
-      } catch (e) {
-        setStatus(`No se pudo pegar la selección: ${e && e.message ? e.message : e}`);
+      function loadGroups() {
+        try {
+          const raw = JSON.parse(localStorage.getItem(GROUPS_KEY) || '[]');
+          state.groups = Array.isArray(raw) ? raw : [];
+        } catch (e) {
+          state.groups = [];
+        }
+        state.groupId = state.groups[0] ? state.groups[0].id : null;
       }
-    });
 
-    if (zonePresetType) {
-      zonePresetType.addEventListener('change', () => {
-        try { updateZonePresetStatus(); } catch (e) {}
+      function noiseHash2D(x, y, seed) {
+        let n = (x * 374761393 + y * 668265263 + seed * 69069) | 0;
+        n = (n ^ (n >>> 13)) * 1274126177;
+        return ((n ^ (n >>> 16)) >>> 0) / 4294967295;
+      }
+
+      function valueNoise2D(x, y, seed) {
+        const x0 = Math.floor(x);
+        const y0 = Math.floor(y);
+        const tx = x - x0;
+        const ty = y - y0;
+        const sx = tx * tx * (3 - 2 * tx);
+        const sy = ty * ty * (3 - 2 * ty);
+        const n00 = noiseHash2D(x0, y0, seed);
+        const n10 = noiseHash2D(x0 + 1, y0, seed);
+        const n01 = noiseHash2D(x0, y0 + 1, seed);
+        const n11 = noiseHash2D(x0 + 1, y0 + 1, seed);
+        const nx0 = n00 + (n10 - n00) * sx;
+        const nx1 = n01 + (n11 - n01) * sx;
+        return nx0 + (nx1 - nx0) * sy;
+      }
+
+      function fbm(x, y, seed, oct = 4) {
+        let sum = 0;
+        let amp = 0.5;
+        let freq = 1;
+        let norm = 0;
+        for (let i = 0; i < oct; i++) {
+          sum += valueNoise2D(x * freq, y * freq, seed + i * 101) * amp;
+          norm += amp;
+          amp *= 0.5;
+          freq *= 2;
+        }
+        return sum / Math.max(0.0001, norm);
+      }
+
+      function generateCoherentBiomes() {
+        const seed = state.epoch.split('').reduce((a, ch) => a + ch.charCodeAt(0), 0) + 29;
+        beginAction();
+        const riverCenter = new Array(state.cols).fill(0);
+        const riverWidth = new Array(state.cols).fill(2);
+        for (let c = 0; c < state.cols; c++) {
+          const x = c / Math.max(1, state.cols - 1);
+          const base = state.rows * 0.47 + Math.sin(x * 8 + seed * 0.03) * state.rows * 0.09;
+          const wiggle = Math.sin(x * 24 + seed * 0.08) * state.rows * 0.025;
+          riverCenter[c] = clamp(Math.round(base + wiggle), 2, state.rows - 3);
+          riverWidth[c] = 2 + Math.floor(valueNoise2D(x * 7, 0.5, seed + 13) * 3);
+        }
+
+        for (let r = 0; r < state.rows; r++) {
+          const y = r / Math.max(1, state.rows - 1);
+          for (let c = 0; c < state.cols; c++) {
+            const x = c / Math.max(1, state.cols - 1);
+            const elevation = clamp((fbm(x * 3.1, y * 3.1, seed + 91, 5) * 0.65) + ((0.1 + y * 0.55 + (x - 0.5) * (x - 0.5) * 0.08) * 0.35), 0, 1);
+            const distRiver = Math.abs(r - riverCenter[c]);
+            const moisture = clamp((fbm(x * 4.4, y * 4.4, seed + 707, 4) * 0.55) + (Math.exp(-distRiver / 7.5) * 0.45), 0, 1);
+            const w = riverWidth[c];
+
+            let biome = 'alluvial';
+            if (distRiver <= w) biome = 'water';
+            else if (distRiver <= w + 1) biome = 'riparian';
+            else if (elevation > 0.78) biome = 'hills';
+            else if (moisture > 0.72) biome = 'forest';
+            else if (moisture > 0.62 && elevation < 0.42) biome = 'marsh';
+            else if (moisture < 0.26 && elevation > 0.38) biome = 'saline';
+            else if (moisture < 0.36) biome = 'steppe';
+            else biome = 'alluvial';
+
+            setCell(c, r, biome);
+          }
+        }
+        commitAction();
+        renderAll();
+        setStatus(`Biomas regenerados con patrón coherente (${state.epoch}).`, 'good');
+      }
+
+      function applyTool(cell, isFinal) {
+        if (cell.col < 0 || cell.row < 0 || cell.col >= state.cols || cell.row >= state.rows) return;
+        if (state.tool === 'brush') paintCircle(cell.col, cell.row, state.terrain);
+        else if (state.tool === 'fill' && isFinal) fillFlood(cell.col, cell.row, state.terrain);
+        else if (state.tool === 'rect' && isFinal && state.rectStart) {
+          fillRect(state.rectStart.col, state.rectStart.row, cell.col, cell.row, state.terrain);
+          state.rectStart = null;
+        } else if (state.tool === 'select' && isFinal && state.rectStart) {
+          state.selection = {
+            minC: clamp(Math.min(state.rectStart.col, cell.col), 0, state.cols - 1),
+            minR: clamp(Math.min(state.rectStart.row, cell.row), 0, state.rows - 1),
+            maxC: clamp(Math.max(state.rectStart.col, cell.col), 0, state.cols - 1),
+            maxR: clamp(Math.max(state.rectStart.row, cell.row), 0, state.rows - 1)
+          };
+          syncSelectionToInputs();
+          state.rectStart = null;
+        } else if (state.tool === 'group' && isFinal) {
+          placeGroupAt(cell.col, cell.row);
+        }
+      }
+
+      function refreshCursorBadge() {
+        el.cursorBadge.textContent = state.hover.col >= 0 && state.hover.row >= 0
+          ? `${state.hover.col}, ${state.hover.row}`
+          : '-, -';
+      }
+
+      el.rail.addEventListener('click', (ev) => {
+        const btn = ev.target.closest('.rail-btn');
+        if (!btn) return;
+        state.tool = btn.dataset.tool;
+        updateToolUi();
+        renderAll();
       });
-    }
 
-    document.getElementById('btnZonePresetCapture').addEventListener('click', () => {
-      try {
-        saveZonePresetFromSelection();
-      } catch (e) {
-        setStatus(`No se pudo guardar la plantilla de zona: ${e && e.message ? e.message : e}`);
-      }
-    });
+      el.brush.addEventListener('input', () => {
+        state.brush = clamp(Number(el.brush.value) || 1, 1, 8);
+        el.brushValue.textContent = String(state.brush);
+      });
 
-    document.getElementById('btnZonePresetClear').addEventListener('click', async () => {
-      try {
-        await clearZonePreset();
-      } catch (e) {
-        setStatus(`No se pudo borrar la plantilla de zona: ${e && e.message ? e.message : e}`);
-      }
-    });
+      el.designName.addEventListener('input', () => {
+        state.name = (el.designName.value || '').trim() || 'Mapa sin título';
+        el.projectBadge.textContent = state.name;
+      });
 
-    document.getElementById('btnOpenZonePresetEditor').addEventListener('click', () => {
-      try {
-        const w = window.open('./zone-layout-visual-editor.html', '_blank', 'noopener,noreferrer,width=1280,height=860');
-        if (w && typeof w.focus === 'function') w.focus();
-        if (!w) setStatus('No se pudo abrir el editor aparte (revisa bloqueador de ventanas).');
-      } catch (e) {
-        setStatus(`No se pudo abrir el editor aparte: ${e && e.message ? e.message : e}`);
-      }
-    });
+      el.epochSelect.addEventListener('change', () => {
+        state.epoch = el.epochSelect.value || 'mesopotamia';
+        el.epochBadge.textContent = state.epoch;
+      });
 
-    document.getElementById('btnZonePresetExport').addEventListener('click', () => {
-      try {
-        downloadZonePresetsJson();
-        setStatus('Plantillas de zona exportadas a JSON independiente.');
-      } catch (e) {
-        setStatus(`No se pudo exportar plantillas: ${e && e.message ? e.message : e}`);
-      }
-    });
+      canv.main.addEventListener('mousedown', (ev) => {
+        if (ev.button === 1 || ev.shiftKey) {
+          state.panning = true;
+          state.panOrigin = { x: ev.clientX, y: ev.clientY };
+          return;
+        }
+        if (ev.button !== 0) return;
+        const cell = screenToCell(ev.clientX, ev.clientY);
+        state.drawing = true;
+        beginAction();
+        if (state.tool === 'rect' || state.tool === 'select') {
+          state.rectStart = { col: cell.col, row: cell.row };
+        } else {
+          applyTool(cell, state.tool !== 'brush');
+        }
+        renderAll();
+      });
 
-    document.getElementById('btnZonePresetImport').addEventListener('click', () => {
-      try {
-        const input = document.getElementById('zonePresetFileInput');
-        input.value = '';
-        input.click();
-      } catch (e) {
-        setStatus('No se pudo abrir selector de archivo para plantillas de zona.');
-      }
-    });
+      canv.main.addEventListener('mousemove', (ev) => {
+        const cell = screenToCell(ev.clientX, ev.clientY);
+        state.hover = cell;
+        refreshCursorBadge();
+        if (state.panning) {
+          const dx = ev.clientX - state.panOrigin.x;
+          const dy = ev.clientY - state.panOrigin.y;
+          state.panOrigin = { x: ev.clientX, y: ev.clientY };
+          state.panX += dx;
+          state.panY += dy;
+          renderAll();
+          return;
+        }
+        if (state.drawing && state.tool === 'brush') {
+          applyTool(cell, false);
+          renderAll();
+        } else {
+          renderAll();
+        }
+      });
 
-    document.getElementById('zonePresetFileInput').addEventListener('change', async (ev) => {
-      const file = ev.target && ev.target.files && ev.target.files[0];
-      if (!file) return;
-      try {
-        const text = await file.text();
-        const parsed = JSON.parse(text);
-        const normalized = normalizeZonePresetPayload(parsed);
-        importZonePresetsObject(normalized);
-        setStatus('Plantillas de zona importadas desde JSON independiente.');
-      } catch (e) {
-        setStatus(`No se pudo importar plantillas: ${e && e.message ? e.message : e}`);
-      } finally {
-        try { ev.target.value = ''; } catch (err) {}
-      }
-    });
+      window.addEventListener('mouseup', (ev) => {
+        if (state.panning) state.panning = false;
+        if (!state.drawing) return;
+        state.drawing = false;
+        const cell = screenToCell(ev.clientX, ev.clientY);
+        applyTool(cell, true);
+        commitAction();
+        renderAll();
+      });
 
-    document.getElementById('btnUndo').addEventListener('click', () => {
-      try {
-        undoDesignChange();
-      } catch (e) {
-        setStatus(`No se pudo deshacer: ${e && e.message ? e.message : e}`);
-      }
-    });
-
-    document.getElementById('btnRedo').addEventListener('click', () => {
-      try {
-        redoDesignChange();
-      } catch (e) {
-        setStatus(`No se pudo rehacer: ${e && e.message ? e.message : e}`);
-      }
-    });
-
-    document.addEventListener('keydown', (ev) => {
-      if (!frameReady) return;
-      const key = String(ev.key || '').toLowerCase();
-      const ctrl = ev.ctrlKey || ev.metaKey;
-      if (ctrl && !ev.shiftKey && key === 'z') {
+      canv.main.addEventListener('wheel', (ev) => {
         ev.preventDefault();
-        try { undoDesignChange(); } catch (e) {}
-        return;
+        const prev = state.zoom;
+        state.zoom = clamp(state.zoom + (ev.deltaY < 0 ? 0.1 : -0.1), 0.35, 3);
+        if (state.zoom === prev) return;
+        const rect = canv.main.getBoundingClientRect();
+        const mx = ev.clientX - rect.left;
+        const my = ev.clientY - rect.top;
+        const sx = (mx - state.panX) / prev;
+        const sy = (my - state.panY) / prev;
+        state.panX = mx - sx * state.zoom;
+        state.panY = my - sy * state.zoom;
+        updateViewInfo();
+        renderAll();
+      }, { passive: false });
+
+      document.getElementById('btnGenerate').addEventListener('click', generateCoherentBiomes);
+      document.getElementById('btnNew').addEventListener('click', () => {
+        resetMap('alluvial');
+        renderAll();
+        setStatus('Mapa nuevo creado.', 'good');
+      });
+      document.getElementById('btnUndo').addEventListener('click', undo);
+      document.getElementById('btnRedo').addEventListener('click', redo);
+      document.getElementById('btnApplySelection').addEventListener('click', () => {
+        applyInputsToSelection();
+        setStatus('Selección aplicada.', 'good');
+      });
+      document.getElementById('btnSelectAll').addEventListener('click', () => {
+        state.selection = { minC: 0, minR: 0, maxC: state.cols - 1, maxR: state.rows - 1 };
+        syncSelectionToInputs();
+        renderAll();
+        setStatus('Selección global aplicada.', 'good');
+      });
+
+      document.getElementById('btnCaptureGroup').addEventListener('click', captureGroup);
+      document.getElementById('btnDeleteGroup').addEventListener('click', deleteGroup);
+      document.getElementById('btnUseGroup').addEventListener('click', () => {
+        state.tool = 'group';
+        updateToolUi();
+        setStatus('Modo colocar conjunto activo.', 'good');
+      });
+
+      el.groupList.addEventListener('change', () => {
+        state.groupId = el.groupList.value || null;
+        rebuildGroupList();
+      });
+
+      document.getElementById('btnSavePending').addEventListener('click', savePending);
+      document.getElementById('btnLoadPending').addEventListener('click', loadPending);
+      document.getElementById('btnExport').addEventListener('click', exportJsonFile);
+      document.getElementById('btnImport').addEventListener('click', () => {
+        el.fileInput.value = '';
+        el.fileInput.click();
+      });
+      el.fileInput.addEventListener('change', (ev) => {
+        const file = ev.target.files && ev.target.files[0];
+        if (!file) return;
+        file.text().then(text => {
+          importPayload(JSON.parse(text));
+          setStatus('Archivo importado.', 'good');
+        }).catch(err => setStatus(`Importación falló: ${err && err.message ? err.message : err}`, 'warn'));
+      });
+      document.getElementById('btnClearPending').addEventListener('click', clearPending);
+      document.getElementById('btnOpenGame').addEventListener('click', () => {
+        window.open('../../index.html', '_blank', 'noopener,noreferrer');
+      });
+
+      window.addEventListener('keydown', (ev) => {
+        const key = (ev.key || '').toLowerCase();
+        if ((ev.ctrlKey || ev.metaKey) && !ev.shiftKey && key === 'z') {
+          ev.preventDefault();
+          undo();
+          return;
+        }
+        if ((ev.ctrlKey || ev.metaKey) && (key === 'y' || (ev.shiftKey && key === 'z'))) {
+          ev.preventDefault();
+          redo();
+          return;
+        }
+        if (key === 'b') state.tool = 'brush';
+        if (key === 'f') state.tool = 'fill';
+        if (key === 'r') state.tool = 'rect';
+        if (key === 's') state.tool = 'select';
+        if (key === 'g') state.tool = 'group';
+        updateToolUi();
+      });
+
+      window.addEventListener('resize', resizeCanvases);
+      window.addEventListener('storage', (ev) => {
+        if (ev.key === GROUPS_KEY) {
+          loadGroups();
+          rebuildGroupList();
+        }
+      });
+
+      function bootstrap() {
+        terrainButtons();
+        state.name = el.designName.value;
+        state.epoch = el.epochSelect.value;
+        el.epochBadge.textContent = state.epoch;
+        el.brushValue.textContent = String(state.brush);
+        updateToolUi();
+        resetMap('alluvial');
+        loadGroups();
+        rebuildGroupList();
+        syncSelectionToInputs();
+        resizeCanvases();
+        try { loadPending(); } catch (e) {}
       }
-      if ((ctrl && key === 'y') || (ctrl && ev.shiftKey && key === 'z')) {
-        ev.preventDefault();
-        try { redoDesignChange(); } catch (e) {}
-        return;
-      }
-      if (key === '[' || key === ']') {
-        ev.preventDefault();
-        const delta = key === ']' ? 1 : -1;
-        const current = toInt(brushSize.value, 2);
-        const next = clamp(current + delta, 1, 6);
-        brushSize.value = String(next);
-        brushSizeLabel.textContent = String(next);
-        const api = getFrameApi();
-        if (api) api.setBrushSize(next);
-      }
-      if (key === 'q') setVisualTool('select');
-      if (key === 'w') setVisualTool('move');
-      if (key === 'x') setVisualTool('delete');
-    });
 
-    window.addEventListener('resize', () => {
-      updateSelectedOverlay();
-    });
-
-    window.addEventListener('storage', (ev) => {
-      if (ev.key === STORAGE_KEY || ev.key === META_KEY) updatePendingStatus();
-      if (ev.key === ZONE_PRESETS_STORAGE_KEY) updateZonePresetStatus();
-    });
-
-    window.addEventListener('message', (ev) => {
-      try {
-        if (ev && ev.data && ev.data.type === 'meso-zone-presets-updated') updateZonePresetStatus();
-      } catch (e) {}
-    });
-
-    window.addEventListener('focus', () => {
-      try { updateZonePresetStatus(); } catch (e) {}
-    });
-
-    frame.addEventListener('load', async () => {
-      try {
-        const api = await waitForApi();
-        frameReady = true;
-        frameCanvasInteractionBound = false;
-        setStatus('Motor cargado. Preparando herramientas del editor...');
-        if (regenerateAfterLoad) api.regenerateProceduralMap(epochSelect.value);
-        regenerateAfterLoad = false;
-        applyScaleToFrame();
-        api.clearTool();
-        api.disableTerrainBrush();
-        activeTerrain = null;
-        activeBuild = null;
-        undoStack.length = 0;
-        redoStack.length = 0;
-        updateHistoryButtons();
-        updateTerrainSelection();
-        await renderBuildButtons();
-        bindFrameCanvasInteractions();
-        clearSelectedObject();
-        setVisualTool('select');
-        persistZonePresetsToStorage();
-        updateZonePresetStatus();
-        setStatus('Visor cargado. Ya puedes editar el mapa procedural real.');
-      } catch (e) {
-        setStatus(`Error al inicializar el visor: ${e && e.message ? e.message : e}`);
-      }
-    });
-
-    (function init() {
-      const savedEpoch = localStorage.getItem('meso.currentEpoch') || 'mesopotamia';
-      const savedBuildingScale = Number(localStorage.getItem(BUILDING_SCALE_KEY) || '1');
-      const savedEntityScale = Number(localStorage.getItem(ENTITY_SCALE_KEY) || '1');
-      epochSelect.value = savedEpoch;
-      metaEpoch.textContent = epochLabels[savedEpoch] || savedEpoch;
-      brushSizeLabel.textContent = String(brushSize.value);
-      buildingScaleInput.value = String(clampScale(savedBuildingScale));
-      entityScaleInput.value = String(clampScale(savedEntityScale));
-      updateScaleLabels();
-      renderTerrainButtons();
-      updateVisualToolButtons();
-      updateTerrainSelection();
-      updateBuildSelection();
-      updateSelectionSummary();
-      updateHistoryButtons();
-      updateZonePresetStatus();
-      setSelectedObjectSummary('Nada seleccionado.');
-      updatePendingStatus();
-      initializeFrame(true);
+      bootstrap();
     })();
   </script>
 </body>
