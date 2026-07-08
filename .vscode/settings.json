@@ -23,6 +23,10 @@
         "/^node --check engine/game-engine\\.js$/": {
             "approve": true,
             "matchCommandLine": true
+        },
+        "/^node tools/syntax_check\\.js engine/game-engine\\.js engine/entities\\.js$/": {
+            "approve": true,
+            "matchCommandLine": true
         }
     },
     "liveServer.settings.port": 5501

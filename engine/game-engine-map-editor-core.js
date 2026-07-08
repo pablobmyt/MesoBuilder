@@ -5,6 +5,8 @@ export function createMapEditorCore(deps) {
   const getHeightMap = () => (typeof deps.getHeightMap === 'function' ? deps.getHeightMap() : deps.heightMap);
   const getGrid = () => (typeof deps.getGrid === 'function' ? deps.getGrid() : deps.grid);
   const getEntities = () => (typeof deps.getEntities === 'function' ? deps.getEntities() : deps.entities);
+  const getRabbits = () => (typeof deps.getRabbits === 'function' ? deps.getRabbits() : deps.rabbits);
+  const getFoxes = () => (typeof deps.getFoxes === 'function' ? deps.getFoxes() : deps.foxes);
   const getPlayer = () => (typeof deps.getPlayer === 'function' ? deps.getPlayer() : deps.player);
 
   function getMapTerrainMeta(terrainId) {
@@ -136,11 +138,13 @@ export function createMapEditorCore(deps) {
     const heightMap = getHeightMap();
     const grid = getGrid();
     const entities = getEntities();
+    const rabbits = getRabbits();
+    const foxes = getFoxes();
     const player = getPlayer();
     return {
       meta: {
         type: 'mesobuilder-map-design',
-        version: 2,
+        version: 3,
         exportedAt: new Date().toISOString(),
         epoch: deps.getCurrentEpoch()
       },
@@ -151,6 +155,8 @@ export function createMapEditorCore(deps) {
       heightMap: heightMap.map(row => row.slice()),
       grid: cloneMapDesignValue(grid, []),
       entities: cloneMapDesignValue(entities || [], []),
+      rabbits: cloneMapDesignValue(rabbits || [], []),
+      foxes: cloneMapDesignValue(foxes || [], []),
       villages: cloneMapDesignValue(window._VILLAGES || [], []),
       zoneSpawnPresets: cloneMapDesignValue(window._ZONE_SPAWN_PRESETS || {}, {}),
       player: {
@@ -191,6 +197,8 @@ export function createMapEditorCore(deps) {
       const heightMap = getHeightMap();
       const grid = getGrid();
       const entities = getEntities();
+      const rabbits = getRabbits();
+      const foxes = getFoxes();
       const player = getPlayer();
       if (!source || !Array.isArray(source.tileBiome)) throw new Error('Formato de diseño no válido');
       if (source.epoch && !options.skipEpochApply && source.epoch !== deps.getCurrentEpoch()) {
@@ -232,7 +240,40 @@ export function createMapEditorCore(deps) {
             if (typeof it.row !== 'number') it.row = (typeof it.y === 'number') ? Math.floor(it.y) : 0;
             it.x = typeof it.x === 'number' ? it.x : it.col;
             it.y = typeof it.y === 'number' ? it.y : it.row;
+            if ((it.kind === 'tree' || it.kind === 'resource' || it.kind === 'ambient') && tileBiome[it.row] && tileBiome[it.row][it.col] === 'water') return;
             entities.push(it);
+          });
+        } catch (e) {}
+      }
+      if (Array.isArray(rabbits) && Object.prototype.hasOwnProperty.call(source, 'rabbits') && Array.isArray(source.rabbits)) {
+        try {
+          rabbits.length = 0;
+          source.rabbits.forEach(rab => {
+            if (!rab || typeof rab !== 'object') return;
+            const it = cloneMapDesignValue(rab, null);
+            if (!it) return;
+            if (typeof it.col !== 'number') it.col = (typeof it.x === 'number') ? Math.floor(it.x) : 0;
+            if (typeof it.row !== 'number') it.row = (typeof it.y === 'number') ? Math.floor(it.y) : 0;
+            it.x = typeof it.x === 'number' ? it.x : it.col;
+            it.y = typeof it.y === 'number' ? it.y : it.row;
+            if (tileBiome[it.row] && tileBiome[it.row][it.col] === 'water') return;
+            rabbits.push(it);
+          });
+        } catch (e) {}
+      }
+      if (Array.isArray(foxes) && Object.prototype.hasOwnProperty.call(source, 'foxes') && Array.isArray(source.foxes)) {
+        try {
+          foxes.length = 0;
+          source.foxes.forEach(fox => {
+            if (!fox || typeof fox !== 'object') return;
+            const it = cloneMapDesignValue(fox, null);
+            if (!it) return;
+            if (typeof it.col !== 'number') it.col = (typeof it.x === 'number') ? Math.floor(it.x) : 0;
+            if (typeof it.row !== 'number') it.row = (typeof it.y === 'number') ? Math.floor(it.y) : 0;
+            it.x = typeof it.x === 'number' ? it.x : it.col;
+            it.y = typeof it.y === 'number' ? it.y : it.row;
+            if (tileBiome[it.row] && tileBiome[it.row][it.col] === 'water') return;
+            foxes.push(it);
           });
         } catch (e) {}
       }

@@ -617,8 +617,8 @@
 
   const _mesoPageParams = new URLSearchParams(window.location.search || '');
   window._standaloneEditorMode = _mesoPageParams.get('editor') === '1';
-  // Pure map editor is now the DEFAULT mode (no NPCs, no saved state loading)
-  window._pureMapEditorMode = _mesoPageParams.get('gameplay') !== '1';
+  // Gameplay is the default runtime. Pure editor mode is only for standalone editor launches.
+  window._pureMapEditorMode = window._standaloneEditorMode && _mesoPageParams.get('gameplay') !== '1';
   window._standaloneEditorEpoch = _mesoPageParams.get('epoch') || '';
   
   // Load entity-pixels for menu rendering
@@ -772,6 +772,11 @@
   function loadEngineAndStart(opts){
      // set externalMenu flag so engine doesn't re-show its internal menu
     window._externalMenu = true;
+    try {
+      const editorMode = !!(opts && opts.editorMode);
+      window._standaloneEditorMode = editorMode;
+      window._pureMapEditorMode = editorMode;
+    } catch (e) {}
     // Capture console and runtime errors so we can surface them in the loader overlay
     (function(){
       try {

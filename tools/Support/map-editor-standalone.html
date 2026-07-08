@@ -8,9 +8,6 @@
     :root {
       --bg: #0d1117;
       --panel: #131a23;
-      --panel-2: #1a2330;
-      --panel-3: #0f151e;
-      --panel-4: #0b1017;
       --line: #2a3645;
       --line-soft: #202a37;
       --text: #e6edf6;
@@ -20,452 +17,506 @@
       --danger: #d16e6e;
       --ok: #68c088;
       --warn: #d3b064;
-      --viewport-grid: rgba(85, 115, 145, 0.16);
+      --viewport-grid: rgba(85,115,145,0.13);
       --tile-size: 22;
     }
-
-    * { box-sizing: border-box; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body {
-      margin: 0;
-      width: 100%;
-      height: 100%;
+      width: 100%; height: 100%;
       color: var(--text);
-      background:
-        radial-gradient(circle at 88% -8%, #213653 0%, transparent 32%),
-        radial-gradient(circle at 10% 120%, #101826 0%, transparent 44%),
-        var(--bg);
+      background: var(--bg);
       font-family: "Segoe UI", "Inter", Tahoma, sans-serif;
       overflow: hidden;
       user-select: none;
-      font-feature-settings: "cv11", "ss01";
       -webkit-font-smoothing: antialiased;
-      text-rendering: optimizeLegibility;
     }
-
     .app {
       height: 100%;
       display: grid;
-      grid-template-rows: 40px 1fr 24px;
+      grid-template-rows: 44px 1fr 26px;
     }
 
+    /* ── TOP BAR ─────────────────────────────── */
     .topbar {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0 10px;
+      padding: 0 12px;
       border-bottom: 1px solid var(--line);
-      background: linear-gradient(180deg, #131c28, #0f1620);
-      box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.28);
-      font-size: 11px;
-      letter-spacing: 0.2px;
+      background: linear-gradient(180deg,#14202e,#0e1822);
+      gap: 10px;
     }
-
-    .topbar .left,
-    .topbar .right {
-      display: flex;
-      align-items: center;
-      gap: 7px;
+    .topbar-left { display:flex; align-items:center; gap:8px; }
+    .topbar-center {
+      display:flex; align-items:center; gap:5px;
+      flex:1; justify-content:center;
     }
-
-    .topbar strong {
-      font-size: 12px;
-      letter-spacing: 0.35px;
-    }
-
+    .topbar-right { display:flex; align-items:center; gap:8px; }
+    .app-title { font-size:13px; font-weight:700; color:#cfe2ff; letter-spacing:.3px; }
     .badge {
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      padding: 2px 7px;
-      color: var(--muted);
-      background: #101722;
-      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.015);
-      font-size: 10px;
-      letter-spacing: 0.45px;
-      text-transform: uppercase;
+      border:1px solid var(--line); border-radius:6px; padding:2px 8px;
+      color:var(--muted); background:#101722;
+      font-size:10px; letter-spacing:.4px; text-transform:uppercase;
     }
+    .epoch-badge {
+      border:1px solid #4a7299; border-radius:6px; padding:3px 10px;
+      font-size:11px; font-weight:700; letter-spacing:.5px; text-transform:uppercase;
+      color:#b3d4f5; background:linear-gradient(180deg,#1a3048,#122438);
+    }
+    /* layer toggle pills */
+    .layer-toggles { display:flex; align-items:center; gap:4px; }
+    .ltog {
+      display:flex; align-items:center; gap:5px;
+      padding:3px 9px; border-radius:20px;
+      border:1px solid #2c3d50; background:#0e1a26;
+      font-size:10px; font-weight:600; letter-spacing:.3px; text-transform:uppercase;
+      cursor:pointer; transition:all .12s ease; color:var(--muted);
+    }
+    .ltog .dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; opacity:.5; transition:opacity .12s; }
+    .ltog.on { border-color:#3d6487; background:#102030; color:var(--text); }
+    .ltog.on .dot { opacity:1; }
+    .ltog:hover { border-color:#4d6d8f; }
 
+    /* ── WORKSPACE ───────────────────────────── */
     .workspace {
-      min-height: 0;
-      display: grid;
-      grid-template-columns: 58px 300px 1fr 310px;
-      gap: 0;
+      min-height:0;
+      display:grid;
+      grid-template-columns: 280px 1fr 290px;
     }
 
-    .rail {
-      border-right: 1px solid var(--line);
-      background: linear-gradient(180deg, #0f1722, #0b1119);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 6px;
-      padding: 8px 5px;
-      overflow-y: auto;
-      box-shadow: inset -1px 0 0 rgba(255,255,255,0.02);
+    /* ── LEFT PANEL ──────────────────────────── */
+    .left-panel {
+      min-width:0; overflow:auto;
+      border-right:1px solid var(--line);
+      background:linear-gradient(180deg,#111924,#0d1520);
+      padding:10px;
+      display:flex; flex-direction:column; gap:8px;
     }
-
-    .rail-btn {
-      width: 46px;
-      height: 38px;
-      border-radius: 7px;
-      border: 1px solid #2c3948;
-      background: linear-gradient(180deg, #1b2734, #121c28);
-      color: var(--text);
-      cursor: pointer;
-      font-size: 10px;
-      font-weight: 600;
-      letter-spacing: 0.45px;
-      text-transform: uppercase;
-      line-height: 1.05;
-      display: grid;
-      place-items: center;
-      text-align: center;
-      padding: 4px 3px;
-      transition: border-color .12s ease, background .12s ease, transform .08s ease;
-    }
-
-    .rail-btn:hover {
-      border-color: #4e6a86;
-      background: linear-gradient(180deg, #223245, #172635);
-    }
-
-    .rail-btn:active {
-      transform: translateY(1px);
-    }
-
-    .rail-btn.active {
-      border-color: #8bc4ff;
-      box-shadow: inset 0 0 0 1px rgba(139,196,255,0.34), 0 0 0 1px rgba(52,127,208,0.2);
-      background: linear-gradient(180deg, #2a4058, #1b2f45);
-    }
-
-    .left-panel,
-    .right-panel {
-      min-width: 0;
-      background: var(--panel);
-      border-right: 1px solid var(--line);
-      overflow: auto;
-      padding: 10px;
-      box-shadow: inset -1px 0 0 rgba(255,255,255,0.015);
-    }
-
-    .right-panel {
-      border-right: none;
-      border-left: 1px solid var(--line);
-      background: linear-gradient(180deg, #0f151e, #0d131b);
-    }
-
     .section {
-      margin-bottom: 9px;
-      border: 1px solid var(--line-soft);
-      border-radius: 8px;
-      background: linear-gradient(180deg, #172131, #121a26);
-      box-shadow: inset 0 1px 0 rgba(255,255,255,0.025);
-      padding: 9px;
+      border:1px solid var(--line-soft);
+      border-radius:8px;
+      background:linear-gradient(180deg,#15202e,#101820);
+      padding:9px;
     }
-
     .section h3 {
-      margin: 0 0 9px;
-      color: var(--accent-2);
-      font-size: 10px;
-      letter-spacing: 1.1px;
-      text-transform: uppercase;
-      font-weight: 700;
-      padding-bottom: 5px;
-      border-bottom: 1px solid rgba(122, 157, 194, 0.22);
+      color:var(--accent-2); font-size:10px; letter-spacing:1px;
+      text-transform:uppercase; font-weight:700;
+      padding-bottom:6px; margin-bottom:8px;
+      border-bottom:1px solid rgba(122,157,194,.2);
     }
-
-    .field {
-      margin-bottom: 7px;
-    }
-
+    .field { margin-bottom:7px; }
     .field label {
-      display: block;
-      margin-bottom: 4px;
-      color: var(--muted);
-      font-size: 10px;
-      letter-spacing: 0.4px;
-      text-transform: uppercase;
+      display:block; margin-bottom:3px;
+      color:var(--muted); font-size:10px; letter-spacing:.4px; text-transform:uppercase;
     }
-
-    input[type="text"],
-    input[type="number"],
-    select,
-    textarea {
-      width: 100%;
-      border: 1px solid #2c3d50;
-      border-radius: 6px;
-      padding: 7px 8px;
-      background: #0e1520;
-      color: var(--text);
-      font-size: 12px;
-      line-height: 1.1;
-      box-shadow: inset 0 1px 0 rgba(255,255,255,0.02);
+    input[type="text"], input[type="number"], select, textarea {
+      width:100%; border:1px solid #2c3d50; border-radius:6px;
+      padding:6px 8px; background:#0e1520; color:var(--text);
+      font-size:12px; line-height:1.2;
     }
-
-    input[type="text"]:focus,
-    input[type="number"]:focus,
-    select:focus,
-    textarea:focus {
-      outline: none;
-      border-color: #6ca4df;
-      box-shadow: 0 0 0 2px rgba(77, 163, 255, 0.16);
+    input[type="text"]:focus, select:focus {
+      outline:none; border-color:#6ca4df;
+      box-shadow:0 0 0 2px rgba(77,163,255,.15);
     }
-
-    input[type="range"] {
-      width: 100%;
-      accent-color: var(--accent);
-    }
-
-    .btn-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-    }
-
+    input[type="range"] { width:100%; accent-color:var(--accent); margin-top:3px; }
+    .btn-row { display:flex; flex-wrap:wrap; gap:5px; }
     button.action {
-      border: 1px solid #30465c;
-      border-radius: 6px;
-      background: linear-gradient(180deg, #243448, #162433);
-      color: var(--text);
-      padding: 6px 9px;
-      font-size: 11px;
-      font-weight: 600;
-      letter-spacing: 0.25px;
-      text-transform: uppercase;
-      cursor: pointer;
-      transition: background .12s ease, border-color .12s ease, transform .08s ease;
+      border:1px solid #30465c; border-radius:6px;
+      background:linear-gradient(180deg,#243448,#162433);
+      color:var(--text); padding:6px 9px;
+      font-size:11px; font-weight:600; letter-spacing:.2px; text-transform:uppercase;
+      cursor:pointer; transition:all .1s ease;
     }
-
-    button.action:hover {
-      border-color: #4d6d8f;
-      background: linear-gradient(180deg, #2c3f55, #1b2b3c);
-    }
-
-    button.action:active {
-      transform: translateY(1px);
-    }
-
+    button.action:hover { border-color:#4d6d8f; background:linear-gradient(180deg,#2c3f55,#1b2b3c); }
+    button.action:active { transform:translateY(1px); }
     button.action.primary {
-      color: #08131f;
-      font-weight: 700;
-      border-color: #8bc4ff;
-      background: linear-gradient(180deg, #9cd0ff, #5ba7f2);
+      color:#08131f; font-weight:700;
+      border-color:#8bc4ff;
+      background:linear-gradient(180deg,#9cd0ff,#5ba7f2);
+    }
+    button.action.primary:hover { background:linear-gradient(180deg,#b3daff,#6db8ff); }
+    button.action.danger { border-color:#895555; background:linear-gradient(180deg,#6a3d3d,#4a2b2b); }
+
+    /* tool buttons strip */
+    .tool-strip {
+      display:grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap:5px;
+    }
+    .tool-btn {
+      border:1px solid #2c3948; border-radius:7px;
+      background:linear-gradient(180deg,#1b2734,#121c28);
+      color:var(--muted); cursor:pointer;
+      font-size:11px; font-weight:600; letter-spacing:.2px;
+      padding:7px 4px; text-align:center; line-height:1.2;
+      transition:all .1s ease;
+    }
+    .tool-btn:hover { border-color:#4e6a86; color:var(--text); }
+    .tool-btn.active {
+      border-color:#8bc4ff; color:#cfe5ff;
+      background:linear-gradient(180deg,#253e56,#18304a);
+      box-shadow:inset 0 0 0 1px rgba(139,196,255,.3);
     }
 
-    button.action.danger {
-      border-color: #895555;
-      background: linear-gradient(180deg, #6a3d3d, #4a2b2b);
+    /* terrain palette */
+    .terrain-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:5px; }
+    .terrain-btn {
+      border:1px solid #2c3d4f; border-radius:6px;
+      background:#111e2c; color:var(--text);
+      font-size:11px; font-weight:600;
+      padding:5px 6px; display:flex; align-items:center; gap:6px;
+      cursor:pointer; transition:all .1s;
     }
+    .terrain-btn:hover { border-color:#3d6080; }
+    .terrain-btn.active { border-color:#97cbff; background:#1d3248; }
+    .sw { width:11px; height:11px; border-radius:3px; border:1px solid rgba(0,0,0,.4); flex-shrink:0; }
 
+    /* ── CENTER ──────────────────────────────── */
     .center {
-      min-width: 0;
-      min-height: 0;
-      display: grid;
-      grid-template-rows: 36px 1fr;
-      background: var(--panel-4);
+      min-width:0; min-height:0;
+      display:grid;
+      grid-template-rows: 36px 1fr 110px;
+      background:#080d13;
     }
-
     .center-toolbar {
-      border-bottom: 1px solid var(--line);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 10px;
-      font-size: 11px;
-      color: var(--muted);
-      background: linear-gradient(180deg, #131c28, #0f1722);
-      letter-spacing: 0.2px;
+      border-bottom:1px solid var(--line);
+      display:flex; align-items:center; gap:10px;
+      padding:0 10px;
+      background:linear-gradient(180deg,#111c2a,#0c1520);
+      font-size:11px; color:var(--muted);
+      overflow:hidden;
     }
+    .tool-label { font-weight:700; color:var(--text); font-size:12px; min-width:160px; }
+    .zoom-info { margin-left:auto; font-size:10px; }
+    .cursor-info { font-size:10px; }
 
-    .view-grid {
-      min-height: 0;
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      grid-template-rows: 1fr 1fr;
-      gap: 1px;
-      background: var(--line);
+    /* main editor canvas */
+    .main-view {
+      position:relative; overflow:hidden; background:#090e15;
     }
-
-    .view {
-      position: relative;
-      background: #0b1118;
-      overflow: hidden;
-    }
-
-    .view .title {
-      position: absolute;
-      top: 7px;
-      left: 7px;
-      z-index: 3;
-      font-size: 10px;
-      color: #c8d7e8;
-      text-transform: uppercase;
-      letter-spacing: 0.8px;
-      background: rgba(8, 12, 18, 0.88);
-      border: 1px solid #2b3948;
-      border-radius: 5px;
-      padding: 2px 7px;
-    }
-
     .canvas-wrap {
-      position: absolute;
-      inset: 0;
+      position:absolute; inset:0;
       background-image:
-        linear-gradient(to right, rgba(26, 39, 55, 0.26) 1px, transparent 1px),
-        linear-gradient(to bottom, rgba(26, 39, 55, 0.26) 1px, transparent 1px),
+        linear-gradient(to right, rgba(26,39,55,.2) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(26,39,55,.2) 1px, transparent 1px),
         linear-gradient(to right, var(--viewport-grid) 1px, transparent 1px),
         linear-gradient(to bottom, var(--viewport-grid) 1px, transparent 1px);
-      background-size: 96px 96px, 96px 96px, 24px 24px, 24px 24px;
+      background-size:96px 96px,96px 96px,24px 24px,24px 24px;
     }
-
     .canvas-wrap::after {
-      content: '';
-      position: absolute;
-      inset: 0;
-      pointer-events: none;
-      background: radial-gradient(circle at 50% 50%, transparent 63%, rgba(0, 0, 0, 0.3) 100%);
+      content:''; position:absolute; inset:0; pointer-events:none;
+      background:radial-gradient(circle at 50% 50%, transparent 65%, rgba(0,0,0,.25) 100%);
+    }
+    canvas { position:absolute; inset:0; width:100%; height:100%; display:block; }
+
+    /* preview strip */
+    .preview-strip {
+      display:grid; grid-template-columns:repeat(3,1fr);
+      gap:1px; background:var(--line);
+      border-top:1px solid var(--line);
+    }
+    .preview-view { position:relative; background:#08101a; overflow:hidden; }
+    .preview-view .plabel {
+      position:absolute; top:4px; left:6px; z-index:3;
+      font-size:9px; color:#8ab0cc; text-transform:uppercase; letter-spacing:.7px;
+      background:rgba(5,9,15,.8); border:1px solid #1f3048; border-radius:4px;
+      padding:1px 5px;
     }
 
-    canvas {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      display: block;
+    /* ── RIGHT PANEL ─────────────────────────── */
+    .right-panel {
+      min-width:0; overflow:auto;
+      border-left:1px solid var(--line);
+      background:linear-gradient(180deg,#0f1a27,#0a1320);
+      padding:10px;
+      display:flex; flex-direction:column; gap:8px;
     }
 
-    .terrain-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 6px;
+    /* entity mode buttons */
+    .entity-mode-bar {
+      display:grid; grid-template-columns:1fr 1fr;
+      gap:5px; margin-bottom:7px;
     }
-
-    .terrain-btn {
-      border: 1px solid #33495f;
-      border-radius: 6px;
-      background: #162130;
-      color: var(--text);
-      font-size: 11px;
-      font-weight: 600;
-      letter-spacing: 0.2px;
-      padding: 6px 7px;
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      cursor: pointer;
-      text-align: left;
+    .entity-mode-btn {
+      border:1px solid #2c3d50; border-radius:6px;
+      background:#0e1823; color:var(--muted);
+      padding:7px 5px; text-align:center;
+      font-size:11px; font-weight:600; letter-spacing:.2px; text-transform:uppercase;
+      cursor:pointer; transition:all .1s;
     }
-
-    .terrain-btn.active {
-      border-color: #97cbff;
-      box-shadow: inset 0 0 0 1px rgba(151,203,255,0.35);
-      background: #203246;
+    .entity-mode-btn:hover { border-color:#4d6d8f; color:var(--text); }
+    .entity-mode-btn.active {
+      border-color:#8bc4ff; color:#cfe5ff;
+      background:linear-gradient(180deg,#1e3a55,#12283f);
     }
-
-    .sw {
-      width: 12px;
-      height: 12px;
-      border-radius: 3px;
-      border: 1px solid rgba(0,0,0,0.45);
-      flex-shrink: 0;
+    .entity-hint {
+      margin-top:5px; padding:5px 7px;
+      border:1px solid #1f3040; border-radius:5px;
+      background:#060d16; color:var(--muted);
+      font-size:10px; line-height:1.4;
     }
+    .isolation-active-label {
+      display:none; margin-bottom:4px;
+      border:1px solid #4a7a3a; border-radius:5px;
+      background:#0b1f0e; color:#7ecf6a;
+      font-size:10px; font-weight:600; padding:4px 7px;
+      text-transform:uppercase; letter-spacing:.3px;
+    }
+    .isolation-active-label.visible { display:block; }
 
     #groupList {
-      width: 100%;
-      min-height: 130px;
-      border: 1px solid #304155;
-      border-radius: 6px;
-      background: #0f1722;
-      color: var(--text);
-      font-size: 12px;
-      padding: 4px;
+      width:100%; min-height:90px; max-height:120px;
+      border:1px solid #304155; border-radius:6px;
+      background:#0a1320; color:var(--text);
+      font-size:12px; padding:4px;
     }
 
+    /* ── FOOTER ──────────────────────────────── */
     .footer {
-      border-top: 1px solid var(--line);
-      background: linear-gradient(180deg, #101822, #0d141d);
-      color: var(--muted);
-      font-size: 11px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 9px;
-      gap: 10px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      letter-spacing: 0.2px;
+      border-top:1px solid var(--line);
+      background:linear-gradient(180deg,#101822,#0d141d);
+      color:var(--muted); font-size:11px;
+      display:flex; align-items:center; justify-content:space-between;
+      padding:0 10px; gap:10px; overflow:hidden;
     }
-
-    .good { color: var(--ok); }
-    .warn { color: var(--warn); }
-
-    @media (max-width: 1400px) {
-      .workspace { grid-template-columns: 52px 264px 1fr 274px; }
-    }
+    .good { color:var(--ok); }
+    .warn { color:var(--warn); }
   </style>
 </head>
 <body>
   <div class="app">
+
+    <!-- ═══════════ TOPBAR ═══════════ -->
     <header class="topbar">
-      <div class="left">
-        <strong>MesoBuilder · World Editor</strong>
-        <span class="badge">From scratch</span>
+      <div class="topbar-left">
+        <span class="app-title">🏛 MesoBuilder · World Editor</span>
         <span class="badge" id="projectBadge">Mapa sin título</span>
       </div>
-      <div class="right">
-        <span class="badge" id="epochBadge">Mesopotamia</span>
-        <span class="badge" id="cursorBadge">-, -</span>
+      <div class="topbar-center">
+        <span style="font-size:10px;color:var(--muted)">CAPAS VISIBLES:</span>
+        <div class="layer-toggles">
+          <button class="ltog on" id="ltogBiome" title="Mostrar/ocultar bioma"><span class="dot" style="background:#b58d54"></span>Bioma</button>
+          <button class="ltog on" id="ltogRoads" title="Mostrar/ocultar carreteras"><span class="dot" style="background:#746a5d"></span>Carreteras</button>
+          <button class="ltog on" id="ltogStructures" title="Mostrar/ocultar construcciones"><span class="dot" style="background:#878d95"></span>Edificios</button>
+          <button class="ltog on" id="ltogGrouped" title="Mostrar/ocultar límites de conjuntos"><span class="dot" style="background:#88c1ff"></span>Conjuntos</button>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <span class="epoch-badge" id="epochBadge">Mesopotamia</span>
+        <span class="badge" id="cursorBadge" style="font-family:monospace">-, -</span>
       </div>
     </header>
 
+    <!-- ═══════════ WORKSPACE ═══════════ -->
     <div class="workspace">
-      <nav class="rail" id="toolRail">
-        <button class="rail-btn active" data-tool="brush">Pincel</button>
-        <button class="rail-btn" data-tool="fill">Relleno</button>
-        <button class="rail-btn" data-tool="rect">Rect</button>
-        <button class="rail-btn" data-tool="select">Selecc</button>
-        <button class="rail-btn" data-tool="group">Grupo</button>
-      </nav>
 
+      <!-- ── LEFT PANEL ── -->
       <aside class="left-panel">
+
+        <!-- Proyecto -->
         <section class="section">
-          <h3>Proyecto</h3>
+          <h3>📁 Proyecto</h3>
           <div class="field">
-            <label for="designName">Nombre del diseño</label>
+            <label for="designName">Nombre</label>
             <input id="designName" type="text" value="Mapa sin título" maxlength="80">
           </div>
           <div class="field">
-            <label for="epochSelect">Época</label>
+            <label for="epochSelect">Época — cambia biomas automáticamente</label>
             <select id="epochSelect">
-              <option value="mesopotamia">Mesopotamia</option>
-              <option value="urss">Antigua URSS</option>
-              <option value="medieval">Edad Media</option>
+              <option value="mesopotamia">🏺 Mesopotamia (árido, aluvial)</option>
+              <option value="urss">☭ Antigua URSS (estepa, hormigón)</option>
+              <option value="medieval">⚔️ Edad Media (bosque, colinas)</option>
             </select>
           </div>
-          <div class="field">
-            <label>Tamaño pincel: <strong id="brushSizeValue">2</strong></label>
-            <input id="brushSize" type="range" min="1" max="8" step="1" value="2">
-          </div>
           <div class="btn-row">
-            <button id="btnNew" class="action">Nuevo</button>
-            <button id="btnGenerate" class="action primary">Generar biomas</button>
+            <button id="btnNew" class="action">Nuevo mapa</button>
+            <button id="btnGenerate" class="action primary">🌍 Generar biomas</button>
           </div>
         </section>
 
+        <!-- Herramientas de pintura -->
         <section class="section">
-          <h3>Biomas</h3>
+          <h3>🖌 Herramienta activa</h3>
+          <div class="tool-strip" id="toolRail">
+            <button class="tool-btn active" data-tool="brush">Pincel<br><span style="font-size:9px;font-weight:400;color:var(--muted)">B</span></button>
+            <button class="tool-btn" data-tool="fill">Relleno<br><span style="font-size:9px;font-weight:400;color:var(--muted)">F</span></button>
+            <button class="tool-btn" data-tool="rect">Rect<br><span style="font-size:9px;font-weight:400;color:var(--muted)">R</span></button>
+            <button class="tool-btn" data-tool="select">Selec.<br><span style="font-size:9px;font-weight:400;color:var(--muted)">S</span></button>
+            <button class="tool-btn" data-tool="entity">Entidad<br><span style="font-size:9px;font-weight:400;color:var(--muted)">E</span></button>
+            <button class="tool-btn" data-tool="group">Grupo<br><span style="font-size:9px;font-weight:400;color:var(--muted)">G</span></button>
+          </div>
+          <div style="margin-top:8px;">
+            <label class="field" style="margin:0"><span style="color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.4px">Tamaño pincel: </span><strong id="brushSizeValue">2</strong></label>
+            <input id="brushSize" type="range" min="1" max="8" step="1" value="2">
+          </div>
+        </section>
+
+        <!-- Paleta de biomas -->
+        <section class="section">
+          <h3>🗺 Paleta de biomas</h3>
           <div id="terrainGrid" class="terrain-grid"></div>
         </section>
 
+        <!-- Estructuras -->
         <section class="section">
-          <h3>Selección</h3>
+          <h3>🏘 Estructuras urbanas</h3>
           <div class="field">
-            <label for="selMin">Rectángulo (min col,row)</label>
+            <label for="structurePreset">Patrón</label>
+            <select id="structurePreset">
+              <option value="balanced">Equilibrado</option>
+              <option value="ordered">Más ordenado</option>
+              <option value="organic">Más orgánico</option>
+            </select>
+          </div>
+          <div class="btn-row">
+            <button id="btnGenerateStructures" class="action primary">🏗 Generar estructuras</button>
+            <button id="btnClearStructures" class="action danger">Limpiar</button>
+          </div>
+          <div id="structureSummary" class="badge" style="display:block;margin-top:7px;font-size:10px;">Sin estructuras generadas.</div>
+        </section>
+
+        <!-- Archivo -->
+        <section class="section">
+          <h3>💾 Archivo</h3>
+          <div class="btn-row">
+            <button id="btnSavePending" class="action primary">Guardar</button>
+            <button id="btnLoadPending" class="action">Cargar</button>
+            <button id="btnExport" class="action">Exportar</button>
+            <button id="btnImport" class="action">Importar</button>
+            <button id="btnOpenGame" class="action">▶ Juego</button>
+            <button id="btnClearPending" class="action danger">Limpiar</button>
+          </div>
+          <input id="fileInput" type="file" accept=".json,application/json" hidden>
+        </section>
+
+        <!-- Historial -->
+        <section class="section">
+          <div class="btn-row">
+            <button id="btnUndo" class="action">↩ Deshacer (Ctrl+Z)</button>
+            <button id="btnRedo" class="action">↪ Rehacer (Ctrl+Y)</button>
+          </div>
+          <div class="badge" id="historyInfo" style="display:block;margin-top:6px;">Undo: 0 · Redo: 0</div>
+        </section>
+
+      </aside>
+
+      <!-- ── CENTER ── -->
+      <main class="center">
+        <div class="center-toolbar">
+          <span class="tool-label" id="toolLabel">Pincel</span>
+          <span class="cursor-info">Cursor: <strong id="cursorBadge2">-, -</strong></span>
+          <span class="zoom-info" id="viewInfo">Zoom 1.00x · Rueda = zoom · Shift+arrastrar = pan</span>
+        </div>
+        <div class="main-view" id="viewMain">
+          <div class="canvas-wrap"><canvas id="mainCanvas"></canvas></div>
+        </div>
+        <div class="preview-strip">
+          <div class="preview-view">
+            <div class="plabel">Distribución biomas</div>
+            <div class="canvas-wrap"><canvas id="biomeCanvas"></canvas></div>
+          </div>
+          <div class="preview-view">
+            <div class="plabel">Mapa de altura</div>
+            <div class="canvas-wrap"><canvas id="heightCanvas"></canvas></div>
+          </div>
+          <div class="preview-view">
+            <div class="plabel">Preview conjunto</div>
+            <div class="canvas-wrap"><canvas id="groupCanvas"></canvas></div>
+          </div>
+        </div>
+      </main>
+
+      <!-- ── RIGHT PANEL ── -->
+      <aside class="right-panel">
+
+        <!-- Entidades: siempre visible -->
+        <section class="section" id="entityPanel">
+          <h3>🧱 Colocar entidades</h3>
+          <div class="entity-mode-bar">
+            <button class="entity-mode-btn active" id="btnEntityPlace">✚ Colocar</button>
+            <button class="entity-mode-btn" id="btnEntitySelect">⇔ Editar/Escalar</button>
+          </div>
+          <div class="field">
+            <label for="entityCatalog">Elemento</label>
+            <select id="entityCatalog">
+              <optgroup label="── Edificios ──">
+                <option value="structure:house">Casa</option>
+                <option value="structure:house_large">Casa grande</option>
+                <option value="structure:house_small">Casa pequeña</option>
+                <option value="structure:hut">Choza</option>
+                <option value="structure:longhouse">Casa larga</option>
+                <option value="structure:stone_house">Casa de piedra</option>
+                <option value="structure:temple">Templo</option>
+                <option value="structure:ziggurat">Zigurat</option>
+                <option value="structure:market">Mercado</option>
+                <option value="structure:granary">Granero</option>
+                <option value="structure:farm">Granja</option>
+                <option value="structure:house_garden">Casa con jardín</option>
+                <option value="structure:mesopotamian_villa_detailed">Villa mesopotámica</option>
+                <option value="structure:soviet_block">Bloque soviético</option>
+                <option value="structure:soviet_superblock">Supermanzana (A)</option>
+                <option value="structure:soviet_superblock_b">Supermanzana (B)</option>
+                <option value="structure:party_hq">Sede del partido</option>
+                <option value="structure:collective_farm">Granja colectiva</option>
+                <option value="structure:factory">Fábrica</option>
+                <option value="structure:state_warehouse">Almacén estatal</option>
+                <option value="structure:state_clinic">Clínica</option>
+                <option value="structure:checkpoint_gate">Puerta control</option>
+                <option value="structure:tower">Torre</option>
+              </optgroup>
+              <optgroup label="── Árboles / Vegetación ──">
+                <option value="tree:tree0">Árbol genérico</option>
+                <option value="tree:tree1">Árbol variante 1</option>
+                <option value="tree:pine">Pino</option>
+                <option value="tree:birch">Abedul</option>
+                <option value="tree:willow">Sauce</option>
+                <option value="tree:bush">Arbusto</option>
+                <option value="tree:shrub">Matorral</option>
+              </optgroup>
+              <optgroup label="── Recursos / Props ──">
+                <option value="resource:stone">Piedra</option>
+                <option value="resource:brick">Ladrillo</option>
+                <option value="ambient:soviet_streetlight">Farola</option>
+                <option value="ambient:plaza_statue_placeholder">Estatua de plaza</option>
+              </optgroup>
+              <optgroup label="── Animales ──">
+                <option value="critter:rabbit">Conejo</option>
+                <option value="critter:fox">Zorro</option>
+              </optgroup>
+            </select>
+          </div>
+          <div class="btn-row" style="margin-top:5px;">
+            <button id="btnEntityClearSel" class="action danger" style="font-size:10px;padding:5px 7px;">✕ Quitar selección</button>
+          </div>
+          <div class="entity-hint" id="entityHint">Selecciona un elemento y haz clic en el mapa para colocarlo.</div>
+        </section>
+
+        <!-- Aislar construcción agrupada -->
+        <section class="section">
+          <h3>🔍 Aislar conjunto</h3>
+          <div id="isolationActiveLabel" class="isolation-active-label">✓ Aislamiento activo</div>
+          <div class="field">
+            <label for="groupedVillageList">Selecciona un núcleo para aislar y editar</label>
+            <select id="groupedVillageList" size="4" style="min-height:70px;">
+              <option value="">— Sin aislamiento —</option>
+            </select>
+          </div>
+          <div class="btn-row">
+            <button id="btnApplyIsolation" class="action primary">🔒 Aislar</button>
+            <button id="btnClearIsolation" class="action danger">🔓 Quitar</button>
+          </div>
+          <div style="margin-top:5px;font-size:10px;color:var(--muted);">Al aislar, el resto del mapa se oscurece y solo puedes editar dentro de ese conjunto.</div>
+        </section>
+
+        <!-- Selección manual -->
+        <section class="section">
+          <h3>📐 Selección manual</h3>
+          <div class="field">
+            <label for="selMin">Min col,row</label>
             <input id="selMin" type="text" value="0,0">
           </div>
           <div class="field">
-            <label for="selMax">Rectángulo (max col,row)</label>
+            <label for="selMax">Max col,row</label>
             <input id="selMax" type="text" value="0,0">
           </div>
           <div class="btn-row">
@@ -473,84 +524,45 @@
             <button id="btnSelectAll" class="action">Todo</button>
           </div>
         </section>
-      </aside>
 
-      <main class="center">
-        <div class="center-toolbar">
-          <div id="toolLabel">Herramienta: Pincel</div>
-          <div id="viewInfo">Zoom 1.00x · Arrastrar: pan · Rueda: zoom</div>
-        </div>
-        <div class="view-grid">
-          <div class="view" id="viewMain">
-            <div class="title">Top / Editor</div>
-            <div class="canvas-wrap"><canvas id="mainCanvas"></canvas></div>
-          </div>
-          <div class="view">
-            <div class="title">Distribución de biomas</div>
-            <div class="canvas-wrap"><canvas id="biomeCanvas"></canvas></div>
-          </div>
-          <div class="view">
-            <div class="title">Mapa de altura</div>
-            <div class="canvas-wrap"><canvas id="heightCanvas"></canvas></div>
-          </div>
-          <div class="view">
-            <div class="title">Preview de conjunto</div>
-            <div class="canvas-wrap"><canvas id="groupCanvas"></canvas></div>
-          </div>
-        </div>
-      </main>
-
-      <aside class="right-panel">
+        <!-- Conjuntos / grupos -->
         <section class="section">
-          <h3>Conjuntos</h3>
+          <h3>📦 Conjuntos guardados</h3>
           <div class="field">
-            <label for="groupName">Nombre conjunto</label>
+            <label for="groupName">Nombre del conjunto</label>
             <input id="groupName" type="text" value="Base militar" maxlength="64">
           </div>
           <div class="field">
             <label for="groupList">Biblioteca</label>
-            <select id="groupList" size="6"></select>
+            <select id="groupList" size="4"></select>
           </div>
           <div class="btn-row">
             <button id="btnCaptureGroup" class="action">Capturar selección</button>
+            <button id="btnUseGroup" class="action primary">Usar en mapa</button>
             <button id="btnDeleteGroup" class="action danger">Borrar</button>
-            <button id="btnUseGroup" class="action">Modo colocar</button>
           </div>
-          <div class="field" style="margin-top:8px;">
-            <label for="groupOffset">Offset de colocación (dx,dy)</label>
+          <div class="field" style="margin-top:7px;">
+            <label for="groupOffset">Offset (dx,dy)</label>
             <input id="groupOffset" type="text" value="0,0">
           </div>
-          <div id="groupSummary" class="badge" style="display:block;margin-top:8px;">Sin conjuntos guardados.</div>
+          <div id="groupSummary" class="badge" style="display:block;margin-top:6px;">Sin conjuntos guardados.</div>
         </section>
 
-        <section class="section">
-          <h3>Archivo</h3>
-          <div class="btn-row">
-            <button id="btnSavePending" class="action primary">Guardar partida</button>
-            <button id="btnLoadPending" class="action">Cargar partida</button>
-            <button id="btnExport" class="action">Exportar JSON</button>
-            <button id="btnImport" class="action">Importar JSON</button>
-            <button id="btnClearPending" class="action danger">Limpiar guardado</button>
-            <button id="btnOpenGame" class="action">Abrir juego</button>
-          </div>
-          <input id="fileInput" type="file" accept=".json,application/json" hidden>
-        </section>
+        <!-- Controles ocultos compatibles con el resto del código -->
+        <input id="layerBiome" type="checkbox" checked hidden>
+        <input id="layerRoads" type="checkbox" checked hidden>
+        <input id="layerStructures" type="checkbox" checked hidden>
+        <input id="layerGrouped" type="checkbox" checked hidden>
 
-        <section class="section">
-          <h3>Historial</h3>
-          <div class="btn-row">
-            <button id="btnUndo" class="action">Deshacer</button>
-            <button id="btnRedo" class="action">Rehacer</button>
-          </div>
-          <div class="badge" id="historyInfo" style="display:block;margin-top:8px;">Undo: 0 · Redo: 0</div>
-        </section>
       </aside>
     </div>
 
+    <!-- ═══════════ FOOTER ═══════════ -->
     <footer class="footer">
-      <div id="status" class="good">Editor inicializado.</div>
-      <div>Atajos: B pincel · F relleno · R rect · S selección · G grupo · Ctrl+Z / Ctrl+Y</div>
+      <div id="status" class="good">Editor inicializado. Elige época → Generar biomas → Generar estructuras.</div>
+      <div style="flex-shrink:0">B pincel · F relleno · R rect · S selec · E entidad · G grupo · Ctrl+Z / Ctrl+Y</div>
     </footer>
+
   </div>
 
   <script>
@@ -570,9 +582,120 @@
         { id: 'hills', label: 'Colinas', color: '#8d7b66', height: 0.78 },
         { id: 'forest', label: 'Bosque', color: '#416745', height: 0.34 },
         { id: 'water', label: 'Agua', color: '#326ea6', height: 0.02 },
-        { id: 'road', label: 'Camino', color: '#746a5d', height: 0.10 }
+        { id: 'road', label: 'Camino', color: '#746a5d', height: 0.10 },
+        { id: 'concrete_road', label: 'Hormigón', color: '#676f78', height: 0.11 }
       ];
       const terrainById = new Map(terrains.map(t => [t.id, t]));
+      const epochTerrainPalette = {
+        mesopotamia: {
+          alluvial: '#b58d54',
+          riparian: '#6d9a5a',
+          marsh: '#5b7a64',
+          saline: '#c9c1ad',
+          steppe: '#b79f62',
+          hills: '#8d7b66',
+          forest: '#416745',
+          water: '#326ea6',
+          road: '#746a5d',
+          concrete_road: '#6f6f73'
+        },
+        urss: {
+          alluvial: '#7f8975',
+          riparian: '#69806f',
+          marsh: '#566f67',
+          saline: '#bcc3c8',
+          steppe: '#8e9278',
+          hills: '#6f757d',
+          forest: '#3f5f47',
+          water: '#385e84',
+          road: '#53585f',
+          concrete_road: '#646b74'
+        },
+        medieval: {
+          alluvial: '#9f7c50',
+          riparian: '#678c5f',
+          marsh: '#587063',
+          saline: '#c3b79d',
+          steppe: '#aa915d',
+          hills: '#786956',
+          forest: '#3f5d40',
+          water: '#2f608f',
+          road: '#655747',
+          concrete_road: '#68605a'
+        }
+      };
+      const epochBiomeProfiles = {
+        mesopotamia: {
+          riverBaseY: 0.47,
+          riverAmp: 0.09,
+          riverWiggle: 0.025,
+          riverWidthBase: 2,
+          riverWidthRand: 3,
+          hillThreshold: 0.78,
+          forestThreshold: 0.72,
+          marshThreshold: 0.62,
+          marshElevMax: 0.42,
+          salineMoisture: 0.26,
+          salineElevMin: 0.38,
+          steppeMoisture: 0.36
+        },
+        urss: {
+          riverBaseY: 0.5,
+          riverAmp: 0.07,
+          riverWiggle: 0.02,
+          riverWidthBase: 1,
+          riverWidthRand: 2,
+          hillThreshold: 0.72,
+          forestThreshold: 0.64,
+          marshThreshold: 0.57,
+          marshElevMax: 0.36,
+          salineMoisture: 0.23,
+          salineElevMin: 0.34,
+          steppeMoisture: 0.43
+        },
+        medieval: {
+          riverBaseY: 0.48,
+          riverAmp: 0.085,
+          riverWiggle: 0.03,
+          riverWidthBase: 2,
+          riverWidthRand: 3,
+          hillThreshold: 0.76,
+          forestThreshold: 0.68,
+          marshThreshold: 0.6,
+          marshElevMax: 0.4,
+          salineMoisture: 0.24,
+          salineElevMin: 0.36,
+          steppeMoisture: 0.35
+        }
+      };
+      const buildingCatalog = {
+        house: { size: { w: 2, h: 2 }, color: '#c6a358' },
+        house_small: { size: { w: 2, h: 2 }, color: '#d1b36b' },
+        house_large: { size: { w: 4, h: 4 }, color: '#b88f53' },
+        hut: { size: { w: 2, h: 2 }, color: '#d7c08f' },
+        longhouse: { size: { w: 4, h: 2 }, color: '#bca171' },
+        stone_house: { size: { w: 3, h: 3 }, color: '#9098a1' },
+        farm: { size: { w: 2, h: 2 }, color: '#4f7f44' },
+        temple: { size: { w: 2, h: 2 }, color: '#ddd1b4' },
+        market: { size: { w: 2, h: 2 }, color: '#b86a2a' },
+        granary: { size: { w: 2, h: 2 }, color: '#aa8422' },
+        ziggurat: { size: { w: 4, h: 4 }, color: '#f0e5cf' },
+        house_garden: { size: { w: 3, h: 3 }, color: '#be9f67' },
+        mesopotamian_villa_detailed: { size: { w: 3, h: 3 }, color: '#c19a6b' },
+        soviet_block: { size: { w: 3, h: 3 }, color: '#878d95' },
+        soviet_superblock: { size: { w: 5, h: 5 }, color: '#717984' },
+        soviet_superblock_b: { size: { w: 5, h: 5 }, color: '#5c636d' },
+        party_hq: { size: { w: 5, h: 5 }, color: '#8f3d46' },
+        collective_farm: { size: { w: 2, h: 2 }, color: '#5e7e52' },
+        factory: { size: { w: 3, h: 3 }, color: '#6c7078' },
+        state_warehouse: { size: { w: 3, h: 3 }, color: '#8a785b' },
+        steel_foundry: { size: { w: 11, h: 11 }, color: '#6f737d' },
+        concrete_road: { size: { w: 1, h: 1 }, color: '#7a7b80' },
+        state_clinic: { size: { w: 3, h: 2 }, color: '#8da0b2' },
+        checkpoint_gate: { size: { w: 2, h: 1 }, color: '#6c7078' },
+        tower: { size: { w: 1, h: 1 }, color: '#707070' },
+        road: { size: { w: 1, h: 1 }, color: '#7d6c59' }
+      };
 
       const state = {
         cols: DEFAULT_COLS,
@@ -592,13 +715,33 @@
         name: 'Mapa sin título',
         groups: [],
         groupId: null,
+        groupedVillageId: '',
+        structurePreset: 'balanced',
+        biomeSeed: Date.now(),
+        layers: {
+          biome: true,
+          roads: true,
+          structures: true,
+          grouped: true
+        },
+        entityMode: 'place',
+        selectedPaletteItem: 'structure:soviet_block',
+        selectedObject: null,
+        resizeHandle: null,
         history: [],
         future: []
       };
 
       let tileBiome = [];
       let heightMap = [];
+      let structureGrid = [];
+      let structureEntities = [];
+      let structureRabbits = [];
+      let structureFoxes = [];
+      let structureVillages = [];
       let pendingAction = null;
+      let plazaStatueSprite = null;
+      let plazaStatueSpriteLoading = false;
 
       const el = {
         rail: document.getElementById('toolRail'),
@@ -620,6 +763,15 @@
         groupList: document.getElementById('groupList'),
         groupSummary: document.getElementById('groupSummary'),
         groupOffset: document.getElementById('groupOffset'),
+        groupedVillageList: document.getElementById('groupedVillageList'),
+        structurePreset: document.getElementById('structurePreset'),
+        structureSummary: document.getElementById('structureSummary'),
+        layerBiome: document.getElementById('layerBiome'),
+        layerRoads: document.getElementById('layerRoads'),
+        layerStructures: document.getElementById('layerStructures'),
+        layerGrouped: document.getElementById('layerGrouped'),
+        entityPanel: document.getElementById('entityPanel'),
+        entityCatalog: document.getElementById('entityCatalog'),
         fileInput: document.getElementById('fileInput')
       };
 
@@ -641,6 +793,122 @@
         el.status.className = tone === 'warn' ? 'warn' : 'good';
       }
 
+      function normalizeHexColor(value) {
+        const raw = String(value || '').trim().toLowerCase();
+        if (!raw) return '#000000';
+        if (raw[0] !== '#') return `#${raw}`;
+        return raw;
+      }
+
+      function isNearWhiteColor(value) {
+        const hex = normalizeHexColor(value).replace('#', '');
+        if (hex.length === 3) {
+          const r = parseInt(hex[0] + hex[0], 16);
+          const g = parseInt(hex[1] + hex[1], 16);
+          const b = parseInt(hex[2] + hex[2], 16);
+          return Number.isFinite(r) && Number.isFinite(g) && Number.isFinite(b) && r >= 245 && g >= 245 && b >= 245;
+        }
+        if (hex.length !== 6) return false;
+        const r = parseInt(hex.slice(0, 2), 16);
+        const g = parseInt(hex.slice(2, 4), 16);
+        const b = parseInt(hex.slice(4, 6), 16);
+        return Number.isFinite(r) && Number.isFinite(g) && Number.isFinite(b) && r >= 245 && g >= 245 && b >= 245;
+      }
+
+      function getStoredPlazaStatueSprite() {
+        try {
+          const raw = localStorage.getItem('meso.plazaStatueSprite');
+          if (!raw) return null;
+          const parsed = JSON.parse(raw);
+          if (!parsed || !Array.isArray(parsed.pixels) || !parsed.grid) return null;
+          return sanitizePlazaStatueSprite(parsed);
+        } catch (_) {
+          return null;
+        }
+      }
+
+      function sanitizePlazaStatueSprite(sprite) {
+        if (!sprite || !Array.isArray(sprite.pixels)) return null;
+        const grid = Math.max(1, Number(sprite.grid) || 64);
+        const pixels = [];
+        for (const px of sprite.pixels) {
+          if (!Array.isArray(px) || px.length < 3) continue;
+          const x = Number(px[0]);
+          const y = Number(px[1]);
+          const color = normalizeHexColor(px[2]);
+          if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+          if (isNearWhiteColor(color)) continue;
+          pixels.push([x, y, color]);
+        }
+        return { grid, pixels };
+      }
+
+      async function ensurePlazaStatueSpriteLoaded() {
+        if (plazaStatueSprite || plazaStatueSpriteLoading) return;
+        plazaStatueSpriteLoading = true;
+        try {
+          const stored = getStoredPlazaStatueSprite();
+          if (stored) {
+            plazaStatueSprite = stored;
+            return;
+          }
+          const response = await fetch(`../../data/entity-pixels.json?v=${Date.now()}`);
+          if (!response.ok) return;
+          const json = await response.json();
+          const icons = (json && json.icons) || {};
+          const sprite = icons.plaza_statue || icons.soviet_monument || null;
+          if (sprite && Array.isArray(sprite.pixels) && sprite.grid) plazaStatueSprite = sanitizePlazaStatueSprite(sprite);
+        } catch (_) {
+        } finally {
+          plazaStatueSpriteLoading = false;
+        }
+      }
+
+      function registerPlazaStatueRuntimeLoader() {
+        window.setPlazaStatueSprite = function setPlazaStatueSprite(spriteObj) {
+          try {
+            const sanitized = sanitizePlazaStatueSprite(spriteObj);
+            if (!sanitized || !Array.isArray(sanitized.pixels) || !sanitized.pixels.length) {
+              setStatus('Estatua inválida: no hay píxeles útiles tras filtrar blanco.', 'warn');
+              return false;
+            }
+            plazaStatueSprite = sanitized;
+            localStorage.setItem('meso.plazaStatueSprite', JSON.stringify(sanitized));
+            renderAll();
+            setStatus(`Estatua cargada (${sanitized.pixels.length} píxeles, blanco transparente).`, 'good');
+            return true;
+          } catch (err) {
+            setStatus('No se pudo cargar la estatua.', 'warn');
+            return false;
+          }
+        };
+      }
+
+      function drawPixelSpriteAt(ctx2d, sprite, centerX, bottomY, renderSizePx) {
+        if (!ctx2d || !sprite || !Array.isArray(sprite.pixels)) return false;
+        const grid = Math.max(1, Number(sprite.grid) || 1);
+        const size = Math.max(4, Number(renderSizePx) || 8);
+        const pixelSize = size / grid;
+        const originX = centerX - (size * 0.5);
+        const originY = bottomY - size;
+        for (const px of sprite.pixels) {
+          if (!Array.isArray(px) || px.length < 3) continue;
+          const x = Number(px[0]);
+          const y = Number(px[1]);
+          const color = px[2];
+          if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+          if (isNearWhiteColor(color)) continue;
+          ctx2d.fillStyle = normalizeHexColor(color);
+          ctx2d.fillRect(
+            originX + x * pixelSize,
+            originY + y * pixelSize,
+            Math.max(1, pixelSize + 0.2),
+            Math.max(1, pixelSize + 0.2)
+          );
+        }
+        return true;
+      }
+
       function parsePair(text, fallbackA = 0, fallbackB = 0) {
         const raw = String(text || '');
         const parts = raw.split(',').map(p => Number(p.trim()));
@@ -653,17 +921,54 @@
         return Math.max(min, Math.min(max, value));
       }
 
+      function getEpochLabel(epochId) {
+        if (epochId === 'urss') return 'Antigua URSS';
+        if (epochId === 'medieval') return 'Edad Media';
+        return 'Mesopotamia';
+      }
+
       function make2D(rows, cols, val) {
         return Array.from({ length: rows }, () => Array(cols).fill(val));
       }
 
+      function getTerrainInfo(terrainId) {
+        const fallback = terrains[0];
+        const base = terrainById.get(terrainId) || fallback;
+        const palette = epochTerrainPalette[state.epoch] || epochTerrainPalette.mesopotamia;
+        return {
+          ...base,
+          color: palette[base.id] || base.color
+        };
+      }
+
+      function getVillageById(villageId) {
+        if (!villageId) return null;
+        return (structureVillages || []).find(v => v && v.id === villageId) || null;
+      }
+
+      function isCellInsideActiveVillageFilter(col, row) {
+        if (!state.groupedVillageId) return true;
+        const village = getVillageById(state.groupedVillageId);
+        if (!village) return true;
+        return col >= village.minC && col <= village.maxC && row >= village.minR && row <= village.maxR;
+      }
+
       function resetMap(terrain = 'alluvial') {
-        const info = terrainById.get(terrain) || terrains[0];
+        const info = getTerrainInfo(terrain);
         tileBiome = make2D(state.rows, state.cols, info.id);
         heightMap = make2D(state.rows, state.cols, info.height);
+        structureGrid = make2D(state.rows, state.cols, null);
+        structureEntities = [];
+        structureRabbits = [];
+        structureFoxes = [];
+        structureVillages = [];
+        state.groupedVillageId = '';
+        state.selectedObject = null;
         state.history = [];
         state.future = [];
         updateHistory();
+        rebuildGroupedVillageList();
+        updateStructureSummary();
       }
 
       function beginAction() {
@@ -672,7 +977,8 @@
 
       function setCell(col, row, terrain) {
         if (col < 0 || row < 0 || col >= state.cols || row >= state.rows) return;
-        const meta = terrainById.get(terrain) || terrains[0];
+        if (!isCellInsideActiveVillageFilter(col, row)) return;
+        const meta = getTerrainInfo(terrain);
         const oldBiome = tileBiome[row][col];
         const oldHeight = heightMap[row][col];
         if (oldBiome === meta.id && oldHeight === meta.height) return;
@@ -731,7 +1037,8 @@
           const b = document.createElement('button');
           b.className = 'terrain-btn';
           b.dataset.terrain = t.id;
-          b.innerHTML = `<span class="sw" style="background:${t.color}"></span><span>${t.label}</span>`;
+          const info = getTerrainInfo(t.id);
+          b.innerHTML = `<span class="sw" style="background:${info.color}"></span><span>${t.label}</span>`;
           b.addEventListener('click', () => {
             state.terrain = t.id;
             updateTerrainUi();
@@ -754,6 +1061,7 @@
           fill: 'Relleno',
           rect: 'Rectángulo',
           select: 'Selección',
+          entity: 'Entidad',
           group: 'Colocar conjunto'
         };
         return labels[tool] || tool;
@@ -767,7 +1075,9 @@
         el.rail.querySelectorAll('.rail-btn').forEach(btn => {
           btn.classList.toggle('active', btn.dataset.tool === state.tool);
         });
-        el.toolLabel.textContent = `Herramienta: ${getToolLabel(state.tool)}`;
+        const suffix = state.tool === 'entity' ? ` (${state.entityMode === 'select' ? 'editar' : 'colocar'})` : '';
+        el.toolLabel.textContent = `Herramienta: ${getToolLabel(state.tool)}${suffix}`;
+        if (el.entityPanel) el.entityPanel.style.display = state.tool === 'entity' ? 'block' : 'none';
       }
 
       function resizeCanvases() {
@@ -842,6 +1152,110 @@
         }
       }
 
+      function getStructureSizeFromCell(cell) {
+        const def = buildingCatalog[cell && cell.type] || { size: { w: 1, h: 1 } };
+        return {
+          w: Math.max(1, Number(cell && cell.w) || def.size.w || 1),
+          h: Math.max(1, Number(cell && cell.h) || def.size.h || 1)
+        };
+      }
+
+      function getStructureOriginCell(col, row) {
+        const cell = structureGrid[row] && structureGrid[row][col];
+        if (!cell) return null;
+        const base = structureGrid[cell.baseRow] && structureGrid[cell.baseRow][cell.baseCol];
+        if (!base) return null;
+        return { ...base, baseCol: cell.baseCol, baseRow: cell.baseRow };
+      }
+
+      function getEntityAt(col, row) {
+        return structureEntities.find(ent => ent && ent.col === col && ent.row === row) || null;
+      }
+
+      function getSelectedBounds() {
+        const sel = state.selectedObject;
+        if (!sel) return null;
+        if (sel.kind === 'structure') {
+          const w = Math.max(1, Number(sel.w) || 1);
+          const h = Math.max(1, Number(sel.h) || 1);
+          return {
+            minC: sel.col,
+            minR: sel.row,
+            maxC: sel.col + w - 1,
+            maxR: sel.row + h - 1,
+            centerC: sel.col + w * 0.5,
+            centerR: sel.row + h * 0.5
+          };
+        }
+        if (sel.kind === 'entity' && sel.ref) {
+          const scale = clamp(Number(sel.ref.size) || 1, 0.4, 3);
+          const radius = 0.5 * scale;
+          return {
+            minC: sel.ref.col + 0.5 - radius,
+            minR: sel.ref.row + 0.5 - radius,
+            maxC: sel.ref.col + 0.5 + radius,
+            maxR: sel.ref.row + 0.5 + radius,
+            centerC: sel.ref.col + 0.5,
+            centerR: sel.ref.row + 0.5
+          };
+        }
+        return null;
+      }
+
+      function getResizeHandles(bounds) {
+        return {
+          nw: { c: bounds.minC, r: bounds.minR },
+          ne: { c: bounds.maxC, r: bounds.minR },
+          sw: { c: bounds.minC, r: bounds.maxR },
+          se: { c: bounds.maxC, r: bounds.maxR }
+        };
+      }
+
+      function pickResizeHandleAtCell(col, row) {
+        const bounds = getSelectedBounds();
+        if (!bounds) return null;
+        const handles = getResizeHandles(bounds);
+        for (const [name, point] of Object.entries(handles)) {
+          if (Math.abs(point.c - col) <= 1 && Math.abs(point.r - row) <= 1) {
+            return { name, bounds };
+          }
+        }
+        return null;
+      }
+
+      function drawResizeHandles(c, ts) {
+        const bounds = getSelectedBounds();
+        if (!bounds) return;
+        const x = bounds.minC * ts + state.panX;
+        const y = bounds.minR * ts + state.panY;
+        const w = (bounds.maxC - bounds.minC + 1) * ts;
+        const h = (bounds.maxR - bounds.minR + 1) * ts;
+        c.strokeStyle = '#97cbff';
+        c.lineWidth = 1.2;
+        c.strokeRect(x + 0.5, y + 0.5, Math.max(1, w - 1), Math.max(1, h - 1));
+        c.fillStyle = '#b9dcff';
+        c.strokeStyle = '#0f1f2e';
+        const hs = Math.max(4, Math.min(8, ts * 0.35));
+        Object.values(getResizeHandles(bounds)).forEach(pt => {
+          const hx = pt.c * ts + state.panX - hs * 0.5;
+          const hy = pt.r * ts + state.panY - hs * 0.5;
+          c.fillRect(hx, hy, hs, hs);
+          c.strokeRect(hx + 0.5, hy + 0.5, hs - 1, hs - 1);
+        });
+      }
+
+      function isRoadBiome(biome) {
+        return biome === 'road' || biome === 'concrete_road';
+      }
+
+      function villageStyleLabel(village) {
+        const militarySet = new Set(['party_hq', 'factory', 'state_warehouse', 'checkpoint_gate', 'tower', 'state_clinic', 'steel_foundry']);
+        const houses = Array.isArray(village && village.houses) ? village.houses : [];
+        const military = houses.filter(h => h && militarySet.has(h.variant)).length;
+        if (military >= 2 || (houses.length && military / houses.length >= 0.24)) return 'Base militar';
+        return 'Núcleo urbano';
+      }
+
       function drawMain() {
         const c = ctx.main;
         const rect = canv.main.getBoundingClientRect();
@@ -856,7 +1270,14 @@
         for (let r = startR; r <= endR; r++) {
           for (let cIdx = startC; cIdx <= endC; cIdx++) {
             const b = tileBiome[r][cIdx] || 'alluvial';
-            const t = terrainById.get(b) || terrains[0];
+            const roadTile = isRoadBiome(b);
+            if (!state.layers.biome && (!roadTile || !state.layers.roads)) continue;
+            if (roadTile && !state.layers.roads && !state.layers.biome) continue;
+            if (!roadTile && !state.layers.biome) continue;
+            const drawTerrainId = roadTile && !state.layers.roads
+              ? ((heightMap[r] && heightMap[r][cIdx] < 0.09) ? 'riparian' : 'alluvial')
+              : b;
+            const t = getTerrainInfo(drawTerrainId);
             const x = cIdx * ts + state.panX;
             const y = r * ts + state.panY;
             c.fillStyle = t.color;
@@ -866,6 +1287,113 @@
               c.strokeRect(x + 0.5, y + 0.5, ts - 1, ts - 1);
             }
           }
+        }
+
+        if (state.layers.structures) {
+          for (let r = startR; r <= endR; r++) {
+            for (let cIdx = startC; cIdx <= endC; cIdx++) {
+              const cell = structureGrid[r] && structureGrid[r][cIdx];
+              if (!cell) continue;
+              if (cell.baseCol !== cIdx || cell.baseRow !== r) continue;
+              const villageMatch = !state.groupedVillageId || cell.villageId === state.groupedVillageId;
+              if (!villageMatch) continue;
+              const def = buildingCatalog[cell.type] || { size: { w: 1, h: 1 }, color: '#cccccc' };
+              const dims = getStructureSizeFromCell(cell);
+              const x = cIdx * ts + state.panX;
+              const y = r * ts + state.panY;
+              const w = dims.w * ts;
+              const h = dims.h * ts;
+              c.fillStyle = def.color;
+              c.fillRect(x + 1, y + 1, Math.max(1, w - 2), Math.max(1, h - 2));
+              c.strokeStyle = 'rgba(8,12,18,0.9)';
+              c.lineWidth = 1;
+              c.strokeRect(x + 0.5, y + 0.5, Math.max(1, w - 1), Math.max(1, h - 1));
+              if (ts >= 10) {
+                c.fillStyle = 'rgba(255,255,255,0.76)';
+                c.font = `${Math.max(8, Math.floor(ts * 0.42))}px Segoe UI`;
+                c.fillText(cell.type, x + 4, y + Math.min(h - 4, 14));
+              }
+            }
+          }
+        }
+
+        for (const ent of structureEntities) {
+          if (!ent || typeof ent.col !== 'number' || typeof ent.row !== 'number') continue;
+          if (state.groupedVillageId && !isCellInsideActiveVillageFilter(ent.col, ent.row)) continue;
+          if (ent.col < startC || ent.col > endC || ent.row < startR || ent.row > endR) continue;
+          const ex = ent.col * ts + state.panX + ts * 0.5;
+          const ey = ent.row * ts + state.panY + ts * 0.5;
+          if (ent.kind === 'tree') {
+            const palette = {
+              birch: '#79b95d',
+              willow: '#6fae74',
+              aspen: '#8fc46a',
+              pine: '#3b7b46',
+              fir: '#2f6337',
+              steppe_shrub: '#7a9b56',
+              hay: '#c6b566',
+              sedge: '#7aa06b',
+              scrub: '#8a955e',
+              bush: '#557d45',
+              shrub: '#6d944d',
+              winter_grass: '#9bad77',
+              tree0: '#73a84e',
+              tree1: '#5e9140',
+              tree2: '#4a7a39',
+              tree3: '#7c9d5f'
+            };
+            const treeScale = Math.max(0.95, Number(ent.size) || 1) * 1.28;
+            c.fillStyle = '#2d3a26';
+            c.fillRect(ex - Math.max(1, ts * 0.075), ey - Math.max(1, ts * 0.08), Math.max(2, ts * 0.15), Math.max(3, ts * 0.3 * treeScale));
+            c.fillStyle = palette[ent.variant] || '#6d944d';
+            c.beginPath();
+            c.arc(ex, ey - ts * 0.14, Math.max(3, ts * Math.min(0.5, 0.18 * treeScale)), 0, Math.PI * 2);
+            c.fill();
+          } else if (ent.kind === 'resource') {
+            c.fillStyle = ent.subtype === 'brick' ? '#b07152' : '#8d8f98';
+            c.fillRect(ex - ts * 0.16, ey - ts * 0.16, ts * 0.32, ts * 0.32);
+          } else {
+            if (ent.subtype === 'plaza_statue_placeholder') {
+              const rendered = drawPixelSpriteAt(c, plazaStatueSprite, ex, ey + ts * 0.34, ts * 0.84);
+              if (!rendered) {
+                c.fillStyle = '#b9bfc8';
+                c.fillRect(ex - ts * 0.16, ey - ts * 0.1, ts * 0.32, ts * 0.2);
+                c.fillStyle = '#d7c38a';
+                c.beginPath();
+                c.arc(ex, ey - ts * 0.16, Math.max(2, ts * 0.11), 0, Math.PI * 2);
+                c.fill();
+              }
+            } else {
+              c.fillStyle = ent.subtype === 'soviet_streetlight' ? '#f4d37d' : '#9cb2c9';
+              c.beginPath();
+              c.arc(ex, ey, Math.max(2, ts * 0.16), 0, Math.PI * 2);
+              c.fill();
+            }
+          }
+        }
+
+        for (const rab of structureRabbits) {
+          if (!rab || typeof rab.col !== 'number' || typeof rab.row !== 'number') continue;
+          if (state.groupedVillageId && !isCellInsideActiveVillageFilter(rab.col, rab.row)) continue;
+          if (rab.col < startC || rab.col > endC || rab.row < startR || rab.row > endR) continue;
+          const ex = rab.col * ts + state.panX + ts * 0.5;
+          const ey = rab.row * ts + state.panY + ts * 0.58;
+          c.fillStyle = '#d9d5cf';
+          c.beginPath();
+          c.ellipse(ex, ey, Math.max(2, ts * 0.13), Math.max(2, ts * 0.1), 0, 0, Math.PI * 2);
+          c.fill();
+        }
+
+        for (const fox of structureFoxes) {
+          if (!fox || typeof fox.col !== 'number' || typeof fox.row !== 'number') continue;
+          if (state.groupedVillageId && !isCellInsideActiveVillageFilter(fox.col, fox.row)) continue;
+          if (fox.col < startC || fox.col > endC || fox.row < startR || fox.row > endR) continue;
+          const ex = fox.col * ts + state.panX + ts * 0.5;
+          const ey = fox.row * ts + state.panY + ts * 0.58;
+          c.fillStyle = '#cc7b43';
+          c.beginPath();
+          c.ellipse(ex, ey, Math.max(2, ts * 0.16), Math.max(2, ts * 0.11), 0, 0, Math.PI * 2);
+          c.fill();
         }
 
         if (state.hover.col >= 0 && state.hover.row >= 0 && state.hover.col < state.cols && state.hover.row < state.rows) {
@@ -887,6 +1415,44 @@
           c.strokeStyle = 'rgba(128,188,255,0.9)';
           c.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
         }
+
+        if (state.layers.grouped && Array.isArray(structureVillages)) {
+          for (const village of structureVillages) {
+            if (!village) continue;
+            const vx = village.minC * ts + state.panX;
+            const vy = village.minR * ts + state.panY;
+            const vw = (village.maxC - village.minC + 1) * ts;
+            const vh = (village.maxR - village.minR + 1) * ts;
+            const active = state.groupedVillageId && village.id === state.groupedVillageId;
+            c.strokeStyle = active ? 'rgba(255,210,129,0.95)' : 'rgba(120,180,255,0.55)';
+            c.lineWidth = active ? 2 : 1;
+            c.strokeRect(vx + 0.5, vy + 0.5, Math.max(1, vw - 1), Math.max(1, vh - 1));
+            if (ts >= 8) {
+              c.fillStyle = active ? 'rgba(255,210,129,0.92)' : 'rgba(200,220,245,0.8)';
+              c.font = `${Math.max(9, Math.floor(ts * 0.44))}px Segoe UI`;
+              c.fillText(`${villageStyleLabel(village)} · ${village.name || village.id}`, vx + 4, vy + 14);
+            }
+          }
+        }
+
+        if (state.groupedVillageId) {
+          const village = getVillageById(state.groupedVillageId);
+          if (village) {
+            c.save();
+            c.fillStyle = 'rgba(0,0,0,0.42)';
+            c.beginPath();
+            c.rect(0, 0, rect.width, rect.height);
+            const vx = village.minC * ts + state.panX;
+            const vy = village.minR * ts + state.panY;
+            const vw = (village.maxC - village.minC + 1) * ts;
+            const vh = (village.maxR - village.minR + 1) * ts;
+            c.rect(vx, vy, vw, vh);
+            c.fill('evenodd');
+            c.restore();
+          }
+        }
+
+        if (state.selectedObject) drawResizeHandles(c, ts);
       }
 
       function drawBiomeStats() {
@@ -909,7 +1475,7 @@
           const y = 12 + i * (barH + 4);
           c.fillStyle = '#1b2635';
           c.fillRect(12, y, rect.width - 24, barH);
-          c.fillStyle = t.color;
+          c.fillStyle = getTerrainInfo(t.id).color;
           c.fillRect(12, y, Math.max(1, (rect.width - 24) * v), barH);
           c.fillStyle = '#dce7f5';
           c.font = '11px Segoe UI';
@@ -964,6 +1530,948 @@
         c.fillText(`${group.name} (${w}x${h})`, 10, rect.height - 10);
       }
 
+      function clearStructures() {
+        for (let r = 0; r < state.rows; r++) {
+          for (let c = 0; c < state.cols; c++) {
+            const biome = tileBiome[r] && tileBiome[r][c];
+            if (biome === 'road' || biome === 'concrete_road') {
+              const fallback = (heightMap[r] && heightMap[r][c] < 0.05) ? 'riparian' : 'alluvial';
+              setCell(c, r, fallback);
+            }
+          }
+        }
+        structureGrid = make2D(state.rows, state.cols, null);
+        structureEntities = [];
+        structureRabbits = [];
+        structureFoxes = [];
+        structureVillages = [];
+        state.groupedVillageId = '';
+        state.selectedObject = null;
+        rebuildGroupedVillageList();
+        updateStructureSummary();
+        renderAll();
+      }
+
+      function updateStructureSummary() {
+        const buildings = structureVillages.reduce((acc, v) => acc + ((v && v.houses && v.houses.length) || 0), 0);
+        const roads = tileBiome.reduce((acc, row) => acc + row.filter(v => v === 'road' || v === 'concrete_road').length, 0);
+        const trees = structureEntities.filter(ent => ent && ent.kind === 'tree').length;
+        const resources = structureEntities.filter(ent => ent && ent.kind === 'resource').length;
+        const ambient = structureEntities.filter(ent => ent && ent.kind === 'ambient').length;
+        const fauna = structureRabbits.length + structureFoxes.length;
+        el.structureSummary.textContent = structureVillages.length
+          ? `${structureVillages.length} núcleos · ${buildings} edificios · ${roads} calles · ${trees} árboles · ${resources + ambient} props · ${fauna} animales`
+          : `${roads} calles · ${trees} árboles · ${resources + ambient} props · ${fauna} animales`;
+      }
+
+      function isWaterTile(col, row) {
+        if (col < 0 || row < 0 || col >= state.cols || row >= state.rows) return true;
+        return tileBiome[row][col] === 'water';
+      }
+
+      function sanitizeStructureEcology() {
+        structureEntities = (structureEntities || []).filter(ent => {
+          if (!ent || typeof ent.col !== 'number' || typeof ent.row !== 'number') return false;
+          if (ent.col < 0 || ent.row < 0 || ent.col >= state.cols || ent.row >= state.rows) return false;
+          if ((ent.kind === 'tree' || ent.kind === 'resource' || ent.kind === 'ambient') && isWaterTile(ent.col, ent.row)) return false;
+          return true;
+        });
+        structureRabbits = (structureRabbits || []).filter(ent => ent && typeof ent.col === 'number' && typeof ent.row === 'number' && !isWaterTile(ent.col, ent.row));
+        structureFoxes = (structureFoxes || []).filter(ent => ent && typeof ent.col === 'number' && typeof ent.row === 'number' && !isWaterTile(ent.col, ent.row));
+      }
+
+      function canPlaceStructure(col, row, type, dims = null) {
+        const def = buildingCatalog[type] || { size: { w: 1, h: 1 } };
+        const w = Math.max(1, Number(dims && dims.w) || def.size.w || 1);
+        const h = Math.max(1, Number(dims && dims.h) || def.size.h || 1);
+        for (let r = 0; r < h; r++) {
+          for (let c = 0; c < w; c++) {
+            const tc = col + c;
+            const tr = row + r;
+            if (tc < 0 || tr < 0 || tc >= state.cols || tr >= state.rows) return false;
+            if (!isCellInsideActiveVillageFilter(tc, tr)) return false;
+            if (isWaterTile(tc, tr)) return false;
+            if (isRoadTile(tc, tr)) return false;
+            if (structureGrid[tr][tc]) return false;
+          }
+        }
+        return true;
+      }
+
+      function getStructurePadding(type) {
+        const def = buildingCatalog[type] || { size: { w: 1, h: 1 } };
+        const maxSide = Math.max(def.size.w, def.size.h);
+        if (maxSide >= 9) return 3;
+        if (maxSide >= 5) return 2;
+        if (maxSide >= 3) return 1;
+        return 1;
+      }
+
+      function canPlaceStructureWithPadding(col, row, type, padding, dims = null) {
+        const def = buildingCatalog[type] || { size: { w: 1, h: 1 } };
+        const w = Math.max(1, Number(dims && dims.w) || def.size.w || 1);
+        const h = Math.max(1, Number(dims && dims.h) || def.size.h || 1);
+        const pad = Math.max(0, Number(padding) || 0);
+        const minC = col - pad;
+        const minR = row - pad;
+        const maxC = col + w - 1 + pad;
+        const maxR = row + h - 1 + pad;
+        for (let r = minR; r <= maxR; r++) {
+          for (let c = minC; c <= maxC; c++) {
+            if (c < 0 || r < 0 || c >= state.cols || r >= state.rows) return false;
+            if (!isCellInsideActiveVillageFilter(c, r)) return false;
+            if (isWaterTile(c, r)) return false;
+            if (isRoadTile(c, r)) return false;
+            const cell = structureGrid[r] && structureGrid[r][c];
+            if (!cell) continue;
+            if (cell.baseCol >= col && cell.baseCol < col + w && cell.baseRow >= row && cell.baseRow < row + h) continue;
+            return false;
+          }
+        }
+        return true;
+      }
+
+      function isStructureOriginAt(col, row) {
+        const cell = structureGrid[row] && structureGrid[row][col];
+        return !!(cell && cell.baseCol === col && cell.baseRow === row);
+      }
+
+      function hasEntityAt(col, row, subtype) {
+        return structureEntities.some(e => e && e.col === col && e.row === row && (!subtype || e.subtype === subtype));
+      }
+
+      function hasCritterAt(col, row) {
+        return structureRabbits.some(e => e && e.col === col && e.row === row)
+          || structureFoxes.some(e => e && e.col === col && e.row === row);
+      }
+
+      function canPlaceScenery(col, row, options = {}) {
+        const allowRoad = !!options.allowRoad;
+        if (col < 0 || row < 0 || col >= state.cols || row >= state.rows) return false;
+        if (!isCellInsideActiveVillageFilter(col, row)) return false;
+        if (isWaterTile(col, row)) return false;
+        if (!allowRoad && isRoadTile(col, row)) return false;
+        if (structureGrid[row] && structureGrid[row][col]) return false;
+        if (hasEntityAt(col, row)) return false;
+        if (hasCritterAt(col, row)) return false;
+        return true;
+      }
+
+      function placeNatureEntity(col, row, kind, subtypeOrVariant, extra = {}) {
+        if (!canPlaceScenery(col, row, extra)) return false;
+        if (kind === 'tree') {
+          structureEntities.push({
+            kind: 'tree',
+            variant: subtypeOrVariant,
+            col,
+            row,
+            x: col,
+            y: row,
+            size: extra.size || 1
+          });
+          return true;
+        }
+        if (kind === 'resource') {
+          structureEntities.push({
+            kind: 'resource',
+            subtype: subtypeOrVariant,
+            col,
+            row,
+            x: col,
+            y: row,
+            _born: Date.now(),
+            _dropSeed: extra.dropSeed || Math.random()
+          });
+          return true;
+        }
+        if (kind === 'ambient') {
+          structureEntities.push({
+            kind: 'ambient',
+            subtype: subtypeOrVariant,
+            col,
+            row,
+            x: col,
+            y: row,
+            size: extra.size || 1,
+            nonInteractive: true
+          });
+          return true;
+        }
+        return false;
+      }
+
+      function placeCritter(col, row, type) {
+        if (!canPlaceScenery(col, row)) return false;
+        const now = Date.now();
+        const base = {
+          col,
+          row,
+          x: col,
+          y: row,
+          t: now,
+          nextMove: now + 900 + Math.floor(Math.random() * 3200)
+        };
+        if (type === 'fox') {
+          structureFoxes.push({
+            id: `fox-${now}-${Math.random().toString(36).slice(2, 4)}`,
+            ...base,
+            hp: 10,
+            maxHp: 10,
+            speed: 1.4,
+            size: 0.7
+          });
+          return true;
+        }
+        structureRabbits.push({
+          id: `rabbit-${now}-${Math.random().toString(36).slice(2, 4)}`,
+          ...base,
+          hp: 6,
+          maxHp: 6,
+          speed: 1,
+          size: 0.45
+        });
+        return true;
+      }
+
+      function getVillageDistance(col, row, centers) {
+        if (!centers || !centers.length) return Infinity;
+        let best = Infinity;
+        for (const center of centers) {
+          if (!center) continue;
+          const cc = typeof center.c === 'number' ? center.c : Math.round((center.minC + center.maxC) * 0.5);
+          const rr = typeof center.r === 'number' ? center.r : Math.round((center.minR + center.maxR) * 0.5);
+          best = Math.min(best, Math.hypot(col - cc, row - rr));
+        }
+        return best;
+      }
+
+      function getBiomeFlora(biome) {
+        if (state.epoch === 'urss') {
+          switch (biome) {
+            case 'forest':
+              return ['tree0', 'tree1', 'tree2', 'tree1'];
+            case 'riparian':
+              return ['tree1', 'tree2', 'tree1', 'tree0'];
+            case 'marsh':
+              return ['tree1', 'tree2', 'tree1'];
+            case 'steppe':
+              return ['tree0', 'tree1', 'tree0'];
+            case 'hills':
+              return ['tree2', 'tree1', 'tree0'];
+            case 'saline':
+              return ['tree0', 'tree1'];
+            default:
+              return ['tree0', 'tree1', 'tree2'];
+          }
+        }
+        switch (biome) {
+          case 'forest':
+            return ['birch', 'pine', 'fir', 'aspen', 'bush'];
+          case 'riparian':
+            return ['willow', 'sedge', 'shrub', 'bush'];
+          case 'marsh':
+            return ['sedge', 'willow', 'scrub', 'shrub'];
+          case 'steppe':
+            return ['steppe_shrub', 'hay', 'winter_grass', 'scrub'];
+          case 'hills':
+            return ['pine', 'scrub', 'bush'];
+          case 'saline':
+            return ['scrub', 'winter_grass'];
+          default:
+            return ['bush', 'shrub', 'hay', 'tree0'];
+        }
+      }
+
+      function pickFromPalette(options, noiseValue) {
+        const list = Array.isArray(options) && options.length ? options : ['tree0'];
+        const clamped = clamp(Number.isFinite(noiseValue) ? noiseValue : Math.random(), 0, 0.999999);
+        return list[Math.floor(clamped * list.length)] || list[0];
+      }
+
+      function pickTreeVariant(biome, col, row, seed, scale = 2.7) {
+        const flora = getBiomeFlora(biome);
+        return pickFromPalette(flora, valueNoise2D(col / scale, row / scale, seed));
+      }
+
+      function decorateVillageRoads(village, seed) {
+        if (!village) return;
+        const minC = Math.max(1, village.minC - 4);
+        const minR = Math.max(1, village.minR - 4);
+        const maxC = Math.min(state.cols - 2, village.maxC + 4);
+        const maxR = Math.min(state.rows - 2, village.maxR + 4);
+        const cadence = state.epoch === 'urss' ? 4 : 5;
+        const size = state.epoch === 'urss' ? 1.15 : 0.95;
+        for (let r = minR; r <= maxR; r++) {
+          for (let c = minC; c <= maxC; c++) {
+            if (!isRoadTile(c, r)) continue;
+            const vertical = isRoadTile(c, r - 1) || isRoadTile(c, r + 1);
+            const horizontal = isRoadTile(c - 1, r) || isRoadTile(c + 1, r);
+            const axisValue = vertical ? r : c;
+            if ((axisValue + Math.floor(seed % cadence)) % cadence !== 0) continue;
+            const spots = vertical ? [[c - 1, r], [c + 1, r]] : horizontal ? [[c, r - 1], [c, r + 1]] : [[c + 1, r], [c, r + 1]];
+            for (const [sc, sr] of spots) {
+              if (!canPlaceScenery(sc, sr)) continue;
+              const biome = tileBiome[sr] && tileBiome[sr][sc] || 'alluvial';
+              const variant = pickTreeVariant(biome, sc, sr, seed + 3001, 3.1);
+              placeNatureEntity(sc, sr, 'tree', variant, { size });
+              if (state.epoch !== 'urss') break;
+            }
+          }
+        }
+      }
+
+      function decorateVillageLots(village, seed) {
+        if (!village || !Array.isArray(village.houses)) return;
+        for (const house of village.houses) {
+          if (!house) continue;
+          const def = buildingCatalog[house.variant] || { size: { w: 1, h: 1 } };
+          const centerC = house.c + Math.floor(def.size.w / 2);
+          const centerR = house.r + Math.floor(def.size.h / 2);
+          const front = [centerC, house.r + def.size.h];
+          const sideLeft = [house.c - 1, centerR];
+          const sideRight = [house.c + def.size.w, centerR];
+          const rear = [centerC, house.r - 1];
+          const options = [front, sideLeft, sideRight, rear];
+          const pickIdx = Math.floor(valueNoise2D(centerC / 5.1, centerR / 5.1, seed + 3301) * options.length);
+          const [ac, ar] = options[pickIdx] || front;
+          const houseNoise = valueNoise2D(centerC / 4.1, centerR / 4.1, seed + 3401);
+          if (['factory', 'state_warehouse', 'party_hq', 'state_clinic'].includes(house.variant)) {
+            const subtype = houseNoise > 0.56 ? 'brick' : 'stone';
+            placeNatureEntity(ac, ar, 'resource', subtype);
+            if (state.epoch === 'urss' && houseNoise > 0.34) {
+              const treeVariant = pickTreeVariant('alluvial', ac + 1, ar, seed + 3451, 2.3);
+              placeNatureEntity(ac + 1, ar, 'tree', treeVariant, { size: 1.05 });
+            }
+          } else if (['collective_farm', 'farm', 'house_garden'].includes(house.variant)) {
+            const farmVariant = pickTreeVariant('alluvial', ac, ar, seed + 3501, 2.4);
+            placeNatureEntity(ac, ar, 'tree', farmVariant, { size: state.epoch === 'urss' ? 1.05 : 0.95 });
+            if (houseNoise > 0.62) placeNatureEntity(ac + 1, ar, 'resource', state.epoch === 'urss' ? 'brick' : 'stone');
+          } else if (houseNoise > 0.7) {
+            const yardVariant = pickTreeVariant('alluvial', ac, ar, seed + 3601, 2.8);
+            placeNatureEntity(ac, ar, 'tree', yardVariant, { size: state.epoch === 'urss' ? 1 : 0.85 });
+          }
+        }
+      }
+
+      function populateEcology(centers = []) {
+        const seed = (state.biomeSeed % 1000003) + state.cols * 11 + state.rows * 17;
+        const villages = Array.isArray(centers) ? centers : [];
+        for (let r = 0; r < state.rows; r++) {
+          for (let c = 0; c < state.cols; c++) {
+            const biome = tileBiome[r] && tileBiome[r][c];
+            if (!biome || biome === 'water') continue;
+            const distVillage = getVillageDistance(c, r, villages);
+            const terrainNoise = fbm(c / 17, r / 17, seed + 401, 3);
+            const detailNoise = valueNoise2D(c / 4.5, r / 4.5, seed + 977);
+            const clusterNoise = valueNoise2D(c / 8.5, r / 8.5, seed + 1447);
+            const heatLarge = fbm(c / 15.2, r / 15.2, seed + 2119, 4);
+            const heatMedium = valueNoise2D(c / 6.6, r / 6.6, seed + 3181);
+            const heatFine = valueNoise2D(c / 2.8, r / 2.8, seed + 4021);
+            const edgeFactor = Math.min(Math.min(c, r), Math.min(state.cols - 1 - c, state.rows - 1 - r));
+            if (edgeFactor < 2) continue;
+            if (!canPlaceScenery(c, r)) continue;
+
+            let treeChance = 0;
+            let resourceChance = 0;
+            let rabbitChance = 0;
+            let foxChance = 0;
+
+            if (biome === 'forest') {
+              treeChance = distVillage < 8 ? 0.05 : 0.28;
+              rabbitChance = distVillage > 9 ? 0.02 : 0;
+              foxChance = distVillage > 18 ? 0.007 : 0;
+            } else if (biome === 'riparian') {
+              treeChance = distVillage < 7 ? 0.06 : 0.19;
+              rabbitChance = distVillage > 10 ? 0.012 : 0;
+            } else if (biome === 'marsh') {
+              treeChance = distVillage < 7 ? 0.03 : 0.11;
+              rabbitChance = distVillage > 12 ? 0.008 : 0;
+            } else if (biome === 'steppe') {
+              treeChance = distVillage < 8 ? 0.015 : 0.08;
+              rabbitChance = distVillage > 7 ? 0.018 : 0.004;
+              foxChance = distVillage > 20 ? 0.006 : 0;
+              resourceChance = 0.006;
+            } else if (biome === 'hills') {
+              treeChance = distVillage < 10 ? 0.02 : 0.09;
+              foxChance = distVillage > 16 ? 0.01 : 0.002;
+              resourceChance = 0.012;
+            } else if (biome === 'saline') {
+              treeChance = 0.01;
+              resourceChance = 0.01;
+            } else {
+              treeChance = distVillage < 6 ? 0.025 : 0.12;
+              rabbitChance = distVillage > 8 ? 0.012 : 0;
+              resourceChance = distVillage > 12 ? 0.004 : 0;
+            }
+
+            if (distVillage <= 5 && biome !== 'riparian' && biome !== 'forest') {
+              treeChance *= 0.45;
+            }
+            if (terrainNoise > 0.57 && clusterNoise > 0.52) treeChance *= 1.35;
+            if (terrainNoise < 0.34) treeChance *= 0.5;
+
+            const treeHeat = clamp((heatLarge * 0.55) + (heatMedium * 0.33) + (heatFine * 0.12), 0, 1);
+            const localPeak = treeHeat >= valueNoise2D((c + 0.7) / 6.6, (r - 0.4) / 6.6, seed + 3181)
+              && treeHeat >= valueNoise2D((c - 0.6) / 6.6, (r + 0.7) / 6.6, seed + 3181)
+              && treeHeat >= valueNoise2D((c + 0.2) / 6.6, (r + 0.2) / 6.6, seed + 3181);
+            const treeThreshold = clamp(1 - treeChance * 1.95, 0.22, 0.93);
+            const canTreeGrow = localPeak
+              ? (treeHeat > treeThreshold)
+              : (treeHeat > treeThreshold + 0.12 && detailNoise < treeChance * 0.6);
+
+            if (canTreeGrow) {
+              const variant = pickTreeVariant(biome, c, r, seed + 1889, 2.7);
+              const size = biome === 'forest' ? 1.45 + (treeHeat - 0.5) * 0.35 : biome === 'riparian' ? 1.15 : 0.95 + (treeHeat - 0.5) * 0.2;
+              placeNatureEntity(c, r, 'tree', variant, { size });
+              continue;
+            }
+            if (detailNoise > 0.91 && terrainNoise < resourceChance + 0.08) {
+              placeNatureEntity(c, r, 'resource', distVillage < 10 ? 'brick' : 'stone', {});
+              continue;
+            }
+            if (distVillage > 10 && terrainNoise > 0.74 && detailNoise < rabbitChance) {
+              placeCritter(c, r, 'rabbit');
+              continue;
+            }
+            if (distVillage > 16 && terrainNoise < foxChance) {
+              placeCritter(c, r, 'fox');
+            }
+          }
+        }
+
+        for (const village of structureVillages) {
+          if (!village) continue;
+          decorateVillageRoads(village, seed + 2501);
+          decorateVillageLots(village, seed + 2601);
+          for (let r = Math.max(1, village.minR - 2); r <= Math.min(state.rows - 2, village.maxR + 2); r++) {
+            for (let c = Math.max(1, village.minC - 2); c <= Math.min(state.cols - 2, village.maxC + 2); c++) {
+              if (isRoadTile(c, r) || structureGrid[r][c]) continue;
+              const distanceToEdge = Math.min(Math.abs(c - village.minC), Math.abs(c - village.maxC), Math.abs(r - village.minR), Math.abs(r - village.maxR));
+              const gardenNoise = valueNoise2D(c / 3.2, r / 3.2, seed + 2111);
+              if (distanceToEdge <= 1 && gardenNoise > 0.58) {
+                const accentVariant = pickTreeVariant('alluvial', c, r, seed + 2701, 2.2);
+                placeNatureEntity(c, r, 'tree', accentVariant, { size: state.epoch === 'urss' ? 1.05 : 0.9 });
+              } else if (distanceToEdge >= 2 && distanceToEdge <= 4 && gardenNoise < 0.04) {
+                placeCritter(c, r, 'rabbit');
+              }
+            }
+          }
+        }
+      }
+
+      function placeStructure(col, row, type, villageId, dims = null) {
+        const def = buildingCatalog[type] || { size: { w: 1, h: 1 } };
+        const w = Math.max(1, Number(dims && dims.w) || def.size.w || 1);
+        const h = Math.max(1, Number(dims && dims.h) || def.size.h || 1);
+        if (!canPlaceStructure(col, row, type, { w, h })) return false;
+        if (isStructureOriginAt(col, row)) return false;
+        for (let r = 0; r < h; r++) {
+          for (let c = 0; c < w; c++) {
+            structureGrid[row + r][col + c] = { type, baseCol: col, baseRow: row, villageId: villageId || null, w, h };
+          }
+        }
+        return true;
+      }
+
+      function placeStructureBuffered(col, row, type, villageId, padding, dims = null) {
+        if (!canPlaceStructureWithPadding(col, row, type, padding, dims)) return false;
+        return placeStructure(col, row, type, villageId, dims);
+      }
+
+      function clearStructureOrigin(baseCol, baseRow) {
+        for (let r = 0; r < state.rows; r++) {
+          for (let c = 0; c < state.cols; c++) {
+            const cell = structureGrid[r] && structureGrid[r][c];
+            if (!cell) continue;
+            if (cell.baseCol === baseCol && cell.baseRow === baseRow) structureGrid[r][c] = null;
+          }
+        }
+      }
+
+      function selectObjectAt(col, row) {
+        const structure = getStructureOriginCell(col, row);
+        if (structure) {
+          const dims = getStructureSizeFromCell(structure);
+          state.selectedObject = {
+            kind: 'structure',
+            col: structure.baseCol,
+            row: structure.baseRow,
+            type: structure.type,
+            villageId: structure.villageId || null,
+            w: dims.w,
+            h: dims.h
+          };
+          return true;
+        }
+        const ent = getEntityAt(col, row);
+        if (ent) {
+          state.selectedObject = { kind: 'entity', ref: ent };
+          return true;
+        }
+        state.selectedObject = null;
+        return false;
+      }
+
+      function resizeSelectedObject(handleName, targetCol, targetRow) {
+        const sel = state.selectedObject;
+        if (!sel) return false;
+        if (sel.kind === 'entity' && sel.ref) {
+          const dist = Math.hypot((targetCol + 0.5) - (sel.ref.col + 0.5), (targetRow + 0.5) - (sel.ref.row + 0.5));
+          sel.ref.size = clamp(dist * 0.9, 0.4, 3);
+          return true;
+        }
+        if (sel.kind !== 'structure') return false;
+
+        const minC = sel.col;
+        const minR = sel.row;
+        const maxC = sel.col + sel.w - 1;
+        const maxR = sel.row + sel.h - 1;
+        const opposite = handleName === 'nw'
+          ? { c: maxC, r: maxR }
+          : handleName === 'ne'
+            ? { c: minC, r: maxR }
+            : handleName === 'sw'
+              ? { c: maxC, r: minR }
+              : { c: minC, r: minR };
+
+        const newMinC = clamp(Math.min(opposite.c, targetCol), 0, state.cols - 1);
+        const newMaxC = clamp(Math.max(opposite.c, targetCol), 0, state.cols - 1);
+        const newMinR = clamp(Math.min(opposite.r, targetRow), 0, state.rows - 1);
+        const newMaxR = clamp(Math.max(opposite.r, targetRow), 0, state.rows - 1);
+        const newW = clamp(newMaxC - newMinC + 1, 1, 24);
+        const newH = clamp(newMaxR - newMinR + 1, 1, 24);
+
+        const backup = [];
+        for (let r = 0; r < state.rows; r++) {
+          for (let c = 0; c < state.cols; c++) {
+            const cell = structureGrid[r] && structureGrid[r][c];
+            if (cell && cell.baseCol === sel.col && cell.baseRow === sel.row) backup.push({ c, r, cell: { ...cell } });
+          }
+        }
+        clearStructureOrigin(sel.col, sel.row);
+        const placed = placeStructure(newMinC, newMinR, sel.type, sel.villageId, { w: newW, h: newH });
+        if (!placed) {
+          backup.forEach(it => { structureGrid[it.r][it.c] = { ...it.cell }; });
+          return false;
+        }
+        state.selectedObject = {
+          ...sel,
+          col: newMinC,
+          row: newMinR,
+          w: newW,
+          h: newH
+        };
+        return true;
+      }
+
+      function carveRoad(col, row, kind) {
+        if (col < 0 || row < 0 || col >= state.cols || row >= state.rows) return;
+        if (isWaterTile(col, row)) return;
+        if (structureGrid[row][col]) return;
+        const terrain = kind === 'concrete_road' ? 'concrete_road' : 'road';
+        setCell(col, row, terrain);
+      }
+
+      function isRoadTile(col, row) {
+        if (col < 0 || row < 0 || col >= state.cols || row >= state.rows) return false;
+        const biome = tileBiome[row] && tileBiome[row][col];
+        return biome === 'road' || biome === 'concrete_road';
+      }
+
+      function canTraverseRoadPath(col, row, goalCol, goalRow) {
+        if (col < 0 || row < 0 || col >= state.cols || row >= state.rows) return false;
+        if (isWaterTile(col, row)) return false;
+        if (col === goalCol && row === goalRow) return true;
+        return !structureGrid[row][col];
+      }
+
+      function findNearestRoadAnchor(col, row, maxRadius = 6) {
+        const startC = clamp(col, 0, state.cols - 1);
+        const startR = clamp(row, 0, state.rows - 1);
+        if (isRoadTile(startC, startR)) return { col: startC, row: startR };
+
+        for (let radius = 1; radius <= maxRadius; radius++) {
+          for (let r = startR - radius; r <= startR + radius; r++) {
+            for (let c = startC - radius; c <= startC + radius; c++) {
+              if (Math.abs(c - startC) !== radius && Math.abs(r - startR) !== radius) continue;
+              if (c < 0 || r < 0 || c >= state.cols || r >= state.rows) continue;
+              if (isRoadTile(c, r)) return { col: c, row: r };
+            }
+          }
+        }
+
+        if (canTraverseRoadPath(startC, startR, startC, startR)) return { col: startC, row: startR };
+        for (let radius = 1; radius <= maxRadius; radius++) {
+          for (let r = startR - radius; r <= startR + radius; r++) {
+            for (let c = startC - radius; c <= startC + radius; c++) {
+              if (Math.abs(c - startC) !== radius && Math.abs(r - startR) !== radius) continue;
+              if (canTraverseRoadPath(c, r, c, r)) return { col: c, row: r };
+            }
+          }
+        }
+        return null;
+      }
+
+      function carveRoadBand(col, row, horizontal, width, kind) {
+        const band = Math.max(1, width | 0);
+        const half = Math.floor(band / 2);
+        for (let offset = -half; offset <= half; offset++) {
+          if (horizontal) carveRoad(col, row + offset, kind);
+          else carveRoad(col + offset, row, kind);
+        }
+      }
+
+      function carveRoadPath(aCol, aRow, bCol, bRow, kind, options = {}) {
+        const strictReuse = options.strictReuse !== false;
+        const start = findNearestRoadAnchor(aCol, aRow, 10);
+        const goal = findNearestRoadAnchor(bCol, bRow, 10);
+        if (!start || !goal) return;
+        const queue = [{ ...start, dir: null }];
+        const gScore = new Map();
+        gScore.set(`${start.col},${start.row}`, 0);
+        const parent = new Map();
+        let found = null;
+        let head = 0;
+
+        const estimate = (col, row) => Math.abs(col - goal.col) + Math.abs(row - goal.row);
+
+        while (head < queue.length) {
+          queue.sort((a, b) => {
+            const ga = gScore.get(`${a.col},${a.row}`) || Infinity;
+            const gb = gScore.get(`${b.col},${b.row}`) || Infinity;
+            return (ga + estimate(a.col, a.row)) - (gb + estimate(b.col, b.row));
+          });
+          const current = queue.shift();
+          if (!current) break;
+          if (current.col === goal.col && current.row === goal.row) {
+            found = current;
+            break;
+          }
+          const neighbors = [
+            { col: current.col + 1, row: current.row, dir: 'E' },
+            { col: current.col - 1, row: current.row, dir: 'W' },
+            { col: current.col, row: current.row + 1, dir: 'S' },
+            { col: current.col, row: current.row - 1, dir: 'N' }
+          ];
+
+          for (const next of neighbors) {
+            const key = `${next.col},${next.row}`;
+            if (!canTraverseRoadPath(next.col, next.row, goal.col, goal.row)) continue;
+            if (strictReuse && !isRoadTile(next.col, next.row)) continue;
+
+            const isExistingRoad = isRoadTile(next.col, next.row);
+            const turnPenalty = current.dir && current.dir !== next.dir ? 0.35 : 0;
+            const carvePenalty = isExistingRoad ? 0.06 : 2.2;
+            const nextCost = (gScore.get(`${current.col},${current.row}`) || 0) + 1 + turnPenalty + carvePenalty;
+
+            if (nextCost >= (gScore.get(key) || Infinity)) continue;
+            gScore.set(key, nextCost);
+            parent.set(key, { col: current.col, row: current.row });
+            queue.push(next);
+          }
+          head++;
+        }
+        if (!found) return;
+        if (strictReuse) return true;
+        let node = found;
+        while (node) {
+          if (!isRoadTile(node.col, node.row)) carveRoad(node.col, node.row, kind);
+          node = parent.get(`${node.col},${node.row}`) || null;
+        }
+        return true;
+      }
+
+      function clearSceneryRect(minC, minR, maxC, maxR) {
+        structureEntities = structureEntities.filter(ent => {
+          if (!ent || typeof ent.col !== 'number' || typeof ent.row !== 'number') return false;
+          return ent.col < minC || ent.col > maxC || ent.row < minR || ent.row > maxR;
+        });
+        structureRabbits = structureRabbits.filter(ent => ent && (ent.col < minC || ent.col > maxC || ent.row < minR || ent.row > maxR));
+        structureFoxes = structureFoxes.filter(ent => ent && (ent.col < minC || ent.col > maxC || ent.row < minR || ent.row > maxR));
+      }
+
+      function carveVillagePlaza(centerCol, centerRow, size, roadKind) {
+        const span = Math.max(3, size | 0);
+        const half = Math.floor(span / 2);
+        const minC = clamp(centerCol - half, 0, state.cols - 1);
+        const maxC = clamp(centerCol + half, 0, state.cols - 1);
+        const minR = clamp(centerRow - half, 0, state.rows - 1);
+        const maxR = clamp(centerRow + half, 0, state.rows - 1);
+
+        clearSceneryRect(minC, minR, maxC, maxR);
+
+        for (let r = minR; r <= maxR; r++) {
+          for (let c = minC; c <= maxC; c++) {
+            if (isWaterTile(c, r)) continue;
+            setCell(c, r, roadKind === 'concrete_road' ? 'concrete_road' : 'road');
+          }
+        }
+
+        if (!hasEntityAt(centerCol, centerRow, 'plaza_statue_placeholder') && !isWaterTile(centerCol, centerRow)) {
+          placeNatureEntity(centerCol, centerRow, 'ambient', 'plaza_statue_placeholder', { allowRoad: true, size: 1.3 });
+        }
+
+        const corners = [
+          [minC + 1, minR + 1],
+          [maxC - 1, minR + 1],
+          [minC + 1, maxR - 1],
+          [maxC - 1, maxR - 1]
+        ];
+        for (const [c, r] of corners) {
+          if (!hasEntityAt(c, r, 'soviet_streetlight') && !isWaterTile(c, r)) {
+            placeNatureEntity(c, r, 'ambient', 'soviet_streetlight', { allowRoad: true, size: 1 });
+          }
+        }
+
+        return { minC, minR, maxC, maxR, centerCol, centerRow, size: span };
+      }
+
+      function placeStreetlights(minC, minR, maxC, maxR) {
+        let step = 0;
+        for (let r = minR; r <= maxR; r++) {
+          for (let c = minC; c <= maxC; c++) {
+            if (!isRoadTile(c, r)) continue;
+            step++;
+            if (step % 5 !== 0) continue;
+            const spots = [[c, r - 1], [c, r + 1], [c - 1, r], [c + 1, r]];
+            for (const [sc, sr] of spots) {
+              if (sc < 0 || sr < 0 || sc >= state.cols || sr >= state.rows) continue;
+              if (isWaterTile(sc, sr) || structureGrid[sr][sc]) continue;
+              if (hasEntityAt(sc, sr, 'soviet_streetlight')) continue;
+              structureEntities.push({ kind: 'ambient', subtype: 'soviet_streetlight', col: sc, row: sr, x: sc, y: sr, size: 1, nonInteractive: true });
+              break;
+            }
+          }
+        }
+      }
+
+      function generateStructures() {
+        clearStructures();
+        const presets = {
+          mesopotamia: {
+            core: ['ziggurat', 'temple', 'market', 'granary', 'mesopotamian_villa_detailed'],
+            residential: ['mesopotamian_villa_detailed', 'house_garden', 'house', 'house_small', 'hut', 'stone_house'],
+            farm: 'farm'
+          },
+          urss: {
+            core: ['party_hq', 'state_clinic', 'state_warehouse', 'factory'],
+            residential: ['soviet_block', 'soviet_superblock', 'soviet_superblock_b', 'house_small'],
+            farm: 'collective_farm'
+          },
+          medieval: {
+            core: ['temple', 'market', 'granary', 'stone_house'],
+            residential: ['stone_house', 'longhouse', 'house', 'house_small', 'hut'],
+            farm: 'farm'
+          }
+        };
+        const preset = presets[state.epoch] || presets.mesopotamia;
+        const styleFactor = state.structurePreset === 'ordered' ? 1.2 : state.structurePreset === 'organic' ? 0.95 : 1;
+        const clusters = state.epoch === 'urss' ? 4 : 3;
+        const centers = [];
+        for (let i = 0; i < clusters; i++) {
+          let found = null;
+          for (let tries = 0; tries < 120; tries++) {
+            const c = Math.floor(18 + Math.random() * (state.cols - 36));
+            const r = Math.floor(18 + Math.random() * (state.rows - 36));
+            if (isWaterTile(c, r)) continue;
+            if (structureVillages.some(v => v && Math.hypot(((v.minC + v.maxC) * 0.5) - c, ((v.minR + v.maxR) * 0.5) - r) < 30)) continue;
+            if (centers.some(x => Math.hypot(x.c - c, x.r - r) < 42 * styleFactor)) continue;
+            found = { c, r };
+            break;
+          }
+          if (found) centers.push(found);
+        }
+
+        centers.forEach((center, index) => {
+          const villageId = `village-${Date.now()}-${index}`;
+          const houses = [];
+          const roadKind = state.epoch === 'urss' ? 'concrete_road' : 'road';
+          const avenueWidth = state.epoch === 'urss' ? 3 : 2;
+          const streetWidth = state.epoch === 'urss' ? 2 : 1;
+          const strictRoadReuse = true;
+          const span = Math.round((state.structurePreset === 'ordered' ? 24 : state.structurePreset === 'organic' ? 20 : 22) * styleFactor);
+          const startC = center.c - span;
+          const startR = center.r - span;
+          const endC = center.c + span;
+          const endR = center.r + span;
+          const blockStep = Math.max(10, Math.round((state.epoch === 'urss' ? 14 : 12) * styleFactor));
+          const lotInset = state.epoch === 'urss' ? 2 : 1;
+
+          for (let c = startC; c <= endC; c++) carveRoadBand(c, center.r, true, avenueWidth, roadKind);
+          for (let r = startR; r <= endR; r++) carveRoadBand(center.c, r, false, avenueWidth, roadKind);
+          for (let c = center.c - blockStep * 2; c <= center.c + blockStep * 2; c += blockStep) {
+            if (c === center.c) continue;
+            for (let r = startR; r <= endR; r++) carveRoadBand(c, r, false, streetWidth, roadKind);
+          }
+          for (let r = center.r - blockStep * 2; r <= center.r + blockStep * 2; r += blockStep) {
+            if (r === center.r) continue;
+            for (let c = startC; c <= endC; c++) carveRoadBand(c, r, true, streetWidth, roadKind);
+          }
+
+          const plaza = carveVillagePlaza(center.c, center.r, state.epoch === 'urss' ? 7 : 5, roadKind);
+
+          const coreType = preset.core[index % preset.core.length] || preset.core[0];
+          const coreDef = buildingCatalog[coreType] || { size: { w: 2, h: 2 } };
+          const coreSpan = Math.floor((plaza.size || 5) * 0.5) + 2;
+          const coreCandidates = [
+            [center.c - Math.floor(coreDef.size.w / 2), center.r - coreSpan - coreDef.size.h],
+            [center.c - Math.floor(coreDef.size.w / 2), center.r + coreSpan],
+            [center.c - coreSpan - coreDef.size.w, center.r - Math.floor(coreDef.size.h / 2)],
+            [center.c + coreSpan, center.r - Math.floor(coreDef.size.h / 2)],
+            [center.c - Math.floor(coreDef.size.w / 2), center.r - Math.floor(coreDef.size.h / 2)]
+          ];
+          for (const [cc, cr] of coreCandidates) {
+            const coreCol = clamp(cc, 0, state.cols - coreDef.size.w);
+            const coreRow = clamp(cr, 0, state.rows - coreDef.size.h);
+            if (placeStructureBuffered(coreCol, coreRow, coreType, villageId, 3)) {
+              houses.push({ c: coreCol, r: coreRow, variant: coreType });
+              break;
+            }
+          }
+
+          const placeLotBuilding = (lotC, lotR, lotW, lotH, candidateTypes, connectToC, connectToR) => {
+            const candidates = candidateTypes.slice().sort((a, b) => {
+              const da = buildingCatalog[a] || { size: { w: 1, h: 1 } };
+              const db = buildingCatalog[b] || { size: { w: 1, h: 1 } };
+              return (db.size.w * db.size.h) - (da.size.w * da.size.h);
+            });
+            for (const type of candidates) {
+              const def = buildingCatalog[type] || { size: { w: 1, h: 1 } };
+              const padding = getStructurePadding(type);
+              const maxCol = lotC + lotW - def.size.w - lotInset;
+              const maxRow = lotR + lotH - def.size.h - lotInset;
+              const minCol = lotC + lotInset;
+              const minRow = lotR + lotInset;
+              if (maxCol < minCol || maxRow < minRow) continue;
+              const idealCol = clamp(Math.floor(lotC + (lotW - def.size.w) / 2), minCol, maxCol);
+              const idealRow = clamp(Math.floor(lotR + (lotH - def.size.h) / 2), minRow, maxRow);
+              const tries = [
+                [idealCol, idealRow],
+                [minCol, minRow],
+                [maxCol, minRow],
+                [minCol, maxRow],
+                [maxCol, maxRow]
+              ];
+              if (state.structurePreset === 'organic') {
+                tries.push([clamp(idealCol + 1, minCol, maxCol), clamp(idealRow - 1, minRow, maxRow)]);
+                tries.push([clamp(idealCol - 1, minCol, maxCol), clamp(idealRow + 1, minRow, maxRow)]);
+              }
+              for (const [pc, pr] of tries) {
+                if (!placeStructureBuffered(pc, pr, type, villageId, padding)) continue;
+                houses.push({ c: pc, r: pr, variant: type });
+                const doorC = pc + Math.floor(def.size.w / 2);
+                const doorR = pr + def.size.h;
+                const connectRoad = findNearestRoadAnchor(connectToC, connectToR, Math.max(8, blockStep));
+                if (connectRoad) {
+                  carveRoadPath(
+                    clamp(doorC, 0, state.cols - 1),
+                    clamp(doorR, 0, state.rows - 1),
+                    connectRoad.col,
+                    connectRoad.row,
+                    roadKind,
+                    { strictReuse: strictRoadReuse }
+                  );
+                }
+                return true;
+              }
+            }
+            return false;
+          };
+
+          for (let blockR = center.r - blockStep * 2; blockR < center.r + blockStep * 2; blockR += blockStep) {
+            for (let blockC = center.c - blockStep * 2; blockC < center.c + blockStep * 2; blockC += blockStep) {
+              const blockCenterC = blockC + Math.floor(blockStep / 2);
+              const blockCenterR = blockR + Math.floor(blockStep / 2);
+              if (Math.abs(blockCenterC - center.c) <= blockStep / 2 && Math.abs(blockCenterR - center.r) <= blockStep / 2) continue;
+              const blockMinC = blockC + Math.ceil(streetWidth / 2) + 1;
+              const blockMinR = blockR + Math.ceil(streetWidth / 2) + 1;
+              const blockMaxC = blockC + blockStep - Math.ceil(streetWidth / 2) - 2;
+              const blockMaxR = blockR + blockStep - Math.ceil(streetWidth / 2) - 2;
+              const lotW = Math.max(5, blockMaxC - blockMinC + 1);
+              const lotH = Math.max(5, blockMaxR - blockMinR + 1);
+              if (lotW < 5 || lotH < 5) continue;
+              const densitySkip = state.structurePreset === 'ordered' ? 0.24 : state.structurePreset === 'organic' ? 0.34 : 0.29;
+              if (Math.random() < densitySkip) continue;
+
+              const connectToC = (Math.abs(blockCenterC - center.c) > Math.abs(blockCenterR - center.r)) ? center.c + Math.sign(blockCenterC - center.c) * Math.floor(blockStep / 2) : blockCenterC;
+              const connectToR = (Math.abs(blockCenterR - center.r) >= Math.abs(blockCenterC - center.c)) ? center.r + Math.sign(blockCenterR - center.r) * Math.floor(blockStep / 2) : blockCenterR;
+
+              const majorBlock = Math.abs(blockCenterC - center.c) <= blockStep && Math.abs(blockCenterR - center.r) <= blockStep;
+              const candidates = majorBlock
+                ? [preset.residential[0], preset.residential[1], preset.residential[2], preset.residential[3], preset.residential[4]]
+                : [preset.residential[2], preset.residential[3], preset.residential[4], preset.residential[5] || preset.residential[0], preset.residential[1]];
+
+              const splitHoriz = lotW >= 12;
+              const splitVert = lotH >= 12;
+              if (splitHoriz && splitVert && state.structurePreset !== 'organic') {
+                const halfW = Math.floor((lotW - 1) / 2);
+                const halfH = Math.floor((lotH - 1) / 2);
+                const lots = [
+                  [blockMinC, blockMinR, halfW, halfH],
+                  [blockMinC + halfW + 1, blockMinR, lotW - halfW - 1, halfH],
+                  [blockMinC, blockMinR + halfH + 1, halfW, lotH - halfH - 1],
+                  [blockMinC + halfW + 1, blockMinR + halfH + 1, lotW - halfW - 1, lotH - halfH - 1]
+                ];
+                lots.forEach((lot, lotIndex) => {
+                  if (Math.random() < 0.22) return;
+                  placeLotBuilding(lot[0], lot[1], lot[2], lot[3], candidates.slice(lotIndex % 2).concat(candidates.slice(0, lotIndex % 2)), connectToC, connectToR);
+                });
+              } else {
+                placeLotBuilding(blockMinC, blockMinR, lotW, lotH, candidates, connectToC, connectToR);
+              }
+            }
+          }
+
+          for (let f = 0; f < 4; f++) {
+            const side = f % 4;
+            const farmOffset = span + 7;
+            const farmCol = side === 0 ? center.c - farmOffset : side === 1 ? center.c + farmOffset : center.c + (f === 2 ? -6 : 6);
+            const farmRow = side === 2 ? center.r - farmOffset : side === 3 ? center.r + farmOffset : center.r + (f === 0 ? -6 : 6);
+            if (placeStructureBuffered(farmCol, farmRow, preset.farm, villageId, 2)) {
+              houses.push({ c: farmCol, r: farmRow, variant: preset.farm });
+              carveRoadPath(farmCol, farmRow, center.c, center.r, roadKind, { strictReuse: strictRoadReuse });
+            }
+          }
+
+          let minC = Infinity;
+          let minR = Infinity;
+          let maxC = -Infinity;
+          let maxR = -Infinity;
+          houses.forEach(h => {
+            const def = buildingCatalog[h.variant] || { size: { w: 1, h: 1 } };
+            minC = Math.min(minC, h.c);
+            minR = Math.min(minR, h.r);
+            maxC = Math.max(maxC, h.c + def.size.w - 1);
+            maxR = Math.max(maxR, h.r + def.size.h - 1);
+          });
+          if (houses.length) {
+            minC = Math.min(minC, plaza.minC);
+            minR = Math.min(minR, plaza.minR);
+            maxC = Math.max(maxC, plaza.maxC);
+            maxR = Math.max(maxR, plaza.maxR);
+            placeStreetlights(Math.max(0, minC - 4), Math.max(0, minR - 4), Math.min(state.cols - 1, maxC + 4), Math.min(state.rows - 1, maxR + 4));
+            structureVillages.push({
+              id: villageId,
+              name: `${state.epoch}-${index + 1}`,
+              type: index === 0 ? 'capital' : 'village',
+              houses,
+              minC,
+              minR,
+              maxC,
+              maxR,
+              metrics: { buildings: houses.length }
+            });
+          }
+        });
+
+        populateEcology(centers);
+        sanitizeStructureEcology();
+        rebuildGroupedVillageList();
+        updateStructureSummary();
+        renderAll();
+        setStatus(`Estructuras generadas: ${structureVillages.length} núcleos urbanos.`, 'good');
+      }
+
       function renderAll() {
         drawMain();
         drawBiomeStats();
@@ -975,7 +2483,7 @@
         return {
           meta: {
             type: 'mesobuilder-map-design',
-            version: 4,
+            version: 5,
             name: state.name,
             savedAt: new Date().toISOString()
           },
@@ -984,6 +2492,11 @@
           rows: state.rows,
           tileBiome: tileBiome.map(r => r.slice()),
           heightMap: heightMap.map(r => r.slice()),
+          grid: structureGrid.map(row => row.map(cell => cell ? { ...cell } : null)),
+          entities: structureEntities.map(ent => ({ ...ent })),
+          rabbits: structureRabbits.map(ent => ({ ...ent })),
+          foxes: structureFoxes.map(ent => ({ ...ent })),
+          villages: structureVillages.map(v => ({ ...v, houses: (v.houses || []).map(h => ({ ...h })) })),
           zoneSpawnPresets: {}
         };
       }
@@ -997,6 +2510,7 @@
         const rows = Math.max(1, Number(src.rows) || DEFAULT_ROWS);
         const nextBiome = make2D(rows, cols, 'alluvial');
         const nextHeight = make2D(rows, cols, 0.12);
+        const nextGrid = make2D(rows, cols, null);
         for (let r = 0; r < rows; r++) {
           const rb = Array.isArray(src.tileBiome[r]) ? src.tileBiome[r] : [];
           const rh = Array.isArray(src.heightMap && src.heightMap[r]) ? src.heightMap[r] : [];
@@ -1013,9 +2527,25 @@
         state.epoch = src.epoch || state.epoch;
         tileBiome = nextBiome;
         heightMap = nextHeight;
+        if (Array.isArray(src.grid)) {
+          for (let r = 0; r < rows; r++) {
+            const row = Array.isArray(src.grid[r]) ? src.grid[r] : [];
+            for (let c = 0; c < cols; c++) nextGrid[r][c] = row[c] ? { ...row[c] } : null;
+          }
+        }
+        structureGrid = nextGrid;
+        structureEntities = Array.isArray(src.entities) ? src.entities.map(ent => ({ ...ent })) : [];
+        structureRabbits = Array.isArray(src.rabbits) ? src.rabbits.map(ent => ({ ...ent })) : [];
+        structureFoxes = Array.isArray(src.foxes) ? src.foxes.map(ent => ({ ...ent })) : [];
+        structureVillages = Array.isArray(src.villages) ? src.villages.map(v => ({ ...v, houses: Array.isArray(v.houses) ? v.houses.map(h => ({ ...h })) : [] })) : [];
+        state.groupedVillageId = '';
+        state.selectedObject = null;
+        rebuildGroupedVillageList();
+        sanitizeStructureEcology();
         state.history = [];
         state.future = [];
         updateHistory();
+        updateStructureSummary();
         refreshProjectUi();
         centerMainView();
         renderAll();
@@ -1035,6 +2565,9 @@
         } catch (e) {}
         setStatus(`Guardado para nueva partida: ${state.name}.`, 'good');
       }
+
+      ensurePlazaStatueSpriteLoaded();
+      registerPlazaStatueRuntimeLoader();
 
       function loadPending() {
         const raw = localStorage.getItem(STORAGE_KEY);
@@ -1074,7 +2607,7 @@
         el.designName.value = state.name;
         el.projectBadge.textContent = state.name;
         el.epochSelect.value = state.epoch;
-        el.epochBadge.textContent = state.epoch;
+        el.epochBadge.textContent = getEpochLabel(state.epoch);
       }
 
       function syncSelectionToInputs() {
@@ -1175,6 +2708,25 @@
         renderAll();
       }
 
+      function rebuildGroupedVillageList() {
+        if (!el.groupedVillageList) return;
+        const prev = state.groupedVillageId || '';
+        el.groupedVillageList.innerHTML = '';
+        const baseOpt = document.createElement('option');
+        baseOpt.value = '';
+        baseOpt.textContent = 'Sin aislamiento';
+        el.groupedVillageList.appendChild(baseOpt);
+        (structureVillages || []).forEach((village, idx) => {
+          const opt = document.createElement('option');
+          opt.value = village.id;
+          opt.textContent = `${idx + 1}. ${villageStyleLabel(village)} · ${village.name || village.id}`;
+          el.groupedVillageList.appendChild(opt);
+        });
+        const stillExists = (structureVillages || []).some(v => v && v.id === prev);
+        state.groupedVillageId = stillExists ? prev : '';
+        el.groupedVillageList.value = state.groupedVillageId;
+      }
+
       function persistGroups() {
         localStorage.setItem(GROUPS_KEY, JSON.stringify(state.groups || []));
       }
@@ -1226,16 +2778,18 @@
       }
 
       function generateCoherentBiomes() {
-        const seed = state.epoch.split('').reduce((a, ch) => a + ch.charCodeAt(0), 0) + 29;
+        state.biomeSeed = Date.now() + Math.floor(Math.random() * 1000000);
+        const seed = state.epoch.split('').reduce((a, ch) => a + ch.charCodeAt(0), 0) + 29 + (state.biomeSeed % 1000003);
+        const profile = epochBiomeProfiles[state.epoch] || epochBiomeProfiles.mesopotamia;
         beginAction();
         const riverCenter = new Array(state.cols).fill(0);
         const riverWidth = new Array(state.cols).fill(2);
         for (let c = 0; c < state.cols; c++) {
           const x = c / Math.max(1, state.cols - 1);
-          const base = state.rows * 0.47 + Math.sin(x * 8 + seed * 0.03) * state.rows * 0.09;
-          const wiggle = Math.sin(x * 24 + seed * 0.08) * state.rows * 0.025;
+          const base = state.rows * profile.riverBaseY + Math.sin(x * 8 + seed * 0.03) * state.rows * profile.riverAmp;
+          const wiggle = Math.sin(x * 24 + seed * 0.08) * state.rows * profile.riverWiggle;
           riverCenter[c] = clamp(Math.round(base + wiggle), 2, state.rows - 3);
-          riverWidth[c] = 2 + Math.floor(valueNoise2D(x * 7, 0.5, seed + 13) * 3);
+          riverWidth[c] = profile.riverWidthBase + Math.floor(valueNoise2D(x * 7, 0.5, seed + 13) * profile.riverWidthRand);
         }
 
         for (let r = 0; r < state.rows; r++) {
@@ -1250,23 +2804,76 @@
             let biome = 'alluvial';
             if (distRiver <= w) biome = 'water';
             else if (distRiver <= w + 1) biome = 'riparian';
-            else if (elevation > 0.78) biome = 'hills';
-            else if (moisture > 0.72) biome = 'forest';
-            else if (moisture > 0.62 && elevation < 0.42) biome = 'marsh';
-            else if (moisture < 0.26 && elevation > 0.38) biome = 'saline';
-            else if (moisture < 0.36) biome = 'steppe';
+            else if (elevation > profile.hillThreshold) biome = 'hills';
+            else if (moisture > profile.forestThreshold) biome = 'forest';
+            else if (moisture > profile.marshThreshold && elevation < profile.marshElevMax) biome = 'marsh';
+            else if (moisture < profile.salineMoisture && elevation > profile.salineElevMin) biome = 'saline';
+            else if (moisture < profile.steppeMoisture) biome = 'steppe';
             else biome = 'alluvial';
 
             setCell(c, r, biome);
           }
         }
         commitAction();
+        structureGrid = make2D(state.rows, state.cols, null);
+        structureEntities = [];
+        structureRabbits = [];
+        structureFoxes = [];
+        structureVillages = [];
+        populateEcology([]);
+        sanitizeStructureEcology();
+        updateStructureSummary();
         renderAll();
-        setStatus(`Biomas regenerados con patrón coherente (${state.epoch}).`, 'good');
+        setStatus(`Biomas regenerados con patrón coherente (${state.epoch}, seed ${state.biomeSeed}).`, 'good');
+      }
+
+      function applyEntityTool(cell) {
+        if (!isCellInsideActiveVillageFilter(cell.col, cell.row)) {
+          setStatus('Esa celda está fuera del conjunto aislado.', 'warn');
+          return;
+        }
+        if (state.entityMode === 'select') {
+          const picked = selectObjectAt(cell.col, cell.row);
+          setStatus(picked ? 'Objeto seleccionado. Arrastra handles para escalar.' : 'No hay objeto en la celda.', picked ? 'good' : 'warn');
+          return;
+        }
+
+        const token = String(state.selectedPaletteItem || '').trim();
+        const [kind, type] = token.split(':');
+        if (!kind || !type) return;
+
+        let ok = false;
+        if (kind === 'structure') {
+          ok = placeStructure(cell.col, cell.row, type, state.groupedVillageId || null);
+          if (ok) {
+            const placed = getStructureOriginCell(cell.col, cell.row);
+            const dims = placed ? getStructureSizeFromCell(placed) : { w: 1, h: 1 };
+            state.selectedObject = { kind: 'structure', col: cell.col, row: cell.row, type, villageId: state.groupedVillageId || null, w: dims.w, h: dims.h };
+          }
+        } else if (kind === 'tree') {
+          ok = placeNatureEntity(cell.col, cell.row, 'tree', type, { size: 1.05 });
+          if (ok) state.selectedObject = { kind: 'entity', ref: getEntityAt(cell.col, cell.row) };
+        } else if (kind === 'resource') {
+          ok = placeNatureEntity(cell.col, cell.row, 'resource', type, {});
+          if (ok) state.selectedObject = { kind: 'entity', ref: getEntityAt(cell.col, cell.row) };
+        } else if (kind === 'ambient') {
+          ok = placeNatureEntity(cell.col, cell.row, 'ambient', type, { allowRoad: true, size: 1 });
+          if (ok) state.selectedObject = { kind: 'entity', ref: getEntityAt(cell.col, cell.row) };
+        } else if (kind === 'critter') {
+          ok = placeCritter(cell.col, cell.row, type);
+        }
+        if (ok) {
+          updateStructureSummary();
+          rebuildGroupedVillageList();
+          setStatus(`Elemento colocado: ${token}.`, 'good');
+        } else {
+          setStatus(`No se pudo colocar ${token} en esa celda.`, 'warn');
+        }
       }
 
       function applyTool(cell, isFinal) {
         if (cell.col < 0 || cell.row < 0 || cell.col >= state.cols || cell.row >= state.rows) return;
+        if (!isCellInsideActiveVillageFilter(cell.col, cell.row) && state.groupedVillageId) return;
         if (state.tool === 'brush') paintCircle(cell.col, cell.row, state.terrain);
         else if (state.tool === 'fill' && isFinal) fillFlood(cell.col, cell.row, state.terrain);
         else if (state.tool === 'rect' && isFinal && state.rectStart) {
@@ -1283,6 +2890,8 @@
           state.rectStart = null;
         } else if (state.tool === 'group' && isFinal) {
           placeGroupAt(cell.col, cell.row);
+        } else if (state.tool === 'entity' && isFinal) {
+          applyEntityTool(cell);
         }
       }
 
@@ -1312,7 +2921,13 @@
 
       el.epochSelect.addEventListener('change', () => {
         state.epoch = el.epochSelect.value || 'mesopotamia';
-        el.epochBadge.textContent = state.epoch;
+        el.epochBadge.textContent = getEpochLabel(state.epoch);
+        terrainButtons();
+        generateCoherentBiomes();
+      });
+
+      el.structurePreset.addEventListener('change', () => {
+        state.structurePreset = el.structurePreset.value || 'balanced';
       });
 
       canv.main.addEventListener('mousedown', (ev) => {
@@ -1323,8 +2938,18 @@
         }
         if (ev.button !== 0) return;
         const cell = screenToCell(ev.clientX, ev.clientY);
+
+        if (state.tool === 'entity' && state.entityMode === 'select') {
+          const hit = pickResizeHandleAtCell(cell.col, cell.row);
+          if (hit) {
+            state.resizeHandle = { name: hit.name };
+            state.drawing = true;
+            return;
+          }
+        }
+
         state.drawing = true;
-        beginAction();
+        if (state.tool === 'brush' || state.tool === 'fill' || state.tool === 'rect' || state.tool === 'select') beginAction();
         if (state.tool === 'rect' || state.tool === 'select') {
           state.rectStart = { col: cell.col, row: cell.row };
         } else {
@@ -1346,6 +2971,11 @@
           renderAll();
           return;
         }
+        if (state.resizeHandle && state.selectedObject) {
+          resizeSelectedObject(state.resizeHandle.name, cell.col, cell.row);
+          renderAll();
+          return;
+        }
         if (state.drawing && state.tool === 'brush') {
           applyTool(cell, false);
           renderAll();
@@ -1359,8 +2989,15 @@
         if (!state.drawing) return;
         state.drawing = false;
         const cell = screenToCell(ev.clientX, ev.clientY);
+        if (state.resizeHandle) {
+          resizeSelectedObject(state.resizeHandle.name, cell.col, cell.row);
+          state.resizeHandle = null;
+          updateStructureSummary();
+          renderAll();
+          return;
+        }
         applyTool(cell, true);
-        commitAction();
+        if (state.tool === 'brush' || state.tool === 'fill' || state.tool === 'rect' || state.tool === 'select') commitAction();
         renderAll();
       });
 
@@ -1381,6 +3018,11 @@
       }, { passive: false });
 
       document.getElementById('btnGenerate').addEventListener('click', generateCoherentBiomes);
+      document.getElementById('btnGenerateStructures').addEventListener('click', generateStructures);
+      document.getElementById('btnClearStructures').addEventListener('click', () => {
+        clearStructures();
+        setStatus('Estructuras eliminadas del diseño.', 'warn');
+      });
       document.getElementById('btnNew').addEventListener('click', () => {
         resetMap('alluvial');
         renderAll();
@@ -1449,7 +3091,73 @@
         if (key === 'r') state.tool = 'rect';
         if (key === 's') state.tool = 'select';
         if (key === 'g') state.tool = 'group';
+        if (key === 'e') state.tool = 'entity';
         updateToolUi();
+      });
+
+      if (el.layerBiome) {
+        el.layerBiome.addEventListener('change', () => {
+          state.layers.biome = !!el.layerBiome.checked;
+          renderAll();
+        });
+      }
+      if (el.layerRoads) {
+        el.layerRoads.addEventListener('change', () => {
+          state.layers.roads = !!el.layerRoads.checked;
+          renderAll();
+        });
+      }
+      if (el.layerStructures) {
+        el.layerStructures.addEventListener('change', () => {
+          state.layers.structures = !!el.layerStructures.checked;
+          renderAll();
+        });
+      }
+      if (el.layerGrouped) {
+        el.layerGrouped.addEventListener('change', () => {
+          state.layers.grouped = !!el.layerGrouped.checked;
+          renderAll();
+        });
+      }
+
+      if (el.entityCatalog) {
+        el.entityCatalog.addEventListener('change', () => {
+          state.selectedPaletteItem = el.entityCatalog.value || 'structure:soviet_block';
+        });
+      }
+      document.getElementById('btnEntityPlace').addEventListener('click', () => {
+        state.tool = 'entity';
+        state.entityMode = 'place';
+        updateToolUi();
+        setStatus('Modo entidad: colocar.', 'good');
+      });
+      document.getElementById('btnEntitySelect').addEventListener('click', () => {
+        state.tool = 'entity';
+        state.entityMode = 'select';
+        updateToolUi();
+        setStatus('Modo entidad: editar/escalar.', 'good');
+      });
+      document.getElementById('btnEntityClearSel').addEventListener('click', () => {
+        state.selectedObject = null;
+        renderAll();
+      });
+
+      if (el.groupedVillageList) {
+        el.groupedVillageList.addEventListener('change', () => {
+          state.groupedVillageId = el.groupedVillageList.value || '';
+          renderAll();
+        });
+      }
+      document.getElementById('btnApplyIsolation').addEventListener('click', () => {
+        state.groupedVillageId = (el.groupedVillageList && el.groupedVillageList.value) || '';
+        renderAll();
+        setStatus(state.groupedVillageId ? 'Aislamiento de conjunto activado.' : 'Sin aislamiento activo.', 'good');
+      });
+      document.getElementById('btnClearIsolation').addEventListener('click', () => {
+        state.groupedVillageId = '';
+        if (el.groupedVillageList) el.groupedVillageList.value = '';
+        renderAll();
+        setStatus('Aislamiento desactivado.', 'good');
       });
 
       window.addEventListener('resize', resizeCanvases);
@@ -1464,12 +3172,19 @@
         terrainButtons();
         state.name = el.designName.value;
         state.epoch = el.epochSelect.value;
-        el.epochBadge.textContent = state.epoch;
+        state.structurePreset = el.structurePreset.value;
+        state.selectedPaletteItem = (el.entityCatalog && el.entityCatalog.value) || 'structure:soviet_block';
+        el.epochBadge.textContent = getEpochLabel(state.epoch);
         el.brushValue.textContent = String(state.brush);
+        if (el.layerBiome) el.layerBiome.checked = !!state.layers.biome;
+        if (el.layerRoads) el.layerRoads.checked = !!state.layers.roads;
+        if (el.layerStructures) el.layerStructures.checked = !!state.layers.structures;
+        if (el.layerGrouped) el.layerGrouped.checked = !!state.layers.grouped;
         updateToolUi();
         resetMap('alluvial');
         loadGroups();
         rebuildGroupList();
+        rebuildGroupedVillageList();
         syncSelectionToInputs();
         resizeCanvases();
         try { loadPending(); } catch (e) {}

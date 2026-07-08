@@ -38,7 +38,7 @@ export function placeTree(col, row, variant) {
   // Mesopotamian flora types (primary) + template trees + legacy types for backward compat
   const types = [
     'birch','willow','aspen','pine','fir',
-    'steppe_shrub','hay','sedge','scrub','bush','shrub','winter_grass',
+    'steppe_shrub','hay','sedge','scrub','bush','shrub','winter_grass','weed',
     'tree0','tree1','tree2','tree3'
   ];
   const chosen = variant || types[Math.floor(Math.random() * types.length)];
@@ -57,6 +57,7 @@ export function placeTree(col, row, variant) {
   else if (chosen === 'weed') size = 0.95;
   else if (chosen === 'shrub') size = 1.4;
   else if (chosen === 'bush') size = 1.6;
+  else if (chosen === 'tree0' || chosen === 'tree1' || chosen === 'tree2' || chosen === 'tree3') size = 1.45;
   entities.push({ id, kind: 'tree', col, row, variant: chosen, hp: 10, size });
 }
 
