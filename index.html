@@ -16,9 +16,32 @@
   <div class="splash-content">
     <img src="data/logo.jpg" alt="MesoBuilder Logo" class="splash-logo">
     <div class="splash-text">MesoBuilder</div>
+    <div class="splash-version" id="splash-version">v-.-.-</div>
     <div class="splash-loading">Cargando...</div>
   </div>
 </div>
+
+<!-- Load version from properties file -->
+<script>
+(function() {
+  var versionEl = document.getElementById('splash-version');
+  fetch('version.properties')
+    .then(function(res) {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.text();
+    })
+    .then(function(text) {
+      var match = text.match(/^app\.version\s*=\s*(.+)$/m);
+      if (match && match[1]) {
+        versionEl.textContent = 'v' + match[1].trim();
+      }
+    })
+    .catch(function(e) {
+      console.warn('Could not load version.properties, using default:', e.message);
+      versionEl.textContent = 'v0.1.0';
+    });
+})();
+</script>
 
 <div id="app">
 

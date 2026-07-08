@@ -37,13 +37,29 @@ export async function loadEntityDefinitions(progress, deps) {
     if (progress && progress.update) progress.update(2, 'Cargando definiciones...');
     const path = 'data/entities-defs.json';
     let resp = null;
-    try { resp = await fetch(path, { cache: 'no-store' }); } catch (e) { resp = null; }
-    if (!resp || !resp.ok) {
+    let j = null;
+
+    // Electron preload: use data injected via contextBridge (avoids file:// fetch CORS)
+    try {
+      if (window.__mesoPreload && window.__mesoPreload.entityDefs) {
+        j = window.__mesoPreload.entityDefs;
+        console.log('entities-defs: using preloaded data (Electron)');
+      }
+    } catch (e) {}
+
+    // Fallback: fetch from disk
+    if (!j) {
+      try { resp = await fetch(path, { cache: 'no-store' }); } catch (e) { resp = null; }
+      if (resp && resp.ok) {
+        try { j = await resp.json(); } catch (e) { j = null; }
+      }
+    }
+
+    if (!j) {
       if (progress && progress.update) progress.update(6, 'Defs: fallback');
       window._ENTITY_DEFS = window._ENTITY_DEFS || { buildings: BUILDINGS, enemies: DEFAULT_ENEMY_DEFS, resources: DEFAULT_RESOURCE_DEFS };
       return;
     }
-    const j = await resp.json();
     window._ENTITY_DEFS = window._ENTITY_DEFS || {};
     window._ENTITY_DEFS.buildings = Object.assign({}, BUILDINGS, j.buildings || {});
     window._ENTITY_DEFS.trees = Array.isArray(j.trees) ? j.trees.slice() : (window._ENTITY_DEFS.trees || []);

@@ -1,6 +1,14 @@
-const { app, BrowserWindow, Menu } = require('electron')
+const { app, BrowserWindow, Menu, globalShortcut } = require('electron')
 const path = require('path')
 const fs = require('fs')
+
+// ── Chromium GPU / rendering switches ──────────────────────────────
+// Force GPU acceleration even on hardware that Chromium would blacklist.
+// This fixes missing sprites (NPCs, trees, weeds, etc.) in Electron.
+app.commandLine.appendSwitch('ignore-gpu-blocklist')
+app.commandLine.appendSwitch('enable-gpu-rasterization')
+app.commandLine.appendSwitch('enable-zero-copy')
+app.commandLine.appendSwitch('disable-software-rasterizer')
 
 function findExternalIndex() {
   // Priority: environment variable MESOBUILDER_EXTERNAL_PATH
@@ -26,10 +34,14 @@ function createWindow () {
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
-    autoHideMenuBar: true, // hide native Electron menu bar
+    frame: false,                // frameless / borderless window
+    autoHideMenuBar: true,
     webPreferences: {
-      contextIsolation: true,
-      sandbox: false
+      preload: path.join(__dirname, 'preload.js'),  // inject JSON data for file:// compatibility
+      nodeIntegration: false,    // security & performance
+      contextIsolation: true,    // isolate renderer context (required for contextBridge)
+      sandbox: false,
+      backgroundThrottling: false // prevent slowdown when app loses focus (important for games)
     }
   })
 
@@ -49,6 +61,11 @@ function createWindow () {
     console.log('Loading bundled index.html from', indexPath)
     win.loadFile(indexPath)
   }
+
+  // Register Alt+F4 / Cmd+Q as a safe quit shortcut for frameless window
+  try {
+    globalShortcut.register('Alt+F4', () => { app.quit() })
+  } catch (e) {}
 
   if (process.env.MESOBUILDER_DEBUG) {
     win.webContents.openDevTools({ mode: 'detach' })

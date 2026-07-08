@@ -3269,6 +3269,24 @@ function drawRegisteredIcon(ctx, name, w, h) {
       const c = window.createCanvasFromPixelDef(window.ENTITY_PIXEL_LIBRARY[name], name, Math.min(w,h));
       if (c) { ctx.clearRect(0,0,w,h); ctx.imageSmoothingEnabled = false; ctx.drawImage(c, 0, 0, w, h); return; }
     }
+    // HARD FALLBACK: draw pixels with fillRect (bypasses drawImage for Electron GPU compat)
+    if (window.ENTITY_PIXEL_LIBRARY && window.ENTITY_PIXEL_LIBRARY[name]) {
+      try {
+        const def = window.ENTITY_PIXEL_LIBRARY[name];
+        const grid = def.grid || 9;
+        const pixels = def.pixels || [];
+        const scale = Math.max(1, Math.floor(Math.min(w, h) / grid));
+        ctx.clearRect(0, 0, w, h);
+        for (let i = 0; i < pixels.length; i++) {
+          const p = pixels[i];
+          if (p && p[2]) {
+            ctx.fillStyle = p[2];
+            ctx.fillRect(p[0] * scale, p[1] * scale, scale, scale);
+          }
+        }
+        return;
+      } catch (e) {}
+    }
     // fallback: clear
     ctx.clearRect(0,0,w,h);
   } catch (e) { console.warn('drawRegisteredIcon err', name, e); ctx.clearRect(0,0,w,h); }
@@ -3316,17 +3334,31 @@ function drawEntitySpriteAt(name, x, y, w, h, options) {
       ctx.restore();
       return;
     }
-    // fallback to pixel library rendering into an offscreen canvas
+    // HARD FALLBACK: draw pixels directly with fillRect (bypasses drawImage; works even
+    // when GPU/driver issues cause drawImage to fail silently, e.g. in Electron).
+    // NOTE: This MUST run before the canvas-based fallback because ctx.drawImage() can
+    // silently fail in Electron/Chromium, making the canvas fallback's return unreachable.
     if (window.ENTITY_PIXEL_LIBRARY && window.ENTITY_PIXEL_LIBRARY[name]) {
-      const c = window.createCanvasFromPixelDef(window.ENTITY_PIXEL_LIBRARY[name], name, Math.min(drawW,drawH));
-        if (c) {
-        const px = Math.round(x - drawW/2);
-        const py = Math.round(y - drawH + (drawH*0.08));
-        ctx.drawImage(c, px, py, drawW, drawH);
-          try { window._entitiesDrawn = (window._entitiesDrawn || 0) + 1; } catch (e) {}
+      try {
+        const def = window.ENTITY_PIXEL_LIBRARY[name];
+        const grid = def.grid || 9;
+        const pixels = def.pixels || [];
+        const scale = Math.max(1, Math.floor(Math.min(drawW, drawH) / grid));
+        const offX = Math.round(x - (grid * scale) / 2);
+        const offY = Math.round(y - (grid * scale) + (drawH * 0.08));
+        for (let i = 0; i < pixels.length; i++) {
+          const p = pixels[i];
+          if (p && p[2]) {
+            ctx.fillStyle = p[2];
+            ctx.fillRect(offX + p[0] * scale, offY + p[1] * scale, scale, scale);
+          }
+        }
+        try { window._entitiesDrawn = (window._entitiesDrawn || 0) + 1; } catch (e) {}
+        // Also populate the cache for future frames (so the cached img path above is hit next time)
+        try { window.createCanvasFromPixelDef(window.ENTITY_PIXEL_LIBRARY[name], name, Math.min(drawW, drawH)); } catch (e) {}
         ctx.restore();
         return;
-      }
+      } catch (e) { /* silently ignore */ }
     }
     ctx.restore();
   } catch (e) { console.warn('drawEntitySpriteAt err', name, e); }
@@ -3536,9 +3568,25 @@ function drawWheatIcon(ctx, w, h) {
   try {
     async function loadLibrary() {
       try {
-        const res = await fetch('data/entity-pixels.json?v=' + Date.now());
-        if (!res.ok) throw new Error('entity-pixels.json not found');
-        const json = await res.json();
+        let json = null;
+
+        // Electron preload: use data injected via contextBridge (avoids file:// fetch CORS)
+        try {
+          if (window.__mesoPreload && window.__mesoPreload.entityPixels) {
+            json = window.__mesoPreload.entityPixels;
+            console.log('entity-pixels: using preloaded data (Electron)');
+          }
+        } catch (e) {}
+
+        // Fallback: fetch from disk (works in browser / HTTP server)
+        if (!json) {
+          try {
+            const res = await fetch('data/entity-pixels.json?v=' + Date.now());
+            if (res.ok) json = await res.json();
+          } catch (e) { /* handled below */ }
+        }
+
+        if (!json) throw new Error('entity-pixels.json not found');
         window.ENTITY_PIXEL_LIBRARY = json.icons || json || {};
         try {
           if (!window.ENTITY_PIXEL_LIBRARY.ma_g && window.ENTITY_PIXEL_LIBRARY.ussr_flag) {
@@ -8211,6 +8259,11 @@ function render() {
         if (subtype === 'wheat') {
           const sizeW = Math.max(14, w * 0.92 * pulse);
           const sizeH = Math.max(14, h * 1.1 * pulse);
+          // Always draw fallback dot first (visible if sprite render fails)
+          ctx.fillStyle = '#DAA520';
+          ctx.beginPath();
+          ctx.arc(x + w * 0.5, y + h * 0.55, Math.max(3, w * 0.08), 0, Math.PI * 2);
+          ctx.fill();
           drawEntitySpriteAt('wheat', x, y + h * 0.12, sizeW, sizeH, { ignoreEntityScale: true });
         } else if (subtype === 'meat') {
           const mw = Math.max(10, w * 0.38 * pulse);
@@ -8244,20 +8297,19 @@ function render() {
         } else if (subtype === 'weed') {
           const { w: ww, h: wh } = getIsoTileSize();
           const sz = Math.max(ww * 0.55, Math.round(ww * 0.95 * 1.38));
-          drawEntitySpriteAt('weed', x + ww * 0.5, y + wh * 0.95, sz, sz * 1.05);
-          if (!window.ENTITY_PIXEL_LIBRARY || !window.ENTITY_PIXEL_LIBRARY['weed']) {
-            // Fallback if sprite not loaded: draw a green tuft
-            ctx.fillStyle = '#4A8A3A';
-            ctx.beginPath();
-            ctx.ellipse(x + ww * 0.5, y + wh * 0.85, sz * 0.3, sz * 0.15, 0, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.fillStyle = '#5AAA4A';
-            for (let ti = 0; ti < 4; ti++) {
-              const tx = x + ww * 0.5 + Math.sin(ti * 1.5) * sz * 0.2;
-              const ty = y + wh * 0.8 - Math.abs(Math.cos(ti * 1.5)) * sz * 0.25;
-              ctx.fillRect(tx - 1, ty - 3, 2, 5);
-            }
+          // Always draw fallback tuft first (visible if sprite render fails, e.g. Electron GPU)
+          ctx.fillStyle = '#4A8A3A';
+          ctx.beginPath();
+          ctx.ellipse(x + ww * 0.5, y + wh * 0.85, sz * 0.3, sz * 0.15, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#5AAA4A';
+          for (let ti = 0; ti < 4; ti++) {
+            const tx = x + ww * 0.5 + Math.sin(ti * 1.5) * sz * 0.2;
+            const ty = y + wh * 0.8 - Math.abs(Math.cos(ti * 1.5)) * sz * 0.25;
+            ctx.fillRect(tx - 1, ty - 3, 2, 5);
           }
+          // Draw pixel-art sprite on top (uses hard fillRect fallback if drawImage fails)
+          drawEntitySpriteAt('weed', x + ww * 0.5, y + wh * 0.95, sz, sz * 1.05);
         } else if (subtype === 'stone') {
           const rw = Math.max(10, Math.floor(w * 0.7 * pulse));
           const rh = Math.max(10, Math.floor(h * 0.7 * pulse));
@@ -8318,6 +8370,11 @@ function render() {
         const cy = y + tileSize*0.5 - sz*0.5;
         if (subtype === 'wheat') {
           const spriteSize = Math.max(12, sz * 1.25);
+          // Always draw fallback dot first (visible if sprite render fails)
+          ctx.fillStyle = '#DAA520';
+          ctx.beginPath();
+          ctx.arc(x + tileSize * 0.5, y + tileSize * 0.58, Math.max(3, tileSize * 0.08), 0, Math.PI * 2);
+          ctx.fill();
           drawEntitySpriteAt('wheat', x + tileSize * 0.5, y + tileSize * 0.72, spriteSize, spriteSize, { ignoreEntityScale: true });
         } else if (subtype === 'meat') {
           const mx = x + tileSize * 0.5;
@@ -8343,20 +8400,19 @@ function render() {
           for (let i=0;i<3;i++) ctx.fillRect(cx + 2 + i*(sz/4), cy + sz*0.2, 1, sz*0.6);
         } else if (subtype === 'weed') {
           const wSz = Math.max(tileSize * 0.46, Math.round(tileSize * 0.95 * 1.38));
-          drawEntitySpriteAt('weed', x + tileSize * 0.5, y + tileSize * 0.98, wSz, wSz * 1.05);
-          if (!window.ENTITY_PIXEL_LIBRARY || !window.ENTITY_PIXEL_LIBRARY['weed']) {
-            // Fallback green tuft
-            ctx.fillStyle = '#4A8A3A';
-            ctx.beginPath();
-            ctx.ellipse(x + tileSize * 0.5, y + tileSize * 0.88, wSz * 0.3, wSz * 0.15, 0, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.fillStyle = '#5AAA4A';
-            for (let ti = 0; ti < 4; ti++) {
-              const tx = x + tileSize * 0.5 + Math.sin(ti * 1.5) * wSz * 0.2;
-              const ty = y + tileSize * 0.83 - Math.abs(Math.cos(ti * 1.5)) * wSz * 0.25;
-              ctx.fillRect(tx - 1, ty - 3, 2, 5);
-            }
+          // Always draw fallback tuft first (visible if sprite render fails, e.g. Electron GPU)
+          ctx.fillStyle = '#4A8A3A';
+          ctx.beginPath();
+          ctx.ellipse(x + tileSize * 0.5, y + tileSize * 0.88, wSz * 0.3, wSz * 0.15, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#5AAA4A';
+          for (let ti = 0; ti < 4; ti++) {
+            const tx = x + tileSize * 0.5 + Math.sin(ti * 1.5) * wSz * 0.2;
+            const ty = y + tileSize * 0.83 - Math.abs(Math.cos(ti * 1.5)) * wSz * 0.25;
+            ctx.fillRect(tx - 1, ty - 3, 2, 5);
           }
+          // Draw pixel-art sprite on top (uses hard fillRect fallback if drawImage fails)
+          drawEntitySpriteAt('weed', x + tileSize * 0.5, y + tileSize * 0.98, wSz, wSz * 1.05);
         } else if (subtype === 'stone') {
           const stoneSprite = (window._ENTITY_BITMAPS && window._ENTITY_BITMAPS['stone']) || (window._SPRITE_IMAGES && window._SPRITE_IMAGES['stone']);
           if (stoneSprite) {
@@ -12865,6 +12921,15 @@ function createMenuBar() {
     window._npcLastAutoSpeak = window._npcLastAutoSpeak || 0;
     window.loadNpcDialoguesFromData = function() {
       try {
+        // Electron preload: use data injected via contextBridge (avoids file:// fetch CORS)
+        try {
+          if (window.__mesoPreload && window.__mesoPreload.npcDialogues) {
+            window.loadNpcDialogues(window.__mesoPreload.npcDialogues);
+            console.log('npc-dialogues: using preloaded data (Electron)');
+            return;
+          }
+        } catch (e) {}
+        // Fallback: fetch from disk
         fetch('data/npc-dialogues.json').then(r => { if (!r.ok) throw new Error('no file'); return r.json(); }).then(obj => { try { window.loadNpcDialogues(obj); notify && notify('Diálogos cargados'); } catch (e) { console.warn(e); } }).catch(err => {
           console.warn('No se pudo cargar data/npc-dialogues.json', err);
           notify && notify('No se encontraron diálogos en data/');
@@ -13089,6 +13154,20 @@ function createMenuBar() {
     } catch (e) {}
 
     window.enterInterior = function(id, doorRef) {
+      const _loadInteriorData = function(callback) {
+        // Electron preload: use data injected via contextBridge
+        try {
+          if (window.__mesoPreload && window.__mesoPreload.interiors && window.__mesoPreload.interiors[id]) {
+            callback(null, window.__mesoPreload.interiors[id]);
+            return;
+          }
+        } catch (e) {}
+        // Fallback: fetch from disk
+        fetch('data/interiors/' + id + '.json')
+          .then(r => { if (!r.ok) throw new Error('missing'); return r.json(); })
+          .then(data => callback(null, data))
+          .catch(err => callback(err));
+      };
       try {
         try {
           const prologue = window._homePrologue;
@@ -13098,7 +13177,8 @@ function createMenuBar() {
             return;
           }
         } catch (e) {}
-        fetch('data/interiors/' + id + '.json').then(r => { if (!r.ok) throw new Error('missing'); return r.json(); }).then(data => {
+        _loadInteriorData(function(err, data) {
+          if (err || !data) { console.warn('Could not load interior', id, err); notify && notify('No se pudo cargar el interior.'); return; }
           // Save exterior state
           window._savedExterior = {
             col: Math.floor(player.x),
@@ -13154,7 +13234,7 @@ function createMenuBar() {
               document.body.classList.add('dialogue-active');
             }
           } catch (e) {}
-        }).catch(() => { notify && notify('Interior no encontrado: ' + id); });
+        });
       } catch (e) {}
     };
     window.exitInterior = function() {
