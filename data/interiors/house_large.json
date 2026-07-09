@@ -1,46 +1,36 @@
 {
-  "defaultFloor": 1,
+  "defaultFloor": 0,
   "floors": [
-    {
-      "name": "Sótano",
-      "width": 12,
-      "height": 8,
-      "entryCol": 5,
-      "entryRow": 5,
-      "chestItems": ["wheat", "stone", "brick", "brick"],
-      "npcs": [],
-      "tiles": [
-        ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"],
-        ["wall", "floor", "floor", "floor", "floor", "pot", "floor", "pot", "floor", "floor", "floor", "wall"],
-        ["wall", "floor", "floor", "floor", "table", "table", "table", "floor", "floor", "floor", "floor", "wall"],
-        ["wall", "floor", "rug", "rug", "floor", "floor", "floor", "floor", "rug", "rug", "floor", "wall"],
-        ["wall", "floor", "floor", "chest", "floor", "floor", "floor", "floor", "floor", "floor", "floor", "wall"],
-        ["wall", "rug", "floor", "floor", "stairs_up", "floor", "floor", "floor", "floor", "floor", "rug", "wall"],
-        ["wall", "floor", "floor", "floor", "floor", "floor", "floor", "floor", "floor", "floor", "floor", "wall"],
-        ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"]
-      ]
-    },
     {
       "name": "Planta baja",
       "width": 12,
-      "height": 8,
+      "height": 9,
       "entryCol": 5,
-      "entryRow": 5,
-      "chestItems": ["wheat", "wheat", "wheat", "stone", "stone", "brick", "brick", "brick"],
+      "entryRow": 6,
+      "chestItems": ["wheat", "wheat", "wheat", "stone", "stone", "brick", "brick"],
+      "wallPalette": {
+        "back": "#8B7050", "backDark": "#7A6040", "backLight": "#9B8060",
+        "left": "#7A6040", "leftDark": "#6A5030",
+        "right": "#9B8060", "rightDark": "#8B7050",
+        "floor": "#D4B896", "floorDark": "#C4A886",
+        "trim": "#5A3A1A", "baseboard": "#4A2A0A",
+        "ceiling": "#3A2A1A"
+      },
       "npcs": [
         { "col": 1, "row": 1, "name": "Patriarca" },
         { "col": 8, "row": 2, "name": "Esposa" },
         { "col": 3, "row": 4, "name": "Hijo" }
       ],
       "tiles": [
-        ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"],
-        ["wall", "bed", "bed", "floor", "floor", "pot", "floor", "pot", "floor", "bed", "bed", "wall"],
-        ["wall", "floor", "floor", "floor", "table", "table", "table", "floor", "floor", "floor", "floor", "wall"],
-        ["wall", "rug", "rug", "floor", "floor", "floor", "floor", "floor", "rug", "rug", "pot", "wall"],
-        ["wall", "floor", "floor", "chest", "floor", "firepit", "floor", "floor", "floor", "floor", "floor", "wall"],
-        ["wall", "rug", "floor", "floor", "stairs_down", "floor", "floor", "floor", "floor", "floor", "rug", "wall"],
-        ["wall", "floor", "floor", "floor", "floor", "door", "floor", "floor", "floor", "floor", "floor", "wall"],
-        ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"]
+        ["wall","painting","wall","wall","painting","wall","window","wall","wall","painting","wall","wall"],
+        ["wall","bed","bed","chair","table","chair","plant","pot","floor","bed","bed","wall"],
+        ["wall","floor","floor","floor","floor","floor","floor","floor","floor","floor","floor","wall"],
+        ["wall","rug","rug","bookshelf","floor","floor","floor","chest","floor","rug","rug","wall"],
+        ["wall","floor","floor","floor","counter","floor","floor","floor","plant","floor","floor","wall"],
+        ["wall","chair","floor","floor","firepit","floor","floor","chair","floor","pot","floor","wall"],
+        ["wall","floor","floor","floor","floor","door","floor","floor","floor","floor","floor","wall"],
+        ["wall","plant","floor","floor","floor","floor","floor","floor","floor","floor","plant","wall"],
+        ["wall","wall","wall","wall","wall","wall","wall","wall","wall","wall","wall","wall"]
       ]
     }
   ]

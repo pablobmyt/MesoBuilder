@@ -3298,70 +3298,48 @@ function drawEntitySpriteAt(name, x, y, w, h, options) {
     const standaloneScale = (options && options.ignoreEntityScale) ? 1 : getStandaloneEditorEntityScale();
     const drawW = w * standaloneScale;
     const drawH = h * standaloneScale;
-    const hasLibDef = !!(window.ENTITY_PIXEL_LIBRARY && window.ENTITY_PIXEL_LIBRARY[name]);
-    // If this sprite comes from entity-pixels library, prefer live canvases over persisted cache
-    let img = null;
-    if (hasLibDef) {
-      img = (window._ENTITY_BITMAPS && window._ENTITY_BITMAPS[name]) || (window._ICON_BITMAPS && window._ICON_BITMAPS[name]);
-      if (!img) {
-        try { img = window.createCanvasFromPixelDef(window.ENTITY_PIXEL_LIBRARY[name], name, Math.min(drawW, drawH)); } catch (e) {}
-      }
-    } else {
-      // for non-library assets, keep existing priority
-      img = (window._SPRITE_IMAGES && window._SPRITE_IMAGES[name]) || (window._ICON_BITMAPS && window._ICON_BITMAPS[name]) || (window._ENTITY_BITMAPS && window._ENTITY_BITMAPS[name]);
-    }
-    // Ensure we don't inherit stray transforms from callers: isolate drawing
+
+    // Shadow
     ctx.save();
     try { ctx.imageSmoothingEnabled = false; } catch (e) {}
-    if (img) {
-      // draw a subtle shadow so sprites feel grounded
-      if (!(options && options.noShadow)) {
-        try {
-          const sx = Math.round(x);
-          const sy = Math.round(y - Math.max(6, drawH * 0.06));
-          ctx.save();
-          ctx.fillStyle = 'rgba(0,0,0,0.28)';
-          ctx.beginPath();
-          ctx.ellipse(sx, sy, Math.round(drawW * 0.45), Math.max(4, Math.round(drawH * 0.08)), 0, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.restore();
-        } catch (e) {}
-      }
-      const px = Math.round(x - drawW/2);
-      const py = Math.round(y - drawH + (drawH*0.08));
-      ctx.drawImage(img, px, py, drawW, drawH);
-      try { window._entitiesDrawn = (window._entitiesDrawn || 0) + 1; } catch (e) {}
-      ctx.restore();
-      return;
+    if (!(options && options.noShadow)) {
+      try {
+        const sx = Math.round(x), sy = Math.round(y - Math.max(6, drawH * 0.06));
+        ctx.fillStyle = 'rgba(0,0,0,0.28)';
+        ctx.beginPath(); ctx.ellipse(sx, sy, Math.round(drawW * 0.45), Math.max(4, Math.round(drawH * 0.08)), 0, 0, Math.PI * 2); ctx.fill();
+      } catch (e) {}
     }
-    // HARD FALLBACK: draw pixels directly with fillRect (bypasses drawImage; works even
-    // when GPU/driver issues cause drawImage to fail silently, e.g. in Electron).
-    // NOTE: This MUST run before the canvas-based fallback because ctx.drawImage() can
-    // silently fail in Electron/Chromium, making the canvas fallback's return unreachable.
+
+    // PRIMARY: direct pixel rendering (fillRect) — always works, no GPU issues
     if (window.ENTITY_PIXEL_LIBRARY && window.ENTITY_PIXEL_LIBRARY[name]) {
       try {
         const def = window.ENTITY_PIXEL_LIBRARY[name];
         const grid = def.grid || 9;
-        const pixels = def.pixels || [];
         const scale = Math.max(1, Math.floor(Math.min(drawW, drawH) / grid));
         const offX = Math.round(x - (grid * scale) / 2);
         const offY = Math.round(y - (grid * scale) + (drawH * 0.08));
-        for (let i = 0; i < pixels.length; i++) {
-          const p = pixels[i];
-          if (p && p[2]) {
-            ctx.fillStyle = p[2];
-            ctx.fillRect(offX + p[0] * scale, offY + p[1] * scale, scale, scale);
-          }
+        for (let i = 0; i < def.pixels.length; i++) {
+          const p = def.pixels[i];
+          if (p && p[2]) { ctx.fillStyle = p[2]; ctx.fillRect(offX + p[0] * scale, offY + p[1] * scale, scale, scale); }
         }
         try { window._entitiesDrawn = (window._entitiesDrawn || 0) + 1; } catch (e) {}
-        // Also populate the cache for future frames (so the cached img path above is hit next time)
-        try { window.createCanvasFromPixelDef(window.ENTITY_PIXEL_LIBRARY[name], name, Math.min(drawW, drawH)); } catch (e) {}
         ctx.restore();
         return;
-      } catch (e) { /* silently ignore */ }
+      } catch (e) { /* fall through to image-based rendering */ }
+    }
+
+    // FALLBACK: image-based rendering for non-library sprites
+    let img = (window._SPRITE_IMAGES && window._SPRITE_IMAGES[name])
+           || (window._ICON_BITMAPS && window._ICON_BITMAPS[name])
+           || (window._ENTITY_BITMAPS && window._ENTITY_BITMAPS[name]);
+    if (img) {
+      const px = Math.round(x - drawW/2);
+      const py = Math.round(y - drawH + (drawH*0.08));
+      try { ctx.drawImage(img, px, py, drawW, drawH); } catch (e) {}
+      try { window._entitiesDrawn = (window._entitiesDrawn || 0) + 1; } catch (e) {}
     }
     ctx.restore();
-  } catch (e) { console.warn('drawEntitySpriteAt err', name, e); }
+  } catch (e) { /* silent */ }
 }
 
 function hasRegisteredSprite(name) {
@@ -3574,16 +3552,25 @@ function drawWheatIcon(ctx, w, h) {
         try {
           if (window.__mesoPreload && window.__mesoPreload.entityPixels) {
             json = window.__mesoPreload.entityPixels;
-            console.log('entity-pixels: using preloaded data (Electron)');
+            console.log('[renderer] entity-pixels: using preloaded data (Electron), icons:', Object.keys(json.icons || json).length);
+          } else {
+            console.warn('[renderer] entity-pixels: __mesoPreload.entityPixels NOT available. Preload may have failed.');
+            console.warn('[renderer] __mesoPreload present:', !!window.__mesoPreload);
+            console.warn('[renderer] __mesoPreload keys:', window.__mesoPreload ? Object.keys(window.__mesoPreload) : 'N/A');
           }
-        } catch (e) {}
+        } catch (e) { console.warn('[renderer] entity-pixels: error checking preload', e); }
 
         // Fallback: fetch from disk (works in browser / HTTP server)
         if (!json) {
           try {
-            const res = await fetch('data/entity-pixels.json?v=' + Date.now());
+            // In Electron, use custom meso-local:// protocol that bypasses file:// CORS
+            const fetchUrl = (window.__mesoPreload && window.__mesoPreload.isElectron)
+              ? 'meso-local://data/entity-pixels.json'
+              : 'data/entity-pixels.json?v=' + Date.now();
+            console.log('[renderer] entity-pixels: trying fetch from', fetchUrl);
+            const res = await fetch(fetchUrl);
             if (res.ok) json = await res.json();
-          } catch (e) { /* handled below */ }
+          } catch (e) { console.warn('[renderer] entity-pixels: fetch failed', e.message); }
         }
 
         if (!json) throw new Error('entity-pixels.json not found');
@@ -7433,249 +7420,242 @@ function render() {
       const interior = window.currentInterior;
       const iCols = interior.width || (interior.tiles && interior.tiles[0] ? interior.tiles[0].length : 8);
       const iRows = interior.height || (interior.tiles ? interior.tiles.length : 6);
-      const ts = getTileSize();
       const nowInt = Date.now();
+      const W = canvas.width, H = canvas.height;
 
-      // ── handle fade-out completion ──
       if (window._interiorFadeOut) {
         const fo = window._interiorFadeOut;
         const pct = Math.min(1, (nowInt - fo.start) / fo.dur);
         if (pct >= 1) { const cb = fo.onDone; window._interiorFadeOut = null; try { cb(); } catch(e) {} }
       }
 
-      const backWallHeight = Math.max(10, Math.floor(ts * 0.9));
-      const interiorPaintingKey = hasRegisteredSprite('ma_g')
-        ? 'ma_g'
-        : (hasRegisteredSprite('ussr_flag') ? 'ussr_flag' : null);
-      const drawInteriorPaintingAt = (name, sx, sy, sw, sh) => {
-        if (!name) return false;
-        try {
-          let img = (window._ENTITY_BITMAPS && window._ENTITY_BITMAPS[name])
-            || (window._ICON_BITMAPS && window._ICON_BITMAPS[name])
-            || (window._SPRITE_IMAGES && window._SPRITE_IMAGES[name]);
-          if (!img && window.ENTITY_PIXEL_LIBRARY && window.ENTITY_PIXEL_LIBRARY[name]) {
-            try { img = window.createCanvasFromPixelDef(window.ENTITY_PIXEL_LIBRARY[name], name, Math.max(sw, sh)); } catch (e) {}
-          }
-          if (!img) return false;
-          ctx.imageSmoothingEnabled = false;
-          ctx.drawImage(img, Math.floor(sx), Math.floor(sy), Math.floor(sw), Math.floor(sh));
-          return true;
-        } catch (e) {
-          return false;
-        }
+      // ── Pseudo-3D room projection ──
+      // Room is centered on canvas with perspective effect
+      const floorTileH = Math.max(18, Math.floor(Math.min(W, H) / (iRows + 2.5)));
+      const floorTileW = Math.max(18, Math.floor(Math.min(W, H) / (iCols + 2)));
+      const backWallH = Math.floor(floorTileH * 1.25);
+      const sideWallH = Math.floor(floorTileH * 0.7);
+      // Perspective: back of room is narrower than front
+      const perspFactor = 0.82; // 1.0 = no perspective, <1 = back narrower
+      const roomFrontW = iCols * floorTileW;
+      const roomBackW = roomFrontW * perspFactor;
+      const roomFloorH = iRows * floorTileH;
+      // Center room on screen, with back wall at top giving space for wall height
+      const roomLeft = Math.floor((W - roomFrontW) / 2);
+      const roomTop = Math.floor((H - roomFloorH - backWallH) / 2) + backWallH;
+      const roomRight = roomLeft + roomFrontW;
+      const roomBottom = roomTop + roomFloorH;
+      // Back wall corners (narrower)
+      const backLeft = Math.floor((W - roomBackW) / 2);
+      const backRight = backLeft + roomBackW;
+
+      // Helper: project tile (col, row) to screen position with perspective
+      const tileToScreen = (col, row) => {
+        const rowFrac = iRows > 1 ? row / (iRows - 1) : 0;
+        const frontX = roomLeft + (col / Math.max(1, iCols - 1)) * roomFrontW;
+        const backX = backLeft + (col / Math.max(1, iCols - 1)) * roomBackW;
+        const x = backX + (frontX - backX) * rowFrac;
+        const y = roomTop + row * floorTileH;
+        const tw = (roomBackW + (roomFrontW - roomBackW) * rowFrac) / iCols;
+        return { x: Math.round(x), y: Math.round(y), w: Math.round(tw), h: floorTileH };
       };
 
-      // Draw floor and walls
-      for (let r = 0; r < iRows; r++) {
-        for (let c = 0; c < iCols; c++) {
-          const { x, y } = worldToScreen(c, r);
-          const t = (interior.tiles && interior.tiles[r] && interior.tiles[r][c]) || 'floor';
-          const isBackWall = (t === 'wall' && r === 0);
-          const isLeftWall = (t === 'wall' && c === 0);
-          const isRightWall = (t === 'wall' && c === iCols - 1);
-          // Base tile
-          if (t === 'wall') {
-            if (isBackWall) {
-              // floor strip at wall base
-              ctx.fillStyle = '#C8A87A';
-              ctx.fillRect(x, y, ts, ts);
+      const wp = interior.wallPalette || {
+        back: '#7A4D38', backBrick: '#6B4030', backBrick2: '#8A5A41',
+        left: '#6B4030', leftBrick: '#5A3825',
+        right: '#8A5A41', rightBrick: '#7A5535'
+      };
 
-              // vertical back wall face
-              const wy = y - backWallHeight;
-              ctx.fillStyle = '#7A4D38';
-              ctx.fillRect(x, wy, ts, backWallHeight + 1);
-
-              // subtle paneling / bricks
-              ctx.fillStyle = '#6B4030';
-              ctx.fillRect(x + 1, wy + 1, ts - 2, Math.max(2, Math.floor(backWallHeight * 0.42)));
-              ctx.fillStyle = '#8A5A41';
-              ctx.fillRect(x + 1, wy + Math.max(3, Math.floor(backWallHeight * 0.48)), ts - 2, Math.max(2, Math.floor(backWallHeight * 0.44)));
-
-              // top cap shadow/highlight
-              ctx.fillStyle = 'rgba(0,0,0,0.25)';
-              ctx.fillRect(x, wy, ts, 2);
-              ctx.fillStyle = 'rgba(255,230,190,0.25)';
-              ctx.fillRect(x, wy + 2, ts, 1);
-
-              // framed painting in the middle of the back wall
-              if (c === Math.floor(iCols / 2)) {
-                const fw = Math.max(8, Math.floor(ts * 0.52));
-                const fh = Math.max(7, Math.floor(backWallHeight * 0.38));
-                const fx = Math.floor(x + (ts - fw) * 0.5);
-                const fy = Math.floor(wy + backWallHeight * 0.28);
-                ctx.fillStyle = '#3A2512';
-                ctx.fillRect(fx - 1, fy - 1, fw + 2, fh + 2);
-                ctx.fillStyle = '#D8B16B';
-                ctx.fillRect(fx, fy, fw, fh);
-                const painted = drawInteriorPaintingAt(interiorPaintingKey, fx + 1, fy + 1, Math.max(1, fw - 2), Math.max(1, fh - 2));
-                if (!painted) {
-                  ctx.fillStyle = '#6E2A1F';
-                  ctx.fillRect(fx + 1, fy + 1, fw - 2, fh - 2);
-                }
-              }
-
-              ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 1;
-              ctx.strokeRect(x+0.5, y+0.5, ts-1, ts-1);
-            } else if (isLeftWall || isRightWall) {
-              // Side walls: render with vertical perspective
-              ctx.fillStyle = '#C8A87A';
-              ctx.fillRect(x, y, ts, ts);
-              
-              // vertical side wall face (shorter than back wall)
-              const sideWallHeight = Math.max(6, Math.floor(backWallHeight * 0.55));
-              const wy = y - sideWallHeight;
-              ctx.fillStyle = isLeftWall ? '#6B4030' : '#8A5A41'; // slightly different tone per side
-              ctx.fillRect(x, wy, ts, sideWallHeight);
-              
-              // subtle brick texture
-              ctx.fillStyle = isLeftWall ? '#5A3825' : '#7A5535';
-              for (let i = 0; i < 2; i++) {
-                ctx.fillRect(x + 1, wy + 1 + i * Math.floor(sideWallHeight * 0.45), ts - 2, Math.max(1, Math.floor(sideWallHeight * 0.38)));
-              }
-              
-              // shadow/depth
-              ctx.fillStyle = 'rgba(0,0,0,0.3)';
-              ctx.fillRect(x, wy, 2, sideWallHeight);
-              
-              ctx.strokeStyle = 'rgba(0,0,0,0.15)'; ctx.lineWidth = 1;
-              ctx.strokeRect(x+0.5, wy+0.5, ts-1, sideWallHeight-1);
-            } else {
-              ctx.fillStyle = '#5C3A2A'; ctx.fillRect(x, y, ts, ts);
-              // brick texture lines
-              ctx.strokeStyle = 'rgba(0,0,0,0.2)'; ctx.lineWidth = 1;
-              ctx.strokeRect(x+1, y+1, ts-2, ts-2);
-              ctx.fillStyle = '#7A4D38'; ctx.fillRect(x+2, y+2, ts-4, ts*0.42);
-              ctx.fillStyle = '#6B4030'; ctx.fillRect(x+2, y+ts*0.5, ts-4, ts*0.4);
-            }
-          } else if (t === 'door') {
-            ctx.fillStyle = '#C8A87A'; ctx.fillRect(x, y, ts, ts);
-            // door frame
-            ctx.fillStyle = '#7A4E22'; ctx.fillRect(x+ts*0.25, y+ts*0.15, ts*0.5, ts*0.75);
-            ctx.fillStyle = '#5A3810'; ctx.fillRect(x+ts*0.45, y+ts*0.45, ts*0.1, ts*0.08);
-          } else {
-            // floor base
-            ctx.fillStyle = '#C8A87A'; ctx.fillRect(x, y, ts, ts);
-            if (t === 'rug') {
-              drawEntitySpriteAt('interior_rug', x + ts*0.5, y + ts, ts*0.92, ts*0.92);
-            } else if (t === 'bed') {
-              drawEntitySpriteAt('interior_bed', x + ts*0.5, y + ts, ts*0.88, ts*0.88);
-            } else if (t === 'table') {
-              drawEntitySpriteAt('interior_table', x + ts*0.5, y + ts, ts*0.85, ts*0.80);
-            } else if (t === 'pot') {
-              drawEntitySpriteAt('interior_pot', x + ts*0.5, y + ts, ts*0.60, ts*0.72);
-            } else if (t === 'chest') {
-              drawEntitySpriteAt('interior_chest', x + ts*0.5, y + ts, ts*0.78, ts*0.68);
-            } else if (t === 'firepit') {
-              drawEntitySpriteAt('interior_firepit', x + ts*0.5, y + ts, ts*0.80, ts*0.85);
-            } else if (t === 'stairs_up') {
-              ctx.fillStyle = '#9C7A4B'; ctx.fillRect(x + ts*0.12, y + ts*0.14, ts*0.76, ts*0.72);
-              ctx.fillStyle = '#B8925C';
-              for (let si = 0; si < 4; si++) {
-                const sy = y + ts*0.18 + si * ts * 0.16;
-                ctx.fillRect(x + ts*0.16, sy, ts*0.68, ts*0.1);
-              }
-              ctx.fillStyle = '#F2D59A';
-              ctx.beginPath();
-              ctx.moveTo(x + ts*0.5, y + ts*0.2);
-              ctx.lineTo(x + ts*0.66, y + ts*0.4);
-              ctx.lineTo(x + ts*0.58, y + ts*0.4);
-              ctx.lineTo(x + ts*0.58, y + ts*0.56);
-              ctx.lineTo(x + ts*0.42, y + ts*0.56);
-              ctx.lineTo(x + ts*0.42, y + ts*0.4);
-              ctx.lineTo(x + ts*0.34, y + ts*0.4);
-              ctx.closePath();
-              ctx.fill();
-            } else if (t === 'stairs_down') {
-              ctx.fillStyle = '#7A5C38'; ctx.fillRect(x + ts*0.12, y + ts*0.14, ts*0.76, ts*0.72);
-              ctx.fillStyle = '#946E43';
-              for (let si = 0; si < 4; si++) {
-                const sy = y + ts*0.18 + si * ts * 0.16;
-                ctx.fillRect(x + ts*0.16, sy, ts*0.68, ts*0.1);
-              }
-              ctx.fillStyle = '#DAB87E';
-              ctx.beginPath();
-              ctx.moveTo(x + ts*0.5, y + ts*0.58);
-              ctx.lineTo(x + ts*0.66, y + ts*0.38);
-              ctx.lineTo(x + ts*0.58, y + ts*0.38);
-              ctx.lineTo(x + ts*0.58, y + ts*0.24);
-              ctx.lineTo(x + ts*0.42, y + ts*0.24);
-              ctx.lineTo(x + ts*0.42, y + ts*0.38);
-              ctx.lineTo(x + ts*0.34, y + ts*0.38);
-              ctx.closePath();
-              ctx.fill();
-            } else if (t === 'elevator') {
-              ctx.fillStyle = '#626A75'; ctx.fillRect(x + ts*0.16, y + ts*0.1, ts*0.68, ts*0.82);
-              ctx.fillStyle = '#939EAD'; ctx.fillRect(x + ts*0.22, y + ts*0.16, ts*0.56, ts*0.58);
-              ctx.fillStyle = '#414955'; ctx.fillRect(x + ts*0.48, y + ts*0.16, ts*0.04, ts*0.58);
-              ctx.fillStyle = '#FFD27A';
-              ctx.beginPath();
-              ctx.arc(x + ts*0.72, y + ts*0.84, Math.max(2, ts*0.06), 0, Math.PI * 2);
-              ctx.fill();
-            }
+      // Helper: draw pixel sprite directly with fillRect (no drawImage)
+      const drawInteriorPixelSprite = (name, sx, sy, sw, sh) => {
+        const def = window.ENTITY_PIXEL_LIBRARY && window.ENTITY_PIXEL_LIBRARY[name];
+        if (!def || !def.pixels) return false;
+        try {
+          const g = def.grid || 8;
+          const sc = Math.max(1, Math.floor(Math.min(sw, sh) / g));
+          for (const p of def.pixels) {
+            if (p && p[2]) { ctx.fillStyle = p[2]; ctx.fillRect(Math.floor(sx) + p[0] * sc, Math.floor(sy) + p[1] * sc, sc, sc); }
           }
-          // floor tile groove lines
-          if (t !== 'wall') {
-            ctx.strokeStyle = 'rgba(0,0,0,0.08)'; ctx.lineWidth = 0.5;
-            ctx.strokeRect(x+0.5, y+0.5, ts-1, ts-1);
+          return true;
+        } catch (e) { return false; }
+      };
+
+      // ── Draw back wall ──
+      const backWallTop = roomTop - backWallH;
+      // Wall face
+      ctx.fillStyle = wp.back;
+      ctx.fillRect(backLeft, backWallTop, roomBackW, backWallH);
+      // Brick lines
+      ctx.fillStyle = wp.backBrick;
+      for (let br = 0; br < Math.floor(backWallH / (floorTileH * 0.4)); br++) {
+        const by = backWallTop + br * floorTileH * 0.4;
+        ctx.fillRect(backLeft, Math.floor(by), roomBackW, Math.max(1, Math.floor(floorTileH * 0.15)));
+      }
+      // Top shadow
+      ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(backLeft, backWallTop, roomBackW, 2);
+      // Baseboard
+      ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(backLeft, roomTop - 3, roomBackW, 3);
+
+      // ── Wall decorations on back wall ──
+      for (let c = 0; c < iCols; c++) {
+        const t = (interior.tiles && interior.tiles[0] && interior.tiles[0][c]) || 'wall';
+        if (t === 'painting' || t === 'window' || t === 'torch' ||
+            (t === 'wall' && c === Math.floor(iCols / 2))) {
+          const colW = roomBackW / iCols;
+          const cx = backLeft + c * colW;
+          const cy = backWallTop + backWallH * 0.25;
+          const cw = colW * 0.65;
+          const ch = backWallH * 0.45;
+
+          if (t === 'painting' || (t === 'wall' && c === Math.floor(iCols / 2))) {
+            const pk = (t === 'painting' && c % 2 === 0) ? 'interior_painting_1' : 'interior_painting_2';
+            const useKey = (t === 'painting') ? pk : (hasRegisteredSprite('ma_g') ? 'ma_g' : 'ussr_flag');
+            // Frame
+            ctx.fillStyle = '#3A2512';
+            ctx.fillRect(Math.floor(cx + colW * 0.17), Math.floor(cy), Math.floor(cw), Math.floor(ch));
+            ctx.fillStyle = '#D8B16B';
+            ctx.fillRect(Math.floor(cx + colW * 0.17) + 1, Math.floor(cy) + 1, Math.floor(cw) - 2, Math.floor(ch) - 2);
+            if (!drawInteriorPixelSprite(useKey, Math.floor(cx + colW * 0.17) + 2, Math.floor(cy) + 2, Math.floor(cw) - 4, Math.floor(ch) - 4)) {
+              ctx.fillStyle = '#6E2A1F';
+              ctx.fillRect(Math.floor(cx + colW * 0.17) + 2, Math.floor(cy) + 2, Math.floor(cw) - 4, Math.floor(ch) - 4);
+            }
+          } else if (t === 'window') {
+            drawInteriorPixelSprite('interior_window', Math.floor(cx + colW * 0.2), Math.floor(cy), Math.floor(cw), Math.floor(ch));
+          } else if (t === 'torch') {
+            const tw = colW * 0.35, th = backWallH * 0.4;
+            drawInteriorPixelSprite('interior_torch', Math.floor(cx + colW * 0.32), Math.floor(backWallTop + backWallH * 0.05), Math.floor(tw), Math.floor(th));
+            const fl = 0.4 + 0.6 * Math.sin(nowInt * 0.008 + c * 2.3);
+            ctx.fillStyle = `rgba(255,160,20,${0.22 * fl})`;
+            ctx.beginPath(); ctx.arc(cx + colW * 0.5, backWallTop + backWallH * 0.22, colW * 0.22, 0, Math.PI * 2); ctx.fill();
           }
         }
       }
 
-      // Draw interior NPCs (entities loop handles them since they were spawnNPC'd)
+      // ── Draw left wall ──
+      ctx.fillStyle = wp.left;
+      ctx.beginPath();
+      ctx.moveTo(backLeft, roomTop);
+      ctx.lineTo(backLeft, backWallTop);
+      ctx.lineTo(roomLeft, roomTop - sideWallH);
+      ctx.lineTo(roomLeft, roomTop);
+      ctx.closePath(); ctx.fill();
+      // Brick lines
+      ctx.fillStyle = wp.leftBrick;
+      for (let i = 0; i < 3; i++) {
+        const t = i / 3;
+        const bx1 = backLeft + (roomLeft - backLeft) * t;
+        const by1 = backWallTop + (roomTop - sideWallH - backWallTop) * t;
+        const bx2 = backLeft + (roomLeft - backLeft) * (t + 0.15);
+        const by2 = roomTop;
+        ctx.fillRect(Math.floor(bx1), Math.floor(by1 + (by2 - by1) * 0.3), Math.max(1, Math.floor((bx2 - bx1) * 0.8)), 1);
+      }
+      // Shadow on wall base
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.fillRect(roomLeft, roomTop, Math.floor((backLeft - roomLeft) * 0.3), roomFloorH);
 
-      // Exit prompt: show near door tile
+      // ── Draw right wall ──
+      ctx.fillStyle = wp.right;
+      ctx.beginPath();
+      ctx.moveTo(backRight, roomTop);
+      ctx.lineTo(backRight, backWallTop);
+      ctx.lineTo(roomRight, roomTop - sideWallH);
+      ctx.lineTo(roomRight, roomTop);
+      ctx.closePath(); ctx.fill();
+      // Shadow
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.fillRect(roomRight - Math.floor((roomRight - backRight) * 0.3), roomTop, Math.floor((roomRight - backRight) * 0.3), roomFloorH);
+
+      // ── Draw floor tiles and furniture (back to front for correct occlusion) ──
+      for (let r = 0; r < iRows; r++) {
+        for (let c = 0; c < iCols; c++) {
+          const pos = tileToScreen(c, r);
+          const t = (interior.tiles && interior.tiles[r] && interior.tiles[r][c]) || 'floor';
+          const isWallTile = t === 'wall' || t === 'painting' || t === 'window' || t === 'torch';
+
+          // Floor base (skip wall tiles on row 0, they're the back wall)
+          if (r === 0 && isWallTile) continue;
+          if (c === 0 && r > 0 && t === 'wall') continue;
+          if (c === iCols - 1 && r > 0 && t === 'wall') continue;
+
+          // Floor color
+          ctx.fillStyle = (r + c) % 2 === 0 ? '#C8A87A' : '#BFA070';
+          ctx.fillRect(pos.x, pos.y, pos.w, pos.h);
+
+          // Furniture
+          const cx = pos.x + pos.w * 0.5;
+          const cy = pos.y + pos.h;
+          const sz = Math.min(pos.w, pos.h) * 0.85;
+
+          if (t === 'rug') {
+            ctx.fillStyle = '#8B2020';
+            ctx.fillRect(pos.x + pos.w * 0.1, pos.y + pos.h * 0.1, pos.w * 0.8, pos.h * 0.8);
+            ctx.fillStyle = '#D4A020';
+            ctx.fillRect(pos.x + pos.w * 0.2, pos.y + pos.h * 0.2, pos.w * 0.6, pos.h * 0.6);
+          } else if (t === 'door') {
+            ctx.fillStyle = '#C8A87A'; ctx.fillRect(pos.x, pos.y, pos.w, pos.h);
+            ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.fillRect(pos.x + pos.w * 0.3, pos.y + pos.h * 0.05, pos.w * 0.4, pos.h * 0.9);
+          } else if (t !== 'floor') {
+            // Use entity sprites via drawEntitySpriteAt (now uses pure fillRect)
+            const spriteMap = { bed: 'interior_bed', table: 'interior_table', pot: 'interior_pot',
+              chest: 'interior_chest', firepit: 'interior_firepit', chair: 'interior_chair',
+              plant: 'interior_plant', bookshelf: 'interior_bookshelf', counter: 'interior_counter' };
+            const spriteName = spriteMap[t];
+            if (spriteName) {
+              drawEntitySpriteAt(spriteName, cx, cy, sz, sz);
+            }
+          }
+
+          // Tile border
+          ctx.strokeStyle = 'rgba(0,0,0,0.06)'; ctx.lineWidth = 0.5;
+          ctx.strokeRect(pos.x + 0.5, pos.y + 0.5, pos.w - 1, pos.h - 1);
+        }
+      }
+
+      // ── Room label ──
       try {
         ctx.save();
-        ctx.font = Math.max(10, Math.floor(12 * (ts / 32))) + 'px sans-serif';
+        ctx.font = Math.max(10, Math.floor(12 * (Math.min(W, H) / 600))) + 'px sans-serif';
         ctx.fillStyle = 'rgba(255,235,185,0.95)';
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'top';
+        ctx.textAlign = 'left'; ctx.textBaseline = 'top';
         ctx.fillText(interior._floorLabel || 'Interior', 12, 10);
         ctx.restore();
 
+        // Exit prompt
         const ec = interior.entryCol || 1;
         const er = (interior.height || iRows) - 2;
-        const hasExitDoor = !!(interior.tiles && interior.tiles[er] && interior.tiles[er][ec] === 'door');
-        const px2 = Math.floor(player.x), py2 = Math.floor(player.y);
-        const nearDoor = hasExitDoor && Math.abs(px2 - ec) <= 1 && Math.abs(py2 - er) <= 1;
+        const hasDoor = !!(interior.tiles && interior.tiles[er] && interior.tiles[er][ec] === 'door');
+        const nearDoor = hasDoor && Math.abs(Math.floor(player.x) - ec) <= 1 && Math.abs(Math.floor(player.y) - er) <= 1;
         if (nearDoor) {
-          const sp = worldToScreen(player.x + 0.5, player.y - 0.5);
+          const ppos = tileToScreen(player.x, player.y - 0.6);
           ctx.save();
-          ctx.font = Math.max(10, Math.floor(12 * (ts/32))) + 'px sans-serif';
+          ctx.font = Math.max(10, Math.floor(12 * (Math.min(W, H) / 600))) + 'px sans-serif';
           ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.strokeStyle = 'rgba(0,0,0,0.7)'; ctx.lineWidth = 3;
           ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-          ctx.strokeText('Salir', sp.x, sp.y - 30); ctx.fillText('Salir', sp.x, sp.y - 30);
-          ctx.font = Math.max(12, Math.floor(14*(ts/32))) + 'px sans-serif';
-          ctx.strokeText('E', sp.x, sp.y - 10); ctx.fillText('E', sp.x, sp.y - 10);
+          ctx.strokeText('Salir [E]', ppos.x + ppos.w * 0.5, ppos.y - 20);
+          ctx.fillText('Salir [E]', ppos.x + ppos.w * 0.5, ppos.y - 20);
           ctx.restore();
         }
-      } catch(e){}
+      } catch (e) {}
 
-      // Check if player is standing on the door tile (auto-exit)
-      try {
-        const doorR2 = (interior.height || iRows) - 2;
-        const doorC2 = interior.entryCol || 1;
-        if (Math.floor(player.y) >= doorR2 && (Math.abs(Math.floor(player.x)-doorC2)<=1)) {
-          // Don't auto-exit — only on E press. But clamp to edge row instead
-        }
-      } catch(e){}
-
-      // Draw fade overlay
+      // ── Fade overlays ──
       try {
         if (window._interiorFadeIn) {
-          const fi = window._interiorFadeIn;
-          const pct = Math.min(1, (nowInt - fi.start) / fi.dur);
+          const fi = window._interiorFadeIn; const pct = Math.min(1, (nowInt - fi.start) / fi.dur);
           ctx.fillStyle = `rgba(0,0,0,${1 - pct})`; ctx.fillRect(0, 0, W, H);
           if (pct >= 1) window._interiorFadeIn = null;
         }
         if (window._interiorFadeOut) {
-          const fo = window._interiorFadeOut;
-          const pct = Math.min(1, (nowInt - fo.start) / fo.dur);
+          const fo = window._interiorFadeOut; const pct = Math.min(1, (nowInt - fo.start) / fo.dur);
           ctx.fillStyle = `rgba(0,0,0,${pct})`; ctx.fillRect(0, 0, W, H);
         }
-      } catch(e){}
+      } catch (e) {}
 
-      // Skip world tile loop
+      // Update player position to match interior tiles
+      try {
+        player.col = Math.max(0, Math.min(iCols - 1, Math.floor(player.x)));
+        player.row = Math.max(0, Math.min(iRows - 1, Math.floor(player.y)));
+      } catch (e) {}
+
       minC = 1; maxC = 0; minR = 1; maxR = 0;
     } catch (e) { console.warn('Error rendering interior', e); }
   }
@@ -12925,13 +12905,17 @@ function createMenuBar() {
         try {
           if (window.__mesoPreload && window.__mesoPreload.npcDialogues) {
             window.loadNpcDialogues(window.__mesoPreload.npcDialogues);
-            console.log('npc-dialogues: using preloaded data (Electron)');
+            console.log('[renderer] npc-dialogues: using preloaded data (Electron)');
             return;
           }
         } catch (e) {}
-        // Fallback: fetch from disk
-        fetch('data/npc-dialogues.json').then(r => { if (!r.ok) throw new Error('no file'); return r.json(); }).then(obj => { try { window.loadNpcDialogues(obj); notify && notify('Diálogos cargados'); } catch (e) { console.warn(e); } }).catch(err => {
-          console.warn('No se pudo cargar data/npc-dialogues.json', err);
+        // Fallback: fetch from disk (uses meso-local:// in Electron)
+        const fetchUrl = (window.__mesoPreload && window.__mesoPreload.isElectron)
+          ? 'meso-local://data/npc-dialogues.json'
+          : 'data/npc-dialogues.json';
+        console.log('[renderer] npc-dialogues: trying fetch from', fetchUrl);
+        fetch(fetchUrl).then(r => { if (!r.ok) throw new Error('no file'); return r.json(); }).then(obj => { try { window.loadNpcDialogues(obj); notify && notify('Diálogos cargados'); } catch (e) { console.warn(e); } }).catch(err => {
+          console.warn('[renderer] No se pudo cargar npc-dialogues.json', err);
           notify && notify('No se encontraron diálogos en data/');
         });
       } catch (e) { console.warn('loadNpcDialoguesFromData error', e); }

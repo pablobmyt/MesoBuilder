@@ -1,43 +1,34 @@
 {
-  "defaultFloor": 1,
+  "defaultFloor": 0,
   "floors": [
-    {
-      "name": "Sótano",
-      "width": 10,
-      "height": 7,
-      "entryCol": 4,
-      "entryRow": 4,
-      "chestItems": ["wheat", "wheat", "brick", "stone"],
-      "npcs": [],
-      "tiles": [
-        ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"],
-        ["wall", "floor", "floor", "floor", "pot", "pot", "floor", "floor", "floor", "wall"],
-        ["wall", "floor", "floor", "floor", "table", "floor", "floor", "floor", "floor", "wall"],
-        ["wall", "rug", "floor", "chest", "stairs_up", "floor", "rug", "floor", "pot", "wall"],
-        ["wall", "floor", "floor", "floor", "floor", "floor", "floor", "floor", "rug", "wall"],
-        ["wall", "floor", "floor", "floor", "floor", "floor", "floor", "floor", "floor", "wall"],
-        ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"]
-      ]
-    },
     {
       "name": "Planta baja",
       "width": 10,
-      "height": 7,
+      "height": 8,
       "entryCol": 4,
-      "entryRow": 4,
-      "chestItems": ["wheat", "wheat", "wheat", "wheat", "brick"],
+      "entryRow": 5,
+      "chestItems": ["wheat", "wheat", "wheat", "brick", "brick"],
+      "wallPalette": {
+        "back": "#7A8B5A", "backDark": "#6A7B4A", "backLight": "#8A9B6A",
+        "left": "#6A7B4A", "leftDark": "#5A6B3A",
+        "right": "#8A9B6A", "rightDark": "#7A8B5A",
+        "floor": "#B8C898", "floorDark": "#A8B888",
+        "trim": "#4A5A2A", "baseboard": "#3A4A1A",
+        "ceiling": "#2A3A1A"
+      },
       "npcs": [
         { "col": 2, "row": 2, "name": "Jardinera" },
         { "col": 7, "row": 1, "name": "Aldeano" }
       ],
       "tiles": [
-        ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"],
-        ["wall", "bed", "floor", "floor", "pot", "pot", "floor", "floor", "bed", "wall"],
-        ["wall", "floor", "floor", "floor", "table", "floor", "floor", "floor", "floor", "wall"],
-        ["wall", "rug", "floor", "chest", "floor", "floor", "rug", "floor", "pot", "wall"],
-        ["wall", "floor", "floor", "stairs_down", "firepit", "floor", "floor", "floor", "rug", "wall"],
-        ["wall", "floor", "floor", "floor", "door", "floor", "floor", "floor", "floor", "wall"],
-        ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"]
+        ["wall","painting","wall","window","wall","window","wall","painting","wall","wall"],
+        ["wall","bed","floor","plant","pot","plant","floor","floor","bed","wall"],
+        ["wall","floor","floor","floor","table","floor","floor","chair","floor","wall"],
+        ["wall","rug","plant","floor","floor","floor","rug","floor","pot","wall"],
+        ["wall","floor","floor","chest","firepit","floor","floor","plant","rug","wall"],
+        ["wall","chair","floor","floor","door","floor","floor","floor","floor","wall"],
+        ["wall","plant","floor","floor","floor","floor","floor","pot","plant","wall"],
+        ["wall","wall","wall","wall","wall","wall","wall","wall","wall","wall"]
       ]
     }
   ]

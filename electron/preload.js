@@ -36,9 +36,16 @@ function readJsonFile(relativePath) {
 }
 
 // Read all JSON data files
+console.log('[preload] Project root:', getProjectRoot());
+console.log('[preload] MESOBUILDER_EXTERNAL_PATH:', process.env.MESOBUILDER_EXTERNAL_PATH || '(not set)');
+
 const entityPixels = readJsonFile('data/entity-pixels.json');
 const entityDefs = readJsonFile('data/entities-defs.json');
 const npcDialogues = readJsonFile('data/npc-dialogues.json');
+
+console.log('[preload] entity-pixels.json loaded:', !!entityPixels, entityPixels ? Object.keys(entityPixels.icons || entityPixels).length + ' icons' : 'MISSING');
+console.log('[preload] entities-defs.json loaded:', !!entityDefs, entityDefs ? Object.keys(entityDefs.buildings || {}).length + ' buildings, ' + (entityDefs.trees || []).length + ' trees' : 'MISSING');
+console.log('[preload] npc-dialogues.json loaded:', !!npcDialogues, npcDialogues ? Object.keys(npcDialogues).length + ' dialogue sets' : 'MISSING');
 
 // Preload all interior JSON files so enterInterior() works without fetch()
 const interiors = {};
@@ -62,5 +69,7 @@ contextBridge.exposeInMainWorld('__mesoPreload', {
   npcDialogues,
   interiors,
   // Flag so the engine knows it's running in Electron with preloaded data
-  isElectron: true
+  isElectron: true,
+  // Dev mode: clear all localStorage caches on startup
+  clearCache: !!(process.env.MESOBUILDER_CLEAR_CACHE)
 });

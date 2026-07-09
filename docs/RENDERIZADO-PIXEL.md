@@ -1,570 +1,643 @@
-# Sistema de Renderizado Pixel-Art de MesoBuilder
+# Sistema de Renderizado Pixel-Art de MesoBuilder — Guía Completa
 
 ## Índice
-1. [Visión General](#visión-general)
-2. [Flujo de Renderizado (Pipeline)](#flujo-de-renderizado-pipeline)
-3. [Sistema de Definición de Pixels](#sistema-de-definición-de-pixels)
-4. [Cachés y Pre-generación de Sprites](#cachés-y-pre-generación-de-sprites)
-5. [Renderizado de Personajes](#renderizado-de-personajes)
-6. [Renderizado de Entidades y Edificios](#renderizado-de-entidades-y-edificios)
-7. [Caché de Terreno (Optimización)](#caché-de-terreno-optimización)
-8. [Bucle Principal de Renderizado](#bucle-principal-de-renderizado)
-9. [Cómo Reutilizar el Sistema](#cómo-reutilizar-el-sistema)
+1. [Arquitectura General](#1-arquitectura-general)
+2. [Definición de Sprites: entity-pixels.json](#2-definición-de-sprites-entity-pixelsjson)
+3. [Función de Renderizado: drawEntitySpriteAt](#3-función-de-renderizado-drawentityspriteat)
+4. [Carga de Sprites en Memoria](#4-carga-de-sprites-en-memoria)
+5. [Sistema de Coordenadas](#5-sistema-de-coordenadas)
+6. [Renderizado de Interiores (estilo Habbo)](#6-renderizado-de-interiores-estilo-habbo)
+7. [Entidades del Mundo Exterior](#7-entidades-del-mundo-exterior)
+8. [Flujo de Renderizado por Frame](#8-flujo-de-renderizado-por-frame)
+9. [Cómo Añadir un Sprite Nuevo](#9-cómo-añadir-un-sprite-nuevo)
+10. [Renderizado de Personajes (NPCs/Jugador)](#10-renderizado-de-personajes-npcsjugador)
+11. [Sistema de Entidades (entities.js)](#11-sistema-de-entidades-entitiesjs)
+12. [Definiciones de Edificios (entities-defs.json)](#12-definiciones-de-edificios-entities-defsjson)
+13. [Consejos de Rendimiento](#13-consejos-de-rendimiento)
 
 ---
 
-## Visión General
+## 1. Arquitectura General
 
-MesoBuilder usa un sistema de **renderizado pixel-art puro** sin texturas externas. Cada sprite, icono y personaje se define como una matriz de píxeles coloreados en archivos JSON. Estos se convierten en `<canvas>` offscreen que luego se dibujan en el canvas principal con `drawImage()` (acelerado por GPU) usando `imageSmoothingEnabled = false` para mantener el look pixelado.
+MesoBuilder usa un **único canvas 2D HTML5** como superficie de dibujo. Todo el renderizado
+ocurre en un `<canvas id="gameCanvas">` con contexto `'2d'`.
 
-**Tecnologías**: Canvas 2D API pura. No usa WebGL, ni bibliotecas de renderizado.
+### Principio fundamental
+> **Cada píxel de cada sprite se dibuja individualmente con `ctx.fillRect()`.
+> No se usa `ctx.drawImage()` para sprites pixel-art.**
 
----
+Esto garantiza que el renderizado funcione en cualquier entorno (navegador web, Electron,
+dispositivos con GPU problemática) porque `fillRect` es una operación básica del canvas 2D
+implementada por software que nunca falla.
 
-## Flujo de Renderizado (Pipeline)
+### ¿Por qué no drawImage?
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│  1. CARGA DE DEFINICIONES (al iniciar)                       │
-│                                                              │
-│  entity-pixels.json  ──►  window.ENTITY_PIXEL_LIBRARY       │
-│  (cada sprite como         { nombre: { grid, pixels } }     │
-│   array de pixels)                                          │
-│                         │                                   │
-│                         ▼                                   │
-│  2. PRE-GENERACIÓN DE SPRITES (generateSpriteImages)        │
-│                                                              │
-│  createCanvasFromPixelDef()  ──►  _ENTITY_BITMAPS[name]     │
-│  (pixel def → <canvas>)          _ICON_BITMAPS[name]        │
-│                         │         (caché en RAM)             │
-│                         ▼                                   │
-│  createImageBitmap()     ──►  _SPRITE_IMAGES[name]          │
-│  o Image() + toBlob()         (ImageBitmap para GPU)        │
-│                         │                                   │
-│                         ▼                                   │
-│  localStorage            ──►  persistencia entre sesiones   │
-│  ('meso.spriteCache')                                       │
-├──────────────────────────────────────────────────────────────┤
-│  3. CACHÉ DE TERRENO (rebuildMapCachesAsync)                │
-│                                                              │
-│  tileBiome[][]  ──►  mapCacheOrtho (canvas offscreen)       │
-│                       mapCacheIso   (canvas offscreen)       │
-│                                                              │
-│  Se construye UNA vez a zoom=1 (tamaño fijo ~22MB).         │
-│  En cada frame se escala con drawImage(scale=zoom).         │
-├──────────────────────────────────────────────────────────────┤
-│  4. BUCLE DE RENDERIZADO (render(), cada frame)             │
-│                                                              │
-│  ① Cielo (gradiente día/noche)                              │
-│  ② Estrellas (noche)                                        │
-│  ③ Nubes (overlay semitransparente)                         │
-│  ④ HUD de supervivencia                                     │
-│  ⑤ TERRENO: drawImage(mapCacheOrtho/Iso, scale=zoom)       │
-│  ⑥ Árboles                                                  │
-│  ⑦ Edificios (depth-sorted, delante/detrás del jugador)    │
-│  ⑧ Entidades/Recursos (sorted por profundidad)              │
-│  ⑨ Jugador + NPCs                                           │
-│  ⑩ Edificios diferidos (delante del jugador)               │
-│  ⑪ Partículas (humo, sangre, texto flotante)               │
-│  ⑫ Overlays (modo editor, selección, niebla de guerra)     │
-│  ⑬ UI (barra de acción, panel, minimapa)                   │
-│  ⑭ Cursor                                                   │
-└──────────────────────────────────────────────────────────────┘
-```
+`ctx.drawImage()` depende de la aceleración GPU del navegador. En Electron/Chromium,
+ciertas combinaciones de drivers GPU causan que `drawImage` falle **silenciosamente**
+(sin lanzar errores, pero sin dibujar nada en el canvas). `fillRect` es una operación
+CPU pura que siempre produce resultado visible.
 
 ---
 
-## Sistema de Definición de Pixels
+## 2. Definición de Sprites: `entity-pixels.json`
 
-### Formato de datos
+**Ubicación**: `data/entity-pixels.json`
 
-Cada sprite/icono se guarda en `data/entity-pixels.json` con esta estructura:
+### Estructura del archivo
 
 ```json
 {
-  "nombre_sprite": {
-    "grid": 9,
-    "pixels": [
-      [4, 0, "#8B6914"],
-      [3, 1, "#8B6914"],
-      [4, 1, "#8B6914"],
-      [5, 1, "#8B6914"]
-    ]
+  "icons": {
+    "nombre_sprite": {
+      "grid": 9,
+      "pixels": [
+        [columna, fila, "#colorhex"],
+        [columna, fila, "#colorhex"],
+        ...
+      ]
+    }
   }
 }
 ```
 
-| Campo | Descripción |
-|-------|-------------|
-| `grid` | Resolución virtual del sprite (N×N píxeles). Define la escala. |
-| `pixels` | Array de `[columna, fila, "#colorHex"]`. Solo se definen píxeles no transparentes. |
+### Campos de cada sprite
 
-### Renderizado fundamental: `drawPixelArt()`
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `grid` | `number` | Tamaño de la cuadrícula en celdas. Un sprite de grid=9 ocupa 9×9 celdas lógicas. |
+| `pixels` | `array` | Array de tripletas `[x, y, color]`. `x` = columna (0 a grid-1), `y` = fila (0 a grid-1), `color` = hexadecimal con `#`. |
 
-```js
-function drawPixelArt(ctx, pixels, scale) {
-  pixels.forEach(([x, y, c]) => {
-    ctx.fillStyle = c;
-    ctx.fillRect(x * scale, y * scale, scale, scale);
-  });
+### Ejemplo comentado
+
+```json
+"house": {
+  "grid": 9,
+  "pixels": [
+    [4,0,"#8B6914"],                                         // Tejado, centro
+    [3,1,"#8B6914"], [4,1,"#8B6914"], [5,1,"#8B6914"],      // Tejado, segunda fila
+    [2,2,"#8B6914"], [3,2,"#8B6914"], [4,2,"#8B6914"],      // Alero
+    [5,2,"#8B6914"], [6,2,"#8B6914"],
+    [2,3,"#C8A84B"], [3,3,"#C8A84B"], [4,3,"#C8A84B"],      // Pared (dorado)
+    [5,3,"#C8A84B"], [6,3,"#C8A84B"],
+    [2,4,"#C8A84B"], [3,4,"#E8D5A3"], [4,4,"#8B6914"],      // Pared + puerta + detalle
+    [5,4,"#E8D5A3"], [6,4,"#C8A84B"],
+    [2,5,"#C8A84B"], [3,5,"#C8A84B"], [4,5,"#C8A84B"],      // Base
+    [5,5,"#C8A84B"], [6,5,"#C8A84B"]
+  ]
 }
 ```
 
-Cada píxel se dibuja como un `fillRect` del tamaño `scale`. La clave es `imageSmoothingEnabled = false` para mantener bordes nítidos.
+### Nomenclatura de sprites
 
-### Conversión a Canvas: `createCanvasFromPixelDef()`
+| Prefijo/Categoría | Ejemplos | Uso |
+|-------------------|----------|-----|
+| Edificios | `house`, `temple`, `farm`, `ziggurat`, `soviet_block` | Construcciones del mundo |
+| Árboles | `tree0`-`tree6`, `birch`, `pine` | Vegetación forestal |
+| Recursos | `weed`, `wheat`, `stone`, `wood` | Recursos naturales recolectables |
+| Interior muebles | `interior_bed`, `interior_chair`, `interior_plant` | Mobiliario de habitaciones |
+| Interior pared | `interior_painting_1`, `interior_window`, `interior_torch` | Decoración mural |
+| Temáticos | `ussr_flag`, `ma_g`, `soviet_fighter_jet` | Sprites de épocas específicas |
+| Mascotas | `pet_dog` | Compañero animal |
+
+### Colores
+
+Formato hexadecimal estándar:
+- `#8B6914` → RGB (marrón oscuro)
+- `#C8A84B` → RGB (dorado)
+- `#E8D5A3` → RGB (crema claro)
+- `#4A8A3A` → RGB (verde vegetación)
+- `#AABBCCDD` → RGBA (los últimos 2 dígitos son alpha: 00=transparente, FF=opaco)
+
+---
+
+## 3. Función de Renderizado: `drawEntitySpriteAt()`
+
+**Ubicación**: `engine/game-engine.js`
 
 ```js
-window.createCanvasFromPixelDef = function(def, name, targetScale = 32) {
-  const grid = def.grid || 9;
-  const pixels = def.pixels || [];
-  const scale = Math.max(1, Math.floor(targetScale / grid));
-  const canvas = document.createElement('canvas');
-  canvas.width = grid * scale;
-  canvas.height = grid * scale;
-  const c = canvas.getContext('2d');
-  c.clearRect(0, 0, canvas.width, canvas.height);
-  pixels.forEach(([x, y, color]) => {
-    if (color) {
-      c.fillStyle = color;
-      c.fillRect(x * scale, y * scale, scale, scale);
-    }
-  });
-  // Registrar en cachés globales
-  window._ICON_BITMAPS[name] = canvas;
-  window._ENTITY_BITMAPS[name] = canvas;
-  return canvas;
+function drawEntitySpriteAt(name, x, y, w, h, options)
+```
+
+### Parámetros
+
+| Parámetro | Tipo | Descripción |
+|-----------|------|-------------|
+| `name` | `string` | Clave del sprite en `ENTITY_PIXEL_LIBRARY` (ej: `'weed'`, `'house'`) |
+| `x` | `number` | Posición X en pantalla — **centro del sprite** |
+| `y` | `number` | Posición Y en pantalla — **base del sprite** (los pies) |
+| `w` | `number` | Ancho deseado en píxeles |
+| `h` | `number` | Alto deseado en píxeles |
+| `options` | `object` | `{ noShadow: boolean, ignoreEntityScale: boolean }` |
+
+### Algoritmo
+
+```
+1. Aplicar escala del editor (si standalone) → drawW, drawH
+2. Guardar estado del canvas (ctx.save)
+3. Dibujar sombra: elipse semitransparente bajo el sprite
+4. SI el sprite existe en ENTITY_PIXEL_LIBRARY:
+   a. Obtener grid y pixels de la definición
+   b. scale = floor(min(drawW, drawH) / grid)
+   c. Calcular offset para centrar el sprite en (x, y)
+   d. PARA CADA [px, py, color] en pixels:
+        ctx.fillStyle = color
+        ctx.fillRect(offX + px*scale, offY + py*scale, scale, scale)
+   e. ctx.restore → FIN
+5. SI NO existe en la librería:
+   a. Buscar en cachés (_SPRITE_IMAGES, _ICON_BITMAPS, _ENTITY_BITMAPS)
+   b. Si hay imagen → ctx.drawImage(img, ...)
+```
+
+### Ejemplo de uso
+
+```js
+// Dibujar una casa en la posición de tile (5, 3)
+const { x, y } = worldToScreen(5, 3);
+const tileSize = getTileSize();
+drawEntitySpriteAt('house', x + tileSize*0.5, y + tileSize, tileSize, tileSize);
+
+// Dibujar un weed sin sombra
+drawEntitySpriteAt('weed', screenX, screenY, 24, 24, { noShadow: true });
+```
+
+---
+
+## 4. Carga de Sprites en Memoria
+
+### Flujo de inicialización
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ 1. electron/preload.js                                  │
+│    fs.readFileSync('data/entity-pixels.json')          │
+│    contextBridge.exposeInMainWorld('__mesoPreload',    │
+│      { entityPixels, entityDefs, npcDialogues, ... })  │
+└─────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────┐
+│ 2. index.html (carga)                                   │
+│    window.__mesoPreload ya está disponible              │
+│    (inyectado por contextBridge antes del DOM)          │
+└─────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────┐
+│ 3. engine/game-engine.js → ensureEntityPixelsLibrary() │
+│    - Si __mesoPreload.entityPixels existe → lo usa     │
+│    - Si no → fetch('data/entity-pixels.json')          │
+│      (solo funciona en HTTP; en file:// usa meso-local)│
+│    - window.ENTITY_PIXEL_LIBRARY = json.icons          │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Estructura final en memoria
+
+```js
+window.ENTITY_PIXEL_LIBRARY = {
+  "house":     { grid: 9,  pixels: [[4,0,"#8B6914"], ...] },
+  "weed":      { grid: 9,  pixels: [[1,0,"#4A8A3A"], ...] },
+  "tree0":     { grid: 12, pixels: [[6,0,"#2A5A1A"], ...] },
+  "interior_chair": { grid: 7, pixels: [[1,0,"#8B6830"], ...] },
+  ...
+}
+```
+
+**No se pre-renderizan canvases intermedios.** Cada frame, los píxeles se dibujan
+directamente desde el array `pixels` con `fillRect`. Para pixel-art (cientos de píxeles
+por sprite como máximo), esto es perfectamente rápido.
+
+---
+
+## 5. Sistema de Coordenadas
+
+### Mundo exterior — Modo ortogonal (top-down)
+
+```js
+function worldToScreen(col, row) {
+  const tileSize = getTileSize();
+  return { x: col * tileSize + camX, y: row * tileSize + camY };
+}
+```
+
+| Variable | Significado |
+|----------|-------------|
+| `col, row` | Coordenadas de mundo (fraccionarias, ej: `player.x = 45.3`) |
+| `tileSize` | Tamaño de tile en píxeles (~48px por defecto, escala con zoom) |
+| `camX, camY` | Desplazamiento de cámara (el jugador se mueve, la cámara lo sigue) |
+
+La cámara se centra en el jugador:
+```js
+camX = canvas.width/2 - player.x * tileSize;
+camY = canvas.height/2 - player.y * tileSize;
+```
+
+### Interiores — Proyección pseudo-3D
+
+Para interiores se usa `tileToScreen()` que aplica perspectiva:
+
+```js
+const perspFactor = 0.82;  // la pared trasera es el 82% del ancho frontal
+
+tileToScreen(col, row) → {
+  x: backX + (frontX - backX) * (row / (iRows-1)),
+  y: roomTop + row * floorTileH,
+  w: ancho_de_tile_con_perspectiva,
+  h: floorTileH
+}
+```
+
+Esto produce el efecto visual de una habitación vista desde un ángulo ligeramente
+elevado, con la pared del fondo más estrecha que el primer plano.
+
+```
+        backLeft ──────────────── backRight    ← pared trasera (82% ancho)
+          ╲                        ╱
+           ╲   [painting] [torch] ╱             ← decoraciones
+            ╲                    ╱
+             ╲  ┌────┐ ┌──────┐ ╱              ← muebles
+              ╲ │bed │ │table │╱
+               ╲└────┘ └──────┘╱
+              roomLeft ─── roomRight            ← borde frontal (100% ancho)
+```
+
+---
+
+## 6. Renderizado de Interiores (estilo Habbo)
+
+### Archivos de datos
+
+**Ubicación**: `data/interiors/*.json`
+
+### Formato completo
+
+```json
+{
+  "defaultFloor": 0,
+  "floors": [{
+    "name": "Planta baja",
+    "width": 10, "height": 8,
+    "entryCol": 4, "entryRow": 5,
+    "chestItems": ["wheat", "stone", "brick"],
+    "wallPalette": {
+      "back": "#7A4D38", "backBrick": "#6B4030", "backBrick2": "#8A5A41",
+      "left": "#6B4030", "leftBrick": "#5A3825",
+      "right": "#8A5A41", "rightBrick": "#7A5535"
+    },
+    "npcs": [
+      { "col": 6, "row": 2, "name": "Aldeana", "npcType": "villager", "static": true }
+    ],
+    "tiles": [
+      ["wall","painting","wall","window","wall","torch","wall","painting","wall","wall"],
+      ["wall","bed","bed","chair","table","chair","plant","rug","rug","wall"],
+      ["wall","pot","floor","floor","floor","floor","floor","rug","rug","wall"],
+      ["wall","bookshelf","floor","counter","floor","chest","floor","plant","floor","wall"],
+      ["wall","chair","floor","firepit","floor","floor","floor","chair","floor","wall"],
+      ["wall","floor","floor","floor","floor","door","floor","floor","floor","wall"],
+      ["wall","floor","plant","floor","floor","floor","floor","pot","floor","wall"],
+      ["wall","wall","wall","wall","wall","wall","wall","wall","wall","wall"]
+    ]
+  }]
+}
+```
+
+### Tipos de tile y su comportamiento
+
+| Tile | Renderizado | Transitable |
+|------|-------------|-------------|
+| `wall` | Pared con textura de ladrillos (fila 0 = trasera, col 0/n = laterales) | ❌ No |
+| `painting` | Pared trasera + cuadro decorativo | ❌ No |
+| `window` | Pared trasera + ventana con cristal | ❌ No |
+| `torch` | Pared trasera + antorcha con brillo animado | ❌ No |
+| `floor` | Suelo en damero (2 tonos alternados) | ✅ Sí |
+| `rug` | Sprite de alfombra persa | ✅ Sí |
+| `bed` | Sprite de cama | ✅ Sí |
+| `table` | Sprite de mesa | ✅ Sí |
+| `chair` | Sprite de silla | ✅ Sí |
+| `pot` | Sprite de vasija | ✅ Sí |
+| `chest` | Sprite de cofre (contenedor) | ✅ Sí |
+| `firepit` | Sprite de hoguera | ✅ Sí |
+| `plant` | Sprite de planta decorativa | ✅ Sí |
+| `bookshelf` | Sprite de estantería | ✅ Sí |
+| `counter` | Sprite de mostrador/barra | ✅ Sí |
+| `door` | Puerta de salida (indicador visual tenue) | ✅ Sí |
+| `stairs_up` | Escaleras (dibujo geométrico) | ✅ Sí |
+| `stairs_down` | Escaleras (dibujo geométrico) | ✅ Sí |
+| `elevator` | Ascensor con panel y botón | ✅ Sí |
+
+### Paleta de paredes (`wallPalette`)
+
+Cada interior define sus colores. Ejemplos por tipo de edificio:
+
+| Edificio | back | left | right | Estilo |
+|----------|------|------|-------|--------|
+| `house` | `#8B7B6A` | `#7B6B5A` | `#9B8B7A` | Neutro cálido |
+| `house_player_home` | `#8B6B4A` | `#7A5A3A` | `#9B7B5A` | Madera rica |
+| `house_large` | `#8B7050` | `#7A6040` | `#9B8060` | Beige noble |
+| `house_garden` | `#7A8B5A` | `#6A7B4A` | `#8A9B6A` | Verde jardín |
+| `residential_tower` | `#7A8A9A` | `#6A7A8A` | `#8A9AAA` | Gris urbano |
+
+---
+
+## 7. Entidades del Mundo Exterior
+
+### Tipos de entidad y su estructura
+
+```js
+// ── Recursos naturales ──
+{
+  id: 'res-1234567890-abc',
+  kind: 'resource',
+  subtype: 'weed' | 'wheat' | 'stone' | 'wood' | 'meat' | 'seed',
+  col: number, row: number,
+  _born: timestamp,
+  _dropSeed: number (0-1)
+}
+
+// ── Árboles ──
+{
+  id: 'tree-1234567890-abc',
+  kind: 'tree',
+  variant: 'birch' | 'oak' | 'pine' | 'fir' | 'willow' | 'bush' | ...,
+  col: number, row: number,
+  hp: 10,
+  size: number  // escala relativa (1.0 = normal, 2.2 = abedul alto)
+}
+
+// ── NPC / Jugador ──
+{
+  id: 'npc-...',
+  kind: 'player',
+  col: number, row: number,
+  x: number, y: number,       // posición fraccionaria para movimiento suave
+  palette: { skin, hair, cloth, trim },
+  dir: 'down' | 'up' | 'left' | 'right',
+  name: string,
+  hp: number, maxHp: number,
+  speed: number,
+  moveTarget: { x, y } | null,
+  _walkFrame: 0 | 1
+}
+
+// ── Edificios (en la grid, no en entities) ──
+grid[row][col] = 'house'  // string simple
+grid[row][col] = { type: 'mesopotamian_villa_detailed', ... }  // objeto
+
+// ── Animales ──
+rabbits[] = { id, col, row, x, y, hp:6, maxHp:6, speed:1.0, size:0.45, nextMove }
+foxes[]   = { id, col, row, x, y, hp:10, maxHp:10, speed:1.4, size:0.7, nextMove }
+```
+
+### Funciones de colocación
+
+```js
+// Recursos
+placeResource(col, row, 'weed')   → entities.push({ kind:'resource', subtype:'weed', ... })
+placeResource(col, row, 'wheat')  → entities.push({ kind:'resource', subtype:'wheat', ... })
+
+// Árboles
+placeTree(col, row, 'birch')      → entities.push({ kind:'tree', variant:'birch', size:2.2, ... })
+placeTree(col, row)               → elige variante aleatoria
+
+// Animales
+placeRabbit(col, row)             → rabbits.push({ id, col, row, x:col, y:row, size:0.45, ... })
+placeFox(col, row)                → foxes.push({ id, col, row, x:col, y:row, size:0.7, ... })
+```
+
+---
+
+## 8. Flujo de Renderizado por Frame
+
+```
+requestAnimationFrame → render loop:
+
+  1. CALCULAR límites visibles (minC, maxC, minR, maxR)
+     - Modo iso: proyectar esquinas del canvas al mundo
+     - Modo ortho: screenToWorld(0,0) y screenToWorld(W,H)
+
+  2. DIBUJAR tiles del terreno (agua, arena, estepa, aluvial...)
+     - fillRect por cada tile en el rango visible
+     - Colores por bioma: agua=#6EA8D7, arena=#EBD9B3, estepa=#C8C080...
+
+  3. SI no hay entidades tree → drawTreesVisible()
+     - Árboles procedurales desde GLOBAL_TREE_TEMPLATES
+     - Densidad ajustada por zoom
+
+  4. DIBUJAR edificios (grid[r][c]) ordenados por profundidad
+     - Edificios "detrás" del jugador primero
+     - Edificios "delante" después (oclusión)
+
+  5. DIBUJAR entidades (resources, trees, NPCs, animals)
+     - Ordenados por fila (painter's algorithm)
+     - Recursos: fallback geométrico + sprite pixel-art
+     - NPCs: drawCharacterPixels() con paleta de colores
+
+  6. DIBUJAR partículas (humo, efectos visuales)
+
+  7. DIBUJAR UI (HUD, tooltips, notificaciones, barras de vida)
+
+  8. SI window.currentInterior → saltar pasos 2-5 y:
+     a. tileToScreen() para cada tile del interior
+     b. Pared trasera con textura + decoraciones
+     c. Paredes laterales trapezoidales
+     d. Suelo en damero + muebles con drawEntitySpriteAt()
+```
+
+---
+
+## 9. Cómo Añadir un Sprite Nuevo
+
+### Añadir definición en `data/entity-pixels.json`
+
+Añadir dentro del objeto `"icons"`:
+
+```json
+"mi_sprite_nuevo": {
+  "grid": 8,
+  "pixels": [
+    [3,2,"#C8A84B"], [4,2,"#8B6914"],
+    [2,3,"#5A3810"], [3,3,"#DAA520"], [4,3,"#DAA520"], [5,3,"#5A3810"],
+    [2,4,"#5A3810"], [3,4,"#8B6914"], [4,4,"#8B6914"], [5,4,"#5A3810"]
+  ]
+}
+```
+
+### Usarlo en el código
+
+```js
+// En cualquier parte del render loop:
+drawEntitySpriteAt('mi_sprite_nuevo', screenX, screenY, 32, 32);
+
+// Verificar disponibilidad:
+if (hasRegisteredSprite('mi_sprite_nuevo')) {
+  // el sprite está en ENTITY_PIXEL_LIBRARY
+}
+```
+
+### Si es un mueble de interior
+
+Añadir al `spriteMap` en el renderizador de interiores:
+
+```js
+const spriteMap = {
+  bed: 'interior_bed',
+  table: 'interior_table',
+  // ...existing...
+  mi_tile: 'mi_sprite_nuevo'  // ← nuevo
 };
 ```
 
+Y usar el nuevo tile en los archivos JSON de interiores:
+
+```json
+["wall", "mi_tile", "floor", ...]
+```
+
 ---
 
-## Cachés y Pre-generación de Sprites
+## 10. Renderizado de Personajes (NPCs/Jugador)
 
-El sistema usa **3 niveles de caché** en cascada:
+Los personajes usan un sistema diferente al resto de sprites. En vez de estar definidos
+en `entity-pixels.json`, se dibujan mediante `drawCharacterPixels()` que combina una
+**plantilla de patrones** con una **paleta de colores**.
 
-### Jerarquía de cachés
+### Plantilla de personaje
 
-```
-Nivel 1: _SPRITE_IMAGES[name]     ← ImageBitmap (GPU, más rápido)
-Nivel 2: _ENTITY_BITMAPS[name]    ← Canvas offscreen (RAM)
-Nivel 3: _ICON_BITMAPS[name]      ← Canvas offscreen (RAM, iconos)
-Nivel 4: ENTITY_PIXEL_LIBRARY[name] ← Definición cruda JSON (se genera al vuelo)
-```
-
-### Flujo de generación (`generateSpriteImages`)
-
-1. Itera todas las claves en `_ENTITY_BITMAPS`
-2. Por cada una, dibuja el canvas en un canvas temporal
-3. Intenta crear `ImageBitmap` (más eficiente para GPU)
-4. Si falla, crea `Image` + Blob URL
-5. Persiste en `localStorage` como data URI (límite ~3MB)
-
-### Resolución de lookups
-
-Cuando se necesita dibujar un sprite, se busca en este orden (ej: `drawRegisteredIcon`):
+El personaje se define como un array de strings donde cada carácter mapea a una parte:
 
 ```js
-// 1. ¿Está en la librería de pixels?
-if (ENTITY_PIXEL_LIBRARY[name]) {
-  // Usar canvas cacheado o crearlo al vuelo
-}
-
-// 2. ¿Hay ImageBitmap pre-generado?
-if (_SPRITE_IMAGES[name]) { /* GPU-accelerated */ }
-
-// 3. ¿Hay canvas cacheado como icono?
-if (_ICON_BITMAPS[name]) { /* fallback canvas */ }
-
-// 4. ¿Hay canvas cacheado como entidad?
-if (_ENTITY_BITMAPS[name]) { /* fallback canvas */ }
-
-// 5. Último recurso: crear desde definición cruda
-if (ENTITY_PIXEL_LIBRARY[name]) {
-  createCanvasFromPixelDef(...)
-}
+const CHARACTER_MAP = [
+  '..hh....',   // h = hair (pelo)
+  '.hhhh...',
+  '.hsshh..',   // s = skin (piel)
+  '.ssss...',
+  '..cccc..',   // c = cloth (ropa)
+  '..ctcc..',   // t = trim (detalles)
+  '..c..c..',
+  '.cc..cc.'
+];
 ```
 
----
-
-## Renderizado de Personajes
-
-### Sistema de paletas
-
-Los personajes usan un sistema de **mapeo de paleta** con 4 canales:
+### Paleta de colores
 
 ```js
 const palette = {
-  skin: '#C8956C',   // h → s (hair → skin en CHARACTER_MAP)
-  hair: '#2C1A0A',   // s → hair
-  cloth: '#7A2E1C',  // c → cloth
-  trim: '#DAA520'    // t → trim
+  skin:  '#C8956C',   // color de piel
+  hair:  '#2C1A0A',   // color de pelo
+  cloth: '#8B6914',   // color de ropa principal
+  trim:  '#DAA520'    // color de detalles (cinturón, bordes)
 };
 ```
 
-### Mapa de caracteres (`CHARACTER_MAP`)
-
-Es una matriz de strings donde cada letra mapea a un color de la paleta:
-
-```
-h = hair (pelo)
-s = skin (piel)
-c = cloth (ropa)
-t = trim (detalles)
-```
-
-### Renderizado direccional
-
-`drawCharacterPixels(ctx, palette, x, y, scale, opts)` soporta:
-
-- **4 direcciones**: `'up'`, `'down'`, `'left'`, `'right'`
-- **Flip horizontal**: al mirar a la izquierda, se invierten las columnas
-- **2 frames de animación**: frame 0 (quieto) y frame 1 (caminando)
-- **Modo headOnly**: solo renderiza la cabeza (filas 0-5)
+### Función de renderizado
 
 ```js
-function drawCharacterPixels(ctx, palette, x, y, scale, opts) {
-  const dir = opts.dir || 'down';
-  const frame = opts.frame || 0;
-  const flip = dir === 'left';
-  
-  for (let row = 0; row < maxRow; row++) {
-    for (let col = 0; col < line.length; col++) {
-      const srcCol = flip ? (line.length - 1 - col) : col;
-      const ch = line[srcCol];
-      let color = null;
-      if (ch === 'h') color = palette.hair;
-      if (ch === 's') color = palette.skin;
-      if (ch === 'c') color = palette.cloth;
-      if (ch === 't') color = palette.trim;
-      
-      // Desplazamiento por frame de animación
-      let dx = 0, dy = 0;
-      if (frame === 1 && isLegRow(row)) {
-        // Piernas se mueven lateralmente
-      }
-      
-      ctx.fillStyle = color;
-      ctx.fillRect(x + col*scale + dx*scale, y + row*scale + dy*scale, scale, scale);
-    }
-  }
-}
+drawCharacterPixels(ctx, palette, px, py, scale, {
+  dir: 'down' | 'up' | 'left' | 'right',
+  frame: 0 | 1  // animación de caminar
+})
 ```
+
+- `dir='left'/'right'` → voltea horizontalmente el sprite
+- `frame=1` → desplaza las piernas para animación de caminar
+
+### Sprites detallados (URSS)
+
+Para la época URSS existe `DETAILED_HUMANOID_SPRITE_URSS` que es un sprite de 24×24
+con píxeles individuales (no basado en plantilla de caracteres). Ofrece más detalle
+visual (botas, cinturón, guerrera militar).
 
 ---
 
-## Renderizado de Entidades y Edificios
+## 11. Sistema de Entidades (entities.js)
 
-### `drawEntitySpriteAt(name, x, y, w, h, options)`
+**Ubicación**: `engine/entities.js`
 
-Función principal para dibujar cualquier sprite en coordenadas del mundo:
-
-```js
-function drawEntitySpriteAt(name, x, y, w, h, options) {
-  // 1. Buscar en cachés (SPRITE_IMAGES → ICON_BITMAPS → ENTITY_BITMAPS)
-  // 2. Si no existe, crear desde ENTITY_PIXEL_LIBRARY
-  // 3. Dibujar sombra elíptica debajo (a menos que options.noShadow)
-  // 4. ctx.drawImage(img, px, py, drawW, drawH) con imageSmoothingEnabled=false
-}
-```
-
-### `drawBuilding(col, row, type, alpha)`
-
-Renderiza edificios con:
-- Sprites registrados (preferido para casas, bloques soviéticos)
-- Fallback a dibujo programático con `fillRect` (arcos, termas, casas mesopotámicas)
-- Escalado visual por tipo de edificio (ej: `soviet_block` ×4.5)
-- Soporte de opacidad (`alpha`)
-
-### Depth-sorting en el render loop
-
-Los edificios se dividen en dos grupos para oclusión correcta:
+### Arrays globales
 
 ```js
-// En isométrico: depthKey = col + row  (mayor = más cerca)
-// En ortográfico: depthKey = row
-
-if (buildingDepthKey < playerDepthKey) {
-  drawBuilding(...);  // detrás del jugador → dibujar ya
-} else {
-  _deferredBuildings.push(...);  // delante → dibujar después del jugador
-}
+const entities = [];   // recursos, árboles, NPCs, edificios colocados
+const rabbits = [];    // conejos (animales pasivos)
+const foxes = [];      // zorros (animales)
+const graves = [];     // tumbas (entidades especiales)
 ```
+
+### Funciones de colocación
+
+| Función | Entidad creada | Array destino |
+|---------|---------------|---------------|
+| `placeResource(col, row, type)` | Recurso | `entities` |
+| `placeTree(col, row, variant)` | Árbol | `entities` |
+| `placeRabbit(col, row)` | Conejo | `rabbits` |
+| `placeFox(col, row)` | Zorro | `foxes` |
+
+### Tick de entidades
+
+`tickEntities(now)` se llama cada frame y maneja:
+- Movimiento de NPCs (patrullaje, persecución)
+- Movimiento de animales (aleatorio)
+- Diálogos automáticos de NPCs
+- Envejecimiento y muerte de entidades
 
 ---
 
-## Caché de Terreno (Optimización)
+## 12. Definiciones de Edificios (entities-defs.json)
 
-Esta es la optimización más importante del sistema. En lugar de dibujar cada tile individualmente en cada frame, el terreno se pre-renderiza en **canvases offscreen**:
+**Ubicación**: `data/entities-defs.json`
 
-### Dos caches independientes
-
-| Cache | Vista | Construcción |
-|-------|-------|-------------|
-| `mapCacheOrtho` | Ortográfica (top-down) | `fillRect` por tile |
-| `mapCacheIso` | Isométrica | `fillPath` romboidal por tile |
-
-### Construcción asíncrona (`rebuildMapCachesAsync`)
-
-```js
-async function rebuildMapCachesAsync() {
-  const BATCH = 14; // filas por yield
-
-  // ── Ortográfico ──
-  for (let r = 0; r < ROWS; r++) {
-    for (let c = 0; c < COLS; c++) {
-      const biome = tileBiome[r][c];
-      oc.fillStyle = getBiomeFillColor(biome);
-      oc.fillRect(c * TILE, r * TILE, TILE, TILE);
-    }
-    if (r % BATCH === 0) await yieldToMain(); // no bloquear UI
-  }
-
-  // ── Isométrico ──
-  for (let r = 0; r < ROWS; r++) {
-    for (let c = 0; c < COLS; c++) {
-      // Proyectar (col,row) → (x,y) en espacio iso
-      // Dibujar rombo con fillPath
-    }
-  }
-}
-```
-
-### Uso en el render loop
-
-```js
-// El cache se construye SIEMPRE a zoom=1 (TILE píxeles por tile)
-// En el render loop se escala vía GPU:
-ctx.drawImage(
-  mapCacheOrtho,
-  0, 0, mapCacheOrtho.width, mapCacheOrtho.height,  // fuente
-  -camX, -camY,                                      // destino
-  mapCacheOrtho.width * zoom, mapCacheOrtho.height * zoom
-);
-```
-
-**Clave**: el canvas del cache tiene tamaño fijo (~22MB para mapas grandes). El `drawImage` con escala lo maneja la GPU eficientemente. Así el zoom nunca requiere reconstruir el cache.
-
----
-
-## Bucle Principal de Renderizado
-
-```js
-function render() {
-  // 1. Delta time + límite de framerate
-  const dt = Math.min(0.05, (now - lastFrameTime) / 1000);
-  
-  // 2. Tick del EventManager (eventos híbridos)
-  EventManager.tick(gdt);
-  
-  // 3. Transiciones de zoom suave (smoothstep)
-  
-  // 4. Limpiar canvas
-  ctx.clearRect(0, 0, W, H);
-  
-  // 5. Screen shake (daño)
-  
-  // 6. Rectángulo de selección (marquee)
-  
-  // 7. Fondo de montañas decorativas
-  drawMountainsBackground(ctx, W, H);
-  
-  // 8. Movimiento del jugador (pathfinding A*)
-  
-  // 9. Tick de supervivencia (hambre, sed, regeneración)
-  
-  // 10. Cielo (gradiente día/noche) + estrellas + nubes
-  
-  // 11. HUD de supervivencia (HP, hambre, sed)
-  
-  // 12. TERRENO: drawImage del mapCache escalado
-  
-  // 13. Árboles visibles
-  
-  // 14. Edificios (depth-sorted, 2 pasadas)
-  
-  // 15. Entidades/recursos (sorted por profundidad)
-  
-  // 16. Jugador + NPCs
-  
-  // 17. Edificios diferidos (delante del jugador)
-  
-  // 18. Partículas (humo, daño, texto flotante)
-  
-  // 19. Overlays (niebla de guerra, editor, zona de安全)
-  
-  // 20. UI/Menús (barra de acción, panel, minimapa)
-  
-  // 21. Cursor
-  
-  // 22. requestAnimationFrame(render)
-}
-```
-
----
-
-## Cómo Reutilizar el Sistema
-
-### Paso 1: Define tus sprites
-
-Crea un archivo JSON con tus sprites:
+### Estructura
 
 ```json
 {
-  "mi_personaje": {
-    "grid": 16,
-    "pixels": [
-      [7, 0, "#FF0000"],
-      [8, 0, "#FF0000"],
-      [7, 1, "#FF0000"],
-      [8, 1, "#00FF00"]
-    ]
-  },
-  "mi_icono": {
-    "grid": 8,
-    "pixels": [
-      [3, 2, "#336699"],
-      [4, 2, "#336699"],
-      [3, 3, "#336699"],
-      [4, 3, "#336699"]
-    ]
-  }
-}
-```
-
-### Paso 2: Carga los datos
-
-```js
-// Cargar el JSON
-const resp = await fetch('mis-sprites.json');
-const spriteData = await resp.json();
-
-// Guardar en la librería global
-window.ENTITY_PIXEL_LIBRARY = spriteData;
-
-// Inicializar cachés
-window._ENTITY_BITMAPS = {};
-window._ICON_BITMAPS = {};
-window._SPRITE_IMAGES = {};
-```
-
-### Paso 3: Función de renderizado base
-
-```js
-// Renderizado pixel-art puro (sin caches)
-function drawPixelArt(ctx, pixels, scale) {
-  pixels.forEach(([x, y, color]) => {
-    ctx.fillStyle = color;
-    ctx.fillRect(x * scale, y * scale, scale, scale);
-  });
-}
-
-// Conversión a canvas (con caché)
-function getSpriteCanvas(name, targetSize = 32) {
-  // ¿Ya está cacheado?
-  if (window._ENTITY_BITMAPS[name]) {
-    return window._ENTITY_BITMAPS[name];
-  }
-  
-  const def = window.ENTITY_PIXEL_LIBRARY[name];
-  if (!def) return null;
-  
-  const grid = def.grid;
-  const scale = Math.max(1, Math.floor(targetSize / grid));
-  
-  const canvas = document.createElement('canvas');
-  canvas.width = grid * scale;
-  canvas.height = grid * scale;
-  const ctx = canvas.getContext('2d');
-  ctx.imageSmoothingEnabled = false; // ← CLAVE: sin esto se ve borroso
-  
-  def.pixels.forEach(([x, y, color]) => {
-    ctx.fillStyle = color;
-    ctx.fillRect(x * scale, y * scale, scale, scale);
-  });
-  
-  window._ENTITY_BITMAPS[name] = canvas;
-  return canvas;
-}
-```
-
-### Paso 4: Dibujar en el canvas principal
-
-```js
-function drawSprite(name, x, y, width, height) {
-  const spriteCanvas = getSpriteCanvas(name, Math.max(width, height));
-  if (!spriteCanvas) return;
-  
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(spriteCanvas, x - width/2, y - height/2, width, height);
-}
-```
-
-### Paso 5: Render loop
-
-```js
-function gameLoop() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  
-  // Dibujar terreno (cacheado para rendimiento)
-  ctx.drawImage(terrainCache, -camX, -camY);
-  
-  // Dibujar entidades
-  entities.forEach(e => {
-    drawSprite(e.sprite, worldToScreenX(e.x), worldToScreenY(e.y), 32, 32);
-  });
-  
-  requestAnimationFrame(gameLoop);
-}
-```
-
-### Paso 6: Optimización de terreno
-
-```js
-function buildTerrainCache(cols, rows, tileSize) {
-  const cache = document.createElement('canvas');
-  cache.width = cols * tileSize;
-  cache.height = rows * tileSize;
-  const cctx = cache.getContext('2d');
-  
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      cctx.fillStyle = getTileColor(c, r);
-      cctx.fillRect(c * tileSize, r * tileSize, tileSize, tileSize);
+  "buildings": {
+    "house": {
+      "name": "Casa",
+      "costBrick": 8, "costWheat": 3,
+      "prodPop": 5, "prodWheat": 0, "prodBrick": 0,
+      "color": "#C8A84B", "roofColor": "#8B6914",
+      "desc": "Aloja 5 habitantes.",
+      "size": { "w": 2, "h": 2 }
     }
+  },
+  "trees": ["oak","pine","birch","bush","weed","tallgrass",...],
+  "animals": {
+    "rabbit": { "name": "Rabbit", "hp": 6, "speed": 1.0, "size": 0.6 },
+    "fox": { "name": "Fox", "hp": 10, "speed": 1.4, "size": 0.9 }
+  },
+  "enemies": {
+    "raider": { "name": "Merodeador", "hp": 12, "speed": 0.9, "reward": {"brick":1} }
   }
-  
-  return cache;
 }
-
-// En el render loop:
-// Escalar con zoom usando drawImage (GPU-accelerated)
-ctx.drawImage(
-  terrainCache,
-  0, 0, terrainCache.width, terrainCache.height,
-  -camX, -camY,
-  terrainCache.width * zoom, terrainCache.height * zoom
-);
 ```
 
-### Consejos clave
+### Campos de edificio
 
-1. **`imageSmoothingEnabled = false`** es esencial para el look pixel-art
-2. **Construye el cache de terreno una vez**, no por frame
-3. **Usa `drawImage` con escala** en lugar de redibujar tiles — la GPU lo maneja
-4. **Ordena entidades por profundidad** (`y` o `col+row` en iso) para oclusión correcta
-5. **Pre-genera ImageBitmaps** con `createImageBitmap()` para mejor rendimiento GPU
-6. **No reconstruyas el cache al hacer zoom** — solo escala con `drawImage`
-7. **Persiste en localStorage** para evitar regenerar sprites cada sesión
+| Campo | Descripción |
+|-------|-------------|
+| `costBrick`, `costWheat` | Coste de construcción |
+| `prodPop`, `prodWheat`, `prodBrick` | Producción por turno |
+| `color`, `roofColor` | Colores para el renderizado (usados por drawEntitySpriteAt) |
+| `size` | Tamaño en tiles `{w, h}` |
+| `attackRange`, `attackDmg`, `attackCooldown` | Solo para torres defensivas |
 
 ---
 
-## Archivos Clave del Sistema
+## 13. Consejos de Rendimiento
 
-| Archivo | Rol |
-|---------|-----|
-| `data/entity-pixels.json` | Definiciones de pixels para TODOS los sprites e iconos |
-| `engine/game-engine.js` | Motor principal: `render()`, `drawPixelArt()`, `drawCharacterPixels()`, `drawEntitySpriteAt()`, `drawBuilding()`, `drawRegisteredIcon()` |
-| `engine/game-engine-sprite-runtime-utils.js` | `generateSpriteImages()` — convierte definiciones a ImageBitmaps |
-| `engine/game-engine-entity-def-utils.js` | Carga de `entities-defs.json`, inicialización de cachés |
-| `engine/atlas-builder.js` | Atlas de árboles (empaqueta múltiples sprites en un canvas) |
+1. **`fillRect` sobre `drawImage`**: Para pixel-art, `fillRect` píxel a píxel es más
+   fiable y suficientemente rápido. Un sprite de grid=12 tiene ~40-80 píxeles. 200
+   sprites × 60 píxeles = 12,000 llamadas a `fillRect` por frame — insignificante.
+
+2. **Iterar solo tiles visibles**: `minC, maxC, minR, maxR` se calculan desde la cámara.
+   No iterar el mapa entero (180×120 = 21,600 tiles), solo el rectángulo visible.
+
+3. **No crear canvases offscreen**: Renderizar a un canvas intermedio para luego hacer
+   `drawImage` reintroduce la dependencia de GPU y añade un paso innecesario.
+
+4. **Limpiar cachés en desarrollo**: `npm run start-electron-dev` ejecuta
+   `scripts/clean-dev.js` que borra localStorage, cachés GPU y archivos temporales.
+
+5. **Colores predefinidos**: Usar strings de color constantes (`#C8A87A`) en vez de
+   crear objetos `rgba()` dinámicamente. El motor de canvas los parsea igual de rápido
+   pero es más legible.
+
+6. **Orden de renderizado**: Dibujar de atrás hacia adelante (filas menores primero)
+   para que los objetos cercanos ocluyan correctamente a los lejanos (painter's algorithm).

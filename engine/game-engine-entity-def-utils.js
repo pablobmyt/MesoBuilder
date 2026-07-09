@@ -43,13 +43,23 @@ export async function loadEntityDefinitions(progress, deps) {
     try {
       if (window.__mesoPreload && window.__mesoPreload.entityDefs) {
         j = window.__mesoPreload.entityDefs;
-        console.log('entities-defs: using preloaded data (Electron)');
+        console.log('[renderer] entities-defs: using preloaded data (Electron), buildings:', Object.keys(j.buildings || {}).length, 'trees:', (j.trees || []).length);
+      } else {
+        console.warn('[renderer] entities-defs: __mesoPreload.entityDefs NOT available.');
+        console.warn('[renderer] __mesoPreload present:', !!window.__mesoPreload);
+        console.warn('[renderer] __mesoPreload keys:', window.__mesoPreload ? Object.keys(window.__mesoPreload) : 'N/A');
       }
-    } catch (e) {}
+    } catch (e) { console.warn('[renderer] entities-defs: error checking preload', e); }
 
     // Fallback: fetch from disk
     if (!j) {
-      try { resp = await fetch(path, { cache: 'no-store' }); } catch (e) { resp = null; }
+      try {
+        const fetchUrl = (window.__mesoPreload && window.__mesoPreload.isElectron)
+          ? 'meso-local://data/entities-defs.json'
+          : path;
+        console.log('[renderer] entities-defs: trying fetch from', fetchUrl);
+        resp = await fetch(fetchUrl, { cache: 'no-store' });
+      } catch (e) { resp = null; console.warn('[renderer] entities-defs: fetch failed', e.message); }
       if (resp && resp.ok) {
         try { j = await resp.json(); } catch (e) { j = null; }
       }

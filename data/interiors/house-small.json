@@ -1,39 +1,31 @@
 {
-  "defaultFloor": 1,
+  "defaultFloor": 0,
   "floors": [
-    {
-      "name": "Sótano",
-      "width": 8,
-      "height": 6,
-      "entryCol": 3,
-      "entryRow": 3,
-      "chestItems": ["wheat", "stone", "brick"],
-      "npcs": [],
-      "tiles": [
-        ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"],
-        ["wall", "floor", "floor", "floor", "floor", "floor", "floor", "wall"],
-        ["wall", "pot", "floor", "floor", "floor", "floor", "pot", "wall"],
-        ["wall", "floor", "floor", "stairs_up", "floor", "chest", "floor", "wall"],
-        ["wall", "floor", "floor", "floor", "floor", "floor", "floor", "wall"],
-        ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"]
-      ]
-    },
     {
       "name": "Planta baja",
       "width": 8,
-      "height": 6,
+      "height": 7,
       "entryCol": 3,
-      "entryRow": 3,
+      "entryRow": 4,
       "chestItems": ["wheat", "wheat", "stone", "brick"],
+      "wallPalette": {
+        "back": "#9B7B5A", "backDark": "#8B6B4A", "backLight": "#AB8B6A",
+        "left": "#8B6B4A", "leftDark": "#7B5B3A",
+        "right": "#AB8B6A", "rightDark": "#9B7B5A",
+        "floor": "#C8A87A", "floorDark": "#B89868",
+        "trim": "#5A3A1A", "baseboard": "#4A2A0A",
+        "ceiling": "#3A2A1A"
+      },
       "npcs": [
         { "col": 5, "row": 2, "name": "Aldeana" }
       ],
       "tiles": [
-        ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"],
-        ["wall", "bed", "bed", "floor", "pot", "floor", "floor", "wall"],
-        ["wall", "floor", "floor", "floor", "table", "table", "floor", "wall"],
-        ["wall", "rug", "rug", "floor", "rug", "rug", "chest", "wall"],
-        ["wall", "stairs_down", "floor", "door", "floor", "floor", "floor", "wall"],
+        ["wall", "painting", "wall", "wall", "window", "wall", "painting", "wall"],
+        ["wall", "bed", "bed", "chair", "table", "chair", "plant", "wall"],
+        ["wall", "pot", "floor", "floor", "floor", "floor", "floor", "wall"],
+        ["wall", "bookshelf", "rug", "rug", "floor", "chest", "pot", "wall"],
+        ["wall", "floor", "floor", "floor", "door", "floor", "floor", "wall"],
+        ["wall", "chair", "floor", "floor", "floor", "floor", "plant", "wall"],
         ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"]
       ]
     }

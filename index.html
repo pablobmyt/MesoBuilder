@@ -513,6 +513,20 @@
   // External menu host flag so engine won't show its internal menu
   window._externalMenu = true;
 
+  // Dev mode: clear ALL localStorage caches for clean testing
+  try {
+    if (window.__mesoPreload && window.__mesoPreload.clearCache) {
+      console.log('[dev] Clearing all localStorage caches...');
+      var keysToRemove = [];
+      for (var i = 0; i < localStorage.length; i++) {
+        var key = localStorage.key(i);
+        if (key && key.indexOf('meso.') === 0) keysToRemove.push(key);
+      }
+      for (var k = 0; k < keysToRemove.length; k++) localStorage.removeItem(keysToRemove[k]);
+      console.log('[dev] Cleared ' + keysToRemove.length + ' cache entries');
+    }
+  } catch (e) { console.warn('[dev] Cache clear failed:', e); }
+
   // create a custom pixel cursor and apply globally
   (function(){
     try {

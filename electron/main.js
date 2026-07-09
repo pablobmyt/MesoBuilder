@@ -1,14 +1,57 @@
-const { app, BrowserWindow, Menu, globalShortcut } = require('electron')
+const { app, BrowserWindow, Menu, globalShortcut, protocol, net } = require('electron')
 const path = require('path')
 const fs = require('fs')
 
 // ── Chromium GPU / rendering switches ──────────────────────────────
-// Force GPU acceleration even on hardware that Chromium would blacklist.
-// This fixes missing sprites (NPCs, trees, weeds, etc.) in Electron.
+// Conservative GPU tuning for Electron game canvas.
+// Previous aggressive switches (disable-software-rasterizer, enable-zero-copy)
+// were causing silent canvas drawImage failures on many systems.
 app.commandLine.appendSwitch('ignore-gpu-blocklist')
 app.commandLine.appendSwitch('enable-gpu-rasterization')
-app.commandLine.appendSwitch('enable-zero-copy')
-app.commandLine.appendSwitch('disable-software-rasterizer')
+// Only use zero-copy if available; don't force it as it can break on some drivers
+// app.commandLine.appendSwitch('enable-zero-copy')
+// DO NOT disable software rasterizer — it's the fallback that saves us when GPU ops fail
+
+// ── Custom protocol: meso-local:// → serves local project files ─────
+// This allows fetch() to work in the renderer even from file:// origin,
+// providing a fallback when preload fails or data isn't preloaded.
+let _projectRoot = null;
+function resolveProjectRoot() {
+  if (_projectRoot) return _projectRoot;
+  const envPath = process.env.MESOBUILDER_EXTERNAL_PATH;
+  if (envPath && fs.existsSync(path.join(envPath, 'index.html'))) {
+    _projectRoot = envPath;
+    return _projectRoot;
+  }
+  // Try cwd, then electron app root
+  for (const candidate of [process.cwd(), path.join(__dirname, '..')]) {
+    try { if (fs.existsSync(path.join(candidate, 'index.html'))) { _projectRoot = candidate; return _projectRoot; } } catch (e) {}
+  }
+  _projectRoot = process.cwd();
+  return _projectRoot;
+}
+
+function registerLocalProtocol() {
+  try {
+    protocol.handle('meso-local', (request) => {
+      try {
+        const url = new URL(request.url);
+        // Remove leading slash to get relative path
+        let filePath = decodeURIComponent(url.pathname.replace(/^\/+/, ''));
+        if (!filePath) filePath = 'index.html';
+        const fullPath = path.join(resolveProjectRoot(), filePath);
+        console.log('[meso-local] serving:', filePath, '→', fullPath);
+        return net.fetch('file:///' + fullPath.replace(/\\/g, '/'));
+      } catch (e) {
+        console.warn('[meso-local] error:', e.message);
+        return new Response('Not found', { status: 404 });
+      }
+    });
+    console.log('[meso-local] Custom protocol registered: meso-local://');
+  } catch (e) {
+    console.warn('[meso-local] Failed to register custom protocol:', e.message);
+  }
+}
 
 function findExternalIndex() {
   // Priority: environment variable MESOBUILDER_EXTERNAL_PATH
@@ -78,6 +121,9 @@ if (!gotLock) {
   app.quit()
 } else {
   app.on('second-instance', () => {})
+
+  // Register custom protocol BEFORE app is ready (required by Electron)
+  registerLocalProtocol();
 
   app.whenReady().then(() => {
     createWindow()
