@@ -8,7 +8,8 @@
     "start-electron-dev": "node scripts/clean-dev.js && set MESOBUILDER_EXTERNAL_PATH=%CD% && set MESOBUILDER_CLEAR_CACHE=1 && npx electron --js-flags=\"--max-old-space-size=4096\" .",
     "start-electron-pro": "node scripts/clean-dev.js && npm run package-win && start dist\\MesoBuilder-win32-x64\\MesoBuilder.exe",
     "package-win": "electron-packager . MesoBuilder --platform=win32 --arch=x64 --out=dist --overwrite",
-    "clean-cache": "npm cache clean --force && npm cache verify"
+    "clean-cache": "npm cache clean --force && npm cache verify",
+    "pixel-editor": "node scripts/serve-pixel-editor.js"
   },
   "devDependencies": {
     "electron": "^26.0.0",

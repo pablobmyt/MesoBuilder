@@ -14,6 +14,10 @@
 11. [Sistema de Entidades (entities.js)](#11-sistema-de-entidades-entitiesjs)
 12. [Definiciones de Edificios (entities-defs.json)](#12-definiciones-de-edificios-entities-defsjson)
 13. [Consejos de Rendimiento](#13-consejos-de-rendimiento)
+14. [Formato Alternativo: String + Paleta (buildPixelSprite)](#14-formato-alternativo-string--paleta-buildpixelsprite)
+15. [Pixel Editor Standalone](#15-pixel-editor-standalone)
+16. [Integración con Football Retro](#16-integración-con-football-retro)
+17. [Flujo de Trabajo: Crear/Editar un Sprite](#17-flujo-de-trabajo-creareditar-un-sprite)
 
 ---
 
@@ -641,3 +645,215 @@ const graves = [];     // tumbas (entidades especiales)
 
 6. **Orden de renderizado**: Dibujar de atrás hacia adelante (filas menores primero)
    para que los objetos cercanos ocluyan correctamente a los lejanos (painter's algorithm).
+
+---
+
+## 14. Formato Alternativo: String + Paleta (`buildPixelSprite`)
+
+Además del formato `{ grid, pixels: [[x,y,color],...] }`, existe un formato compacto
+basado en **strings de caracteres + paleta** usado en Football Retro y el Pixel Editor.
+
+### Estructura
+
+```json
+{
+  "grid": "16x22",
+  "palette": {
+    "o": "#111", "h": "#333", "s": "#e8b48f", "c": "#e63946", "p": "#1a1a3a"
+  },
+  "rows": [
+    "......oooo......",
+    ".....ohhhho.....",
+    "....ohhhhhho....",
+    "...acccccccca...",
+    "..accccnncccca..",
+    "....pppppppp...."
+  ]
+}
+```
+
+| Campo | Descripción |
+|-------|-------------|
+| `rows` | Array de strings. Cada carácter = 1 píxel. `.` = transparente. |
+| `palette` | Objeto que mapea cada carácter a un color hexadecimal. |
+| `grid` | "W×H" informativo (el ancho se calcula de `rows[0].length`). |
+
+### Función conversora
+
+```js
+function buildPixelSprite(rows, palette) {
+    const pixels = [];
+    for (let r = 0; r < rows.length; r++) {
+        for (let c = 0; c < rows[r].length; c++) {
+            const ch = rows[r][c];
+            if (ch !== '.' && palette[ch]) {
+                pixels.push([c, r, palette[ch]]);
+            }
+        }
+    }
+    return { grid: rows[0].length, pixels: pixels };
+}
+```
+
+### Uso típico
+
+```js
+// Definir sprite de forma legible
+PIXEL_LIBRARY["shooter_back"] = buildPixelSprite([
+    "......oooo......",
+    ".....ohhhho.....",
+    "...accccnnccca..",
+    "....pppppppp....",
+], {
+    o: "#111", h: "#333", s: "#e8b48f",
+    a: "#e8b48f", c: "#e63946", n: "#fff",
+    p: "#1a1a3a", P: "#0a0a1a"
+});
+```
+
+### Ventajas sobre el formato de arrays
+
+| Aspecto | Array `[[x,y,color],...]` | String + paleta |
+|---------|--------------------------|-----------------|
+| Legibilidad | Baja (coordenadas sueltas) | Alta (se ve la forma) |
+| Edición manual | Difícil | Fácil (editor de texto) |
+| Tamaño | Mínimo | Compacto |
+| Cambiar un color | Editar cada `[x,y,color]` | Cambiar 1 entrada en `palette` |
+
+### Archivo de sprites editables
+
+Football Retro almacena sprites en este formato en `data/sprites-penalty.json`.
+Se cargan al iniciar el juego y sobrescriben las definiciones hardcodeadas:
+
+```js
+fetch('/data/sprites-penalty.json')
+    .then(r => r.json())
+    .then(data => {
+        for (const key of ["goal_front", "gk_front", "shooter_back"]) {
+            PIXEL_LIBRARY[key] = buildPixelSprite(data[key].rows, data[key].palette);
+        }
+    });
+```
+
+---
+
+## 15. Pixel Editor Standalone
+
+### Acceso
+
+- **MesoBuilder**: `npm run pixel-editor` → `http://127.0.0.1:3458`
+- **Football Retro**: `http://127.0.0.1:3456/pixel-editor.html`
+
+### Funcionalidades
+
+| Herramienta | Descripción |
+|-------------|-------------|
+| 🖌 Pincel | Dibuja píxeles individuales |
+| ✏️ Lápiz | Píxeles de 1px sin suavizado |
+| 🪣 Bote | Rellena área conectada |
+| ⬜ Rectángulo | Dibuja rectángulos (relleno o borde) |
+| ⭕ Elipse | Dibuja elipses |
+| ✂ Selección | Selecciona, mueve, copia, pega regiones |
+| 🔄 Flip H/V | Voltea horizontal/verticalmente |
+| ↩ Rotar | Rota 90° a la derecha |
+| 📐 Grid | Ajustable de 8×8 a 64×64 |
+| 🔍 Zoom | 1x a 32x |
+| 📋 Capas | Sistema de capas con undo/redo |
+
+### Panel Football Retro integrado
+
+El editor incluye un panel lateral específico para Football Retro:
+
+| Botón | Acción |
+|-------|--------|
+| **📥 Importar JSON** | Carga un sprite desde formato `rows + palette` |
+| **📤 Exportar PIXEL_LIBRARY** | Genera `{ grid, pixels: [[x,y,color],...] }` |
+| **📋 Copiar buildSprite()** | Genera código `buildPixelSprite([...], {...})` listo para pegar |
+
+### Preview en tiempo real
+
+El panel incluye un mini-canvas que renderiza el sprite actual usando el mismo
+algoritmo `fillRect` por píxel que el juego, con:
+
+- Sombra elíptica bajo el sprite (como `drawEntitySpriteAt`)
+- Fondo cuadriculado para visualizar transparencias
+- Slider de escala (1x-12x)
+- Info: grid, número de píxeles, tamaño en px
+
+---
+
+## 16. Integración con Football Retro
+
+El sistema de renderizado de Football Retro es una adaptación directa del de MesoBuilder.
+Comparten el mismo principio fundamental (`fillRect` por píxel) y formatos de datos
+compatibles.
+
+### Equivalencias
+
+| Concepto | MesoBuilder | Football Retro |
+|----------|-------------|----------------|
+| Librería de sprites | `ENTITY_PIXEL_LIBRARY` | `PIXEL_LIBRARY` |
+| Formato de sprite | `{ grid, pixels: [[x,y,color],...] }` | Igual |
+| Función de renderizado | `drawEntitySpriteAt(name, x, y, w, h, options)` | `drawStaticSprite(ctx, key, x, y, scale)` |
+| Sombra | `ctx.ellipse(...)` bajo el sprite | No (los sprites son más pequeños) |
+| Carga de sprites | `entity-pixels.json` via preload | `sprites-penalty.json` via fetch |
+| Sprites de personajes | `drawCharacterPixels()` con plantillas | `drawEntitySpriteAt()` con `CHARACTER_MAP` |
+
+### Función de renderizado en Football Retro
+
+```js
+function drawStaticSprite(ctx, key, x, y, scale) {
+    const sprite = PIXEL_LIBRARY[key];
+    if (!sprite) return;
+    for (let i = 0; i < sprite.pixels.length; i++) {
+        const px = sprite.pixels[i];
+        ctx.fillStyle = px[2];
+        ctx.fillRect(
+            Math.floor(x + px[0] * scale),
+            Math.floor(y + px[1] * scale),
+            scale, scale
+        );
+    }
+}
+```
+
+### Sprites específicos de Football Retro (vista de penalti)
+
+| Sprite | Grid | Uso |
+|--------|------|-----|
+| `goal_front` | 58×32 | Portería vista desde el frente |
+| `gk_front` | 16×22 | Portero de frente (amarillo) |
+| `shooter_back` | 16×22 | Lanzador de espaldas (rojo) |
+| `stand_penalty` | 58×7 | Grada de fondo |
+| `balon` | 7×7 | Balón de fútbol |
+
+---
+
+## 17. Flujo de Trabajo: Crear/Editar un Sprite
+
+```
+1. Abrir Pixel Editor
+   └─ npm run pixel-editor (MesoBuilder)
+   └─ http://127.0.0.1:3456/pixel-editor.html (Football Retro)
+
+2. Opción A: Importar sprite existente
+   └─ Panel Football Retro → 📥 Importar JSON
+   └─ Pegar contenido de sprites-penalty.json
+
+   Opción B: Crear desde cero
+   └─ Seleccionar grid size
+   └─ Dibujar con las herramientas
+
+3. Editar el sprite
+   └─ Pincel, relleno, formas, selección...
+   └─ El preview se actualiza en tiempo real
+
+4. Exportar
+   └─ 📤 Exportar PIXEL_LIBRARY → para usar en código JS
+   └─ 📋 Copiar buildSprite() → pegar directamente en retro-striker.html
+   └─ O guardar en sprites-penalty.json manualmente
+
+5. Probar en el juego
+   └─ Recargar retro-striker.html?mode=penalty
+   └─ El juego carga los sprites desde sprites-penalty.json
+```

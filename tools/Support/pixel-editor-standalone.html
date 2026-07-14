@@ -1,2604 +1,707 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VSoftware Pixel Art Editor</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎨 Pixel Editor — Football Retro / MesoBuilder</title>
+<style>
+:root{--bg:#0a0a14;--glass:rgba(20,20,40,.75);--glass2:rgba(30,30,55,.65);--glass3:rgba(40,40,65,.55);--border:rgba(255,255,255,.08);--border2:rgba(255,255,255,.14);--accent:#8b5cf6;--accent2:#a78bfa;--text:#e8e8f0;--text2:#9090b0;--gold:#f2c14e;--red:#e63946;--green:#2a9d8f;--r:12px;--blur:blur(16px)}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:linear-gradient(135deg,#0a0a18 0%,#12122a 30%,#0d0d20 60%,#0a0a18 100%);color:var(--text);font-family:'Segoe UI',system-ui,-apple-system,sans-serif;height:100vh;overflow:hidden;font-size:13px}
+body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellipse at 30% 20%,rgba(139,92,246,.06) 0%,transparent 60%),radial-gradient(ellipse at 70% 80%,rgba(42,157,143,.04) 0%,transparent 60%);pointer-events:none;z-index:0}
+.container{display:flex;height:100vh;position:relative;z-index:1}
 
-        body {
-            background-color: #1a1a1a;
-            color: #e0e0e0;
-            font-family: 'Courier New', monospace;
-            height: 100vh;
-            overflow: hidden;
-        }
+.toolbar{width:52px;background:var(--glass);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);border-right:1px solid var(--border);padding:8px 6px;display:flex;flex-direction:column;gap:4px;align-items:center}
+.toolbar button{width:40px;height:40px;border:none;background:var(--glass3);color:var(--text2);border-radius:10px;cursor:pointer;font-size:15px;transition:all .15s;border:1px solid var(--border);backdrop-filter:blur(4px)}
+.toolbar button:hover{background:var(--accent);color:#fff;transform:translateY(-1px);box-shadow:0 4px 12px rgba(139,92,246,.3)}
+.toolbar button.active{background:var(--accent);color:#fff;box-shadow:0 0 16px rgba(139,92,246,.4);border-color:var(--accent2)}
+.toolbar .sep{width:28px;height:1px;background:var(--border2);margin:3px 0}
+.toolbar .lbl{font-size:7px;color:var(--text2);text-align:center;margin-top:-2px}
 
-        .container {
-            display: flex;
-            height: 100vh;
-            gap: 0;
-        }
+.sprite-panel{width:210px;background:var(--glass);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);border-right:1px solid var(--border);display:flex;flex-direction:column}
+.sprite-panel h4{font-size:11px;color:var(--accent2);padding:10px 12px;border-bottom:1px solid var(--border);letter-spacing:.5px}
+.sprite-panel input{width:calc(100% - 16px);margin:8px;padding:7px 10px;background:var(--glass3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:10px;outline:none;backdrop-filter:blur(8px);transition:.2s}
+.sprite-panel input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(139,92,246,.12)}
+.sprite-list{flex:1;overflow-y:auto;padding:6px}
+.sprite-cat{margin-bottom:8px}
+.sprite-cat>.title{font-size:10px;color:var(--accent2);padding:4px 8px;cursor:pointer;font-weight:600;user-select:none;border-radius:6px;transition:.15s}
+.sprite-cat>.title:hover{background:var(--glass3)}
+.sprite-cat>.items{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:4px 6px}
+.sprite-cat>.items.collapsed{display:none}
+.sprite-cat .item{aspect-ratio:1;background:var(--glass3);backdrop-filter:blur(6px);border:1px solid var(--border);border-radius:8px;cursor:pointer;transition:all .12s;display:flex;align-items:center;justify-content:center;position:relative;min-height:0}
+.sprite-cat .item:hover{border-color:var(--accent);transform:scale(1.05);z-index:5;box-shadow:0 4px 16px rgba(0,0,0,.4)}
+.sprite-cat .item canvas{image-rendering:pixelated;max-width:80%;max-height:80%}
+.sprite-cat .item .tip{position:absolute;top:-28px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.85);backdrop-filter:blur(12px);color:#fff;font-size:9px;padding:3px 8px;border-radius:4px;white-space:nowrap;pointer-events:none;opacity:0;transition:.15s;z-index:10;border:1px solid var(--border)}
+.sprite-cat .item:hover .tip{opacity:1;top:-32px}
 
-        /* Left Sidebar */
-        .sidebar-left {
-            width: 120px;
-            background-color: #2a2a2a;
-            border-right: 1px solid #3a3a3a;
-            padding: 12px;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-            overflow-y: auto;
-        }
+.canvas-area{flex:1;display:flex;flex-direction:column;align-items:center;padding:12px;gap:8px;overflow:hidden}
+.canvas-bar{display:flex;gap:10px;align-items:center;font-size:10px;color:var(--text2);background:var(--glass2);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);padding:6px 14px;border-radius:20px;border:1px solid var(--border)}
+.canvas-bar label{font-size:10px;display:flex;align-items:center;gap:3px}
+.canvas-bar input[type=range]{width:80px;accent-color:var(--accent)}
+.canvas-bar input[type=number]{width:48px;padding:4px 6px;background:var(--glass3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;text-align:center}
+.canvas-bar select{background:var(--glass3);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:10px}
+.canvas-scroll{flex:1;overflow:auto;width:100%;display:flex;align-items:flex-start;justify-content:center;padding:10px}
+canvas#canvas{border:1px solid var(--border);image-rendering:pixelated;cursor:crosshair;border-radius:4px;box-shadow:0 4px 24px rgba(0,0,0,.4)}
 
-        .sidebar-title {
-            font-size: 11px;
-            font-weight: bold;
-            color: #00D9FF;
-            margin-bottom: 8px;
-            text-transform: uppercase;
-        }
+.right-panel{width:250px;background:var(--glass);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);border-left:1px solid var(--border);padding:12px;display:flex;flex-direction:column;gap:10px;overflow-y:auto}
+.right-panel h4{font-size:10px;color:var(--accent2);text-transform:uppercase;margin-bottom:2px;letter-spacing:1px}
+.color-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:4px}
+.color-grid .sw{aspect-ratio:1;border-radius:6px;border:2px solid var(--border);cursor:pointer;transition:all .1s}
+.color-grid .sw:hover{transform:scale(1.25);z-index:1;box-shadow:0 2px 8px rgba(0,0,0,.3)}
+.color-grid .sw.sel{border-color:#fff;box-shadow:0 0 10px rgba(255,255,255,.25)}
+.color-row{display:flex;gap:8px;align-items:center}
+input[type=color]{width:42px;height:42px;border:2px solid var(--border);border-radius:10px;cursor:pointer;background:0}
+input[type=color]::-webkit-color-swatch-wrapper{padding:0}
+input[type=color]::-webkit-color-swatch{border:none;border-radius:6px}
+.color-hex{flex:1;padding:7px;background:var(--glass3);backdrop-filter:blur(8px);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;font-family:'SF Mono',monospace;text-align:center;letter-spacing:1px}
 
-        .tool-button {
-            padding: 8px 12px;
-            background-color: #3a3a3a;
-            color: #e0e0e0;
-            border: 1px solid #3a3a3a;
-            border-radius: 3px;
-            cursor: pointer;
-            font-size: 12px;
-            transition: all 150ms ease;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
-        }
+.btn{background:var(--glass3);backdrop-filter:blur(6px);color:var(--text);border:1px solid var(--border);padding:6px 10px;cursor:pointer;font-size:10px;border-radius:8px;transition:all .15s;font-family:inherit;text-align:center}
+.btn:hover{background:rgba(60,60,90,.7);border-color:var(--border2);transform:translateY(-1px)}
+.btn.prim{background:var(--accent);border-color:var(--accent2);color:#fff;box-shadow:0 2px 8px rgba(139,92,246,.3)}
+.btn.prim:hover{background:#9b6cf7;box-shadow:0 4px 16px rgba(139,92,246,.4)}
+.btn.ok{background:var(--green);border-color:rgba(42,157,143,.4);color:#fff}
+.btn-row{display:flex;gap:5px;flex-wrap:wrap}
+.btn-row .btn{flex:1}
 
-        .tool-button:hover {
-            background-color: #00D9FF;
-            color: #1a1a1a;
-            box-shadow: 0 4px 8px rgba(0, 217, 255, 0.3);
-            transform: translateY(-2px);
-        }
+#frPreviewCanvas{background:rgba(0,0,0,.3);border:1px solid var(--border);border-radius:10px;width:100%}
+.info{font-size:9px;color:var(--text2);display:flex;gap:8px;justify-content:center}
+.info b{color:var(--text)}
 
-        .tool-button.active {
-            background-color: #00D9FF;
-            color: #1a1a1a;
-            box-shadow: 0 0 12px rgba(0, 217, 255, 0.6), inset 0 0 4px rgba(0, 217, 255, 0.3);
-        }
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);align-items:center;justify-content:center;z-index:100}
+.modal>div{background:var(--glass);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);border:1px solid var(--border2);border-radius:16px;padding:20px;width:480px;max-height:80vh;overflow-y:auto;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+.modal h3{font-size:14px;color:var(--accent2);margin-bottom:12px}
+.modal textarea{width:100%;height:160px;background:rgba(0,0,0,.3);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:monospace;font-size:10px;padding:10px;resize:vertical}
+.modal .btns{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
 
-        .tool-button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
 
-        .divider {
-            height: 1px;
-            background-color: #3a3a3a;
-            margin: 8px 0;
-        }
-
-        .slider-group {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-        }
-
-        .slider-group label {
-            font-size: 11px;
-            font-weight: bold;
-            color: #00D9FF;
-        }
-
-        input[type="range"] {
-            width: 100%;
-            height: 4px;
-            border-radius: 2px;
-            background: #3a3a3a;
-            outline: none;
-            appearance: none;
-            -webkit-appearance: none;
-        }
-
-        input[type="range"]::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            appearance: none;
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            background: #00D9FF;
-            cursor: pointer;
-        }
-
-        input[type="range"]::-moz-range-thumb {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            background: #00D9FF;
-            cursor: pointer;
-            border: none;
-        }
-
-        .slider-value {
-            font-size: 11px;
-            color: #a0a0a0;
-            text-align: center;
-        }
-
-        .checkbox-label {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 12px;
-            cursor: pointer;
-        }
-
-        input[type="checkbox"] {
-            width: 14px;
-            height: 14px;
-            cursor: pointer;
-        }
-
-        /* Center Canvas */
-        .canvas-area {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            background-color: #1a1a1a;
-            padding: 16px;
-            gap: 16px;
-            overflow: hidden;
-        }
-        .canvas-scroll {
-            flex: 1;
-            overflow: auto;
-            width: 100%;
-            display: flex;
-            align-items: flex-start;
-            justify-content: flex-start;
-            padding: 8px;
-        }
-
-        .canvas-header {
-            text-align: center;
-        }
-
-        .canvas-header h1 {
-            font-size: 28px;
-            font-weight: bold;
-            color: #00D9FF;
-            margin-bottom: 4px;
-        }
-
-        .canvas-header p {
-            font-size: 12px;
-            color: #a0a0a0;
-        }
-
-        canvas {
-            border: 2px solid #00D9FF;
-            background-color: #0a0a0a;
-            box-shadow: 0 0 20px rgba(0, 217, 255, 0.2);
-            cursor: crosshair;
-            image-rendering: pixelated;
-            image-rendering: crisp-edges;
-        }
-
-        /* Resizer between left sidebar and canvas */
-        #leftResizer {
-            background: linear-gradient(90deg, rgba(255,255,255,0.02), rgba(255,255,255,0.06));
-            transition: background 120ms ease;
-        }
-        #leftResizer:hover { background: linear-gradient(90deg, rgba(255,255,255,0.04), rgba(255,255,255,0.12)); }
-
-        /* Right Sidebar */
-        .sidebar-right {
-            width: 280px;
-            background-color: #2a2a2a;
-            border-left: 1px solid #3a3a3a;
-            padding: 16px;
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-            overflow-y: auto;
-        }
-
-        .color-section {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-
-        .color-input-group {
-            display: flex;
-            gap: 8px;
-        }
-
-        input[type="color"] {
-            width: 100%;
-            height: 48px;
-            border: 1px solid #3a3a3a;
-            border-radius: 3px;
-            cursor: pointer;
-        }
-
-        .color-preview {
-            width: 48px;
-            height: 48px;
-            border: 2px solid #3a3a3a;
-            border-radius: 3px;
-            flex-shrink: 0;
-        }
-
-        .palette {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 8px;
-        }
-
-        .color-swatch {
-            width: 100%;
-            aspect-ratio: 1;
-            border: 2px solid #3a3a3a;
-            border-radius: 3px;
-            cursor: pointer;
-            transition: all 150ms ease;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
-        }
-
-        .color-swatch:hover {
-            box-shadow: 0 0 8px rgba(0, 217, 255, 0.5);
-            transform: scale(1.05);
-        }
-
-        .color-swatch.selected {
-            border-color: #00D9FF;
-            box-shadow: 0 0 12px rgba(0, 217, 255, 0.8);
-        }
-
-        .export-buttons {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-
-        .code-output {
-            background-color: #1a1a1a;
-            border: 1px solid #3a3a3a;
-            border-radius: 3px;
-            padding: 12px;
-            font-size: 11px;
-            font-family: 'Courier New', monospace;
-            color: #00D9FF;
-            max-height: 300px;
-            overflow-y: auto;
-            white-space: pre-wrap;
-            word-break: break-all;
-        }
-
-        .stats {
-            font-size: 11px;
-            color: #a0a0a0;
-            text-align: center;
-            border-top: 1px solid #3a3a3a;
-            padding-top: 12px;
-            margin-top: auto;
-        }
-
-        /* Modal */
-        .modal {
-            display: none;
-            position: fixed;
-            inset: 0;
-            background-color: rgba(0, 0, 0, 0.7);
-            z-index: 1000;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .modal.active {
-            display: flex;
-        }
-
-        .modal-content {
-            background-color: #2a2a2a;
-            border: 2px solid #00D9FF;
-            border-radius: 3px;
-            padding: 24px;
-            max-width: 500px;
-            width: 90%;
-            box-shadow: 0 0 30px rgba(0, 217, 255, 0.3);
-        }
-
-        .modal-content h2 {
-            font-size: 18px;
-            color: #00D9FF;
-            margin-bottom: 16px;
-        }
-
-        .modal-content textarea {
-            width: 100%;
-            height: 200px;
-            background-color: #1a1a1a;
-            border: 1px solid #3a3a3a;
-            border-radius: 3px;
-            padding: 8px;
-            color: #e0e0e0;
-            font-family: 'Courier New', monospace;
-            font-size: 11px;
-            margin-bottom: 16px;
-            resize: vertical;
-        }
-
-        .modal-buttons {
-            display: flex;
-            gap: 8px;
-        }
-
-        .modal-buttons button {
-            flex: 1;
-        }
-
-        /* Toast Notification */
-        .toast {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            background-color: #00D9FF;
-            color: #1a1a1a;
-            padding: 12px 16px;
-            border-radius: 3px;
-            font-size: 12px;
-            font-weight: bold;
-            z-index: 2000;
-            animation: slideIn 300ms ease;
-        }
-
-        .toast.error {
-            background-color: #FF6B35;
-        }
-
-        @keyframes slideIn {
-            from {
-                transform: translateX(400px);
-                opacity: 0;
-            }
-            to {
-                transform: translateX(0);
-                opacity: 1;
-            }
-        }
-
-        /* Code output editable state */
-        .code-output-wrapper {
-            position: relative;
-        }
-        .code-output:hover {
-            border-color: #555;
-        }
-        .code-edit-pencil {
-            position: absolute;
-            top: 6px;
-            right: 6px;
-            background: #2a2a2a;
-            border: 1px solid #3a3a3a;
-            color: #00D9FF;
-            font-size: 13px;
-            cursor: pointer;
-            padding: 2px 7px;
-            border-radius: 3px;
-            opacity: 0;
-            transition: opacity 150ms ease;
-            z-index: 10;
-            user-select: none;
-        }
-        .code-output-wrapper:hover .code-edit-pencil {
-            opacity: 1;
-        }
-        .code-edit-area {
-            background-color: #111;
-            border: 1px solid #00D9FF;
-            border-radius: 3px;
-            padding: 10px;
-            font-size: 11px;
-            font-family: 'Courier New', monospace;
-            color: #e0e0e0;
-            max-height: 280px;
-            min-height: 120px;
-            overflow-y: auto;
-            width: 100%;
-            resize: vertical;
-            display: none;
-            box-sizing: border-box;
-            tab-size: 2;
-        }
-        .code-edit-actions {
-            display: none;
-            gap: 6px;
-        }
-        /* auto-save indicator */
-        #autoSaveIndicator {
-            font-size: 10px;
-            color: #4caf50;
-            text-align: right;
-            opacity: 0;
-            transition: opacity 600ms ease;
-            height: 14px;
-            margin-top: 2px;
-        }
-        #autoSaveIndicator.visible { opacity: 1; }
-
-        /* Scrollbar */
-        ::-webkit-scrollbar {
-            width: 8px;
-        }
-
-        ::-webkit-scrollbar-track {
-            background: #1a1a1a;
-        }
-
-        ::-webkit-scrollbar-thumb {
-            background: #3a3a3a;
-            border-radius: 4px;
-        }
-
-        ::-webkit-scrollbar-thumb:hover {
-            background: #4a4a4a;
-        }
-
-        /* Layer drag & drop styles */
-        .layer-item[draggable="true"] {
-            transition: all 150ms ease;
-        }
-
-        .layer-item[draggable="true"]:hover {
-            background-color: #252525 !important;
-            transform: translateX(2px);
-        }
-
-        .layer-item[draggable="true"].active {
-            background-color: #1a3a3a;
-            border: 1px solid #00D9FF;
-            box-shadow: inset 0 0 8px rgba(0, 217, 255, 0.2);
-        }
-    </style>
+.layer-row{display:flex;align-items:center;gap:5px;padding:5px 8px;background:var(--glass3);backdrop-filter:blur(6px);border:1px solid transparent;border-radius:8px;cursor:pointer;font-size:10px;margin:2px 0;transition:.12s}
+.layer-row:hover{background:rgba(50,50,80,.6)}
+.layer-row.sel{border-color:var(--accent);background:rgba(139,92,246,.12)}
+.layer-row .vis{width:18px;text-align:center;cursor:pointer;font-size:12px}
+.layer-row .name{flex:1;overflow:hidden;white-space:nowrap}
+.layer-actions{display:flex;gap:4px;margin-top:4px}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);color:var(--text);padding:10px 24px;border-radius:24px;font-size:12px;z-index:200;border:1px solid var(--border2);box-shadow:0 8px 24px rgba(0,0,0,.4);animation:fadeIn .3s}
+@keyframes fadeIn{from{opacity:0;transform:translateX(-50%) translateY(10px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+#shapePreview{position:absolute;pointer-events:none;border:1px dashed rgba(255,255,255,.5);display:none}
+.frame-bar{display:flex;align-items:center;gap:6px;padding:6px 12px;background:var(--glass);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);border-top:1px solid var(--border);height:52px;flex-shrink:0}
+.frame-bar .btn{padding:4px 8px;font-size:11px}
+.frame-thumbs{display:flex;gap:4px;overflow-x:auto;flex:1;padding:2px 0}
+.frame-thumb{width:40px;height:40px;background:var(--glass3);border:2px solid var(--border);border-radius:6px;cursor:pointer;flex-shrink:0;transition:.12s;image-rendering:pixelated;display:flex;align-items:center;justify-content:center;position:relative}
+.frame-thumb:hover{border-color:var(--accent2)}
+.frame-thumb.active{border-color:var(--accent);box-shadow:0 0 8px rgba(139,92,246,.4)}
+.frame-thumb canvas{image-rendering:pixelated}
+.frame-thumb .fn{position:absolute;bottom:-2px;right:2px;font-size:7px;color:var(--text2);background:rgba(0,0,0,.6);padding:0 3px;border-radius:3px}
+</style>
 </head>
 <body>
-    <div class="container">
-        <!-- Left Sidebar -->
-        <div class="sidebar-left">
-            <div class="sidebar-title">TOOLS</div>
-            <button class="tool-button active" data-tool="brush">✏️ Brush</button>
-            <button class="tool-button" data-tool="eraser">🧹 Eraser</button>
-            <button class="tool-button" data-tool="picker">🎨 Picker</button>
-            <button class="tool-button" data-tool="bucket">🪣 Bucket</button>
-            <button class="tool-button" data-tool="line">／ Line</button>
-            <button class="tool-button" data-tool="rect">▭ Rect</button>
-            <button class="tool-button" data-tool="select">⬚ Select</button>
-            <button class="tool-button" data-tool="text">📝 Text</button>
+<div class="container">
+<!-- Toolbar -->
+<div class="toolbar">
+<button data-tool="brush" class="active" title="Pincel (B)">🖌</button><span class="lbl">Brush</span>
+<button data-tool="eraser" title="Borrador (E)">🧹</button><span class="lbl">Erase</span>
+<button data-tool="fill" title="Relleno (G)">🪣</button><span class="lbl">Fill</span>
+<div class="sep"></div>
+<button data-tool="rect" title="Rectángulo (R)">⬜</button><span class="lbl">Rect</span>
+<button data-tool="ellipse" title="Elipse">⭕</button><span class="lbl">Ellip</span>
+<button data-tool="line" title="Línea (L)">📏</button><span class="lbl">Line</span>
+<div class="sep"></div>
+<button data-tool="select" title="Selección (S)">⬛</button><span class="lbl">Select</span>
+<button id="flipHBtn" title="Flip H">↔</button><span class="lbl">FlipH</span>
+<button id="flipVBtn" title="Flip V">↕</button><span class="lbl">FlipV</span>
+<button id="rotateBtn" title="Rotar 90°">↻</button><span class="lbl">Rot</span>
+<div class="sep"></div>
+<button id="importImageBtn" title="Importar desde imagen">🖼</button><span class="lbl">Img</span>
+</div>
 
-            <div style="display:flex; flex-direction:column; gap:8px;">
-                <button class="tool-button" id="fillSelectionBtn" disabled>🪣 Fill Selection</button>
-                <button class="tool-button" id="eraseSelectionBtn" disabled>✂ Clear Selection</button>
-                <button class="tool-button" id="clearSelectionBtn" disabled>✕ Deselect</button>
-                <button class="tool-button" id="copySelectionBtn" disabled>📋 Copy Selection</button>
-                <button class="tool-button" id="cutSelectionBtn" disabled>✂ Cut Selection</button>
-                <button class="tool-button" id="pasteSelectionBtn" disabled>📌 Paste</button>
-            </div>
+<!-- Sprite Library -->
+<div class="sprite-panel">
+<h4>📦 SPRITE LIBRARY</h4>
+<input type="text" id="spriteSearch" placeholder="🔍 Buscar sprite...">
+<div class="sprite-list" id="spriteList"></div>
+</div>
 
-            <div class="divider"></div>
+<!-- Canvas -->
+<div class="canvas-area">
+<div class="canvas-bar">
+<label>Grid:</label><input type="number" id="gridSize" value="16" min="4" max="64">
+<label>Zoom:</label><input type="range" id="zoomSlider" min="1" max="32" value="8">
+<span id="zoomVal">8x</span>
+<label><input type="checkbox" id="showGrid" checked> Grid</label>
+<label><input type="checkbox" id="fillShapes"> Fill</label>
+<label><input type="checkbox" id="mirrorX"> Mir.X</label>
+</div>
+<div class="canvas-scroll"><canvas id="canvas"></canvas></div>
+<div class="info">Pixels: <b id="pixelCount">0</b> | Grid: <b id="gridInfo">16×16</b> | <span id="spriteName">Sin nombre</span></div>
+</div>
 
-            <div class="sidebar-title">DRAW OPTIONS</div>
-            <label class="checkbox-label">
-                <input type="checkbox" id="fillShapes">
-                Fill shapes
-            </label>
-            <label class="checkbox-label">
-                <input type="checkbox" id="mirrorX">
-                Mirror X
-            </label>
-            <label class="checkbox-label">
-                <input type="checkbox" id="mirrorY">
-                Mirror Y
-            </label>
+<!-- Right Panel -->
+<div class="right-panel">
+<h4>🎨 COLOR</h4>
+<div class="color-row">
+<input type="color" id="colorPicker" value="#6c5ce7">
+<input type="text" class="color-hex" id="colorHex" value="#6c5ce7" maxlength="7">
+</div>
+<div class="color-grid" id="paletteGrid"></div>
 
-            <div class="divider"></div>
+<h4>📐 EXPORT</h4>
+<div class="btn-row">
+<button class="btn prim" id="frExportBtn">📤 PIXEL_LIBRARY</button>
+<button class="btn" id="frCopySpriteBtn">📋 buildSprite()</button>
+</div>
+<div class="btn-row">
+<button class="btn" id="frImportBtn">📥 Import JSON</button>
+<button class="btn ok" id="applyCodeBtn">✅ Aplicar</button>
+</div>
+<div class="btn-row">
+<button class="btn" id="exportPngBtn">🖼 Exportar PNG</button>
+<button class="btn ok" id="saveToFileBtn">💾 Guardar en JSON</button>
+</div>
+<h4>📋 LAYERS</h4>
+<div id="layersList"></div>
+<div class="layer-actions">
+<button class="btn" id="addLayerBtn">+ Capa</button>
+<button class="btn" id="mergeDownBtn">↓ Merge</button>
+</div>
 
-            <div class="sidebar-title">CANVAS OPS</div>
-            <div style="display:flex; flex-direction:column; gap:8px;">
-                <button class="tool-button" id="flipHorizontalBtn">↔ Flip H</button>
-                <button class="tool-button" id="flipVerticalBtn">↕ Flip V</button>
-                <button class="tool-button" id="rotateRightBtn">↻ Rotate 90°</button>
-                <button class="tool-button" id="trimCanvasBtn">✂ Trim Content</button>
-                <button class="tool-button" id="centerSpriteBtn">◎ Center Sprite</button>
-            </div>
+<h4>👁 PREVIEW</h4>
+<input type="range" id="frScaleSlider" min="1" max="12" value="6">
+<span style="font-size:9px;color:var(--text2)">Scale: <b id="frScaleVal">6x</b></span>
+<canvas id="frPreviewCanvas" width="256" height="180"></canvas>
+<span class="info" id="frPreviewInfo">Sin píxeles</span>
 
-            <div class="divider"></div>
-            <div class="color-section">
-                <div class="sidebar-title">BACKGROUND & CAPAS</div>
-                <div style="display:flex; flex-direction:column; gap:6px; font-size:10px;">
-                    <label>📷 Imagen de Fondo:</label>
-                    <input id="bgImageFile" type="file" accept="image/*" style="width:100%; padding:4px; background:#1f1f1f; color:#e0e0e0; border:1px solid #3a3a3a; font-size:9px;">
-                    <input id="bgImageUrl" type="text" placeholder="URL remoto" style="width:100%; padding:6px; background:#1f1f1f; color:#e0e0e0; border:1px solid #3a3a3a; margin-bottom:4px;">
-                    <div style="display:flex; gap:4px;">
-                        <button class="tool-button" id="loadBgUrlBtn" style="flex:1; padding:4px; font-size:9px;">🔗 Cargar URL</button>
-                        <button class="tool-button" id="clearBgBtn" style="flex:1; padding:4px; font-size:9px;">✕ Limpiar</button>
-                    </div>
-                    <div style="display:flex; align-items:center; gap:6px;">
-                        <label style="width:60px;">Opacidad:</label>
-                        <input id="bgOpacitySlider" type="range" min="0" max="100" value="50" style="flex:1;">
-                        <span id="bgOpacityValue" style="width:30px;">50%</span>
-                    </div>
-                    <div style="border-top:1px solid #2a2a2a; padding-top:8px; margin-top:4px;">
-                        <div style="font-size:10px; margin-bottom:6px;">🖼➜🎨 Convertir imagen a pixel art:</div>
-                        <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
-                            <label style="font-size:9px; white-space:nowrap;">Max colores:</label>
-                            <input id="imgConvertColors" type="number" min="2" max="64" value="16" style="width:50px; padding:3px; background:#1f1f1f; color:#e0e0e0; border:1px solid #3a3a3a; font-size:9px;">
-                        </div>
-                        <button class="tool-button" id="convertToPxArtBtn" style="width:100%; padding:5px; font-size:9px;">🎨 Convertir al editor</button>
-                    </div>
-                </div>
-                <div style="margin-top:10px; border-top:1px solid #3a3a3a; padding-top:8px;">
-                    <label style="font-size:10px;">🗂 Capas:</label>
-                    <div id="layersPanel" style="max-height:120px; overflow-y:auto; background:#141414; border:1px solid #2a2a2a; border-radius:4px; margin:6px 0;">
-                        <!-- Layer items injected here -->
-                    </div>
-                    <div style="display:flex; gap:4px; margin-top:6px;">
-                        <button class="tool-button" id="addLayerBtn" style="flex:1; padding:4px; font-size:9px;">➕ Capa</button>
-                        <button class="tool-button" id="flattenLayersBtn" style="flex:1; padding:4px; font-size:9px;">🔗 Aplanar</button>
-                    </div>
-                </div>
-            </div>
+<div class="btn-row"><button class="btn" id="trimCanvasBtn">✂ Trim</button><button class="btn" id="centerSpriteBtn">⊙ Center</button></div>
+<div id="autoSaveIndicator" style="font-size:9px;color:var(--green);text-align:center;opacity:0">✓ Guardado</div>
+</div>
+</div>
 
-            <div class="divider"></div>
-            <div class="color-section">
-                <div class="sidebar-title">LIBRERÍA</div>
-                <select id="entityLibrary" style="width:100%; padding:8px; background:#1f1f1f; color:#e0e0e0; border:1px solid #3a3a3a; margin-bottom:8px;"></select>
-                <input id="newEntityKeyInput" type="text" placeholder="new_entity_key" style="width:100%; padding:8px; background:#1f1f1f; color:#e0e0e0; border:1px solid #3a3a3a; margin-bottom:8px;">
-                <div style="display:flex; gap:8px;">
-                    <button class="tool-button" id="reloadLibraryBtn">🔄 Reload</button>
-                    <button class="tool-button" id="saveToLibraryBtn">💾 Save</button>
-                </div>
-                <div style="display:flex; gap:8px; margin-top:8px;">
-                    <button class="tool-button" id="createEntityBtn">➕ Add New</button>
-                    <button class="tool-button" id="saveAllLibraryBtn">🗂 Save All</button>
-                </div>
-                <div style="font-size:9px;color:#888;margin-top:4px;line-height:1.4;">
-                    💾 guarda en <b>entity-pixels.json</b><br>
-                    Requiere: <code style="color:#00D9FF">node tools/Support/save-sprite-server.js</code>
-                </div>
-            </div>
+<!-- Frame bar -->
+<div class="frame-bar" id="frameBar">
+<button class="btn" id="framePrevBtn" title="Frame anterior">◀</button>
+<div class="frame-thumbs" id="frameThumbs"></div>
+<button class="btn" id="frameNextBtn" title="Frame siguiente">▶</button>
+<button class="btn prim" id="frameAddBtn" title="Añadir frame">+</button>
+<button class="btn" id="frameDelBtn" title="Eliminar frame">−</button>
+<button class="btn" id="frameDupBtn" title="Duplicar frame">⧉</button>
+<button class="btn" id="framePlayBtn" title="Reproducir animación">▶️</button>
+<span style="font-size:10px;color:var(--text2);margin-left:8px" id="frameInfo">Frame 1/1</span>
+</div>
 
-            <div class="divider"></div>
+<!-- Image Import Modal -->
+<div class="modal" id="imgImportModal">
+<div><h3>🖼 Importar desde imagen</h3>
+<div style="display:flex;gap:10px;margin-bottom:10px">
+<button class="btn" id="imgTabFile" style="flex:1">📁 Archivo</button>
+<button class="btn" id="imgTabUrl" style="flex:1">🌐 URL</button>
+</div>
+<div id="imgPanelFile">
+<input type="file" id="imgFileInput" accept="image/*" style="display:block;width:100%;padding:8px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);margin-bottom:8px">
+<div id="imgDropZone" style="border:2px dashed var(--border);border-radius:10px;padding:30px;text-align:center;color:var(--text2);font-size:12px;cursor:pointer">📂 Arrastra una imagen aquí<br>o haz clic para seleccionar</div>
+</div>
+<div id="imgPanelUrl" style="display:none">
+<input type="text" id="imgUrlInput" placeholder="https://ejemplo.com/imagen.png" style="width:100%;padding:8px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:11px;margin-bottom:8px">
+</div>
+<div class="btns"><button class="btn prim" id="imgImportConfirmBtn">Importar</button><button class="btn" id="imgImportCancelBtn">Cancelar</button></div></div>
+</div>
 
-            <div class="sidebar-title">SIZE (celdas)</div>
-            <div class="slider-group">
-                <input type="number" id="gridSize" min="4" max="128" value="16" step="1" style="width:100%;padding:5px;background:#1f1f1f;color:#e0e0e0;border:1px solid #3a3a3a;border-radius:3px;">
-                <div class="slider-value"><span id="gridSizeValue">16</span>x<span id="gridSizeValue2">16</span></div>
-            </div>
-            <div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:4px;">
-                <button class="tool-button size-preset" data-size="6"  style="flex:1;min-width:24px;padding:3px 1px;font-size:10px;">6</button>
-                <button class="tool-button size-preset" data-size="8"  style="flex:1;min-width:24px;padding:3px 1px;font-size:10px;">8</button>
-                <button class="tool-button size-preset" data-size="9"  style="flex:1;min-width:24px;padding:3px 1px;font-size:10px;">9</button>
-                <button class="tool-button size-preset" data-size="10" style="flex:1;min-width:24px;padding:3px 1px;font-size:10px;">10</button>
-                <button class="tool-button size-preset" data-size="12" style="flex:1;min-width:24px;padding:3px 1px;font-size:10px;">12</button>
-                <button class="tool-button size-preset" data-size="16" style="flex:1;min-width:24px;padding:3px 1px;font-size:10px;">16</button>
-                <button class="tool-button size-preset" data-size="24" style="flex:1;min-width:24px;padding:3px 1px;font-size:10px;">24</button>
-                <button class="tool-button size-preset" data-size="32" style="flex:1;min-width:24px;padding:3px 1px;font-size:10px;">32</button>
-                <button class="tool-button size-preset" data-size="48" style="flex:1;min-width:24px;padding:3px 1px;font-size:10px;">48</button>
-                <button class="tool-button size-preset" data-size="64" style="flex:1;min-width:24px;padding:3px 1px;font-size:10px;">64</button>
-            </div>
+<!-- Import Modal -->
+<div class="modal" id="frImportModal">
+<div><h3>📥 Importar desde JSON (rows + palette)</h3>
+<textarea id="frImportCode" placeholder='{"rows":["......oooo......",...],"palette":{"o":"#111",...}}'></textarea>
+<div class="btns"><button class="btn prim" id="frImportConfirmBtn">Importar</button><button class="btn" id="frImportCancelBtn">Cancelar</button></div></div>
+</div>
 
-            <div class="sidebar-title">ZOOM</div>
-            <div class="slider-group">
-                <input type="range" id="zoom" min="1" max="20" value="4" step="1">
-                <div class="slider-value"><span id="zoomValue">4</span>x</div>
-            </div>
+<!-- Save Modal -->
+<div class="modal" id="saveModal">
+<div><h3>💾 Guardar sprite en archivo</h3>
+<label style="font-size:10px;color:var(--text2)">Nombre del sprite</label>
+<input id="saveSpriteName" placeholder="mi_sprite" style="width:100%;margin:4px 0 8px;padding:6px 8px;background:var(--input);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px">
+<label style="font-size:10px;color:var(--text2)">Archivo destino</label>
+<select id="saveTargetFile" style="width:100%;margin:4px 0 8px;padding:6px 8px;background:var(--input);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px">
+  <option value="sprites.json">sprites.json (Personajes)</option>
+  <option value="sprites-penalty.json">sprites-penalty.json (Penaltis)</option>
+  <option value="entity-pixels.json">entity-pixels.json (Entidades)</option>
+</select>
+<div class="btns"><button class="btn prim" id="saveConfirmBtn">💾 Guardar</button><button class="btn" id="saveCancelBtn">Cancelar</button></div></div>
+</div>
 
-            <div class="divider"></div>
-            <div class="sidebar-title">EXPORT SCALE</div>
-            <div style="display:flex; flex-direction:column; gap:8px;">
-                <div style="display:flex; gap:8px;">
-                    <button class="tool-button" id="scale2Btn" data-scale="2">2x</button>
-                    <button class="tool-button" id="scale4Btn" data-scale="4">4x</button>
-                    <button class="tool-button" id="scale8Btn" data-scale="8">8x</button>
-                    <button class="tool-button" id="scale16Btn" data-scale="16">16x</button>
-                </div>
-                <div style="display:flex; gap:8px; align-items:center;">
-                    <label style="font-size:11px; color:#a0a0a0;">Custom:</label>
-                    <input id="customScaleInput" type="number" min="1" value="2" style="width:72px; padding:6px; background:#1f1f1f; color:#e0e0e0; border:1px solid #3a3a3a;" />
-                </div>
-            </div>
+<script>
+// ════════════ STATE ════════════
+const state={pixels:[],currentColor:'#6c5ce7',tool:'brush',gridSize:16,zoom:8,showGrid:true,fillShapes:false,mirrorX:false,sel:null,selPixels:null,selDragging:null,selStartX:0,selStartY:0,selOrig:{x:0,y:0,w:0,h:0},shapeStart:null,clipboard:null,mouseGx:0,mouseGy:0,currentSourceFile:'sprites.json',layers:[{name:'Capa 1',pixels:[],visible:true}],activeLayer:0,history:[],historyIdx:-1,undoLimit:50};
+const canvas=document.getElementById('canvas'),ctx=canvas.getContext('2d');
+const presetColors=['#6c5ce7','#e63946','#457bff','#f2c14e','#2a9d8f','#ff7b00','#ffffff','#c77dff','#ff6b6b','#48cae4','#a8e6cf','#111111','#e8b48f','#8b6914','#c8a84b','#4a8a3a','#2c3440','#56657c','#4a1010','#8b1a1a'];
 
-            <div class="divider"></div>
-            <div class="sidebar-title">SAVE MODE</div>
-            <div style="display:flex; flex-direction:column; gap:8px;">
-                <label class="checkbox-label"><input type="radio" name="saveMode" id="saveModePost" value="post" checked> Post to game (default)</label>
-                <label class="checkbox-label"><input type="radio" name="saveMode" id="saveModeOverwrite" value="overwrite"> Download overwrite (save file)</label>
-                <label class="checkbox-label"><input type="radio" name="saveMode" id="saveModePatch" value="patch"> Download patch (single entry)</label>
-            </div>
-
-            <div class="divider"></div>
-
-            <label class="checkbox-label">
-                <input type="checkbox" id="showGrid" checked>
-                Grid
-            </label>
-            <label class="checkbox-label">
-                <input type="checkbox" id="showTransparency" checked>
-                PNG Background
-            </label>
-
-            <div class="divider"></div>
-
-            <button class="tool-button" id="undoBtn">↶ Undo</button>
-            <button class="tool-button" id="redoBtn">↷ Redo</button>
-            <button class="tool-button" id="clearBtn" style="background-color: #FF6B35; color: #1a1a1a;">🗑️ Clear</button>
-        </div>
-        <div id="leftResizer" style="width:6px; cursor:col-resize; background:transparent;" title="Drag to resize sidebar"></div>
-
-        <!-- Center Canvas -->
-        <div class="canvas-area">
-            <div class="canvas-header">
-                <h1>VSoftware Pixel Editor</h1>
-                <p id="canvasSizeInfo">Selecciona un sprite o elige un tamaño</p>
-            </div>
-            <div class="canvas-scroll" id="canvasScroll">
-                <canvas id="canvas"></canvas>
-            </div>
-        </div>
-
-        <!-- Right Sidebar -->
-        <div class="sidebar-right">
-            <div class="color-section">
-                <div class="sidebar-title">CURRENT COLOR</div>
-                <div class="color-input-group">
-                    <input type="color" id="colorPicker" value="#00d9ff">
-                    <div class="color-preview" id="colorPreview" style="background-color: #00d9ff;"></div>
-                </div>
-            </div>
-
-            <div class="color-section">
-                <div class="sidebar-title">PALETTE</div>
-                <div class="palette" id="palette"></div>
-            </div>
-
-            <div class="divider"></div>
-
-            <div class="color-section">
-                <div class="sidebar-title">EXPORT</div>
-                <div class="export-buttons">
-                    <button class="tool-button" id="copyBtn">📋 Copy Code</button>
-                    <button class="tool-button" id="downloadBtn">⬇️ Download</button>
-                    <button class="tool-button" id="importBtn">⬆️ Import</button>
-                    <button class="tool-button" id="loadGameDefsBtn">⚙️ Load Game Defs</button>
-                    <button class="tool-button" id="sendToGameBtn">➡️ Import To Game</button>
-                    <button class="tool-button" id="exportGameDefsBtn">💾 Save Game Defs</button>
-                </div>
-            </div>
-
-            <div class="divider"></div>
-
-            <div class="color-section">
-                <div class="sidebar-title">CODE OUTPUT</div>
-                <div class="code-output-wrapper">
-                    <div class="code-output" id="codeOutput" title="Pasa el cursor y haz clic en ✏️ para editar">{
-  "grid": 16,
-  "pixels": []
-}</div>
-                    <button class="code-edit-pencil" id="codeEditPencil" title="Editar y guardar en fichero">✏️</button>
-                    <textarea class="code-edit-area" id="codeEditArea" spellcheck="false"></textarea>
-                </div>
-                <div class="code-edit-actions" id="codeEditActions" style="display:flex;">
-                    <button class="tool-button" id="applyCodeBtn" style="flex:1;display:none;background:#00D9FF;color:#1a1a1a;">✅ Aplicar</button>
-                    <button class="tool-button" id="cancelCodeBtn" style="flex:1;display:none;background:#FF6B35;color:#1a1a1a;">✖ Cancelar</button>
-                </div>
-                <div id="autoSaveIndicator">✓ Guardado</div>
-            </div>
-
-            <div class="stats">
-                <p>Pixels: <span id="pixelCount">0</span></p>
-                <p>Grid: <span id="gridInfo">16x16</span></p>
-            </div>
-        </div>
-    </div>
-
-    <!-- Import Modal -->
-    <div class="modal" id="importModal">
-        <div class="modal-content">
-            <h2>Import Pixel Art</h2>
-            <textarea id="importCode" placeholder="Paste your pixel array code here..."></textarea>
-            <div class="modal-buttons">
-                <button class="tool-button" id="importConfirmBtn">Import</button>
-                <button class="tool-button" id="importCancelBtn" style="background-color: #FF6B35; color: #1a1a1a;">Cancel</button>
-            </div>
-        </div>
-    </div>
-
-    <script>
-        // State
-        const state = {
-            pixels: [],
-            currentColor: '#00d9ff',
-            tool: 'brush',
-            gridSize: 16,
-            zoom: 4,
-            showGrid: true,
-            fillShapes: false,
-            mirrorX: false,
-            mirrorY: false,
-            history: [[]],
-            historyIndex: 0,
-            selection: null,
-            selectionPreview: null,
-            selectionStart: null,
-            shapeStart: null,
-            shapePreview: null,
-            clipboard: null,
-            pasteCount: 0,
-            isSelecting: false,
-            isDrawing: false,
-            strokeDirty: false,
-            lastPaintedCell: null,
-            showTransparency: true,
-            // Layer system
-            layers: [{ id: 'layer_0', name: 'Capa 1', pixels: [], visible: true, opacity: 100 }],
-            currentLayerId: 'layer_0',
-            draggedLayerIndex: null,
-            // Background image
-            backgroundImage: null,
-            bgOpacity: 50
-        };
-
-        // Preset Colors
-        const presetColors = [
-            '#FFFFFF', '#000000', '#FF0000', '#00FF00', '#0000FF',
-            '#FFFF00', '#FF00FF', '#00FFFF', '#FFA500', '#800080',
-            '#FFC0CB', '#A52A2A', '#808080', '#00D9FF', '#0066FF',
-            '#FF6B35', '#FF1493', '#FFD700', '#DAA520', '#8B7355'
-        ];
-
-        // DOM Elements
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
-        const gridSizeInput = document.getElementById('gridSize');
-        const zoomInput = document.getElementById('zoom');
-        const showGridCheckbox = document.getElementById('showGrid');
-        const colorPicker = document.getElementById('colorPicker');
-        const colorPreview = document.getElementById('colorPreview');
-        const codeOutput = document.getElementById('codeOutput');
-        const importModal = document.getElementById('importModal');
-        const importCode = document.getElementById('importCode');
-        const palette = document.getElementById('palette');
-        const pixelCountSpan = document.getElementById('pixelCount');
-        const gridInfoSpan = document.getElementById('gridInfo');
-        const fillSelectionBtn = document.getElementById('fillSelectionBtn');
-        const eraseSelectionBtn = document.getElementById('eraseSelectionBtn');
-        const clearSelectionBtn = document.getElementById('clearSelectionBtn');
-        const copySelectionBtn = document.getElementById('copySelectionBtn');
-        const cutSelectionBtn = document.getElementById('cutSelectionBtn');
-        const pasteSelectionBtn = document.getElementById('pasteSelectionBtn');
-        const fillShapesCheckbox = document.getElementById('fillShapes');
-        const mirrorXCheckbox = document.getElementById('mirrorX');
-        const mirrorYCheckbox = document.getElementById('mirrorY');
-        const showTransparencyCheckbox = document.getElementById('showTransparency');
-        const flipHorizontalBtn = document.getElementById('flipHorizontalBtn');
-        const flipVerticalBtn = document.getElementById('flipVerticalBtn');
-        const rotateRightBtn = document.getElementById('rotateRightBtn');
-        const trimCanvasBtn = document.getElementById('trimCanvasBtn');
-        const centerSpriteBtn = document.getElementById('centerSpriteBtn');
-
-        // Initialize Palette
-        presetColors.forEach((color, index) => {
-            const button = document.createElement('button');
-            button.className = 'color-swatch';
-            button.style.backgroundColor = color;
-            button.title = color;
-            button.addEventListener('click', () => {
-                state.currentColor = color;
-                colorPicker.value = color;
-                colorPreview.style.backgroundColor = color;
-                updateColorSwatches();
-            });
-            palette.appendChild(button);
-        });
-
-        // Event Listeners
-        document.querySelectorAll('[data-tool]').forEach(btn => {
-            btn.addEventListener('click', () => {
-                document.querySelectorAll('[data-tool]').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                state.tool = btn.dataset.tool;
-                state.shapeStart = null;
-                state.shapePreview = null;
-                draw();
-            });
-        });
-
-        fillShapesCheckbox.addEventListener('change', (e) => {
-            state.fillShapes = e.target.checked;
-            draw();
-        });
-
-        mirrorXCheckbox.addEventListener('change', (e) => {
-            state.mirrorX = e.target.checked;
-        });
-
-        mirrorYCheckbox.addEventListener('change', (e) => {
-            state.mirrorY = e.target.checked;
-        });
-
-        gridSizeInput.addEventListener('change', (e) => {
-            const n = Math.max(4, Math.min(128, parseInt(e.target.value) || 16));
-            state.gridSize = n;
-            clearSelection(false);
-            state.shapeStart = null;
-            state.shapePreview = null;
-            gridSizeInput.value = n;
-            document.getElementById('gridSizeValue').textContent = n;
-            document.getElementById('gridSizeValue2').textContent = n;
-            gridInfoSpan.textContent = `${n}x${n}`;
-            resizeCanvas();
-            draw();
-        });
-
-        // Size preset buttons
-        document.addEventListener('click', (e) => {
-            if (e.target.classList.contains('size-preset')) {
-                const n = parseInt(e.target.dataset.size);
-                if (!n) return;
-                state.gridSize = n;
-                clearSelection(false);
-                state.shapeStart = null;
-                state.shapePreview = null;
-                gridSizeInput.value = n;
-                document.getElementById('gridSizeValue').textContent = n;
-                document.getElementById('gridSizeValue2').textContent = n;
-                gridInfoSpan.textContent = `${n}x${n}`;
-                // clear out-of-bounds pixels
-                getCurrentLayer().pixels = getCurrentLayer().pixels.filter(p => p.x < n && p.y < n);
-                resizeCanvas();
-                addToHistory(); updateCodeOutput(); draw();
-                showToast(`Grid ${n}×${n}`);
-            }
-        });
-
-        zoomInput.addEventListener('input', (e) => {
-            state.zoom = parseInt(e.target.value);
-            document.getElementById('zoomValue').textContent = state.zoom;
-            resizeCanvas();
-            draw();
-        });
-
-        showGridCheckbox.addEventListener('change', (e) => {
-            state.showGrid = e.target.checked;
-            draw();
-        });
-
-        showTransparencyCheckbox.addEventListener('change', (e) => {
-            state.showTransparency = e.target.checked;
-            draw();
-        });
-
-        colorPicker.addEventListener('change', (e) => {
-            state.currentColor = e.target.value;
-            colorPreview.style.backgroundColor = e.target.value;
-            updateColorSwatches();
-        });
-
-        // --- Game definitions integration ---
-        const loadGameDefsBtn = document.getElementById('loadGameDefsBtn');
-        const sendToGameBtn = document.getElementById('sendToGameBtn');
-        const exportGameDefsBtn = document.getElementById('exportGameDefsBtn');
-        const gameDefsFile = document.createElement('input'); gameDefsFile.type = 'file'; gameDefsFile.accept = 'application/json'; gameDefsFile.style.display = 'none'; document.body.appendChild(gameDefsFile);
-
-        function showToast(msg, isError) {
-            const t = document.createElement('div'); t.className = 'toast' + (isError? ' error' : ''); t.textContent = msg; document.body.appendChild(t);
-            setTimeout(() => { try { document.body.removeChild(t); } catch (e) {} }, 2600);
-        }
-
-        loadGameDefsBtn.addEventListener('click', async () => {
-            // try fetching bundled defs first
-            try {
-                const r = await fetch('/data/entities-defs.json', { cache: 'no-store' });
-                if (!r.ok) throw new Error('No bundled defs');
-                const j = await r.json(); importCode.value = JSON.stringify(j, null, 2); importModal.classList.add('active');
-                showToast('Defs loaded into editor');
-                return;
-            } catch (e) {
-                // fallback to file picker
-                gameDefsFile.click();
-            }
-        });
-
-        gameDefsFile.addEventListener('change', (ev) => {
-            const f = ev.target.files && ev.target.files[0]; if (!f) return; const r = new FileReader();
-            r.onload = () => { try { const j = JSON.parse(String(r.result)); importCode.value = JSON.stringify(j, null, 2); importModal.classList.add('active'); showToast('Defs loaded into editor'); } catch (err) { showToast('Invalid JSON', true); } };
-            r.readAsText(f);
-        });
-
-        sendToGameBtn.addEventListener('click', async () => {
-            // take JSON from importCode textarea and send to opener/parent
-            try {
-                const txt = importCode.value.trim(); if (!txt) { showToast('No JSON present', true); return; }
-                const obj = JSON.parse(txt);
-                // attach current editor sprite data so the game has pixel art
-                try {
-                    obj.sprites = obj.sprites || {};
-                    obj.sprites['editor_current'] = { pixels: getEditorPixels(), gridSize: state.gridSize, zoom: state.zoom, palette: presetColors };
-                } catch (e) {}
-                // prefer direct function call on opener or parent
-                if (window.opener && typeof window.opener.importEntityDefinitionsFromObject === 'function') {
-                    window.opener.importEntityDefinitionsFromObject(obj);
-                    showToast('Defs sent to game');
-                    return;
-                }
-                if (window.parent && window.parent !== window && typeof window.parent.importEntityDefinitionsFromObject === 'function') {
-                    window.parent.importEntityDefinitionsFromObject(obj);
-                    showToast('Defs sent to parent');
-                    return;
-                }
-                // fallback: postMessage
-                if (window.opener) {
-                    window.opener.postMessage({ type: 'meso.importEntityDefs', data: obj }, '*');
-                    showToast('Defs posted to opener');
-                    return;
-                }
-                showToast('No game window found', true);
-            } catch (e) { showToast('Error parsing JSON', true); }
-        });
-
-        exportGameDefsBtn.addEventListener('click', () => {
-            try {
-                if (window.opener && typeof window.opener.exportEntityDefinitionsToJSON === 'function') { window.opener.exportEntityDefinitionsToJSON(); showToast('Guardado de defs solicitado'); return; }
-                if (window.parent && typeof window.parent.exportEntityDefinitionsToJSON === 'function') { window.parent.exportEntityDefinitionsToJSON(); showToast('Guardado de defs solicitado'); return; }
-                showToast('No game window found', true);
-            } catch (e) { showToast('Export failed', true); }
-        });
-
-        // listen for messages (in case parent responds)
-        window.addEventListener('message', (ev) => {
-            try {
-                if (!ev.data) return;
-                if (ev.data.type === 'meso.importResult') {
-                    showToast(ev.data.msg || 'Imported');
-                }
-                if (ev.data.type === 'entityPixelsLoaded') {
-                    // remote notified library loaded (optional)
-                    try { loadEntityPixelLibrary(); } catch (e) {}
-                }
-            } catch (e) {}
-        });
-
-        // --- Entity pixel library handling ---
-        const entityLibrarySelect = document.getElementById('entityLibrary');
-        const reloadLibraryBtn = document.getElementById('reloadLibraryBtn');
-        const saveToLibraryBtn = document.getElementById('saveToLibraryBtn');
-        const newEntityKeyInput = document.getElementById('newEntityKeyInput');
-        const createEntityBtn = document.getElementById('createEntityBtn');
-        const saveAllLibraryBtn = document.getElementById('saveAllLibraryBtn');
-        let ENTITY_PIXEL_LIBRARY = {};
-
-        function normalizeEntityKey(raw) {
-            const key = String(raw || '').trim().toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/^_+|_+$/g, '');
-            return key;
-        }
-
-        function getEditorPixels() {
-            try {
-                const layer = getCurrentLayer();
-                return Array.isArray(layer && layer.pixels) ? layer.pixels : [];
-            } catch (e) {
-                return [];
+// ════════════ CANVAS ════════════
+function resizeCanvas(){const s=state.gridSize*state.zoom;canvas.width=s;canvas.height=s;draw();}
+function draw(){
+    const s=state.zoom;
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle='#0a0a10';ctx.fillRect(0,0,canvas.width,canvas.height);
+    if(state.showGrid&&s>=4){ctx.strokeStyle='rgba(255,255,255,0.06)';ctx.lineWidth=.5;
+        for(let x=0;x<state.gridSize;x++){ctx.beginPath();ctx.moveTo(x*s,0);ctx.lineTo(x*s,state.gridSize*s);ctx.stroke();}
+        for(let y=0;y<state.gridSize;y++){ctx.beginPath();ctx.moveTo(0,y*s);ctx.lineTo(state.gridSize*s,y*s);ctx.stroke();}}
+    const layer=state.layers[state.activeLayer];
+    if(layer&&layer.visible){for(const p of layer.pixels){ctx.fillStyle=p.color;ctx.fillRect(p.x*s,p.y*s,s,s);}}
+    // ── Preview de transformación (mover/escalar en tiempo real) ──
+    if(state.selPixels&&state.sel&&(state.selDragging==='move'||state.selDragging==='handle')){
+        const o=state.selOrig,ns=state.sel;
+        const sx=ns.w/(o.w||1),sy=ns.h/(o.h||1);
+        ctx.globalAlpha=0.85;
+        for(const p of state.selPixels){if(!p)continue;
+            const rx=Math.round((p.x-o.x)*sx+ns.x),ry=Math.round((p.y-o.y)*sy+ns.y);
+            if(rx>=0&&rx<state.gridSize&&ry>=0&&ry<state.gridSize){
+                ctx.fillStyle=p.color;ctx.fillRect(rx*s,ry*s,s,s);
             }
         }
+        ctx.globalAlpha=1;
+    }
+    if(state.sel){const sx=state.sel.x,sy=state.sel.y,sw=state.sel.w,sh=state.sel.h;const sc=getSelectionContrast();ctx.strokeStyle=sc;ctx.lineWidth=1.5;ctx.setLineDash([4,2]);ctx.strokeRect(sx*s,sy*s,(sw+1)*s,(sh+1)*s);ctx.setLineDash([]);const hs=Math.max(3,Math.floor(s/3));for(const [hx,hy] of[[sx,sy],[sx+sw/2,sy],[sx+sw,sy],[sx,sy+sh/2],[sx+sw,sy+sh/2],[sx,sy+sh],[sx+sw/2,sy+sh],[sx+sw,sy+sh]]){ctx.fillStyle=sc;ctx.fillRect(Math.floor(hx*s-hs),Math.floor(hy*s-hs),hs*2,hs*2);ctx.strokeStyle='#000';ctx.lineWidth=1;ctx.strokeRect(Math.floor(hx*s-hs),Math.floor(hy*s-hs),hs*2,hs*2);}}
+    frRenderPreview();updateInfo();
+}
+function updateInfo(){const l=state.layers[state.activeLayer];document.getElementById('pixelCount').textContent=l?l.pixels.length:0;document.getElementById('gridInfo').textContent=state.gridSize+'×'+state.gridSize;}
+function getActivePixels(){const l=state.layers[state.activeLayer];return l?l.pixels:[];}
+function setPixel(x,y,color){
+    if(x<0||y<0||x>=state.gridSize||y>=state.gridSize)return;
+    const px=getActivePixels();const idx=px.findIndex(p=>p.x===x&&p.y===y);
+    if(color===null){if(idx>=0){px.splice(idx,1);saveHistory();}}
+    else{if(idx>=0){px[idx].color=color;saveHistory();}else{px.push({x,y,color});saveHistory();}}
+}
+function getPixel(x,y){const px=getActivePixels();const p=px.find(p=>p.x===x&&p.y===y);return p?p.color:null;}
+function saveHistory(){const l=state.layers[state.activeLayer];if(!l)return;state.history=state.history.slice(0,state.historyIdx+1);state.history.push({pixels:JSON.parse(JSON.stringify(l.pixels))});if(state.history.length>state.undoLimit)state.history.shift();state.historyIdx=state.history.length-1;document.getElementById('autoSaveIndicator').style.opacity='1';setTimeout(()=>document.getElementById('autoSaveIndicator').style.opacity='0',800);}
+function undo(){if(state.historyIdx>0){state.historyIdx--;state.layers[state.activeLayer].pixels=JSON.parse(JSON.stringify(state.history[state.historyIdx].pixels));draw();}}
+function redo(){if(state.historyIdx<state.history.length-1){state.historyIdx++;state.layers[state.activeLayer].pixels=JSON.parse(JSON.stringify(state.history[state.historyIdx].pixels));draw();}}
 
-        function normalizeImportedPixels(rawPixels) {
-            if (!Array.isArray(rawPixels)) return [];
-            return rawPixels.map(p => {
-                if (Array.isArray(p)) return { x: Number(p[0]), y: Number(p[1]), color: p[2] };
-                if (p && typeof p === 'object') return { x: Number(p.x), y: Number(p.y), color: p.color };
-                return null;
-            }).filter(p => p && Number.isFinite(p.x) && Number.isFinite(p.y) && typeof p.color === 'string');
-        }
+// ════════════ TOOLS ════════════
+let _drawing=false,_shapePreview=null;
+canvas.addEventListener('mousedown',e=>{
+    const rect=canvas.getBoundingClientRect();const mx=e.clientX-rect.left;const my=e.clientY-rect.top;
+    const gx=Math.floor(mx/state.zoom),gy=Math.floor(my/state.zoom);
+    if(state.tool==='brush'){setPixel(gx,gy,state.currentColor);_drawing=true;}
+    else if(state.tool==='eraser'){setPixel(gx,gy,null);_drawing=true;}
+    else if(state.tool==='fill'){floodFill(gx,gy,state.currentColor);}
+    else if(state.tool==='select'){
+        const h=detectHandle(gx,gy);
+        if(state.sel&&h>=0){state.selDragging='handle';state.selHandle=h;state.selStartX=gx;state.selStartY=gy;state.selOrig={...state.sel};}
+        else if(state.sel&&gx>=state.sel.x&&gx<=state.sel.x+state.sel.w&&gy>=state.sel.y&&gy<=state.sel.y+state.sel.h){state.selDragging='move';state.selStartX=gx;state.selStartY=gy;state.selOrig={...state.sel};cacheSelectionPixels();}
+        else{state.sel={x:gx,y:gy,w:0,h:0};state.selPixels=null;state.selDragging=null;}
+        _drawing=true;
+    }
+    else if(state.tool==='rect'||state.tool==='ellipse'||state.tool==='line'){state.shapeStart={x:gx,y:gy};_drawing=true;}
+    draw();
+});
+canvas.addEventListener('mousemove',e=>{
+    const rect=canvas.getBoundingClientRect();const mx=e.clientX-rect.left;const my=e.clientY-rect.top;
+    const gx=Math.floor(mx/state.zoom),gy=Math.floor(my/state.zoom);
+    state.mouseGx=Math.max(0,Math.min(state.gridSize-1,gx));state.mouseGy=Math.max(0,Math.min(state.gridSize-1,gy));
+    if(!_drawing)return;
+    if(state.tool==='brush'){setPixel(gx,gy,state.currentColor);draw();}
+    else if(state.tool==='eraser'){setPixel(gx,gy,null);draw();}
+    else if(state.tool==='select'){
+        if(state.selDragging==='move'&&state.sel){const dx=gx-state.selStartX,dy=gy-state.selStartY;state.sel.x=Math.max(0,Math.min(state.gridSize-state.sel.w-1,state.selOrig.x+dx));state.sel.y=Math.max(0,Math.min(state.gridSize-state.sel.h-1,state.selOrig.y+dy));draw();}
+        else if(state.selDragging==='handle'){resizeSelection(gx,gy);draw();}
+        else if(!state.selDragging&&state.sel){state.sel.w=gx-state.sel.x;state.sel.h=gy-state.sel.y;draw();}
+    }
+    else if(state.shapeStart){state._shapeEnd={x:gx,y:gy};draw();}
+});
+canvas.addEventListener('mouseup',e=>{
+    if(!_drawing){_drawing=false;return;}_drawing=false;
+    if(state.selDragging==='move'&&state.sel){pasteSelectionPixels();state.selDragging=null;state.selPixels=null;saveHistory();draw();}
+    else if(state.selDragging==='handle'){applySelectionResize();state.selDragging=null;state.selPixels=null;saveHistory();draw();}
+    else if(state.tool==='select'&&state.sel&&state.sel.w<0){state.sel.x+=state.sel.w;state.sel.w=Math.abs(state.sel.w);if(state.sel.h<0){state.sel.y+=state.sel.h;state.sel.h=Math.abs(state.sel.h);}state.sel.w=Math.max(0,state.sel.w);state.sel.h=Math.max(0,state.sel.h);draw();}
+    state.selDragging=null;
+    if(state.shapeStart&&state._shapeEnd){
+        const x1=state.shapeStart.x,y1=state.shapeStart.y,x2=state._shapeEnd.x,y2=state._shapeEnd.y;
+        if(state.tool==='rect')drawRect(x1,y1,x2,y2,state.currentColor,state.fillShapes);
+        else if(state.tool==='ellipse')drawEllipse(x1,y1,x2,y2,state.currentColor,state.fillShapes);
+        else if(state.tool==='line')drawLine(x1,y1,x2,y2,state.currentColor);
+        state.shapeStart=null;state._shapeEnd=null;saveHistory();draw();
+    }
+    state._shapeEnd=null;state.shapeStart=null;
+});
+// Preview shape while drawing
+const origDraw=draw;
+draw=function(){
+    origDraw();
+    if(state.shapeStart&&state._shapeEnd&&_drawing){
+        const s=state.zoom,x1=state.shapeStart.x,y1=state.shapeStart.y,x2=state._shapeEnd.x,y2=state._shapeEnd.y;
+        ctx.strokeStyle='rgba(255,255,255,.4)';ctx.lineWidth=1;ctx.setLineDash([3,3]);
+        if(state.tool==='rect')ctx.strokeRect(Math.min(x1,x2)*s,Math.min(y1,y2)*s,(Math.abs(x2-x1)+1)*s,(Math.abs(y2-y1)+1)*s);
+        else if(state.tool==='ellipse'){ctx.beginPath();const cx=(x1+x2)/2*s,cy=(y1+y2)/2*s,rx=Math.abs(x2-x1)/2*s,ry=Math.abs(y2-y1)/2*s;ctx.ellipse(cx,cy,rx,ry,0,0,Math.PI*2);ctx.stroke();}
+        else if(state.tool==='line'){ctx.beginPath();ctx.moveTo(x1*s+s/2,y1*s+s/2);ctx.lineTo(x2*s+s/2,y2*s+s/2);ctx.stroke();}
+        ctx.setLineDash([]);
+    }
+    frRenderPreview();updateInfo();
+};
 
-        async function persistLibraryToDisk(payload, fallbackFilename = 'entity-pixels.json') {
-            try {
-                const r = await fetch('http://localhost:3001/save-entity-pixels', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-                if (!r.ok) throw new Error('server error ' + r.status);
-                return { ok: true };
-            } catch (e) {
-                return { ok: false, error: e };
-            }
-        }
+function drawLine(x1,y1,x2,y2,color){
+    let dx=Math.abs(x2-x1),dy=Math.abs(y2-y1),sx=x1<x2?1:-1,sy=y1<y2?1:-1,err=dx-dy;
+    while(true){setPixel(x1,y1,color);if(x1===x2&&y1===y2)break;const e2=err*2;if(e2>-dy){err-=dy;x1+=sx;}if(e2<dx){err+=dx;y1+=sy;}}
+}
+function drawRect(x1,y1,x2,y2,color,fill){
+    const lx=Math.min(x1,x2),rx=Math.max(x1,x2),ty=Math.min(y1,y2),by=Math.max(y1,y2);
+    if(fill){for(let y=ty;y<=by;y++)for(let x=lx;x<=rx;x++)setPixel(x,y,color);}
+    else{for(let x=lx;x<=rx;x++){setPixel(x,ty,color);setPixel(x,by,color);}for(let y=ty;y<=by;y++){setPixel(lx,y,color);setPixel(rx,y,color);}}
+}
+// ════════════ SELECTION HELPERS ════════════
+function detectHandle(gx,gy){if(!state.sel)return -1;const s=state.sel;const d=3;for(let i=0;i<8;i++){const hx=i%3===0?s.x:(i%3===1?s.x+s.w/2:s.x+s.w);const hy=i<3?s.y:(i<6?s.y+s.h/2:s.y+s.h);if(Math.abs(gx-hx)<d&&Math.abs(gy-hy)<d)return i;}return -1;}
+function cacheSelectionPixels(){const px=getActivePixels();state.selPixels=[];const s=state.sel;px.forEach(p=>{if(p.x>=s.x&&p.x<=s.x+s.w&&p.y>=s.y&&p.y<=s.y+s.h)state.selPixels.push({...p});else state.selPixels.push(null);});const toRemove=[];for(let i=px.length-1;i>=0;i--){const p=px[i];if(p.x>=s.x&&p.x<=s.x+s.w&&p.y>=s.y&&p.y<=s.y+s.h){toRemove.push(i);}}for(const i of toRemove)px.splice(i,1);}
+function pasteSelectionPixels(){if(!state.selPixels||!state.sel)return;const px=getActivePixels();const s=state.sel;for(const p of state.selPixels){if(!p)continue;const nx=p.x-s.x+s.x,nx2=p.x-s.x+s.x,ny=p.y-s.y+s.y;if(nx>=0&&nx<state.gridSize&&ny>=0&&ny<state.gridSize){const ex=px.findIndex(q=>q.x===nx&&q.y===ny);if(ex>=0)px[ex].color=p.color;else px.push({x:nx,y:ny,color:p.color});}}state.selPixels=null;}
+function resizeSelection(gx,gy){const s=state.sel,o=state.selOrig;const h=state.selHandle;let nx=o.x,ny=o.y,nw=o.w,nh=o.h;
+    if(h===0||h===3||h===5){const dx=gx-state.selStartX;nx=o.x+dx;nw=o.w-dx;}
+    if(h===2||h===4||h===7){nw=o.w+(gx-state.selStartX);}
+    if(h===0||h===1||h===2){const dy=gy-state.selStartY;ny=o.y+dy;nh=o.h-dy;}
+    if(h===5||h===6||h===7){nh=o.h+(gy-state.selStartY);}
+    if(nw<1)nw=1;if(nh<1)nh=1;
+    if(nx<0){nw+=nx;nx=0;}if(ny<0){nh+=ny;ny=0;}
+    if(nx+nw>=state.gridSize)nw=state.gridSize-nx-1;
+    if(ny+nh>=state.gridSize)nh=state.gridSize-ny-1;
+    s.x=nx;s.y=ny;s.w=nw;s.h=nh;
+}
+function applySelectionResize(){if(!state.selPixels||!state.sel)return;const px=getActivePixels();const s=state.sel,o=state.selOrig;const sx=s.w/(o.w||1),sy=s.h/(o.h||1);
+    for(const p of state.selPixels){if(!p)continue;const rx=Math.round((p.x-o.x)*sx+s.x),ry=Math.round((p.y-o.y)*sy+s.y);if(rx>=0&&rx<state.gridSize&&ry>=0&&ry<state.gridSize){const ex=px.findIndex(q=>q.x===rx&&q.y===ry);if(ex>=0)px[ex].color=p.color;else px.push({x:rx,y:ry,color:p.color});}}
+    state.selPixels=null;
+}
+function deleteSelection(){if(!state.sel)return;const px=getActivePixels();for(let i=px.length-1;i>=0;i--){const p=px[i];if(p.x>=state.sel.x&&p.x<=state.sel.x+state.sel.w&&p.y>=state.sel.y&&p.y<=state.sel.y+state.sel.h)px.splice(i,1);}state.sel=null;saveHistory();draw();}
+function copySelection(){if(!state.sel)return;const px=getActivePixels();state.clipboard=px.filter(p=>p.x>=state.sel.x&&p.x<=state.sel.x+state.sel.w&&p.y>=state.sel.y&&p.y<=state.sel.y+state.sel.h).map(p=>({...p,x:p.x-state.sel.x,y:p.y-state.sel.y}));toast('📋 Copiado '+state.clipboard.length+'px');}
+function pasteClipboard(){if(!state.clipboard||!state.clipboard.length)return;const px=getActivePixels();const cx=state.mouseGx,cy=state.mouseGy;let minX=state.gridSize,minY=state.gridSize,maxX=0,maxY=0;let placed=0;for(const p of state.clipboard){const nx=p.x+cx,ny=p.y+cy;if(nx>=0&&nx<state.gridSize&&ny>=0&&ny<state.gridSize){const ex=px.findIndex(q=>q.x===nx&&q.y===ny);if(ex>=0)px[ex].color=p.color;else px.push({x:nx,y:ny,color:p.color});if(nx<minX)minX=nx;if(ny<minY)minY=ny;if(nx>maxX)maxX=nx;if(ny>maxY)maxY=ny;placed++;}}if(placed>0){state.sel={x:minX,y:minY,w:maxX-minX,h:maxY-minY};document.querySelector('[data-tool=select]').click();}saveHistory();draw();toast('📋 Pegado '+placed+'px en ('+cx+','+cy+')');}
+function getSelectionContrast(){if(!state.sel)return '#ffffff';const px=getActivePixels();const s=state.sel;let r=0,g=0,b=0,n=0;for(const p of px){if(p.x>=s.x&&p.x<=s.x+s.w&&p.y>=s.y&&p.y<=s.y+s.h){const c=parseInt(p.color.slice(1),16);r+=(c>>16)&0xff;g+=(c>>8)&0xff;b+=c&0xff;n++;}}if(n===0)return '#ffffff';r=Math.floor(r/n);g=Math.floor(g/n);b=Math.floor(b/n);const ir=255-r,ig=255-g,ib=255-b;const lum=0.299*ir+0.587*ig+0.114*ib;if(lum<30)return '#ffffff';if(lum>225)return '#000000';return '#'+[ir,ig,ib].map(v=>Math.min(255,Math.max(0,v)).toString(16).padStart(2,'0')).join('');}
 
-        async function loadEntityPixelLibrary() {
-            try {
-                const r = await fetch('/data/entity-pixels.json?v=' + Date.now(), { cache: 'no-store' });
-                if (!r.ok) throw new Error('No pixel library');
-                const j = await r.json();
-                ENTITY_PIXEL_LIBRARY = j.icons || j || {};
-                populateLibrarySelect();
-                showToast('Pixel library loaded');
-            } catch (e) {
-                console.warn('Could not load entity-pixels.json', e);
-                ENTITY_PIXEL_LIBRARY = {};
-                populateLibrarySelect();
-            }
-        }
+function drawEllipse(x1,y1,x2,y2,color,fill){
+    const cx=(x1+x2)/2,cy=(y1+y2)/2,rx=Math.abs(x2-x1)/2,ry=Math.abs(y2-y1)/2;
+    for(let y=Math.floor(cy-ry);y<=Math.ceil(cy+ry);y++)for(let x=Math.floor(cx-rx);x<=Math.ceil(cx+rx);x++){
+        const dx=(x-cx)/rx,dy=(y-cy)/ry;if(dx*dx+dy*dy<=1)setPixel(x,y,color);
+        else if(!fill&&dx*dx+dy*dy<=1.08)setPixel(x,y,color);
+    }
+}
 
-        function populateLibrarySelect() {
-            entityLibrarySelect.innerHTML = '';
-            const keys = Object.keys(ENTITY_PIXEL_LIBRARY);
-            const empty = document.createElement('option'); empty.value = ''; empty.textContent = '-- Select object --'; entityLibrarySelect.appendChild(empty);
-            keys.forEach(k => {
-                const o = document.createElement('option'); o.value = k; o.textContent = k; entityLibrarySelect.appendChild(o);
-            });
-        }
+function floodFill(sx,sy,color){
+    const target=getPixel(sx,sy);if(target===color)return;if(target===null&&color===null)return;
+    const stack=[[sx,sy]],visited=new Set();const key=(x,y)=>x+','+y;
+    while(stack.length){const [x,y]=stack.pop();if(x<0||y<0||x>=state.gridSize||y>=state.gridSize)continue;const k=key(x,y);if(visited.has(k))continue;visited.add(k);const c=getPixel(x,y);if(c!==target)continue;if(color===null){const px=getActivePixels();const idx=px.findIndex(p=>p.x===x&&p.y===y);if(idx>=0)px.splice(idx,1);}else{setPixel(x,y,color);}stack.push([x+1,y],[x-1,y],[x,y+1],[x,y-1]);}
+    saveHistory();
+}
 
-        createEntityBtn.addEventListener('click', () => {
-            const key = normalizeEntityKey(newEntityKeyInput && newEntityKeyInput.value);
-            if (!key) {
-                showToast('Escribe un nombre válido (a-z, 0-9, _)', true);
-                return;
-            }
-            const grid = state.gridSize;
-            const pixels = getEditorPixels().map(p => [p.x, p.y, p.color]);
-            ENTITY_PIXEL_LIBRARY[key] = { grid, pixels };
-            populateLibrarySelect();
-            entityLibrarySelect.value = key;
-            if (newEntityKeyInput) newEntityKeyInput.value = key;
-            updateCodeOutput();
-            showToast(`Entidad ${key} creada en librería local`);
-        });
+// ════════════ LAYERS ════════════
+function updateLayersPanel(){
+    const el=document.getElementById('layersList');el.innerHTML='';
+    state.layers.forEach((l,i)=>{const d=document.createElement('div');d.className='layer-row'+(i===state.activeLayer?' sel':'');d.innerHTML=`<span class="vis" data-i="${i}">${l.visible?'👁':'—'}</span><span class="name">${l.name}</span><span style="font-size:9px;color:var(--text2)">${l.pixels.length}px</span>`;d.onclick=e=>{if(!e.target.classList.contains('vis')){state.activeLayer=i;updateLayersPanel();draw();}};d.querySelector('.vis').onclick=e=>{e.stopPropagation();l.visible=!l.visible;updateLayersPanel();draw();};el.appendChild(d);});
+}
+// ════════════ FRAME BAR ════════════
+function updateFrameBar(){
+    const el=document.getElementById('frameThumbs');el.innerHTML='';
+    state.layers.forEach((l,i)=>{
+        const d=document.createElement('div');d.className='frame-thumb'+(i===state.activeLayer?' active':'');
+        const c=document.createElement('canvas');c.width=32;c.height=32;const cx=c.getContext('2d');
+        cx.fillStyle='rgba(0,0,0,.3)';cx.fillRect(0,0,32,32);
+        if(l.pixels.length){let mx=99,my=99,Mx=0,My=0;l.pixels.forEach(p=>{mx=Math.min(mx,p.x);my=Math.min(my,p.y);Mx=Math.max(Mx,p.x);My=Math.max(My,p.y);});const gw=Mx-mx+1,gh=My-my+1,s=Math.floor(Math.min(30/gw,30/gh));const ox=(32-gw*s)/2,oy=(32-gh*s)/2;l.pixels.forEach(p=>{cx.fillStyle=p.color;cx.fillRect(Math.floor(ox+(p.x-mx)*s),Math.floor(oy+(p.y-my)*s),s,s);});}
+        d.appendChild(c);const n=document.createElement('span');n.className='fn';n.textContent=i+1;d.appendChild(n);
+        d.onclick=()=>{state.activeLayer=i;updateFrameBar();updateLayersPanel();draw();};d.title=l.name;el.appendChild(d);
+    });
+    document.getElementById('frameInfo').textContent=`Frame ${state.activeLayer+1}/${state.layers.length}`;
+}
+const origUL=updateLayersPanel;updateLayersPanel=function(){origUL();updateFrameBar();};
+document.getElementById('framePrevBtn').onclick=()=>{if(state.activeLayer>0){state.activeLayer--;updateFrameBar();updateLayersPanel();draw();}};
+document.getElementById('frameNextBtn').onclick=()=>{if(state.activeLayer<state.layers.length-1){state.activeLayer++;updateFrameBar();updateLayersPanel();draw();}};
+document.getElementById('frameAddBtn').onclick=()=>{state.layers.push({name:'Frame '+(state.layers.length+1),pixels:[],visible:true});state.activeLayer=state.layers.length-1;saveHistory();updateFrameBar();updateLayersPanel();draw();};
+document.getElementById('frameDelBtn').onclick=()=>{if(state.layers.length>1){state.layers.splice(state.activeLayer,1);if(state.activeLayer>=state.layers.length)state.activeLayer=state.layers.length-1;saveHistory();updateFrameBar();updateLayersPanel();draw();}};
+document.getElementById('frameDupBtn').onclick=()=>{const src=state.layers[state.activeLayer];state.layers.splice(state.activeLayer+1,0,{name:src.name+' copy',pixels:JSON.parse(JSON.stringify(src.pixels)),visible:true});state.activeLayer++;saveHistory();updateFrameBar();updateLayersPanel();draw();};
+let _playing=false,_playInterval=null;
+document.getElementById('framePlayBtn').onclick=()=>{if(_playing){clearInterval(_playInterval);_playing=false;document.getElementById('framePlayBtn').textContent='▶️';document.getElementById('framePlayBtn').classList.remove('ok');return;}_playing=true;document.getElementById('framePlayBtn').textContent='⏸';document.getElementById('framePlayBtn').classList.add('ok');let fi=state.activeLayer;_playInterval=setInterval(()=>{fi=(fi+1)%state.layers.length;state.activeLayer=fi;updateFrameBar();updateLayersPanel();draw();},200);};
+document.getElementById('addLayerBtn').onclick=()=>{document.getElementById('frameAddBtn').click();};
+document.getElementById('mergeDownBtn').onclick=()=>{if(state.activeLayer>0){const src=state.layers[state.activeLayer];const dst=state.layers[state.activeLayer-1];for(const p of src.pixels){const ex=dst.pixels.find(q=>q.x===p.x&&q.y===p.y);if(ex)ex.color=p.color;else dst.pixels.push({...p});}state.layers.splice(state.activeLayer,1);state.activeLayer--;saveHistory();updateFrameBar();updateLayersPanel();draw();}};
 
-        saveAllLibraryBtn.addEventListener('click', async () => {
-            const payload = { icons: Object.assign({}, ENTITY_PIXEL_LIBRARY) };
-            const result = await persistLibraryToDisk(payload, 'entity-pixels.json');
-            if (result.ok) showToast('✓ Librería completa guardada en entity-pixels.json');
-            else showToast('⚠ Servidor no activo. No se guardó en disco.', true);
-            try { if (window.opener && window.opener !== window) window.opener.postMessage({ type: 'saveEntityPixels', data: payload }, '*'); } catch (e) {}
-            try { if (window.parent && window.parent !== window) window.parent.postMessage({ type: 'saveEntityPixels', data: payload }, '*'); } catch (e) {}
-        });
+// ════════════ PALETTE ════════════
+function buildPalette(){
+    const g=document.getElementById('paletteGrid');g.innerHTML='';
+    presetColors.forEach(c=>{const d=document.createElement('div');d.className='sw'+(c===state.currentColor?' sel':'');d.style.background=c;d.title=c;d.onclick=()=>{state.currentColor=c;document.getElementById('colorPicker').value=c;document.getElementById('colorHex').value=c;buildPalette();};g.appendChild(d);});
+}
+document.getElementById('colorPicker').oninput=function(){state.currentColor=this.value;document.getElementById('colorHex').value=this.value;buildPalette();};
+document.getElementById('colorHex').onchange=function(){const v=this.value;if(/^#[0-9a-fA-F]{6}$/.test(v)){state.currentColor=v;document.getElementById('colorPicker').value=v;buildPalette();}};
 
-        entityLibrarySelect.addEventListener('change', () => {
-            const k = entityLibrarySelect.value;
-            if (!k) return;
-            if (newEntityKeyInput) newEntityKeyInput.value = k;
-            const def = ENTITY_PIXEL_LIBRARY[k];
-            if (!def) return;
-            const imported = normalizeImportedPixels(def.pixels || []);
-            getCurrentLayer().pixels = imported;
-            state.pixels = imported.slice();
-            clearSelection(false);
-            state.shapeStart = null;
-            state.shapePreview = null;
-            state.gridSize = def.grid || def.gridSize || state.gridSize;
-            gridSizeInput.value = state.gridSize;
-            document.getElementById('gridSizeValue').textContent = state.gridSize;
-            document.getElementById('gridSizeValue2').textContent = state.gridSize;
-            gridInfoSpan.textContent = `${state.gridSize}x${state.gridSize}`;
-            fitZoomToCanvas();
-            resizeCanvas();
-            addToHistory(); updateCodeOutput(); draw();
-            showToast(`Loaded ${k}`);
-        });
+// ════════════ TOOL BUTTONS ════════════
+document.querySelectorAll('[data-tool]').forEach(b=>{b.onclick=()=>{document.querySelectorAll('[data-tool]').forEach(x=>x.classList.remove('active'));b.classList.add('active');state.tool=b.dataset.tool;}});
+document.getElementById('flipHBtn').onclick=()=>{const px=getActivePixels();px.forEach(p=>p.x=state.gridSize-1-p.x);saveHistory();draw();};
+document.getElementById('flipVBtn').onclick=()=>{const px=getActivePixels();px.forEach(p=>p.y=state.gridSize-1-p.y);saveHistory();draw();};
+document.getElementById('rotateBtn').onclick=()=>{const px=getActivePixels();px.forEach(p=>{const nx=state.gridSize-1-p.y;const ny=p.x;p.x=nx;p.y=ny;});saveHistory();draw();};
+document.getElementById('trimCanvasBtn').onclick=()=>{const px=getActivePixels();if(!px.length)return;let mx=state.gridSize,my=state.gridSize,Mx=0,My=0;px.forEach(p=>{mx=Math.min(mx,p.x);my=Math.min(my,p.y);Mx=Math.max(Mx,p.x);My=Math.max(My,p.y);});px.forEach(p=>{p.x-=mx;p.y-=my;});state.gridSize=Math.max(Mx-mx+1,My-my+1,4);document.getElementById('gridSize').value=state.gridSize;saveHistory();resizeCanvas();};
+document.getElementById('centerSpriteBtn').onclick=()=>{const px=getActivePixels();if(!px.length)return;let mx=state.gridSize,my=state.gridSize,Mx=0,My=0;px.forEach(p=>{mx=Math.min(mx,p.x);my=Math.min(my,p.y);Mx=Math.max(Mx,p.x);My=Math.max(My,p.y);});const ow=Mx-mx+1,oh=My-my+1;const ox=Math.floor((state.gridSize-ow)/2)-mx,oy=Math.floor((state.gridSize-oh)/2)-my;px.forEach(p=>{p.x+=ox;p.y+=oy;});saveHistory();draw();};
 
-        reloadLibraryBtn.addEventListener('click', () => loadEntityPixelLibrary());
+// ════════════ UI BINDINGS ════════════
+document.getElementById('gridSize').onchange=function(){state.gridSize=Math.max(4,Math.min(64,+this.value));this.value=state.gridSize;const px=getActivePixels();for(let i=px.length-1;i>=0;i--){if(px[i].x>=state.gridSize||px[i].y>=state.gridSize)px.splice(i,1);}saveHistory();resizeCanvas();};
+document.getElementById('zoomSlider').oninput=function(){state.zoom=+this.value;document.getElementById('zoomVal').textContent=state.zoom+'x';resizeCanvas();};
+document.getElementById('showGrid').onchange=function(){state.showGrid=this.checked;draw();};
+document.getElementById('fillShapes').onchange=function(){state.fillShapes=this.checked;};
+document.getElementById('mirrorX').onchange=function(){state.mirrorX=this.checked;};
 
-        // Export multiplier and save-mode helpers
-        let exportMultiplier = 2;
-        const scale2Btn = document.getElementById('scale2Btn');
-        const scale4Btn = document.getElementById('scale4Btn');
-        const scale8Btn = document.getElementById('scale8Btn');
-        const scale16Btn = document.getElementById('scale16Btn');
-        const customScaleInput = document.getElementById('customScaleInput');
+// ════════════ FOOTBALL RETRO PREVIEW ════════════
+const frPC=document.getElementById('frPreviewCanvas'),frPCtx=frPC.getContext('2d');
+const frScaleSlider=document.getElementById('frScaleSlider');
+frScaleSlider.oninput=()=>{document.getElementById('frScaleVal').textContent=frScaleSlider.value+'x';frRenderPreview();};
 
-        function setExportMultiplier(n) {
-            exportMultiplier = Math.max(1, Math.floor(Number(n) || 1));
-            customScaleInput.value = exportMultiplier;
-            [scale2Btn, scale4Btn, scale8Btn, scale16Btn].forEach(b => {
-                if (!b) return;
-                if (Number(b.dataset.scale) === exportMultiplier) b.classList.add('active'); else b.classList.remove('active');
-            });
-        }
+function frRenderPreview(){
+    const scale=+frScaleSlider.value;const pw=frPC.width,ph=frPC.height;
+    frPCtx.clearRect(0,0,pw,ph);frPCtx.fillStyle='#0f0f17';frPCtx.fillRect(0,0,pw,ph);
+    frPCtx.fillStyle='#1a1a28';for(let y=0;y<ph;y+=10)for(let x=0;x<pw;x+=10)if((x/10+y/10)%2===0)frPCtx.fillRect(x,y,10,10);
+    const px=getActivePixels();if(!px.length){document.getElementById('frPreviewInfo').textContent='Sin píxeles';return;}
+    let mx=999,my=999,Mx=0,My=0;px.forEach(p=>{mx=Math.min(mx,p.x);my=Math.min(my,p.y);Mx=Math.max(Mx,p.x);My=Math.max(My,p.y);});
+    const gw=Mx-mx+1,gh=My-my+1,sw=gw*scale,sh=gh*scale;
+    const cx=(pw-sw)/2,cy=(ph-sh)/2+8;
+    frPCtx.fillStyle='rgba(0,0,0,.3)';frPCtx.beginPath();frPCtx.ellipse(cx+sw/2,cy+sh+scale*.3,sw*.42,scale*1.2,0,0,Math.PI*2);frPCtx.fill();
+    for(const p of px){frPCtx.fillStyle=p.color;frPCtx.fillRect(Math.floor(cx+(p.x-mx)*scale),Math.floor(cy+(p.y-my)*scale),scale,scale);}
+    document.getElementById('frPreviewInfo').textContent=`${gw}×${gh} | ${px.length}px | ${scale}x | ${sw}×${sh}px`;
+}
 
-        [scale2Btn, scale4Btn, scale8Btn, scale16Btn].forEach(b => { if (b) b.addEventListener('click', () => { setExportMultiplier(Number(b.dataset.scale)); showToast(`Export scale set ${exportMultiplier}x`); }); });
-        if (customScaleInput) customScaleInput.addEventListener('change', () => { setExportMultiplier(customScaleInput.value); showToast(`Export scale set ${exportMultiplier}x`); });
+// ════════════ EXPORT / IMPORT ════════════
+document.getElementById('frExportBtn').onclick=()=>{
+    const px=getActivePixels();if(!px.length)return toast('Sin píxeles');
+    let mx=999,my=999,Mx=0,My=0;px.forEach(p=>{mx=Math.min(mx,p.x);my=Math.min(my,p.y);Mx=Math.max(Mx,p.x);My=Math.max(My,p.y);});
+    const g=Math.max(Mx-mx+1,My-my+1),arr=px.map(p=>`[${p.x-mx},${p.y-my},"${p.color}"]`).join(',');
+    const code=`{\n  "grid": ${g},\n  "pixels": [${arr}]\n}`;
+    navigator.clipboard.writeText(code).then(()=>toast('📋 Copiado PIXEL_LIBRARY'));
+};
+document.getElementById('frCopySpriteBtn').onclick=()=>{
+    const px=getActivePixels();if(!px.length)return toast('Sin píxeles');
+    let mx=999,my=999,Mx=0,My=0;px.forEach(p=>{mx=Math.min(mx,p.x);my=Math.min(my,p.y);Mx=Math.max(Mx,p.x);My=Math.max(My,p.y);});
+    const g=Math.max(Mx-mx+1,My-my+1);
+    const rows=[],pal={},cm={};const chs='abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';let ci=0;
+    function gc(c){if(cm[c])return cm[c];const ch=chs[ci++];cm[c]=ch;pal[ch]=c;return ch;}
+    for(let y=0;y<g;y++){let r='';for(let x=0;x<g;x++){const p=px.find(q=>q.x-mx===x&&q.y-my===y);r+=p?gc(p.color):'.';}rows.push(r);}
+    const code=`PIXEL_LIBRARY["nombre"] = buildPixelSprite([\n${rows.map(r=>'    "'+r+'"').join(',\n')}\n], ${JSON.stringify(pal)});`;
+    navigator.clipboard.writeText(code).then(()=>toast('📋 Copiado buildPixelSprite()'));
+};
+document.getElementById('frImportBtn').onclick=()=>{document.getElementById('frImportModal').style.display='flex';};
+document.getElementById('frImportCancelBtn').onclick=()=>{document.getElementById('frImportModal').style.display='none';};
 
-        // initialize button states
-        setExportMultiplier(exportMultiplier);
+// ── Guardar en archivo JSON ──
+document.getElementById('saveToFileBtn').onclick=()=>{document.getElementById('saveModal').style.display='flex';};
+document.getElementById('saveCancelBtn').onclick=()=>{document.getElementById('saveModal').style.display='none';};
+document.getElementById('saveConfirmBtn').onclick=async()=>{
+    const px=getActivePixels();if(!px.length)return toast('Sin píxeles para guardar');
+    let mx=999,my=999,Mx=0,My=0;px.forEach(p=>{mx=Math.min(mx,p.x);my=Math.min(my,p.y);Mx=Math.max(Mx,p.x);My=Math.max(My,p.y);});
+    const grid=Math.max(Mx-mx+1,My-my+1);
+    const normPx=px.map(p=>({x:p.x-mx,y:p.y-my,color:p.color}));
+    const name=document.getElementById('saveSpriteName').value.trim()||'nuevo_sprite';
+    const file=document.getElementById('saveTargetFile').value;
+    try{
+        const r=await fetch('/api/save-sprite',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({file,spriteName:name,grid,pixels:normPx})});
+        const j=await r.json();
+        if(j.error)toast('❌ '+j.error);
+        else{toast('✅ Guardado: '+j.sprite+' ('+j.pixels+'px) en '+j.file);document.getElementById('saveModal').style.display='none';state.currentSourceFile=file;}
+    }catch(e){toast('❌ Error: '+e.message);}
+};
 
-        // Resizer behavior for left sidebar
-        (function(){
-            const resizer = document.getElementById('leftResizer');
-            const sidebar = document.querySelector('.sidebar-left');
-            const MIN = 80; const MAX = 520;
-            if (!resizer || !sidebar) return;
-            let dragging = false;
-            resizer.addEventListener('mousedown', (ev) => {
-                dragging = true; document.body.style.userSelect = 'none';
-            });
-            document.addEventListener('mousemove', (ev) => {
-                if (!dragging) return;
-                const containerRect = document.querySelector('.container').getBoundingClientRect();
-                let newWidth = ev.clientX - containerRect.left;
-                newWidth = Math.max(MIN, Math.min(MAX, newWidth));
-                sidebar.style.width = newWidth + 'px';
-                // trigger canvas resize if function exists
-                try { if (typeof resizeCanvas === 'function') resizeCanvas(); } catch (e) {}
-            });
-            document.addEventListener('mouseup', () => { if (dragging) { dragging = false; document.body.style.userSelect = ''; } });
-        })();
+// ── Paleta por defecto para sprites de personajes ──
+const CHAR_PALETTE={o:'#111',h:'#333',s:'#e8b48f',S:'#c89a6e',e:'#222',a:'#e8b48f',c:'#e63946',C:'#991a1a',n:'#fff',p:'#1a1a3a',P:'#0a0a1a',k:'#fff',b:'#111',r:'#cc0000',t:'#8b4513',g:'#444'};
 
-        function downloadJSON(filename, obj) {
-            const el = document.createElement('a');
-            const data = JSON.stringify(obj, null, 2);
-            el.setAttribute('href', 'data:application/json;charset=utf-8,' + encodeURIComponent(data));
-            el.setAttribute('download', filename);
-            el.style.display = 'none'; document.body.appendChild(el); el.click(); document.body.removeChild(el);
-        }
+function importRows(rows,palette){
+    const px=[];for(let r=0;r<rows.length;r++)for(let c=0;c<rows[r].length;c++){const ch=rows[r][c];if(ch!=='.'&&palette[ch])px.push({x:c,y:r,color:palette[ch]});}
+    autoTrimAndSet(px,rows[0].length);
+    saveHistory();resizeCanvas();updateLayersPanel();draw();toast('✅ Importado: '+px.length+'px, grid '+state.gridSize);
+}
+function autoTrimAndSet(px,defaultGrid){
+    if(!px.length){state.gridSize=defaultGrid;document.getElementById('gridSize').value=defaultGrid;state.layers[state.activeLayer].pixels=[];return;}
+    let mx=defaultGrid,my=defaultGrid,Mx=0,My=0;px.forEach(p=>{mx=Math.min(mx,p.x);my=Math.min(my,p.y);Mx=Math.max(Mx,p.x);My=Math.max(My,p.y);});
+    px.forEach(p=>{p.x-=mx;p.y-=my;});
+    state.gridSize=Math.max(Mx-mx+1,My-my+1,4);document.getElementById('gridSize').value=state.gridSize;
+    state.layers[state.activeLayer].pixels=px;
+}
+function smartImport(json){
+    // Formato 1: {rows, palette}
+    if(json.rows&&json.palette){importRows(json.rows,json.palette);return true;}
+    // Formato 2: {body, idle, run1, run2} — sprite de personaje
+    if(json.body&&json.idle){const all=json.body.concat(json.idle);importRows(all,CHAR_PALETTE);document.getElementById('spriteName').textContent=json.id||json.name||'character';return true;}
+    // Formato 3: {body} solo
+    if(json.body&&Array.isArray(json.body)&&typeof json.body[0]==='string'){importRows(json.body,CHAR_PALETTE);document.getElementById('spriteName').textContent=json.id||json.name||'sprite';return true;}
+    // Formato 4: {grid, pixels: [[x,y,color],...]}
+    if(json.grid&&json.pixels){const px=json.pixels.map(p=>({x:p[0],y:p[1],color:p[2]}));autoTrimAndSet(px,json.grid);saveHistory();resizeCanvas();updateLayersPanel();draw();toast('✅ Importado: '+px.length+'px, grid '+state.gridSize);return true;}
+    // Formato 5: es un sprite individual con {grid, pixels} dentro de algo más grande
+    if(json.grid&&json.pixels===undefined&&typeof json==='object'){for(const k of Object.keys(json)){if(json[k]&&json[k].grid&&json[k].pixels){const px=json[k].pixels.map(p=>({x:p[0],y:p[1],color:p[2]}));state.layers[state.activeLayer].pixels=px;state.gridSize=json[k].grid;document.getElementById('gridSize').value=state.gridSize;document.getElementById('spriteName').textContent=k;saveHistory();resizeCanvas();updateLayersPanel();draw();toast('✅ Importado: '+k+' ('+px.length+'px)');return true;}}}
+    return false;
+}
+document.getElementById('frImportConfirmBtn').onclick=()=>{
+    try{const j=JSON.parse(document.getElementById('frImportCode').value);
+        if(smartImport(j)){document.getElementById('frImportModal').style.display='none';}
+        else{toast('❌ Formato no reconocido. Prueba con {rows, palette}, {body, idle}, o {grid, pixels}');}
+    }catch(e){toast('❌ JSON inválido: '+e.message);}
+};
+document.getElementById('applyCodeBtn').onclick=()=>{
+    try{const j=JSON.parse(prompt('Pega aquí el JSON del sprite:'));
+        if(smartImport(j))return;
+        toast('❌ Formato no reconocido');
+    }catch(e){toast('❌ '+e.message);}
+};
 
-        // Save current edited sprite back to entity-pixels.json via save server + optional game post
-        saveToLibraryBtn.addEventListener('click', async () => {
-            const typedKey = normalizeEntityKey(newEntityKeyInput && newEntityKeyInput.value);
-            const key = typedKey || entityLibrarySelect.value || 'editor_custom';
-            const grid = state.gridSize;
-            const pixels = getEditorPixels().map(p => [p.x, p.y, p.color]);
-            // Update in-memory library
-            ENTITY_PIXEL_LIBRARY[key] = { grid, pixels };
-            populateLibrarySelect();
-            entityLibrarySelect.value = key;
-            if (newEntityKeyInput) newEntityKeyInput.value = key;
-            const newLib = Object.assign({}, ENTITY_PIXEL_LIBRARY);
-            const payload = { icons: newLib };
-
-            // 1. Write to disk via save server (primary)
-            const result = await persistLibraryToDisk(payload, 'entity-pixels.json');
-            if (result.ok) showToast(`✓ ${key} guardado en entity-pixels.json`);
-            else showToast('⚠ Servidor no activo. No se guardó en disco.', true);
-
-            // 2. Also notify live game window if open
-            const patch = { icons: {} };
-            patch.icons[key] = { grid, pixels };
-            const msg = { type: 'saveEntityPixelsPatch', data: patch, meta: { key } };
-            try { if (window.opener && window.opener !== window) window.opener.postMessage(msg, '*'); } catch (e) {}
-            try { if (window.parent && window.parent !== window) window.parent.postMessage(msg, '*'); } catch (e) {}
-        });
-
-        // Load library at start
-        loadEntityPixelLibrary();
-
-        canvas.addEventListener('mousedown', handleCanvasPointerDown);
-        canvas.addEventListener('mousemove', handleCanvasPointerMove);
-        document.addEventListener('mouseup', handleCanvasPointerUp);
-
-        document.getElementById('undoBtn').addEventListener('click', undo);
-        document.getElementById('redoBtn').addEventListener('click', redo);
-        document.getElementById('clearBtn').addEventListener('click', clear);
-        fillSelectionBtn.addEventListener('click', () => applySelection('fill'));
-        eraseSelectionBtn.addEventListener('click', () => applySelection('erase'));
-        clearSelectionBtn.addEventListener('click', () => { clearSelection(); showToast('Selección eliminada'); });
-        copySelectionBtn.addEventListener('click', () => copySelectionToClipboard(false));
-        cutSelectionBtn.addEventListener('click', () => copySelectionToClipboard(true));
-        pasteSelectionBtn.addEventListener('click', () => pasteClipboardIntoCanvas());
-        flipHorizontalBtn.addEventListener('click', () => applyCanvasTransform(pixel => ({ x: state.gridSize - 1 - pixel.x, y: pixel.y, color: pixel.color }), 'Canvas invertido horizontalmente'));
-        flipVerticalBtn.addEventListener('click', () => applyCanvasTransform(pixel => ({ x: pixel.x, y: state.gridSize - 1 - pixel.y, color: pixel.color }), 'Canvas invertido verticalmente'));
-        rotateRightBtn.addEventListener('click', () => applyCanvasTransform(pixel => ({ x: state.gridSize - 1 - pixel.y, y: pixel.x, color: pixel.color }), 'Canvas rotado 90°'));
-        trimCanvasBtn.addEventListener('click', trimCanvasToContent);
-        centerSpriteBtn.addEventListener('click', centerSpriteToGrid);
-        
-        // Background image handlers
-        document.getElementById('bgImageFile').addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                const img = new Image();
-                img.onload = () => {
-                    state.backgroundImage = img;
-                    draw();
-                    showToast('Imagen de fondo cargada');
+// ════════════ SPRITE LIBRARY (ALL sources) ════════════
+const spriteLib={games:{},_source:{}};
+function pixelsFromRows(rows,palette){const px=[];for(let r=0;r<rows.length;r++)for(let c=0;c<rows[r].length;c++){const ch=rows[r][c];if(ch!=='.'&&palette[ch])px.push([c,r,palette[ch]]);}return px;}
+function shadeHex(hex,pct){if(!hex||!hex.startsWith('#'))return hex||'#333';const n=parseInt(hex.slice(1),16);let r=(n>>16)&255,g=(n>>8)&255,b=n&255;const f=1+pct;r=Math.round(r*f);g=Math.round(g*f);b=Math.round(b*f);return'#'+[r,g,b].map(v=>Math.min(255,Math.max(0,v)).toString(16).padStart(2,'0')).join('');}
+async function fetchJSON(...paths){for(const p of paths){try{const r=await fetch(p);if(r.ok)return await r.json();}catch(e){}}return null;}
+async function loadSpriteLibrary(){
+    spriteLib._source={};
+    const frCats=[],mbCats=[];
+    const d1=await fetchJSON('/data/sprites-penalty.json');
+    if(d1){const sp={};for(const k of['goal_front','goal_side','gk_front','shooter_back','stand_penalty']){if(d1[k]&&d1[k].rows&&d1[k].palette){sp[k]={grid:d1[k].rows[0].length,pixels:pixelsFromRows(d1[k].rows,d1[k].palette)};spriteLib._source[k]='sprites-penalty.json';}}if(Object.keys(sp).length)frCats.push({name:'Penalti / Porterías',sprites:sp});}
+    const d2=await fetchJSON('/data/sprites.json');
+    if(d2&&d2.sprites){const sp2={};for(const s of d2.sprites){const sid=s.id||s.name;if(s.pixels&&s.grid){sp2[sid]={grid:s.grid,pixels:s.pixels.map(p=>[p[0],p[1],p[2]])};}else if(s.body){const all=s.body.concat(s.idle||[],s.run1||[],s.run2||[]);sp2[sid]={grid:s.body[0].length,pixels:pixelsFromRows(all,CHAR_PALETTE)};}spriteLib._source[sid]='sprites.json';}if(Object.keys(sp2).length)frCats.push({name:'Personajes',sprites:sp2});}
+    const d3=await fetchJSON('/data/stadiums.json');
+    if(d3&&d3.stadiums){const sp3={};for(const s of d3.stadiums){const c1=s.stand?.color1||'#333',c2=s.stand?.color2||'#555';const sid='stad_'+s.id;sp3[sid]={grid:12,pixels:pixelsFromRows(['.aaaaaaaaaa.','.aCCCCCCCCa.','.aCCCCCCCCa.','.aaaaaaaaaa.'],{a:c1,C:c2})};spriteLib._source[sid]='stadiums.json';}if(Object.keys(sp3).length)frCats.push({name:'Estadios',sprites:sp3});}
+    const d4=await fetchJSON('/data/teams.json');
+    if(d4&&d4.teams){const sp4={};for(const t of d4.teams){const sc=t.shirt||'#e63946';const sid='team_'+t.id;sp4[sid]={grid:16,pixels:pixelsFromRows(['...cccccccc.....','..cccccccccc....','..ccnnnnnncc...','..cccccccccc....','..CCCCCCCCCC....','....pppppp......','....pPPPPp......','...kk..kk.......','...bb..bb.......'],{c:sc,C:shadeHex(sc,-.3),n:'#fff',p:t.shorts||'#111',P:'#000',k:'#fff',b:'#111'})};spriteLib._source[sid]='teams.json';}if(Object.keys(sp4).length)frCats.push({name:'Equipos',sprites:sp4});}
+    const d5=await fetchJSON('/data/entity-pixels.json');
+    if(d5&&d5.icons&&Object.keys(d5.icons).length){mbCats.push({name:'Entidades',sprites:d5.icons});for(const k of Object.keys(d5.icons))spriteLib._source[k]='entity-pixels.json';}
+    spriteLib.games={};
+    if(frCats.length)spriteLib.games['⚽ Football Retro']=frCats;
+    if(mbCats.length)spriteLib.games['🏛 MesoBuilder']=mbCats;
+    renderSpriteLibrary();
+}
+function renderSpriteLibrary(filter=''){
+    const el=document.getElementById('spriteList');el.innerHTML='';
+    const games=spriteLib.games||{};
+    if(!Object.keys(games).length){el.innerHTML='<div style="padding:12px;font-size:10px;color:var(--text2);text-align:center">No se encontraron librerías.</div>';return;}
+    const f=filter.toLowerCase();
+    Object.entries(games).forEach(([gameName,categories])=>{
+        const total=categories.reduce((a,c)=>a+Object.keys(c.sprites).length,0);
+        const gd=document.createElement('div');gd.style.marginBottom='8px';
+        const gb=document.createElement('div');
+        gb.style.cssText='padding:7px 10px;background:var(--glass3);backdrop-filter:blur(8px);border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:11px;color:var(--accent2);font-weight:600;display:flex;justify-content:space-between;align-items:center;transition:.15s;user-select:none';
+        gb.innerHTML=gameName+' <span style="font-size:9px;color:var(--text2)">'+total+' sprites</span>';
+        gb.onmouseenter=()=>{gb.style.background='rgba(139,92,246,.15)';gb.style.borderColor='var(--accent)';};
+        gb.onmouseleave=()=>{gb.style.background='var(--glass3)';gb.style.borderColor='var(--border)';};
+        const gi=document.createElement('div');gi.style.display='none';gi.style.padding='4px 0 0 4px';
+        gb.onclick=()=>{gi.style.display=gi.style.display==='none'?'block':'none';};
+        gd.appendChild(gb);
+        categories.forEach(cat=>{
+            const cl=document.createElement('div');cl.style.cssText='font-size:9px;color:var(--text2);text-transform:uppercase;padding:4px 6px 2px;letter-spacing:.5px';cl.textContent=cat.name;gi.appendChild(cl);
+            const gr=document.createElement('div');gr.className='items';
+            Object.entries(cat.sprites).forEach(([k,v])=>{if(f&&!k.toLowerCase().includes(f))return;
+                const item=document.createElement('div');item.className='item';item.title=k;
+                const c=document.createElement('canvas');c.width=32;c.height=32;const cx=c.getContext('2d');
+                if(v.pixels&&v.grid){const s=Math.floor(32/v.grid);v.pixels.forEach(p=>{cx.fillStyle=p[2];cx.fillRect(p[0]*s,p[1]*s,s,s);});}
+                item.appendChild(c);const tip=document.createElement('span');tip.className='tip';tip.textContent=k.length>14?k.slice(0,12)+'..':k;item.appendChild(tip);
+                item.onclick=()=>{
+                    let px,grid;
+                    if(v.pixels&&v.grid){px=v.pixels.map(p=>({x:p[0],y:p[1],color:p[2]}));grid=v.grid;autoTrimAndSet(px,grid);}
+                    else{px=[];grid=16;state.layers[state.activeLayer].pixels=px;state.gridSize=grid;document.getElementById('gridSize').value=grid;}
+                    document.getElementById('spriteName').textContent=k;
+                    document.getElementById('saveSpriteName').value=k;
+                    state.currentSourceFile=spriteLib._source[k]||'sprites.json';
+                    document.getElementById('saveTargetFile').value=state.currentSourceFile;
+                    saveHistory();resizeCanvas();updateLayersPanel();draw();
                 };
-                img.src = event.target.result;
-            };
-            reader.readAsDataURL(file);
+                gr.appendChild(item);
+            });
+            gi.appendChild(gr);
         });
-        
-        document.getElementById('loadBgUrlBtn').addEventListener('click', () => {
-            const url = document.getElementById('bgImageUrl').value.trim();
-            if (!url) { showToast('Ingrese una URL', true); return; }
-            const img = new Image();
-            img.crossOrigin = 'anonymous';
-            img.onload = () => {
-                state.backgroundImage = img;
-                draw();
-                showToast('Imagen remota cargada');
-            };
-            img.onerror = () => { showToast('Error al cargar imagen', true); };
-            img.src = url;
-        });
-        
-        document.getElementById('clearBgBtn').addEventListener('click', () => {
-            state.backgroundImage = null;
-            document.getElementById('bgImageFile').value = '';
-            document.getElementById('bgImageUrl').value = '';
-            draw();
-            showToast('Imagen de fondo eliminada');
-        });
-        
-        document.getElementById('bgOpacitySlider').addEventListener('input', (e) => {
-            state.bgOpacity = parseInt(e.target.value);
-            document.getElementById('bgOpacityValue').textContent = state.bgOpacity + '%';
-            draw();
-        });
-
-        // Image → Pixel Art converter
-        document.getElementById('convertToPxArtBtn').addEventListener('click', () => {
-            const img = state.backgroundImage;
-            if (!img) { showToast('Carga primero una imagen de fondo', true); return; }
-            const G = state.gridSize;
-            const maxColors = Math.max(2, Math.min(64, parseInt(document.getElementById('imgConvertColors').value) || 16));
-
-            // Step 1: downscale image to G×G into an offscreen canvas
-            const tmp = document.createElement('canvas');
-            tmp.width = G; tmp.height = G;
-            const tc = tmp.getContext('2d');
-            tc.imageSmoothingEnabled = true;
-            tc.imageSmoothingQuality = 'high';
-            tc.drawImage(img, 0, 0, G, G);
-            const raw = tc.getImageData(0, 0, G, G).data;
-
-            // Step 2: collect all opaque pixel colors
-            const srcColors = [];
-            for (let i = 0; i < G * G; i++) {
-                const a = raw[i * 4 + 3];
-                if (a < 32) { srcColors.push(null); continue; }
-                srcColors.push([raw[i*4], raw[i*4+1], raw[i*4+2]]);
-            }
-
-            // Step 3: k-means color quantization to reduce palette
-            const opaque = srcColors.filter(Boolean);
-            if (!opaque.length) { showToast('La imagen no tiene píxeles visibles', true); return; }
-
-            function hexColor(r, g, b) { return '#' + [r,g,b].map(v => Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,'0')).join(''); }
-            function colorDist(a, b) { return (a[0]-b[0])**2 + (a[1]-b[1])**2 + (a[2]-b[2])**2; }
-
-            // pick initial centroids via random unique samples
-            const k = Math.min(maxColors, opaque.length);
-            let centroids = [];
-            const step = Math.max(1, Math.floor(opaque.length / k));
-            for (let i = 0; i < k; i++) centroids.push([...opaque[i * step]]);
-
-            // 12 iterations of k-means
-            for (let iter = 0; iter < 12; iter++) {
-                const sums = centroids.map(() => [0,0,0,0]); // r,g,b,count
-                for (const c of opaque) {
-                    let best = 0, bestD = Infinity;
-                    for (let j = 0; j < k; j++) { const d = colorDist(c, centroids[j]); if (d < bestD) { bestD = d; best = j; } }
-                    sums[best][0] += c[0]; sums[best][1] += c[1]; sums[best][2] += c[2]; sums[best][3]++;
-                }
-                centroids = sums.map((s, i) => s[3] > 0 ? [s[0]/s[3], s[1]/s[3], s[2]/s[3]] : centroids[i]);
-            }
-
-            // Step 4: map each pixel to nearest centroid and build pixel list
-            const newPixels = [];
-            for (let y = 0; y < G; y++) {
-                for (let x = 0; x < G; x++) {
-                    const src = srcColors[y * G + x];
-                    if (!src) continue;
-                    let best = 0, bestD = Infinity;
-                    for (let j = 0; j < k; j++) { const d = colorDist(src, centroids[j]); if (d < bestD) { bestD = d; best = j; } }
-                    newPixels.push({ x, y, color: hexColor(...centroids[best]) });
-                }
-            }
-
-            // Step 5: replace current layer pixels
-            getCurrentLayer().pixels = newPixels;
-            draw();
-            showToast(`Convertido: ${newPixels.length} píxeles, ${k} colores`);
-        });
-        
-        // Layer handlers
-        document.getElementById('addLayerBtn').addEventListener('click', () => {
-            const layerId = 'layer_' + Date.now();
-            state.layers.push({ id: layerId, name: `Capa ${state.layers.length + 1}`, pixels: [], visible: true, opacity: 100 });
-            state.currentLayerId = layerId;
-            updateLayersPanel();
-            draw();
-            showToast('Nueva capa creada');
-        });
-        
-        document.getElementById('flattenLayersBtn').addEventListener('click', () => {
-            if (state.layers.length <= 1) { showToast('Solo hay una capa', true); return; }
-            // Merge all visible layers into first layer
-            const merged = { ...state.layers[0], pixels: [...state.layers[0].pixels] };
-            for (let i = 1; i < state.layers.length; i++) {
-                if (state.layers[i].visible) {
-                    merged.pixels.push(...state.layers[i].pixels);
-                }
-            }
-            state.layers = [merged];
-            state.currentLayerId = merged.id;
-            updateLayersPanel();
-            draw();
-            showToast(`${state.layers.length - 1} capas combinadas`);
-        });
-        
-        document.getElementById('copyBtn').addEventListener('click', copyCode);
-        document.getElementById('downloadBtn').addEventListener('click', downloadCode);
-        document.getElementById('importBtn').addEventListener('click', () => importModal.classList.add('active'));
-        document.getElementById('importCancelBtn').addEventListener('click', () => importModal.classList.remove('active'));
-        document.getElementById('importConfirmBtn').addEventListener('click', () => {
-            // try detect entity-defs JSON: has `buildings` or `trees` or `animals`
-            const txt = importCode.value && importCode.value.trim();
-            if (!txt) { showToast('No content to import', true); return; }
-            try {
-                const obj = JSON.parse(txt);
-                if (obj && (obj.buildings || obj.trees || obj.animals)) {
-                    // treat as entity definitions: send to game
-                    if (window.opener && typeof window.opener.importEntityDefinitionsFromObject === 'function') {
-                        window.opener.importEntityDefinitionsFromObject(obj);
-                        showToast('Entity definitions imported to game');
-                        importModal.classList.remove('active');
-                        return;
-                    }
-                    if (window.parent && window.parent !== window && typeof window.parent.importEntityDefinitionsFromObject === 'function') {
-                        window.parent.importEntityDefinitionsFromObject(obj);
-                        showToast('Entity definitions imported to parent');
-                        importModal.classList.remove('active');
-                        return;
-                    }
-                    if (window.opener) { window.opener.postMessage({ type: 'meso.importEntityDefs', data: obj }, '*'); showToast('Posted defs to opener'); importModal.classList.remove('active'); return; }
-                    showToast('No game window found to import defs', true);
-                    return;
-                }
-            } catch (e) {
-                // not JSON or invalid JSON — fall through to pixel import handler
-            }
-            // fallback: original pixel import flow
-            try { importPixels(); importModal.classList.remove('active'); } catch (e) { showToast('Invalid code format', true); }
-        });
-
-        // Functions
-        // BASE_CELL: screen pixels per cell at zoom=1. cellSize = BASE_CELL * zoom.
-        // This keeps cell size independent of gridSize — changing gridSize only adds/removes cells.
-        const BASE_CELL = 6;
-        function getCellSize() { return Math.max(2, BASE_CELL * state.zoom); }
-
-        function resizeCanvas() {
-            const cs = getCellSize();
-            canvas.width  = cs * state.gridSize;
-            canvas.height = cs * state.gridSize;
-            const info = document.getElementById('canvasSizeInfo');
-            if (info) info.textContent = `${state.gridSize}×${state.gridSize} celdas · ${cs}px/celda · ${canvas.width}×${canvas.height}px`;
-        }
-
-        function draw() {
-            const cs = getCellSize();
-            drawBackground(cs);
-
-            // Draw pixels from all visible layers
-            state.layers.forEach((layer, layerIdx) => {
-                if (!layer.visible) return;
-                ctx.save();
-                ctx.globalAlpha = layer.opacity / 100;
-                layer.pixels.forEach(pixel => {
-                    ctx.fillStyle = pixel.color;
-                    ctx.fillRect(pixel.x * cs, pixel.y * cs, cs, cs);
-                });
-                ctx.restore();
-            });
-
-            // Highlight current layer (draw outline around visible pixels)
-            const currentLayer = getCurrentLayer();
-            if (currentLayer && currentLayer.pixels.length > 0) {
-                const minX = Math.min(...currentLayer.pixels.map(p => p.x));
-                const maxX = Math.max(...currentLayer.pixels.map(p => p.x));
-                const minY = Math.min(...currentLayer.pixels.map(p => p.y));
-                const maxY = Math.max(...currentLayer.pixels.map(p => p.y));
-                ctx.save();
-                ctx.strokeStyle = 'rgba(255, 100, 100, 0.3)';
-                ctx.lineWidth = 1;
-                ctx.strokeRect(minX * cs - 1, minY * cs - 1, (maxX - minX + 2) * cs, (maxY - minY + 2) * cs);
-                ctx.restore();
-            }
-
-            // Draw grid lines on top
-            if (state.showGrid) {
-                ctx.strokeStyle = cs >= 6 ? 'rgba(255,255,255,0.13)' : 'rgba(255,255,255,0.07)';
-                ctx.lineWidth = 1;
-                for (let i = 0; i <= state.gridSize; i++) {
-                    const pos = i * cs + 0.5;
-                    ctx.beginPath(); ctx.moveTo(pos, 0); ctx.lineTo(pos, canvas.height); ctx.stroke();
-                    ctx.beginPath(); ctx.moveTo(0, pos); ctx.lineTo(canvas.width, pos); ctx.stroke();
-                }
-            }
-
-            const previewCells = getShapePreviewCells();
-            if (previewCells.length) {
-                ctx.save();
-                ctx.fillStyle = 'rgba(0, 217, 255, 0.28)';
-                previewCells.forEach(cell => {
-                    ctx.fillRect(cell.x * cs, cell.y * cs, cs, cs);
-                });
-                ctx.restore();
-            }
-
-            const selection = normalizeSelection(state.selectionPreview || state.selection);
-            if (selection) {
-                const sx = selection.x1 * cs;
-                const sy = selection.y1 * cs;
-                const sw = (selection.x2 - selection.x1 + 1) * cs;
-                const sh = (selection.y2 - selection.y1 + 1) * cs;
-                ctx.save();
-                ctx.fillStyle = state.selectionPreview ? 'rgba(0, 217, 255, 0.14)' : 'rgba(0, 217, 255, 0.10)';
-                ctx.fillRect(sx, sy, sw, sh);
-                ctx.setLineDash([6, 4]);
-                ctx.lineWidth = 2;
-                ctx.strokeStyle = '#00D9FF';
-                ctx.strokeRect(sx + 1, sy + 1, Math.max(0, sw - 2), Math.max(0, sh - 2));
-                ctx.restore();
-            }
-        }
-
-        function drawBackground(cs) {
-            if (!state.showTransparency) {
-                ctx.fillStyle = '#0a0a0a';
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
-            } else {
-                const tile = Math.max(4, Math.floor(cs));
-                const c1 = '#11151b';
-                const c2 = '#1b222b';
-                for (let y = 0; y < canvas.height; y += tile) {
-                    for (let x = 0; x < canvas.width; x += tile) {
-                        const even = ((Math.floor(x / tile) + Math.floor(y / tile)) % 2) === 0;
-                        ctx.fillStyle = even ? c1 : c2;
-                        ctx.fillRect(x, y, tile, tile);
-                    }
-                }
-            }
-            
-            // Draw background image if loaded
-            if (state.backgroundImage) {
-                ctx.save();
-                ctx.globalAlpha = state.bgOpacity / 100;
-                const imgWidth = state.gridSize * cs;
-                const imgHeight = state.gridSize * cs;
-                ctx.drawImage(state.backgroundImage, 0, 0, imgWidth, imgHeight);
-                ctx.restore();
-            }
-        }
-
-        function getCanvasCellFromEvent(e) {
-            const rect = canvas.getBoundingClientRect();
-            const cs = getCellSize();
-            const scaleX = canvas.width  / (rect.width  || canvas.width);
-            const scaleY = canvas.height / (rect.height || canvas.height);
-            const x = Math.floor((e.clientX - rect.left) * scaleX / cs);
-            const y = Math.floor((e.clientY - rect.top)  * scaleY / cs);
-
-            if (x < 0 || x >= state.gridSize || y < 0 || y >= state.gridSize) return null;
-            return { x, y };
-        }
-
-        function normalizeSelection(selection) {
-            if (!selection) return null;
-            const x1 = Math.max(0, Math.min(selection.x1, selection.x2));
-            const y1 = Math.max(0, Math.min(selection.y1, selection.y2));
-            const x2 = Math.min(state.gridSize - 1, Math.max(selection.x1, selection.x2));
-            const y2 = Math.min(state.gridSize - 1, Math.max(selection.y1, selection.y2));
-            if (x1 > x2 || y1 > y2) return null;
-            return { x1, y1, x2, y2 };
-        }
-
-        function updateSelectionButtons() {
-            const hasSelection = !!normalizeSelection(state.selection);
-            fillSelectionBtn.disabled = !hasSelection;
-            eraseSelectionBtn.disabled = !hasSelection;
-            clearSelectionBtn.disabled = !hasSelection;
-            copySelectionBtn.disabled = !hasSelection;
-            cutSelectionBtn.disabled = !hasSelection;
-            pasteSelectionBtn.disabled = !state.clipboard;
-        }
-
-        function clearSelection(redraw = true) {
-            state.selection = null;
-            state.selectionPreview = null;
-            state.selectionStart = null;
-            state.isSelecting = false;
-            updateSelectionButtons();
-            if (redraw) draw();
-        }
-
-        function getPixelColor(x, y) {
-            // Search through all visible layers from top to bottom
-            for (let i = state.layers.length - 1; i >= 0; i--) {
-                if (!state.layers[i].visible) continue;
-                const pixel = state.layers[i].pixels.find(p => p.x === x && p.y === y);
-                if (pixel) return pixel.color;
-            }
-            return null;
-        }
-
-        function getMirroredPoints(x, y) {
-            const candidates = [{ x, y }];
-            if (state.mirrorX) candidates.push({ x: state.gridSize - 1 - x, y });
-            if (state.mirrorY) candidates.push({ x, y: state.gridSize - 1 - y });
-            if (state.mirrorX && state.mirrorY) candidates.push({ x: state.gridSize - 1 - x, y: state.gridSize - 1 - y });
-            const seen = new Set();
-            return candidates.filter(pt => {
-                if (pt.x < 0 || pt.x >= state.gridSize || pt.y < 0 || pt.y >= state.gridSize) return false;
-                const key = `${pt.x},${pt.y}`;
-                if (seen.has(key)) return false;
-                seen.add(key);
-                return true;
-            });
-        }
-
-        function upsertPixel(x, y, color) {
-            const layer = getCurrentLayer();
-            const existingIndex = layer.pixels.findIndex(p => p.x === x && p.y === y);
-            if (existingIndex >= 0) {
-                if (layer.pixels[existingIndex].color === color) return false;
-                layer.pixels[existingIndex].color = color;
-                return true;
-            }
-            layer.pixels.push({ x, y, color });
-            return true;
-        }
-
-        function erasePixel(x, y) {
-            const layer = getCurrentLayer();
-            const before = layer.pixels.length;
-            layer.pixels = layer.pixels.filter(p => !(p.x === x && p.y === y));
-            return layer.pixels.length !== before;
-        }
-
-        // Layer system helpers
-        function getCurrentLayer() {
-            return state.layers.find(l => l.id === state.currentLayerId) || state.layers[0];
-        }
-
-        function getCurrentLayerPixels() {
-            return getCurrentLayer().pixels || [];
-        }
-
-        function setCurrentLayerPixels(pixels) {
-            const layer = getCurrentLayer();
-            if (layer) layer.pixels = pixels;
-        }
-
-        function upsertPixelInLayer(layerId, x, y, color) {
-            const layer = state.layers.find(l => l.id === layerId);
-            if (!layer) return false;
-            const existingIndex = layer.pixels.findIndex(p => p.x === x && p.y === y);
-            if (existingIndex >= 0) {
-                if (layer.pixels[existingIndex].color === color) return false;
-                layer.pixels[existingIndex].color = color;
-                return true;
-            }
-            layer.pixels.push({ x, y, color });
-            return true;
-        }
-
-        function updateLayersPanel() {
-            const panel = document.getElementById('layersPanel');
-            panel.innerHTML = '';
-            state.layers.forEach((layer, idx) => {
-                const item = document.createElement('div');
-                item.className = 'layer-item' + (layer.id === state.currentLayerId ? ' active' : '');
-                item.draggable = true;
-                item.dataset.layerIdx = idx;
-                item.style.cssText = 'padding:6px; background:#1a1a1a; border:1px solid #2a2a2a; margin:2px 0; border-radius:3px; display:flex; justify-content:space-between; align-items:center; font-size:10px; cursor:move; user-select:none;';
-                
-                const nameSpan = document.createElement('span');
-                nameSpan.textContent = layer.name;
-                nameSpan.style.flex = '1';
-                nameSpan.style.pointerEvents = 'none';
-                
-                const visBtn = document.createElement('button');
-                visBtn.textContent = layer.visible ? '👁' : '🚫';
-                visBtn.style.cssText = 'padding:2px 6px; background:#2a2a2a; border:none; color:#e0e0e0; cursor:pointer; border-radius:2px; font-size:9px;';
-                visBtn.onclick = (e) => { e.stopPropagation(); layer.visible = !layer.visible; updateLayersPanel(); draw(); };
-                
-                const delBtn = document.createElement('button');
-                delBtn.textContent = '✕';
-                delBtn.style.cssText = 'padding:2px 6px; background:#4a1a1a; border:none; color:#ff6b6b; cursor:pointer; border-radius:2px; margin-left:4px; font-size:9px;';
-                delBtn.onclick = (e) => { e.stopPropagation(); if (state.layers.length > 1) { state.layers.splice(idx, 1); if (state.currentLayerId === layer.id) state.currentLayerId = state.layers[0].id; updateLayersPanel(); draw(); } };
-                
-                item.appendChild(nameSpan);
-                item.appendChild(visBtn);
-                item.appendChild(delBtn);
-                
-                // Drag & drop handlers
-                item.ondragstart = (e) => { 
-                    state.draggedLayerIndex = idx; 
-                    item.style.opacity = '0.5';
-                    e.dataTransfer.effectAllowed = 'move';
-                };
-                item.ondragend = (e) => { 
-                    state.draggedLayerIndex = null; 
-                    item.style.opacity = '1';
-                    updateLayersPanel();
-                };
-                item.ondragover = (e) => { 
-                    e.preventDefault(); 
-                    e.dataTransfer.dropEffect = 'move';
-                    if (state.draggedLayerIndex !== null && state.draggedLayerIndex !== idx) {
-                        item.style.borderTop = '2px solid #00D9FF';
-                    }
-                };
-                item.ondragleave = (e) => {
-                    item.style.borderTop = '';
-                };
-                item.ondrop = (e) => { 
-                    e.preventDefault(); 
-                    if (state.draggedLayerIndex !== null && state.draggedLayerIndex !== idx) {
-                        const draggedLayer = state.layers[state.draggedLayerIndex];
-                        state.layers.splice(state.draggedLayerIndex, 1);
-                        const newIdx = idx > state.draggedLayerIndex ? idx - 1 : idx;
-                        state.layers.splice(newIdx, 0, draggedLayer);
-                    }
-                    item.style.borderTop = '';
-                    state.draggedLayerIndex = null;
-                    updateLayersPanel();
-                    draw();
-                };
-                
-                // Click to select
-                item.onclick = () => { state.currentLayerId = layer.id; updateLayersPanel(); draw(); };
-                
-                panel.appendChild(item);
-            });
-        }
-
-        function paintPoints(points, mode = state.tool, color = state.currentColor, useMirror = true) {
-            let changed = false;
-            const seen = new Set();
-            points.forEach(point => {
-                const targets = useMirror ? getMirroredPoints(point.x, point.y) : [point];
-                targets.forEach(target => {
-                    const key = `${target.x},${target.y}`;
-                    if (seen.has(key)) return;
-                    seen.add(key);
-                    if (mode === 'brush') changed = upsertPixel(target.x, target.y, color) || changed;
-                    else if (mode === 'eraser') changed = erasePixel(target.x, target.y) || changed;
-                });
-            });
-            return changed;
-        }
-
-        function getLineCells(start, end) {
-            if (!start || !end) return [];
-            const cells = [];
-            let x0 = start.x, y0 = start.y;
-            const x1 = end.x, y1 = end.y;
-            const dx = Math.abs(x1 - x0);
-            const dy = Math.abs(y1 - y0);
-            const sx = x0 < x1 ? 1 : -1;
-            const sy = y0 < y1 ? 1 : -1;
-            let err = dx - dy;
-            while (true) {
-                cells.push({ x: x0, y: y0 });
-                if (x0 === x1 && y0 === y1) break;
-                const e2 = err * 2;
-                if (e2 > -dy) { err -= dy; x0 += sx; }
-                if (e2 < dx) { err += dx; y0 += sy; }
-            }
-            return cells;
-        }
-
-        function getRectCells(start, end, filled = false) {
-            if (!start || !end) return [];
-            const x1 = Math.min(start.x, end.x);
-            const y1 = Math.min(start.y, end.y);
-            const x2 = Math.max(start.x, end.x);
-            const y2 = Math.max(start.y, end.y);
-            const cells = [];
-            for (let y = y1; y <= y2; y++) {
-                for (let x = x1; x <= x2; x++) {
-                    if (filled || x === x1 || x === x2 || y === y1 || y === y2) cells.push({ x, y });
-                }
-            }
-            return cells;
-        }
-
-        function getShapeCells(start, end) {
-            if (!start || !end) return [];
-            if (state.tool === 'line') return getLineCells(start, end);
-            if (state.tool === 'rect') return getRectCells(start, end, state.fillShapes);
-            return [];
-        }
-
-        function getShapePreviewCells() {
-            if (!state.shapeStart || !state.shapePreview) return [];
-            return getShapeCells(state.shapeStart, state.shapePreview);
-        }
-
-        function applyBucketFill(startX, startY) {
-            const selection = normalizeSelection(state.selection);
-            if (selection) {
-                applySelection('fill');
-                return true;
-            }
-            const targetColor = getPixelColor(startX, startY);
-            if (targetColor === state.currentColor) return false;
-            const queue = [{ x: startX, y: startY }];
-            const visited = new Set();
-            const region = [];
-            while (queue.length) {
-                const cell = queue.shift();
-                const key = `${cell.x},${cell.y}`;
-                if (visited.has(key)) continue;
-                visited.add(key);
-                if (cell.x < 0 || cell.x >= state.gridSize || cell.y < 0 || cell.y >= state.gridSize) continue;
-                if (getPixelColor(cell.x, cell.y) !== targetColor) continue;
-                region.push(cell);
-                queue.push({ x: cell.x + 1, y: cell.y });
-                queue.push({ x: cell.x - 1, y: cell.y });
-                queue.push({ x: cell.x, y: cell.y + 1 });
-                queue.push({ x: cell.x, y: cell.y - 1 });
-            }
-            return paintPoints(region, 'brush', state.currentColor, true);
-        }
-
-        function applyToolToCell(x, y) {
-            if (state.tool === 'brush') return paintPoints([{ x, y }], 'brush', state.currentColor, true);
-            if (state.tool === 'eraser') return paintPoints([{ x, y }], 'eraser', state.currentColor, true);
-            if (state.tool === 'bucket') return applyBucketFill(x, y);
-            if (state.tool === 'picker') {
-                const color = getPixelColor(x, y);
-                if (!color) return false;
-                state.currentColor = color;
-                colorPicker.value = color;
-                colorPreview.style.backgroundColor = color;
-                updateColorSwatches();
-                state.tool = 'brush';
-                document.querySelectorAll('[data-tool]').forEach(b => b.classList.remove('active'));
-                document.querySelector('[data-tool="brush"]').classList.add('active');
-                return false;
-            }
-            if (state.tool === 'text') {
-                openTextInputDialog(x, y);
-                return false;
-            }
-            return false;
-        }
-
-        function applySelection(action) {
-            const selection = normalizeSelection(state.selection);
-            if (!selection) {
-                showToast('No hay una selección activa', true);
-                return;
-            }
-
-            let changed = false;
-            for (let y = selection.y1; y <= selection.y2; y++) {
-                for (let x = selection.x1; x <= selection.x2; x++) {
-                    if (action === 'fill') changed = upsertPixel(x, y, state.currentColor) || changed;
-                    if (action === 'erase') changed = erasePixel(x, y) || changed;
-                }
-            }
-
-            if (!changed) {
-                showToast(action === 'fill' ? 'La selección ya tiene ese color' : 'La selección ya está vacía');
-                return;
-            }
-
-            addToHistory();
-            updateCodeOutput();
-            draw();
-            scheduleAutoSave();
-            const width = selection.x2 - selection.x1 + 1;
-            const height = selection.y2 - selection.y1 + 1;
-            showToast(action === 'fill' ? `Selección pintada (${width}×${height})` : `Selección borrada (${width}×${height})`);
-        }
-
-        function copySelectionToClipboard(cut = false) {
-            const selection = normalizeSelection(state.selection);
-            if (!selection) {
-                showToast('No hay una selección activa', true);
-                return;
-            }
-            const pixels = [];
-            for (let y = selection.y1; y <= selection.y2; y++) {
-                for (let x = selection.x1; x <= selection.x2; x++) {
-                    const color = getPixelColor(x, y);
-                    if (color) pixels.push({ x: x - selection.x1, y: y - selection.y1, color });
-                }
-            }
-            state.clipboard = {
-                width: selection.x2 - selection.x1 + 1,
-                height: selection.y2 - selection.y1 + 1,
-                pixels
-            };
-            state.pasteCount = 0;
-            if (cut) {
-                applySelection('erase');
-                showToast(`Selección cortada (${state.clipboard.width}×${state.clipboard.height})`);
-            } else {
-                showToast(`Selección copiada (${state.clipboard.width}×${state.clipboard.height})`);
-            }
-            updateSelectionButtons();
-        }
-
-        function pasteClipboardIntoCanvas() {
-            if (!state.clipboard) {
-                showToast('No hay nada para pegar', true);
-                return;
-            }
-            const clip = state.clipboard;
-            const selection = normalizeSelection(state.selection);
-            let anchorX = 0;
-            let anchorY = 0;
-            if (selection) {
-                anchorX = selection.x1;
-                anchorY = selection.y1;
-            }
-            const offset = state.pasteCount;
-            anchorX = Math.max(0, Math.min(state.gridSize - 1, anchorX + offset));
-            anchorY = Math.max(0, Math.min(state.gridSize - 1, anchorY + offset));
-
-            let changed = false;
-            clip.pixels.forEach(pixel => {
-                const x = anchorX + pixel.x;
-                const y = anchorY + pixel.y;
-                if (x < 0 || y < 0 || x >= state.gridSize || y >= state.gridSize) return;
-                changed = upsertPixel(x, y, pixel.color) || changed;
-            });
-
-            if (!changed) {
-                showToast('Pegado fuera de límites o sin cambios');
-                return;
-            }
-
-            state.selection = normalizeSelection({
-                x1: anchorX,
-                y1: anchorY,
-                x2: anchorX + clip.width - 1,
-                y2: anchorY + clip.height - 1
-            });
-            state.pasteCount++;
-            addToHistory();
-            updateCodeOutput();
-            updateSelectionButtons();
-            draw();
-            scheduleAutoSave();
-            showToast(`Pegado ${clip.width}×${clip.height}`);
-        }
-
-        function trimCanvasToContent() {
-            const layerPixels = getCurrentLayer().pixels;
-            if (!layerPixels.length) {
-                showToast('No hay contenido para recortar');
-                return;
-            }
-            const minX = Math.min(...layerPixels.map(p => p.x));
-            const minY = Math.min(...layerPixels.map(p => p.y));
-            const maxX = Math.max(...layerPixels.map(p => p.x));
-            const maxY = Math.max(...layerPixels.map(p => p.y));
-            const nextSize = Math.max(4, Math.min(128, Math.max(maxX - minX + 1, maxY - minY + 1)));
-            const shifted = layerPixels
-                .map(p => ({ x: p.x - minX, y: p.y - minY, color: p.color }))
-                .filter(p => p.x >= 0 && p.y >= 0 && p.x < nextSize && p.y < nextSize);
-            state.gridSize = nextSize;
-            getCurrentLayer().pixels = shifted;
-            gridSizeInput.value = nextSize;
-            document.getElementById('gridSizeValue').textContent = nextSize;
-            document.getElementById('gridSizeValue2').textContent = nextSize;
-            gridInfoSpan.textContent = `${nextSize}x${nextSize}`;
-            clearSelection(false);
-            fitZoomToCanvas();
-            resizeCanvas();
-            addToHistory();
-            updateCodeOutput();
-            draw();
-            scheduleAutoSave();
-            showToast(`Canvas recortado a ${nextSize}×${nextSize}`);
-        }
-
-        function centerSpriteToGrid() {
-            const layerPixels = getCurrentLayer().pixels;
-            if (!layerPixels.length) {
-                showToast('No hay contenido para centrar');
-                return;
-            }
-            const minX = Math.min(...layerPixels.map(p => p.x));
-            const minY = Math.min(...layerPixels.map(p => p.y));
-            const maxX = Math.max(...layerPixels.map(p => p.x));
-            const maxY = Math.max(...layerPixels.map(p => p.y));
-            const spriteW = maxX - minX + 1;
-            const spriteH = maxY - minY + 1;
-            const offsetX = Math.floor((state.gridSize - spriteW) / 2) - minX;
-            const offsetY = Math.floor((state.gridSize - spriteH) / 2) - minY;
-            const centered = [];
-            const seen = new Set();
-            layerPixels.forEach(pixel => {
-                const x = pixel.x + offsetX;
-                const y = pixel.y + offsetY;
-                if (x < 0 || y < 0 || x >= state.gridSize || y >= state.gridSize) return;
-                const key = `${x},${y}`;
-                if (seen.has(key)) return;
-                seen.add(key);
-                centered.push({ x, y, color: pixel.color });
-            });
-            getCurrentLayer().pixels = centered;
-            clearSelection(false);
-            addToHistory();
-            updateCodeOutput();
-            draw();
-            scheduleAutoSave();
-            showToast('Sprite centrado en el canvas');
-        }
-
-        function commitStrokeIfDirty() {
-            if (!state.strokeDirty) return;
-            state.strokeDirty = false;
-            state.lastPaintedCell = null;
-            addToHistory();
-            updateCodeOutput();
-            draw();
-            scheduleAutoSave();
-        }
-
-        function openTextInputDialog(x, y) {
-            const input = prompt('Escribe el texto (usa: A-Z, 0-9):', '');
-            if (!input) return;
-            const text = input.toUpperCase().substring(0, 10);
-            drawTextAtPosition(x, y, text, state.currentColor);
-        }
-
-        function drawTextAtPosition(x, y, text, color) {
-            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-            const charWidth = 3, charHeight = 5;
-            let changed = false;
-            for (let i = 0; i < text.length; i++) {
-                const char = text[i];
-                const charIndex = chars.indexOf(char);
-                if (charIndex === -1) continue;
-                const charPixelData = getCharPixelData(char);
-                for (const [px, py] of charPixelData) {
-                    changed = upsertPixel(x + i * (charWidth + 1) + px, y + py, color) || changed;
-                }
-            }
-            if (changed) { addToHistory(); updateCodeOutput(); draw(); scheduleAutoSave(); }
-        }
-
-        function getCharPixelData(char) {
-            const fontAssets = {
-                'A': [[1,0],[0,1],[1,1],[2,1],[0,2],[1,2],[2,2]],
-                '0': [[0,0],[1,0],[2,0],[0,1],[2,1],[0,2],[1,2],[2,2]],
-                '1': [[1,0],[0,1],[1,1],[0,2],[1,2],[2,2]],
-            };
-            return fontAssets[char] || [];
-        }
-
-        function handleCanvasPointerDown(e) {
-            const cell = getCanvasCellFromEvent(e);
-            if (!cell) return;
-
-            if (state.tool === 'select') {
-                state.isSelecting = true;
-                state.selectionStart = cell;
-                state.selectionPreview = { x1: cell.x, y1: cell.y, x2: cell.x, y2: cell.y };
-                draw();
-                return;
-            }
-
-            if (state.tool === 'line' || state.tool === 'rect') {
-                state.isDrawing = true;
-                state.shapeStart = cell;
-                state.shapePreview = cell;
-                draw();
-                return;
-            }
-
-            state.isDrawing = true;
-            state.lastPaintedCell = null;
-            const changed = applyToolToCell(cell.x, cell.y);
-            state.lastPaintedCell = `${cell.x},${cell.y}`;
-            if (changed) {
-                state.strokeDirty = true;
-                updateCodeOutput();
-            }
-            draw();
-        }
-
-        function handleCanvasPointerMove(e) {
-            const cell = getCanvasCellFromEvent(e);
-            if (!cell) return;
-
-            if (state.isSelecting && state.selectionStart) {
-                state.selectionPreview = { x1: state.selectionStart.x, y1: state.selectionStart.y, x2: cell.x, y2: cell.y };
-                draw();
-                return;
-            }
-
-            if (state.isDrawing && (state.tool === 'line' || state.tool === 'rect')) {
-                state.shapePreview = cell;
-                draw();
-                return;
-            }
-
-            if (!state.isDrawing || e.buttons !== 1) return;
-            if (state.tool !== 'brush' && state.tool !== 'eraser') return;
-            const key = `${cell.x},${cell.y}`;
-            if (state.lastPaintedCell === key) return;
-            const changed = applyToolToCell(cell.x, cell.y);
-            state.lastPaintedCell = key;
-            if (changed) {
-                state.strokeDirty = true;
-                updateCodeOutput();
-                draw();
-            }
-        }
-
-        function handleCanvasPointerUp() {
-            if (state.isSelecting) {
-                const selection = normalizeSelection(state.selectionPreview || state.selection);
-                state.selection = selection;
-                state.selectionPreview = null;
-                state.selectionStart = null;
-                state.isSelecting = false;
-                updateSelectionButtons();
-                draw();
-                if (selection) {
-                    const width = selection.x2 - selection.x1 + 1;
-                    const height = selection.y2 - selection.y1 + 1;
-                    showToast(`Selección ${width}×${height}`);
-                }
-                return;
-            }
-
-            if (state.isDrawing && (state.tool === 'line' || state.tool === 'rect')) {
-                const shapeCells = getShapeCells(state.shapeStart, state.shapePreview || state.shapeStart);
-                const changed = paintPoints(shapeCells, 'brush', state.currentColor, true);
-                state.shapeStart = null;
-                state.shapePreview = null;
-                state.isDrawing = false;
-                if (changed) {
-                    addToHistory();
-                    updateCodeOutput();
-                    draw();
-                    scheduleAutoSave();
-                    showToast(state.tool === 'line' ? 'Línea creada' : 'Rectángulo creado');
-                } else {
-                    draw();
-                }
-                return;
-            }
-
-            state.isDrawing = false;
-            commitStrokeIfDirty();
-        }
-
-        function addToHistory() {
-            const newHistory = state.history.slice(0, state.historyIndex + 1);
-            newHistory.push(JSON.parse(JSON.stringify(getCurrentLayer().pixels)));
-            state.history = newHistory;
-            state.historyIndex = newHistory.length - 1;
-            updateHistoryButtons();
-        }
-
-        function undo() {
-            if (state.historyIndex > 0) {
-                state.historyIndex--;
-                getCurrentLayer().pixels = JSON.parse(JSON.stringify(state.history[state.historyIndex]));
-                clearSelection(false);
-                state.shapeStart = null;
-                state.shapePreview = null;
-                updateCodeOutput();
-                updateHistoryButtons();
-                draw();
-                showToast('Undo');
-            }
-        }
-
-        function redo() {
-            if (state.historyIndex < state.history.length - 1) {
-                state.historyIndex++;
-                getCurrentLayer().pixels = JSON.parse(JSON.stringify(state.history[state.historyIndex]));
-                clearSelection(false);
-                state.shapeStart = null;
-                state.shapePreview = null;
-                updateCodeOutput();
-                updateHistoryButtons();
-                draw();
-                showToast('Redo');
-            }
-        }
-
-        function clear() {
-            getCurrentLayer().pixels = [];
-            clearSelection(false);
-            state.shapeStart = null;
-            state.shapePreview = null;
-            addToHistory();
-            updateCodeOutput();
-            draw();
-            showToast('Canvas cleared');
-        }
-
-        function applyCanvasTransform(transformer, message) {
-            const transformed = [];
-            const seen = new Set();
-            getCurrentLayer().pixels.forEach(pixel => {
-                const next = transformer(pixel);
-                if (!next) return;
-                if (next.x < 0 || next.x >= state.gridSize || next.y < 0 || next.y >= state.gridSize) return;
-                const key = `${next.x},${next.y}`;
-                if (seen.has(key)) return;
-                seen.add(key);
-                transformed.push({ x: next.x, y: next.y, color: next.color || pixel.color });
-            });
-            getCurrentLayer().pixels = transformed;
-            clearSelection(false);
-            state.shapeStart = null;
-            state.shapePreview = null;
-            addToHistory();
-            updateCodeOutput();
-            draw();
-            scheduleAutoSave();
-            showToast(message);
-        }
-
-        function updateCodeOutput() {
-            // Flatten visible layers for export
-            const exportPixels = [];
-            state.layers.forEach(layer => {
-                if (layer.visible) {
-                    exportPixels.push(...layer.pixels);
-                }
-            });
-            
-            pixelCountSpan.textContent = exportPixels.length;
-            if (typeof _codeEditMode !== 'undefined' && _codeEditMode) return; // don't clobber live edit
-            const key = entityLibrarySelect.value || 'editor_custom';
-            const grid = state.gridSize;
-            if (exportPixels.length === 0) {
-                codeOutput.textContent = JSON.stringify({ grid, pixels: [] }, null, 2);
-            } else {
-                const pxArr = exportPixels.map(p => [p.x, p.y, p.color]);
-                const entry = { grid, pixels: pxArr };
-                // Pretty-print with compact pixel rows
-                const pxLines = pxArr.map(p => `    [${p[0]},${p[1]},"${p[2]}"]`);
-                const pretty = `{
-  "grid": ${grid},
-  "pixels": [\n${pxLines.join(',\n')}\n  ]
-}`;
-                codeOutput.textContent = pretty;
-            }
-        }
-
-        function copyCode() {
-            const code = (typeof _codeEditMode !== 'undefined' && _codeEditMode)
-                ? document.getElementById('codeEditArea').value
-                : codeOutput.textContent;
-            navigator.clipboard.writeText(code).then(() => {
-                showToast('Code copied to clipboard!');
-            });
-        }
-
-        function downloadCode() {
-            const code = codeOutput.textContent;
-            const saveMode = (document.querySelector('input[name="saveMode"]:checked') || {}).value || 'post';
-            const key = entityLibrarySelect.value || 'editor_custom';
-            const grid = state.gridSize;
-            // Flatten visible layers for export
-            const exportPixels = [];
-            state.layers.forEach(layer => {
-                if (layer.visible) {
-                    exportPixels.push(...layer.pixels);
-                }
-            });
-            const pixels = exportPixels.map(p => [p.x, p.y, p.color]);
-            const exportMultiplierLocal = (typeof exportMultiplier !== 'undefined') ? exportMultiplier : 1;
-
-            if (saveMode === 'post') {
-                const patch = { icons: {} };
-                patch.icons[key] = { grid: grid, pixels: pixels };
-                // post as a patch so game merges it
-                if (window.opener && window.opener !== window) { window.opener.postMessage({ type: 'saveEntityPixelsPatch', data: patch, meta: { key, exportMultiplier: exportMultiplierLocal } }, '*'); showToast('Posted sprite patch to game'); return; }
-                if (window.parent && window.parent !== window) { window.parent.postMessage({ type: 'saveEntityPixelsPatch', data: patch, meta: { key, exportMultiplier: exportMultiplierLocal } }, '*'); showToast('Posted sprite patch to parent'); return; }
-                showToast('No game window found — no se pudo guardar', true);
-                return;
-            }
-
-            if (saveMode === 'overwrite') {
-                // update the in-memory library and download full JSON for overwrite
-                try {
-                    const newLib = Object.assign({}, ENTITY_PIXEL_LIBRARY);
-                    newLib[key] = { grid: grid, pixels: pixels };
-                    const blob = new Blob([JSON.stringify({ icons: newLib }, null, 2)], { type: 'application/json' });
-                    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'entity-pixels.json'; document.body.appendChild(a); a.click(); setTimeout(() => { try { document.body.removeChild(a); URL.revokeObjectURL(a.href); } catch (e) {} }, 200);
-                    // also post to game if present
-                    const payload = { icons: newLib, meta: { exportMultiplier: exportMultiplierLocal } };
-                    if (window.opener && window.opener !== window) { window.opener.postMessage({ type: 'saveEntityPixels', data: payload }, '*'); showToast('Downloaded overwrite and posted to game'); return; }
-                    if (window.parent && window.parent !== window) { window.parent.postMessage({ type: 'saveEntityPixels', data: payload }, '*'); showToast('Downloaded overwrite and posted to parent'); return; }
-                    showToast('Downloaded overwrite (no game window)');
-                    return;
-                } catch (e) { showToast('Overwrite export failed', true); return; }
-            }
-
-            if (saveMode === 'patch') {
-                // download only the JS code as a single-entry patch file
-                const patchObj = { icons: {} };
-                patchObj.icons[key] = { grid: grid, pixels: pixels };
-                const fname = `entity-pixels.patch.${key}.json`;
-                const el = document.createElement('a');
-                el.setAttribute('href', 'data:application/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(patchObj, null, 2)));
-                el.setAttribute('download', fname);
-                el.style.display = 'none'; document.body.appendChild(el); el.click(); document.body.removeChild(el);
-                // post patch as well if game present
-                if (window.opener && window.opener !== window) { window.opener.postMessage({ type: 'saveEntityPixelsPatch', data: patchObj, meta: { key, exportMultiplier: exportMultiplierLocal } }, '*'); showToast('Downloaded patch and posted to game'); return; }
-                if (window.parent && window.parent !== window) { window.parent.postMessage({ type: 'saveEntityPixelsPatch', data: patchObj, meta: { key, exportMultiplier: exportMultiplierLocal } }, '*'); showToast('Downloaded patch and posted to parent'); return; }
-                showToast('Patch downloaded (no game window)');
-                return;
-            }
-
-            // default fallback: download the JS code as before
-            const element = document.createElement('a');
-            element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(code));
-            element.setAttribute('download', 'pixel-art.js');
-            element.style.display = 'none';
-            document.body.appendChild(element);
-            element.click();
-            document.body.removeChild(element);
-            showToast('Code downloaded!');
-        }
-
-        function importPixels() {
-            try {
-                const code = importCode.value;
-                let newPixels = [];
-                let newGridSize = null;
-
-                try {
-                    const obj = JSON.parse(code);
-                    if (obj && Array.isArray(obj.pixels)) {
-                        newPixels = normalizeImportedPixels(obj.pixels);
-                        if (typeof obj.grid === 'number' && obj.grid > 0) newGridSize = obj.grid;
-                        else if (typeof obj.gridSize === 'number' && obj.gridSize > 0) newGridSize = obj.gridSize;
-                    } else if (Array.isArray(obj)) {
-                        newPixels = normalizeImportedPixels(obj);
-                    } else if (obj && obj.icons && typeof obj.icons === 'object') {
-                        const firstKey = Object.keys(obj.icons)[0];
-                        const firstDef = firstKey ? obj.icons[firstKey] : null;
-                        if (firstDef && Array.isArray(firstDef.pixels)) {
-                            newPixels = normalizeImportedPixels(firstDef.pixels);
-                            if (typeof firstDef.grid === 'number' && firstDef.grid > 0) newGridSize = firstDef.grid;
-                            else if (typeof firstDef.gridSize === 'number' && firstDef.gridSize > 0) newGridSize = firstDef.gridSize;
-                        }
-                    }
-                } catch (e) {
-                    // Not valid JSON, fallback to regex extraction
-                    const match = code.match(/\[\s*(-?\d+)\s*,\s*(-?\d+)\s*,\s*['"]([^'"]+)['"]\s*\]/g);
-                    if (!match) {
-                        showToast('Invalid code format', true);
-                        return;
-                    }
-                    newPixels = match.map(item => {
-                        const parsed = item.match(/\[\s*(-?\d+)\s*,\s*(-?\d+)\s*,\s*['"]([^'"]+)['"]\s*\]/);
-                        return parsed ? { x: parseInt(parsed[1], 10), y: parseInt(parsed[2], 10), color: parsed[3] } : null;
-                    }).filter(Boolean);
-                }
-
-                if (!newPixels.length) {
-                    showToast('No se encontraron pixels válidos', true);
-                    return;
-                }
-
-                // normalize to non-negative coordinates
-                const minX = Math.min(...newPixels.map(p => p.x));
-                const minY = Math.min(...newPixels.map(p => p.y));
-                if (minX < 0 || minY < 0) {
-                    newPixels = newPixels.map(p => ({ x: p.x - minX, y: p.y - minY, color: p.color }));
-                }
-
-                if (!newGridSize && newPixels.length > 0) {
-                    const maxX = Math.max(...newPixels.map(p => p.x));
-                    const maxY = Math.max(...newPixels.map(p => p.y));
-                    newGridSize = Math.max(maxX, maxY) + 1;
-                }
-                if (newGridSize) newGridSize = Math.max(4, Math.min(128, newGridSize));
-                if (newGridSize && newGridSize !== state.gridSize) {
-                    state.gridSize = newGridSize;
-                    gridSizeInput.value = newGridSize;
-                    document.getElementById('gridSizeValue').textContent = newGridSize;
-                    document.getElementById('gridSizeValue2').textContent = newGridSize;
-                    gridInfoSpan.textContent = `${newGridSize}x${newGridSize}`;
-                }
-
-                const finalPixels = newPixels.filter(p => p.x >= 0 && p.y >= 0 && p.x < state.gridSize && p.y < state.gridSize);
-                getCurrentLayer().pixels = finalPixels;
-                state.pixels = finalPixels.slice();
-                clearSelection(false);
-                addToHistory();
-                updateCodeOutput();
-                importModal.classList.remove('active');
-                importCode.value = '';
-                fitZoomToCanvas();
-                resizeCanvas();
-                draw();
-                showToast(`Importado: ${getCurrentLayer().pixels.length} px · ${state.gridSize}×${state.gridSize}`);
-            } catch (error) {
-                showToast('Error importing pixels', true);
-            }
-        }
-
-        function fitZoomToCanvas() {
-            const scroll = document.getElementById('canvasScroll');
-            if (!scroll || !state.gridSize) return;
-            const availW = Math.max(120, scroll.clientWidth - 24);
-            const availH = Math.max(120, scroll.clientHeight - 24);
-            const targetCellW = Math.floor(availW / state.gridSize);
-            const targetCellH = Math.floor(availH / state.gridSize);
-            const targetCell = Math.max(2, Math.min(targetCellW, targetCellH));
-            const nextZoom = Math.max(1, Math.min(20, Math.floor(targetCell / BASE_CELL) || 1));
-            state.zoom = nextZoom;
-            zoomInput.value = String(nextZoom);
-            document.getElementById('zoomValue').textContent = String(nextZoom);
-        }
-
-        function updateColorSwatches() {
-            document.querySelectorAll('.color-swatch').forEach(swatch => {
-                if (swatch.style.backgroundColor === state.currentColor) {
-                    swatch.classList.add('selected');
-                } else {
-                    swatch.classList.remove('selected');
-                }
-            });
-        }
-
-        // ── Auto-save to disk + game ─────────────────────────────────────────
-        let _autoSaveTimer = null;
-        const _autoSaveIndicator = document.getElementById('autoSaveIndicator');
-
-        function scheduleAutoSave() {
-            clearTimeout(_autoSaveTimer);
-            _autoSaveTimer = setTimeout(doAutoSave, 600);
-        }
-
-        async function doAutoSave() {
-            const key = entityLibrarySelect.value || 'editor_custom';
-            const grid = state.gridSize;
-            const pixels = getEditorPixels().map(p => [p.x, p.y, p.color]);
-            // Update in-memory library
-            ENTITY_PIXEL_LIBRARY[key] = { grid, pixels };
-            const newLib = Object.assign({}, ENTITY_PIXEL_LIBRARY);
-            // 1 — write to disk via local save-server
-            try {
-                const r = await fetch('http://localhost:3001/save-entity-pixels', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ icons: newLib })
-                });
-                if (!r.ok) throw new Error('server error');
-            } catch (e) {
-                // server not running — silent, will still update game
-            }
-            // 2 — update live game window (patch)
-            const patch = { icons: {} };
-            patch.icons[key] = { grid, pixels };
-            const msg = { type: 'saveEntityPixelsPatch', data: patch, meta: { key } };
-            try { if (window.opener && window.opener !== window) window.opener.postMessage(msg, '*'); } catch (e) {}
-            try { if (window.parent && window.parent !== window) window.parent.postMessage(msg, '*'); } catch (e) {}
-            // 3 — show indicator
-            if (_autoSaveIndicator) {
-                _autoSaveIndicator.textContent = '✓ ' + key + ' guardado';
-                _autoSaveIndicator.classList.add('visible');
-                setTimeout(() => _autoSaveIndicator.classList.remove('visible'), 2000);
-            }
-        }
-
-        // ── Code output pencil edit mode ──────────────────────────────────────
-        const codeEditPencil = document.getElementById('codeEditPencil');
-        const codeEditArea = document.getElementById('codeEditArea');
-        const applyCodeBtn = document.getElementById('applyCodeBtn');
-        const cancelCodeBtn = document.getElementById('cancelCodeBtn');
-        let _codeEditMode = false;
-
-        function enterCodeEditMode() {
-            if (_codeEditMode) return;
-            _codeEditMode = true;
-            codeEditArea.value = codeOutput.textContent;
-            codeOutput.style.display = 'none';
-            codeEditArea.style.display = 'block';
-            applyCodeBtn.style.display = 'flex';
-            cancelCodeBtn.style.display = 'flex';
-            codeEditPencil.textContent = '👁️';
-            codeEditPencil.title = 'Ver código generado';
-            codeEditArea.focus();
-        }
-
-        function exitCodeEditMode() {
-            _codeEditMode = false;
-            codeOutput.style.display = '';
-            codeEditArea.style.display = 'none';
-            applyCodeBtn.style.display = 'none';
-            cancelCodeBtn.style.display = 'none';
-            codeEditPencil.textContent = '✏️';
-            codeEditPencil.title = 'Editar y guardar en fichero';
-        }
-
-        codeEditPencil.addEventListener('click', () => {
-            if (_codeEditMode) exitCodeEditMode();
-            else enterCodeEditMode();
-        });
-
-        cancelCodeBtn.addEventListener('click', exitCodeEditMode);
-
-        applyCodeBtn.addEventListener('click', async () => {
-            const raw = codeEditArea.value.trim();
-            try {
-                const obj = JSON.parse(raw);
-                const grid = (typeof obj.grid === 'number') ? obj.grid : state.gridSize;
-                const pxRaw = Array.isArray(obj.pixels) ? obj.pixels : [];
-                const newPixels = normalizeImportedPixels(pxRaw);
-                // Apply to edtor state
-                state.gridSize = grid;
-                gridSizeInput.value = grid;
-                document.getElementById('gridSizeValue').textContent = grid;
-                document.getElementById('gridSizeValue2').textContent = grid;
-                gridInfoSpan.textContent = `${grid}x${grid}`;
-                getCurrentLayer().pixels = newPixels;
-                state.pixels = newPixels.slice();
-                clearSelection(false);
-                addToHistory();
-                updateCodeOutput();
-                fitZoomToCanvas();
-                resizeCanvas();
-                draw();
-                // Save to disk immediately
-                const key = entityLibrarySelect.value || 'editor_custom';
-                ENTITY_PIXEL_LIBRARY[key] = { grid, pixels: pxRaw };
-                const newLib = Object.assign({}, ENTITY_PIXEL_LIBRARY);
-                try {
-                    const r = await fetch('http://localhost:3001/save-entity-pixels', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ icons: newLib })
-                    });
-                    if (r.ok) showToast('Guardado en entity-pixels.json');
-                    else showToast('Servidor no disponible — datos actualizados en memoria', false);
-                } catch (e) {
-                    showToast('Servidor no disponible — datos actualizados en memoria', false);
-                }
-                exitCodeEditMode();
-            } catch (e) {
-                showToast('JSON inválido: ' + e.message, true);
-            }
-        });
-
-        function updateHistoryButtons() {
-            document.getElementById('undoBtn').disabled = state.historyIndex === 0;
-            document.getElementById('redoBtn').disabled = state.historyIndex === state.history.length - 1;
-        }
-
-        document.addEventListener('keydown', (e) => {
-            if (e.target && ['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
-            const hasSelection = !!normalizeSelection(state.selection);
-            const key = e.key.toLowerCase();
-
-            if ((e.ctrlKey || e.metaKey) && key === 'z' && !e.shiftKey) {
-                e.preventDefault();
-                undo();
-                return;
-            }
-            if ((e.ctrlKey || e.metaKey) && (key === 'y' || (key === 'z' && e.shiftKey))) {
-                e.preventDefault();
-                redo();
-                return;
-            }
-            if ((e.ctrlKey || e.metaKey) && key === 'c') {
-                if (!hasSelection) return;
-                e.preventDefault();
-                copySelectionToClipboard(false);
-                return;
-            }
-            if ((e.ctrlKey || e.metaKey) && key === 'x') {
-                if (!hasSelection) return;
-                e.preventDefault();
-                copySelectionToClipboard(true);
-                return;
-            }
-            if ((e.ctrlKey || e.metaKey) && key === 'v') {
-                if (!state.clipboard) return;
-                e.preventDefault();
-                pasteClipboardIntoCanvas();
-                return;
-            }
-
-            if (key === 'b') {
-                document.querySelector('[data-tool="brush"]').click();
-                return;
-            }
-            if (key === 'e') {
-                document.querySelector('[data-tool="eraser"]').click();
-                return;
-            }
-            if (key === 'g') {
-                document.querySelector('[data-tool="bucket"]').click();
-                return;
-            }
-            if (key === 'l') {
-                document.querySelector('[data-tool="line"]').click();
-                return;
-            }
-            if (key === 'r') {
-                document.querySelector('[data-tool="rect"]').click();
-                return;
-            }
-            if (key === 's') {
-                document.querySelector('[data-tool="select"]').click();
-                return;
-            }
-            if (key === 't') {
-                trimCanvasToContent();
-                return;
-            }
-            if (key === 'c' && !e.ctrlKey && !e.metaKey) {
-                centerSpriteToGrid();
-                return;
-            }
-            if ((e.ctrlKey || e.metaKey) && key === 'h') {
-                e.preventDefault();
-                flipHorizontalBtn.click();
-                return;
-            }
-            if ((e.ctrlKey || e.metaKey) && key === 'j') {
-                e.preventDefault();
-                flipVerticalBtn.click();
-                return;
-            }
-
-            if (e.key === 'Escape') {
-                if (state.shapeStart || state.shapePreview) {
-                    state.shapeStart = null;
-                    state.shapePreview = null;
-                    state.isDrawing = false;
-                    draw();
-                    showToast('Forma cancelada');
-                    return;
-                }
-                if (!hasSelection) return;
-                clearSelection();
-                showToast('Selección eliminada');
-            } else if (e.key === 'Enter') {
-                if (!hasSelection) return;
-                e.preventDefault();
-                applySelection('fill');
-            } else if (e.key === 'Delete' || e.key === 'Backspace') {
-                if (!hasSelection) return;
-                e.preventDefault();
-                applySelection('erase');
-            }
-        });
-
-        function showToast(message, isError = false) {
-            const toast = document.createElement('div');
-            toast.className = `toast ${isError ? 'error' : ''}`;
-            toast.textContent = message;
-            document.body.appendChild(toast);
-            setTimeout(() => toast.remove(), 2000);
-        }
-
-        // Initialize
-        resizeCanvas();
-        updateLayersPanel();
-        draw();
-        updateHistoryButtons();
-        updateSelectionButtons();
-        updateCodeOutput();
-    </script>
+        gd.appendChild(gi);el.appendChild(gd);
+    });
+}
+document.getElementById('spriteSearch').oninput=function(){renderSpriteLibrary(this.value);};
+
+// ════════════ KEYBOARD ════════════
+document.addEventListener('keydown',e=>{
+    if(e.ctrlKey&&e.key==='z'){e.preventDefault();undo();}
+    if(e.ctrlKey&&e.key==='y'){e.preventDefault();redo();}
+    if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA')return;
+    if(e.key==='Delete'){e.preventDefault();deleteSelection();return;}
+    if(e.ctrlKey&&e.key==='c'){e.preventDefault();copySelection();return;}
+    if(e.ctrlKey&&e.key==='v'){e.preventDefault();pasteClipboard();return;}
+    if(e.ctrlKey&&e.key==='x'){e.preventDefault();copySelection();deleteSelection();return;}
+    if(e.key==='Escape'){state.sel=null;state.selPixels=null;draw();return;}
+    switch(e.key.toLowerCase()){
+        case'b':document.querySelector('[data-tool=brush]').click();break;case'e':document.querySelector('[data-tool=eraser]').click();break;
+        case'g':document.querySelector('[data-tool=fill]').click();break;case'r':document.querySelector('[data-tool=rect]').click();break;
+        case'l':document.querySelector('[data-tool=line]').click();break;case's':document.querySelector('[data-tool=select]').click();break;
+    }
+});
+
+function toast(msg){const t=document.createElement('div');t.className='toast';t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),1800);}
+
+// ════════════ IMAGE IMPORT ════════════
+let _imgFile=null;
+document.getElementById('importImageBtn').onclick=()=>{
+    _imgFile=null;document.getElementById('imgFileInput').value='';document.getElementById('imgUrlInput').value='';
+    document.getElementById('imgPanelFile').style.display='block';
+    document.getElementById('imgPanelUrl').style.display='none';
+    document.getElementById('imgImportModal').style.display='flex';
+};
+document.getElementById('imgTabFile').onclick=()=>{document.getElementById('imgPanelFile').style.display='block';document.getElementById('imgPanelUrl').style.display='none';};
+document.getElementById('imgTabUrl').onclick=()=>{document.getElementById('imgPanelFile').style.display='none';document.getElementById('imgPanelUrl').style.display='block';};
+document.getElementById('imgImportCancelBtn').onclick=()=>{document.getElementById('imgImportModal').style.display='none';};
+document.getElementById('imgFileInput').onchange=e=>{if(e.target.files[0])_imgFile=e.target.files[0];};
+const dropZone=document.getElementById('imgDropZone');
+dropZone.onclick=()=>document.getElementById('imgFileInput').click();
+dropZone.ondragover=e=>{e.preventDefault();dropZone.style.borderColor='var(--accent)';};
+dropZone.ondragleave=()=>{dropZone.style.borderColor='var(--border)';};
+dropZone.ondrop=e=>{e.preventDefault();dropZone.style.borderColor='var(--border)';if(e.dataTransfer.files[0]){_imgFile=e.dataTransfer.files[0];dropZone.textContent='✅ '+_imgFile.name;}};
+document.getElementById('imgImportConfirmBtn').onclick=async()=>{
+    let img=null;
+    if(_imgFile){img=await loadImageFromFile(_imgFile);}
+    else{const url=document.getElementById('imgUrlInput').value.trim();if(url)img=await loadImageFromUrl(url);}
+    if(!img){toast('❌ Selecciona un archivo o escribe una URL');return;}
+    pixelateImage(img);
+    document.getElementById('imgImportModal').style.display='none';
+};
+function loadImageFromFile(file){return new Promise(res=>{const reader=new FileReader();reader.onload=()=>{const img=new Image();img.onload=()=>res(img);img.src=reader.result;};reader.readAsDataURL(file);});}
+function loadImageFromUrl(url){return new Promise(res=>{const img=new Image();img.crossOrigin='anonymous';img.onload=()=>res(img);img.onerror=()=>{toast('❌ No se pudo cargar la URL');res(null);};img.src=url;});}
+function isLightColor(r,g,b){return r>210&&g>210&&b>210;}
+function isGrayColor(r,g,b){const mx=Math.max(r,g,b),mn=Math.min(r,g,b);return mx-mn<25&&r>140&&r<220;}
+function isCheckerboard(r,g,b,x,y,data,g){if(isLightColor(r,g,b)||isGrayColor(r,g,b)){const dx=(x+1)%g,dy=(y+1)%g;const i2=(dy*g+dx)*4;const r2=data[i2],g2=data[i2+1],b2=data[i2+2];if(r2===undefined)return isLightColor(r,g,b);return isLightColor(r2,g2,b2)||isGrayColor(r2,g2,b2);}return false;}
+function pixelateImage(img){
+    const rawG=Math.min(img.width,img.height);
+    const g=Math.min(32,Math.max(8,Math.round(rawG/8)*8));
+    state.gridSize=g;document.getElementById('gridSize').value=g;
+    const tmp=document.createElement('canvas');tmp.width=g;tmp.height=g;const tx=tmp.getContext('2d');
+    tx.drawImage(img,0,0,g,g);
+    const data=tx.getImageData(0,0,g,g).data;
+    const px=[];
+    for(let y=0;y<g;y++)for(let x=0;x<g;x++){
+        const i=(y*g+x)*4;
+        const r=data[i],gv=data[i+1],b=data[i+2],a=data[i+3];
+        if(a<64)continue;
+        if(isCheckerboard(r,gv,b,x,y,data,g))continue;
+        // Mantener color original (snap a steps de 16 para limpiar, pero sin forzar paleta)
+        const sr=Math.round(r/16)*16,sg=Math.round(gv/16)*16,sb=Math.round(b/16)*16;
+        px.push({x,y,color:'#'+[sr,sg,sb].map(v=>Math.min(255,v).toString(16).padStart(2,'0')).join('')});
+    }
+    // Auto-trim: eliminar filas/columnas vacías
+    if(px.length){let mx=g,my=g,Mx=0,My=0;px.forEach(p=>{mx=Math.min(mx,p.x);my=Math.min(my,p.y);Mx=Math.max(Mx,p.x);My=Math.max(My,p.y);});px.forEach(p=>{p.x-=mx;p.y-=my;});const ng=Math.max(Mx-mx+1,My-my+1,4);state.gridSize=ng;document.getElementById('gridSize').value=ng;}
+    state.layers[state.activeLayer].pixels=px;
+    saveHistory();resizeCanvas();updateLayersPanel();updateFrameBar();draw();
+    toast('✅ Importado: '+px.length+'px, grid '+state.gridSize);
+}
+function findClosestColor(hex){
+    let best=presetColors[0],bestD=999;
+    const r1=parseInt(hex.slice(1,3),16),g1=parseInt(hex.slice(3,5),16),b1=parseInt(hex.slice(5,7),16);
+    for(const c of presetColors){
+        const r2=parseInt(c.slice(1,3),16),g2=parseInt(c.slice(3,5),16),b2=parseInt(c.slice(5,7),16);
+        const d=(r1-r2)**2+(g1-g2)**2+(b1-b2)**2;
+        if(d<bestD){bestD=d;best=c;}
+    }
+    return best;
+}
+
+// ════════════ PNG EXPORT ════════════
+document.getElementById('exportPngBtn').onclick=()=>{
+    const px=getActivePixels();if(!px.length)return toast('Sin píxeles');
+    let mx=999,my=999,Mx=0,My=0;px.forEach(p=>{mx=Math.min(mx,p.x);my=Math.min(my,p.y);Mx=Math.max(Mx,p.x);My=Math.max(My,p.y);});
+    const w=Mx-mx+1,h=My-my+1;
+    const ec=document.createElement('canvas');ec.width=w;ec.height=h;const ex=ec.getContext('2d');
+    ex.clearRect(0,0,w,h);
+    px.forEach(p=>{ex.fillStyle=p.color;ex.fillRect(p.x-mx,p.y-my,1,1);});
+    // Escalar para que sea visible (x8 mínimo)
+    const scale=Math.max(8,Math.floor(256/Math.max(w,h)));
+    const oc=document.createElement('canvas');oc.width=w*scale;oc.height=h*scale;const ox=oc.getContext('2d');
+    ox.imageSmoothingEnabled=false;
+    ox.drawImage(ec,0,0,w*scale,h*scale);
+    const a=document.createElement('a');a.download='sprite_'+w+'x'+h+'.png';a.href=oc.toDataURL();a.click();
+    toast('✅ PNG descargado: '+w+'×'+h+' @ '+scale+'x');
+};
+
+// ════════════ INIT ════════════
+buildPalette();updateLayersPanel();updateFrameBar();resizeCanvas();loadSpriteLibrary();
+saveHistory();
+</script>
 </body>
 </html>
