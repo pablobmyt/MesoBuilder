@@ -20,17 +20,17 @@ function getProjectRoot() {
 /**
  * Safely read and parse a JSON file, returning null on any error.
  */
-function readJsonFile(relativePath) {
+function readJsonFile(relativePath, silent) {
   try {
     const fullPath = path.join(getProjectRoot(), relativePath);
     if (!fs.existsSync(fullPath)) {
-      console.warn('[preload] File not found:', fullPath);
+      if (!silent) console.warn('[preload] File not found:', fullPath);
       return null;
     }
     const raw = fs.readFileSync(fullPath, 'utf-8');
     return JSON.parse(raw);
   } catch (e) {
-    console.warn('[preload] Error reading', relativePath, e.message);
+    if (!silent) console.warn('[preload] Error reading', relativePath, e.message);
     return null;
   }
 }
@@ -42,7 +42,6 @@ console.log('[preload] MESOBUILDER_EXTERNAL_PATH:', process.env.MESOBUILDER_EXTE
 const entityPixels = readJsonFile('data/entity-pixels.json');
 const entityDefs = readJsonFile('data/entities-defs.json');
 const npcDialogues = readJsonFile('data/npc-dialogues.json');
-
 console.log('[preload] entity-pixels.json loaded:', !!entityPixels, entityPixels ? Object.keys(entityPixels.icons || entityPixels).length + ' icons' : 'MISSING');
 console.log('[preload] entities-defs.json loaded:', !!entityDefs, entityDefs ? Object.keys(entityDefs.buildings || {}).length + ' buildings, ' + (entityDefs.trees || []).length + ' trees' : 'MISSING');
 console.log('[preload] npc-dialogues.json loaded:', !!npcDialogues, npcDialogues ? Object.keys(npcDialogues).length + ' dialogue sets' : 'MISSING');
@@ -62,12 +61,30 @@ try {
   console.warn('[preload] Could not preload interiors:', e.message);
 }
 
+// Ajustes visuales de sprites/edificios generados con el MODO DEBUG (F9).
+// Es opcional: si el archivo no existe, el motor usa los valores por defecto.
+const spriteAdjustments = readJsonFile('data/sprite-adjustments.json', true);
+if (spriteAdjustments) {
+  console.log('[preload] sprite-adjustments.json cargado:',
+    Object.keys(spriteAdjustments.sprites || {}).length + ' sprites,',
+    Object.keys(spriteAdjustments.buildings || {}).length + ' edificios');
+}
+
+// Estructuras (conjuntos de edificios) definidas por el usuario. Opcional.
+const structures = readJsonFile('data/structures.json', true);
+if (structures) {
+  console.log('[preload] structures.json cargado:',
+    Object.keys(structures.structures || structures).length + ' estructuras');
+}
+
 // Expose to the renderer via contextBridge
 contextBridge.exposeInMainWorld('__mesoPreload', {
   entityPixels,
   entityDefs,
   npcDialogues,
   interiors,
+  spriteAdjustments,
+  structures,
   // Flag so the engine knows it's running in Electron with preloaded data
   isElectron: true,
   // Dev mode: clear all localStorage caches on startup

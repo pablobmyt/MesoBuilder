@@ -13,8 +13,21 @@ app.commandLine.appendSwitch('enable-gpu-rasterization')
 // DO NOT disable software rasterizer — it's the fallback that saves us when GPU ops fail
 
 // ── Custom protocol: meso-local:// → serves local project files ─────
-// This allows fetch() to work in the renderer even from file:// origin,
-// providing a fallback when preload fails or data isn't preloaded.
+// Este permite que fetch() funcione en el renderer incluso desde file:// origin,
+// proporcionando un respaldo cuando el preload falla o no tiene los datos.
+//
+// IMPORTANTE (dos pasos obligatorios):
+//   1) registerSchemesAsPrivileged() DEBE llamarse antes de app.whenReady(),
+//      si no, el renderer no puede usar el esquema con fetch()
+//      ("URL scheme \"meso-local\" is not supported").
+//   2) protocol.handle() debe llamarse DESPUÉS de app.whenReady() para tener sesión.
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'meso-local',
+    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true }
+  }
+])
+
 let _projectRoot = null;
 function resolveProjectRoot() {
   if (_projectRoot) return _projectRoot;
@@ -36,8 +49,11 @@ function registerLocalProtocol() {
     protocol.handle('meso-local', (request) => {
       try {
         const url = new URL(request.url);
-        // Remove leading slash to get relative path
-        let filePath = decodeURIComponent(url.pathname.replace(/^\/+/, ''));
+        // Con esquemas "standard" el primer segmento se interpreta como host:
+        // meso-local://data/entity-pixels.json → host='data', pathname='/entity-pixels.json'.
+        // Si el esquema se tratara como opaco, host='' y pathname='//data/...'.
+        // Esta construcción funciona en ambos casos.
+        let filePath = decodeURIComponent((url.host || '') + url.pathname).replace(/^\/+/, '');
         if (!filePath) filePath = 'index.html';
         const fullPath = path.join(resolveProjectRoot(), filePath);
         console.log('[meso-local] serving:', filePath, '→', fullPath);
@@ -122,10 +138,12 @@ if (!gotLock) {
 } else {
   app.on('second-instance', () => {})
 
-  // Register custom protocol BEFORE app is ready (required by Electron)
-  registerLocalProtocol();
-
   app.whenReady().then(() => {
+    // El protocolo debe registrarse DESPUÉS de que la app esté lista:
+    // protocol.handle() necesita una sesión válida (antes fallaba con
+    // "Session can only be received when app is ready" y el fallback
+    // meso-local:// nunca quedaba disponible).
+    registerLocalProtocol();
     createWindow()
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()

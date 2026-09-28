@@ -1,1 +1,379 @@
-{"defaultFloor":0,"floors":[{"name":"Planta baja","width":10,"height":8,"entryCol":5,"entryRow":5,"chestItems":["wheat","wheat","stone","brick"],"wallPalette":{"back":"#7A8A9A","backDark":"#6A7A8A","backLight":"#8A9AAA","left":"#6A7A8A","leftDark":"#5A6A7A","right":"#8A9AAA","rightDark":"#7A8A9A","floor":"#B8C0C8","floorDark":"#A8B0B8","trim":"#4A5A6A","baseboard":"#3A4A5A","ceiling":"#2A3A4A"},"npcs":[{"col":7,"row":2,"name":"Portero","npcType":"villager","static":true}],"tiles":[["wall","painting","wall","window","wall","window","wall","painting","wall","wall"],["wall","counter","bookshelf","chair","table","chair","plant","bed","bed","wall"],["wall","floor","floor","floor","floor","elevator","floor","floor","floor","wall"],["wall","rug","rug","floor","firepit","floor","rug","rug","pot","wall"],["wall","floor","floor","chair","door","floor","floor","chest","floor","wall"],["wall","pot","floor","floor","floor","floor","floor","floor","plant","wall"],["wall","chair","plant","floor","floor","floor","floor","floor","floor","wall"],["wall","wall","wall","wall","wall","wall","wall","wall","wall","wall"]]}]}  
+{
+  "interiorId": "residential_tower",
+  "defaultFloor": 0,
+  "entryCol": 4,
+  "entryRow": 6,
+  "chestItems": [
+    "brick",
+    "stone",
+    "bread"
+  ],
+  "npcs": [
+    {
+      "col": 5,
+      "row": 6,
+      "name": "Conserje"
+    }
+  ],
+  "floors": [
+    {
+      "name": "Portal",
+      "width": 9,
+      "height": 8,
+      "entryCol": 4,
+      "entryRow": 6,
+      "wallPalette": {
+        "back": "#8A8F96",
+        "backDark": "#6E737A",
+        "backLight": "#A2A7AE",
+        "left": "#7A7F86",
+        "leftDark": "#63686E",
+        "right": "#9AA0A8",
+        "rightDark": "#848A92",
+        "floor": "#9A9186",
+        "floorDark": "#8C8478",
+        "trim": "#4A4E54",
+        "baseboard": "#3A3E44",
+        "ceiling": "#2E3238"
+      },
+      "tiles": [
+        [
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall"
+        ],
+        [
+          "wall",
+          "painting",
+          "wall",
+          "wall",
+          "window",
+          "wall",
+          "wall",
+          "painting",
+          "wall"
+        ],
+        [
+          "wall",
+          "counter",
+          "counter",
+          "floor",
+          "floor",
+          "floor",
+          "bookshelf",
+          "floor",
+          "wall"
+        ],
+        [
+          "wall",
+          "chair",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "wall"
+        ],
+        [
+          "wall",
+          "floor",
+          "floor",
+          "floor",
+          "rug",
+          "rug",
+          "floor",
+          "floor",
+          "wall"
+        ],
+        [
+          "wall",
+          "chest",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "wall"
+        ],
+        [
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "door",
+          "wall",
+          "wall",
+          "wall",
+          "wall"
+        ],
+        [
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "door",
+          "wall",
+          "wall",
+          "wall",
+          "wall"
+        ]
+      ],
+      "npcs": [
+        {
+          "col": 5,
+          "row": 6,
+          "name": "Conserje"
+        }
+      ]
+    },
+    {
+      "name": "Primer piso",
+      "width": 9,
+      "height": 8,
+      "entryCol": 4,
+      "entryRow": 6,
+      "wallPalette": {
+        "back": "#8A8F96",
+        "backDark": "#6E737A",
+        "backLight": "#A2A7AE",
+        "left": "#7A7F86",
+        "leftDark": "#63686E",
+        "right": "#9AA0A8",
+        "rightDark": "#848A92",
+        "floor": "#9A9186",
+        "floorDark": "#8C8478",
+        "trim": "#4A4E54",
+        "baseboard": "#3A3E44",
+        "ceiling": "#2E3238"
+      },
+      "tiles": [
+        [
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall"
+        ],
+        [
+          "wall",
+          "painting",
+          "wall",
+          "wall",
+          "window",
+          "wall",
+          "wall",
+          "painting",
+          "wall"
+        ],
+        [
+          "wall",
+          "bed",
+          "bed",
+          "floor",
+          "floor",
+          "floor",
+          "bookshelf",
+          "floor",
+          "wall"
+        ],
+        [
+          "wall",
+          "bed",
+          "bed",
+          "floor",
+          "floor",
+          "rug",
+          "rug",
+          "floor",
+          "wall"
+        ],
+        [
+          "wall",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "rug",
+          "rug",
+          "floor",
+          "wall"
+        ],
+        [
+          "wall",
+          "pot",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "chair",
+          "wall"
+        ],
+        [
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "door",
+          "wall",
+          "wall",
+          "wall",
+          "wall"
+        ],
+        [
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "door",
+          "wall",
+          "wall",
+          "wall",
+          "wall"
+        ]
+      ],
+      "npcs": [
+        {
+          "col": 4,
+          "row": 3,
+          "name": "Mikhail Petrov"
+        },
+        {
+          "col": 6,
+          "row": 6,
+          "name": "Olga Sokolova"
+        }
+      ]
+    },
+    {
+      "name": "Segundo piso",
+      "width": 9,
+      "height": 8,
+      "entryCol": 4,
+      "entryRow": 6,
+      "wallPalette": {
+        "back": "#8A8F96",
+        "backDark": "#6E737A",
+        "backLight": "#A2A7AE",
+        "left": "#7A7F86",
+        "leftDark": "#63686E",
+        "right": "#9AA0A8",
+        "rightDark": "#848A92",
+        "floor": "#9A9186",
+        "floorDark": "#8C8478",
+        "trim": "#4A4E54",
+        "baseboard": "#3A3E44",
+        "ceiling": "#2E3238"
+      },
+      "tiles": [
+        [
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall"
+        ],
+        [
+          "wall",
+          "painting",
+          "wall",
+          "wall",
+          "window",
+          "wall",
+          "wall",
+          "painting",
+          "wall"
+        ],
+        [
+          "wall",
+          "floor",
+          "floor",
+          "chest",
+          "floor",
+          "bookshelf",
+          "floor",
+          "floor",
+          "wall"
+        ],
+        [
+          "wall",
+          "table",
+          "table",
+          "floor",
+          "floor",
+          "floor",
+          "bed",
+          "bed",
+          "wall"
+        ],
+        [
+          "wall",
+          "chair",
+          "chair",
+          "floor",
+          "floor",
+          "floor",
+          "bed",
+          "bed",
+          "wall"
+        ],
+        [
+          "wall",
+          "floor",
+          "floor",
+          "floor",
+          "rug",
+          "rug",
+          "floor",
+          "floor",
+          "wall"
+        ],
+        [
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "door",
+          "wall",
+          "wall",
+          "wall",
+          "wall"
+        ],
+        [
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "door",
+          "wall",
+          "wall",
+          "wall",
+          "wall"
+        ]
+      ],
+      "npcs": [
+        {
+          "col": 3,
+          "row": 5,
+          "name": "Yuri Volkov"
+        }
+      ]
+    }
+  ]
+}

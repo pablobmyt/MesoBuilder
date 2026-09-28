@@ -340,32 +340,37 @@ body.theme-urss #btn-endturn {
 /* â”€â”€ EXTERNAL MAIN MENU â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #main-menu-root {
   background:
-    radial-gradient(circle at top, rgba(200,168,75,0.12), transparent 34%),
-    linear-gradient(180deg, #0d0a04 0%, #1a1208 55%, #120d05 100%) !important;
+    radial-gradient(1200px 700px at 15% 0%, rgba(200,168,75,0.14), transparent 60%),
+    radial-gradient(900px 600px at 100% 100%, rgba(46,111,163,0.20), transparent 65%),
+    linear-gradient(160deg, #070c15 0%, #0b1524 45%, #080d16 100%) !important;
 }
 
 #main-menu-box {
-  background: linear-gradient(180deg, rgba(20,14,6,0.98), rgba(12,9,4,0.97)) !important;
-  border: 2px solid var(--ui-border) !important;
-  border-radius: 0 !important;
-  box-shadow: 0 0 0 2px rgba(80,58,21,0.6), 0 18px 48px rgba(0,0,0,0.72) !important;
+  background: linear-gradient(180deg, rgba(20,26,38,0.94), rgba(11,16,25,0.97)) !important;
+  border: 1px solid rgba(255,255,255,0.08) !important;
+  border-radius: 20px !important;
+  box-shadow: 0 30px 80px rgba(0,0,0,0.68), inset 0 1px 0 rgba(255,255,255,0.06) !important;
   position: relative;
-  overflow: hidden;
+  overflow: visible;
 }
 
+/* Filete dorado superior (antes era un marco de 2 px alrededor de toda la caja). */
 #main-menu-box::before {
   content: '';
   position: absolute;
-  inset: 6px;
-  border: 1px solid rgba(232,213,163,0.14);
+  inset: 0 0 auto 0;
+  height: 3px;
+  border: 0;
+  border-radius: 20px 20px 0 0;
+  background: linear-gradient(90deg, transparent, var(--sand-mid), var(--wheat), var(--sand-mid), transparent);
+  opacity: 0.9;
   pointer-events: none;
 }
 
 #main-menu-box h1 {
-  color: var(--sand-mid) !important;
-  text-transform: uppercase;
-  letter-spacing: 4px !important;
-  text-shadow: 0 0 12px rgba(200,168,75,0.35);
+  text-transform: none;
+  letter-spacing: normal !important;
+  text-shadow: 0 10px 30px rgba(0,0,0,0.45);
 }
 
 #main-menu-box > div:first-child > div:nth-child(2),
@@ -390,14 +395,13 @@ body.theme-urss #btn-endturn {
 #menu-map-design-load,
 #menu-map-design-clear {
   font-family: inherit !important;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  border-radius: 0 !important;
+  text-transform: none;
+  letter-spacing: normal;
   transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
 }
 
-#menu-new,
-#menu-map-editor,
+/* Sólo los botones del modal llevan el dorado del tema: las acciones del menú
+   usan el azul «río» (.mm-btn-primary) para que se vea cuál es la principal. */
 #menu-start-confirm,
 #menu-start-tab-character {
   background: linear-gradient(180deg, var(--sand-mid), var(--sand-dark)) !important;
@@ -406,11 +410,6 @@ body.theme-urss #btn-endturn {
   box-shadow: inset 0 1px 0 rgba(255,245,220,0.4);
 }
 
-#menu-load,
-#menu-import,
-#menu-options,
-#menu-credits,
-#menu-exit,
 #menu-char-random,
 #menu-char-reset,
 #menu-start-cancel,
@@ -418,8 +417,8 @@ body.theme-urss #btn-endturn {
 #menu-map-design-open-editor,
 #menu-map-design-load,
 #menu-map-design-clear {
-  background: rgba(26,18,8,0.92) !important;
-  border: 1px solid #5a4520 !important;
+  background: rgba(255,255,255,0.05) !important;
+  border: 1px solid rgba(255,255,255,0.14) !important;
   color: var(--ui-text) !important;
 }
 
@@ -444,16 +443,16 @@ body.theme-urss #btn-endturn {
 }
 
 #menu-scene {
-  border: 2px solid var(--ui-border) !important;
-  border-radius: 0 !important;
+  border: 1px solid rgba(0,0,0,0.5) !important;
+  border-radius: 12px !important;
   background: linear-gradient(180deg, #d5b36d 0%, #88aa63 58%, #4a7c3f 100%) !important;
-  box-shadow: inset 0 0 0 2px rgba(10,8,2,0.28), 0 10px 28px rgba(0,0,0,0.35) !important;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05), 0 10px 26px rgba(0,0,0,0.4) !important;
 }
 
 #menu-saves {
-  background: rgba(12,9,4,0.92) !important;
-  border: 1px solid #4e3a1a;
-  border-radius: 0 !important;
+  background: rgba(0,0,0,0.28) !important;
+  border: 1px solid rgba(255,255,255,0.07) !important;
+  border-radius: 14px !important;
   color: var(--ui-text) !important;
 }
 
@@ -463,10 +462,10 @@ body.theme-urss #btn-endturn {
 }
 
 #menu-startup-modal > div {
-  background: linear-gradient(180deg, rgba(18,14,6,0.98), rgba(10,8,3,0.98)) !important;
-  border: 2px solid var(--ui-border) !important;
-  border-radius: 0 !important;
-  box-shadow: 0 18px 40px rgba(0,0,0,0.6);
+  background: linear-gradient(180deg, rgba(20,26,38,0.96), rgba(11,16,25,0.98)) !important;
+  border: 1px solid rgba(255,255,255,0.09) !important;
+  border-radius: 18px !important;
+  box-shadow: 0 30px 80px rgba(0,0,0,0.7) !important;
 }
 
 #menu-startup-modal h3,
@@ -489,9 +488,9 @@ body.theme-urss #btn-endturn {
 #menu-char-name,
 #menu-char-preset,
 #menu-density-preset {
-  background: #120d05 !important;
-  border: 1px solid #5a4520 !important;
-  border-radius: 0 !important;
+  background: rgba(0,0,0,0.42) !important;
+  border: 1px solid rgba(255,255,255,0.12) !important;
+  border-radius: 10px !important;
   color: var(--sand-light) !important;
 }
 
@@ -1658,4 +1657,536 @@ body.theme-urw #notif {
   body.theme-urw #action-bar {
     right: 300px;
   }
+}
+
+/* ============================================================================
+   MENÚ PRINCIPAL (rediseño 2026-09-28)
+   ----------------------------------------------------------------------------
+   Antes: caja plana con TODOS los estilos en línea dentro del HTML, botones
+   apilados sin jerarquía y una lista de guardados sin estilo propio. Ahora:
+   fondo a pantalla completa con viñeta, tarjeta «cristal», acciones con icono +
+   título + descripción, vista previa del mundo enmarcada y pie con atajos.
+   Todo usa las variables de tema (--ui-*, --sand-*, --river*) para que el menú
+   cambie de paleta con la época, y el foco es visible para navegar con teclado.
+   ============================================================================ */
+#main-menu-root {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(10px, 3vw, 34px);
+  box-sizing: border-box;
+  color: var(--ui-text, #E8D5A3);
+  font-family: system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background:
+    radial-gradient(1200px 700px at 15% 0%, rgba(216, 190, 138, 0.16), transparent 60%),
+    radial-gradient(900px 600px at 100% 100%, rgba(46, 111, 163, 0.22), transparent 65%),
+    linear-gradient(160deg, #070c15 0%, #0b1524 45%, #080d16 100%);
+  animation: mm-fade 0.28s ease both;
+}
+@keyframes mm-fade { from { opacity: 0; } to { opacity: 1; } }
+/* Rejilla sutil + viñeta: dan profundidad sin cargar ninguna imagen. */
+#main-menu-root::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 46px 46px;
+  -webkit-mask-image: radial-gradient(circle at 50% 40%, #000 35%, transparent 78%);
+  mask-image: radial-gradient(circle at 50% 40%, #000 35%, transparent 78%);
+}
+#main-menu-root::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 45%, transparent 45%, rgba(0, 0, 0, 0.55) 100%);
+}
+
+#main-menu-box {
+  position: relative;
+  z-index: 1;
+  width: min(1080px, 100%);
+  max-height: 100%;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: clamp(16px, 2.4vw, 30px);
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(22, 28, 40, 0.92), rgba(12, 17, 26, 0.95));
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(14px);
+}
+#main-menu-box::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 3px;
+  border-radius: 20px 20px 0 0;
+  background: linear-gradient(90deg, transparent, var(--sand-mid, #C8A84B), var(--wheat, #DAA520), var(--sand-mid, #C8A84B), transparent);
+  opacity: 0.85;
+}
+
+/* ── Cabecera: marca, título, lema y sello ── */
+.mm-hero { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.mm-mark {
+  width: 52px;
+  height: 52px;
+  flex: 0 0 52px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  font-size: 24px;
+  color: #12100a;
+  background: linear-gradient(160deg, var(--sand-light, #E8D5A3), var(--sand-mid, #C8A84B));
+  box-shadow: 0 8px 20px rgba(200, 168, 75, 0.22), inset 0 -3px 0 rgba(0, 0, 0, 0.18);
+}
+.mm-hero h1 {
+  margin: 0;
+  font-size: clamp(26px, 4vw, 40px);
+  line-height: 1.05;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+}
+.mm-hero h1 span {
+  background: linear-gradient(120deg, var(--sand-pale, #F5ECD7), var(--wheat, #DAA520) 55%, var(--sand-mid, #C8A84B));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.mm-tagline { margin: 5px 0 0; color: var(--ui-dim, #8B7355); font-size: 13px; max-width: 58ch; }
+.mm-chip {
+  margin-left: auto;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ui-dim, #8B7355);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 999px;
+  padding: 6px 12px;
+  white-space: nowrap;
+}
+
+/* ── Cuerpo: columna de acciones + panel lateral ── */
+.mm-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 340px); gap: 18px; align-items: start; }
+.mm-actions { display: flex; flex-direction: column; gap: 10px; }
+.mm-actions-row { flex-direction: row; gap: 10px; }
+.mm-actions-row .mm-btn { flex: 1; }
+
+.mm-btn {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  padding: 14px 16px;
+  border-radius: 14px;
+  color: var(--ui-text, #E8D5A3);
+  font: inherit;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: transform 0.14s ease, border-color 0.14s ease, background 0.14s ease, box-shadow 0.14s ease;
+}
+.mm-btn .mm-ico {
+  flex: 0 0 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  font-size: 18px;
+  color: var(--sand-light, #E8D5A3);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.mm-btn b { display: block; font-size: 15px; font-weight: 700; }
+.mm-btn small { display: block; margin-top: 2px; font-size: 12px; color: var(--ui-dim, #8B7355); }
+.mm-btn:hover,
+.mm-btn:focus-visible {
+  transform: translateY(-1px);
+  border-color: rgba(200, 168, 75, 0.55);
+  background: linear-gradient(180deg, rgba(200, 168, 75, 0.16), rgba(200, 168, 75, 0.05));
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.35);
+}
+.mm-btn:focus-visible { outline: 2px solid var(--wheat, #DAA520); outline-offset: 2px; }
+.mm-btn:active { transform: translateY(0); }
+
+.mm-btn-primary {
+  background: linear-gradient(150deg, var(--river-light, #4A9FD4), var(--river, #2E6FA3));
+  border-color: rgba(255, 255, 255, 0.22);
+}
+.mm-btn-primary .mm-ico { color: #fff; background: rgba(255, 255, 255, 0.16); border-color: rgba(255, 255, 255, 0.28); }
+.mm-btn-primary small { color: rgba(255, 255, 255, 0.82); }
+.mm-btn-primary:hover { background: linear-gradient(150deg, #5FB0E6, var(--river-light, #4A9FD4)); border-color: #8FD0FF; }
+
+.mm-btn-ghost { justify-content: center; gap: 8px; padding: 10px 12px; font-size: 13px; color: var(--ui-dim, #8B7355); }
+.mm-btn-ghost .mm-ico { flex: 0 0 auto; width: auto; height: auto; background: none; border: 0; font-size: 14px; }
+
+/* ── Panel lateral: vista previa y guardados ── */
+.mm-side { display: flex; flex-direction: column; gap: 12px; }
+.mm-card { padding: 12px; border-radius: 14px; background: rgba(0, 0, 0, 0.28); border: 1px solid rgba(255, 255, 255, 0.07); }
+.mm-card h2 {
+  margin: 0 0 9px;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--sand-light, #E8D5A3);
+}
+.mm-scene {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+  image-rendering: pixelated;
+  background: linear-gradient(#8ccf8a, #3a7b3a);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.4), 0 10px 26px rgba(0, 0, 0, 0.35);
+}
+/* La lista la rellena el JS con estilos en línea: aquí se normalizan (!important). */
+.mm-saves { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.mm-saves > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.04) !important;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.mm-saves button {
+  padding: 6px 10px !important;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: #0e1116;
+  background: linear-gradient(180deg, var(--sand-light, #E8D5A3), var(--sand-mid, #C8A84B));
+}
+.mm-saves button:hover { filter: brightness(1.08); }
+.mm-saves button:focus-visible { outline: 2px solid var(--wheat, #DAA520); outline-offset: 2px; }
+
+.mm-tip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--ui-dim, #8B7355);
+}
+.mm-tip kbd {
+  font: inherit;
+  font-size: 11px;
+  color: var(--sand-pale, #F5ECD7);
+  padding: 2px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+@media (max-width: 860px) {
+  .mm-columns { grid-template-columns: 1fr; }
+  .mm-chip { margin-left: 0; }
+}
+
+/* ── Selector de MODO DE JUEGO dentro del modal «Nueva partida» ──
+   Historia: Adapa y la época los fija el guion. Libre: editor completo. */
+.mm-modes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 0 0 14px; }
+.mm-mode {
+  padding: 12px 14px;
+  border-radius: 12px;
+  color: #efe8db;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.02)) !important;
+  border: 1px solid rgba(255, 255, 255, 0.10) !important;
+  transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+.mm-mode b { display: block; font-size: 13px; letter-spacing: 0.08em !important; text-transform: uppercase !important; }
+.mm-mode small { display: block; margin-top: 4px; font-size: 11.5px; line-height: 1.35; color: #b3a789; }
+.mm-mode:hover { transform: translateY(-1px); border-color: rgba(218, 165, 32, 0.5) !important; }
+.mm-mode.is-active {
+  background: linear-gradient(150deg, rgba(218, 165, 32, 0.22), rgba(139, 105, 20, 0.12)) !important;
+  border-color: rgba(218, 165, 32, 0.75) !important;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.35), inset 0 0 0 1px rgba(255, 236, 190, 0.12);
+}
+.mm-mode.is-active b { color: #ffe9b8; }
+
+/* Ficha del guion: sustituye al editor cuando el modo historia está activo. */
+.mm-story-note {
+  grid-column: 1 / span 2;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(218, 165, 32, 0.08);
+  border: 1px solid rgba(218, 165, 32, 0.28);
+}
+.mm-story-note b { font-size: 13px; letter-spacing: 0.08em !important; text-transform: uppercase !important; color: #ffe9b8; }
+.mm-story-note small { display: block; margin-top: 5px; font-size: 11.5px; line-height: 1.4; color: #cfc3a8; }
+
+@media (max-width: 700px) {
+  .mm-modes { grid-template-columns: 1fr; }
+}
+
+/* ── Modal «Nueva partida»: estética de la referencia (limpia, con tarjetas) ── */
+#menu-startup-modal { background: rgba(4, 7, 12, 0.72) !important; backdrop-filter: blur(4px); }
+#menu-startup-modal > div {
+  width: min(840px, 94vw) !important;
+  max-height: 92vh;
+  overflow: auto;
+  padding: 22px !important;
+  border-radius: 18px !important;
+  border: 1px solid rgba(255, 255, 255, 0.09) !important;
+  background: linear-gradient(180deg, rgba(20, 26, 38, 0.96), rgba(11, 16, 25, 0.98)) !important;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.7) !important;
+}
+#menu-startup-modal h3 { margin: 0 0 14px 0 !important; font-size: 20px; font-weight: 800; letter-spacing: 0.3px; }
+#menu-start-tab-character,
+#menu-start-tab-options { padding: 8px 16px !important; border-radius: 999px !important; cursor: pointer; }
+#menu-start-tab-options { color: var(--ui-dim, #8B7355) !important; }
+#menu-startup-modal input[type="text"],
+#menu-startup-modal select {
+  background: rgba(0, 0, 0, 0.42) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 10px !important;
+}
+#menu-startup-modal input[type="range"] { accent-color: var(--wheat, #DAA520); }
+#menu-startup-modal button { cursor: pointer; }
+#menu-startup-modal button:hover { filter: brightness(1.1); }
+#menu-start-confirm {
+  padding: 10px 20px !important;
+  border-radius: 10px !important;
+  background: linear-gradient(150deg, var(--river-light, #4A9FD4), var(--river, #2E6FA3)) !important;
+}
+#menu-start-cancel { border-radius: 10px !important; }
+/* Botones de apariencia/color que genera el JS del modal. */
+#menu-char-presets button,
+#menu-char-outfits button,
+#menu-color-rows button { border-radius: 10px !important; }
+#menu-char-canvas { border-radius: 10px !important; }
+
+/* ============================================================================
+   MENÚ PRINCIPAL — composición tipo «Mafia: The Old Country» (2ª versión)
+   ----------------------------------------------------------------------------
+   Sustituye al diseño de tarjeta con cristal: ahora el fondo va a sangre con
+   elementos del PROPIO juego (el lienzo #mm-backdrop que pinta el JS con la sala
+   en penumbra y la lámpara de aceite, más una «ventana al mundo» difuminada con
+   #menu-scene) y encima hay un menú LIMPIO: lista de texto en mayúsculas, filete
+   dorado al pasar el ratón y los atajos abajo a la derecha, como la referencia.
+   Las reglas .mm-* anteriores se conservan porque el modal las reutiliza.
+   ============================================================================ */
+#main-menu-root {
+  display: block !important;
+  padding: 0 !important;
+  background: #070605 !important;
+  color: #f4efe6;
+}
+#main-menu-root::before,
+#main-menu-root::after { display: none !important; }
+
+#mm-backdrop { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+
+/* «Ventana al mundo»: la escena del juego, difuminada y cálida, al fondo a la derecha. */
+#mm-world-window {
+  position: absolute;
+  right: 7%;
+  top: 50%;
+  transform: translateY(-50%);
+  width: min(36vw, 460px);
+  aspect-ratio: 1 / 1;
+  border-radius: 14px;
+  overflow: hidden;
+  opacity: 0.55;
+  filter: blur(2px) saturate(1.15) brightness(0.8);
+  box-shadow: 0 40px 120px rgba(0, 0, 0, 0.85), inset 0 0 0 1px rgba(255, 225, 180, 0.08);
+  pointer-events: none;
+}
+#menu-scene {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  border: 0 !important;
+  border-radius: 14px !important;
+  box-shadow: none !important;
+  image-rendering: pixelated;
+}
+
+#main-menu-box {
+  position: relative;
+  z-index: 2;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: clamp(18px, 3vh, 34px);
+  width: 100%;
+  min-height: 100%;
+  max-height: 100%;
+  max-width: none;
+  overflow: auto;
+  padding: clamp(24px, 5vw, 86px);
+  background: none !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none;
+}
+#main-menu-box::before { display: none !important; }
+
+.mm-hero { display: block; }
+.mm-hero h1 {
+  margin: 0;
+  font-size: clamp(32px, 4.6vw, 60px);
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #f7f2e8;
+  text-transform: none !important;
+  text-shadow: 0 6px 30px rgba(0, 0, 0, 0.8);
+}
+.mm-tagline {
+  margin: 10px 0 0;
+  max-width: 46ch;
+  font-size: clamp(12px, 1.05vw, 15px);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #c3b79c;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
+}
+
+/* Lista de acciones: texto limpio, sin cajas. */
+.mm-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.mm-btn {
+  position: relative;
+  display: block;
+  width: auto !important;
+  padding: 9px 0 9px 20px !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: none !important;
+  box-shadow: none !important;
+  color: #efe8db !important;
+  font: inherit;
+  font-size: clamp(15px, 1.65vw, 23px);
+  font-weight: 600;
+  letter-spacing: 0.13em !important;
+  text-transform: uppercase !important;
+  text-align: left;
+  cursor: pointer;
+  transform: none !important;
+  transition: color 0.15s ease, transform 0.18s ease;
+  text-shadow: 0 3px 16px rgba(0, 0, 0, 0.85);
+}
+.mm-btn::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 3px;
+  height: 74%;
+  background: linear-gradient(180deg, var(--wheat, #DAA520), var(--sand-dark, #8B6914));
+  transform: translateY(-50%) scaleX(0);
+  transform-origin: left center;
+  transition: transform 0.18s ease;
+}
+.mm-btn .mm-label { display: block; }
+.mm-btn .mm-hint {
+  display: block;
+  max-height: 0;
+  margin-top: 3px;
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: #b3a789;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+.mm-btn:hover,
+.mm-btn:focus-visible { color: #fff !important; transform: translateX(8px) !important; outline: none; }
+.mm-btn:hover::before,
+.mm-btn:focus-visible::before { transform: translateY(-50%) scaleX(1); }
+.mm-btn:hover .mm-hint,
+.mm-btn:focus-visible .mm-hint { max-height: 2em; opacity: 1; }
+
+/* Partida guardada: una línea discreta. */
+.mm-saves-block { max-width: 520px; }
+.mm-saves-block h2 {
+  margin: 0 0 8px;
+  font-size: 10px;
+  letter-spacing: 0.22em !important;
+  text-transform: uppercase !important;
+  color: #9c927b;
+}
+.mm-saves { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.mm-saves > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px !important;
+  border-radius: 10px !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 225, 180, 0.10) !important;
+  color: #e8dfcc;
+}
+.mm-saves button {
+  margin-left: auto;
+  padding: 5px 12px !important;
+  border: 1px solid rgba(255, 225, 180, 0.28) !important;
+  border-radius: 999px !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: #f0e6cf !important;
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.mm-saves button:hover { background: rgba(218, 165, 32, 0.22) !important; }
+
+/* Pie: enlaces a la izquierda y atajos a la derecha (como el «ESC QUIT GAME»). */
+#mm-foot { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; flex-wrap: wrap; }
+.mm-foot-links { display: flex; gap: 16px; }
+.mm-link {
+  padding: 2px 0 !important;
+  border: 0 !important;
+  background: none !important;
+  color: #a89c81 !important;
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 0.12em !important;
+  text-transform: uppercase !important;
+  cursor: pointer;
+}
+.mm-link:hover,
+.mm-link:focus-visible { color: #fff !important; outline: none; }
+.mm-keys { display: flex; gap: 16px; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: #9c927b; }
+.mm-keys span { display: inline-flex; align-items: center; gap: 5px; }
+.mm-keys kbd {
+  padding: 2px 5px;
+  border: 1px solid rgba(255, 225, 180, 0.22);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.35);
+  font: inherit;
+  font-size: 10px;
+  color: #e8dfcc;
+}
+
+@media (max-width: 900px) {
+  #mm-world-window { display: none; }
+  #main-menu-box { justify-content: flex-start; padding-top: 12vh; }
+  #mm-foot { flex-direction: column; align-items: flex-start; }
 }

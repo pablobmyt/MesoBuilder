@@ -1,32 +1,127 @@
 {
+  "interiorId": "house-small",
   "defaultFloor": 0,
+  "entryCol": 4,
+  "entryRow": 5,
+  "chestItems": [
+    "wheat",
+    "wheat",
+    "stone",
+    "brick"
+  ],
+  "npcs": [
+    {
+      "col": 5,
+      "row": 2,
+      "name": "Aldeana"
+    }
+  ],
   "floors": [
     {
       "name": "Planta baja",
-      "width": 8,
+      "width": 9,
       "height": 7,
-      "entryCol": 3,
-      "entryRow": 4,
-      "chestItems": ["wheat", "wheat", "stone", "brick"],
+      "entryCol": 4,
+      "entryRow": 5,
       "wallPalette": {
-        "back": "#9B7B5A", "backDark": "#8B6B4A", "backLight": "#AB8B6A",
-        "left": "#8B6B4A", "leftDark": "#7B5B3A",
-        "right": "#AB8B6A", "rightDark": "#9B7B5A",
-        "floor": "#C8A87A", "floorDark": "#B89868",
-        "trim": "#5A3A1A", "baseboard": "#4A2A0A",
+        "back": "#9B7B5A",
+        "backDark": "#8B6B4A",
+        "backLight": "#AB8B6A",
+        "left": "#8B6B4A",
+        "leftDark": "#7B5B3A",
+        "right": "#AB8B6A",
+        "rightDark": "#9B7B5A",
+        "floor": "#C8A87A",
+        "floorDark": "#BFA070",
+        "trim": "#5A3A1A",
+        "baseboard": "#4A2A0A",
         "ceiling": "#3A2A1A"
       },
-      "npcs": [
-        { "col": 5, "row": 2, "name": "Aldeana" }
-      ],
       "tiles": [
-        ["wall", "painting", "wall", "wall", "window", "wall", "painting", "wall"],
-        ["wall", "bed", "bed", "chair", "table", "chair", "plant", "wall"],
-        ["wall", "pot", "floor", "floor", "floor", "floor", "floor", "wall"],
-        ["wall", "bookshelf", "rug", "rug", "floor", "chest", "pot", "wall"],
-        ["wall", "floor", "floor", "floor", "door", "floor", "floor", "wall"],
-        ["wall", "chair", "floor", "floor", "floor", "floor", "plant", "wall"],
-        ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"]
+        [
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall"
+        ],
+        [
+          "wall",
+          "painting",
+          "wall",
+          "wall",
+          "window",
+          "wall",
+          "wall",
+          "painting",
+          "wall"
+        ],
+        [
+          "wall",
+          "bed",
+          "bed",
+          "floor",
+          "table",
+          "table",
+          "chair",
+          "chair",
+          "wall"
+        ],
+        [
+          "wall",
+          "floor",
+          "floor",
+          "floor",
+          "rug",
+          "rug",
+          "floor",
+          "floor",
+          "wall"
+        ],
+        [
+          "wall",
+          "pot",
+          "floor",
+          "rug",
+          "rug",
+          "floor",
+          "chest",
+          "floor",
+          "wall"
+        ],
+        [
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "door",
+          "wall",
+          "wall",
+          "wall",
+          "wall"
+        ],
+        [
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "door",
+          "wall",
+          "wall",
+          "wall",
+          "wall"
+        ]
+      ],
+      "npcs": [
+        {
+          "col": 5,
+          "row": 2,
+          "name": "Aldeana"
+        }
       ]
     }
   ]

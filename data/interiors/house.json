@@ -1,33 +1,176 @@
 {
+  "interiorId": "house",
   "defaultFloor": 0,
+  "entryCol": 5,
+  "entryRow": 7,
+  "chestItems": [
+    "wheat",
+    "brick",
+    "bread"
+  ],
+  "npcs": [
+    {
+      "col": 6,
+      "row": 2,
+      "name": "Aldeano"
+    },
+    {
+      "col": 3,
+      "row": 7,
+      "name": "Anciana"
+    }
+  ],
   "floors": [
     {
       "name": "Planta baja",
-      "width": 10,
-      "height": 7,
-      "entryCol": 4,
-      "entryRow": 4,
-      "chestItems": ["wheat", "wheat", "wheat", "stone", "brick", "brick"],
+      "width": 11,
+      "height": 9,
+      "entryCol": 5,
+      "entryRow": 7,
       "wallPalette": {
-        "back": "#8B7B6A", "backDark": "#7B6B5A", "backLight": "#9B8B7A",
-        "left": "#7B6B5A", "leftDark": "#6B5B4A",
-        "right": "#9B8B7A", "rightDark": "#8B7B6A",
-        "floor": "#C8B898", "floorDark": "#B8A888",
-        "trim": "#5A4A2A", "baseboard": "#4A3A1A",
+        "back": "#9B7B5A",
+        "backDark": "#8B6B4A",
+        "backLight": "#AB8B6A",
+        "left": "#8B6B4A",
+        "leftDark": "#7B5B3A",
+        "right": "#AB8B6A",
+        "rightDark": "#9B7B5A",
+        "floor": "#C8A87A",
+        "floorDark": "#BFA070",
+        "trim": "#5A3A1A",
+        "baseboard": "#4A2A0A",
         "ceiling": "#3A2A1A"
       },
-      "npcs": [
-        { "col": 1, "row": 1, "name": "Aldeano" },
-        { "col": 7, "row": 2, "name": "Aldeana" }
-      ],
       "tiles": [
-        ["wall", "painting", "wall", "wall", "painting", "wall", "window", "wall", "painting", "wall"],
-        ["wall", "bed", "bed", "chair", "table", "chair", "plant", "bed", "bed", "wall"],
-        ["wall", "floor", "floor", "floor", "floor", "floor", "floor", "floor", "floor", "wall"],
-        ["wall", "bookshelf", "rug", "rug", "firepit", "floor", "rug", "rug", "pot", "wall"],
-        ["wall", "floor", "floor", "floor", "door", "floor", "floor", "chest", "floor", "wall"],
-        ["wall", "chair", "floor", "floor", "floor", "floor", "floor", "floor", "plant", "wall"],
-        ["wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall", "wall"]
+        [
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall"
+        ],
+        [
+          "wall",
+          "painting",
+          "wall",
+          "wall",
+          "window",
+          "wall",
+          "wall",
+          "wall",
+          "painting",
+          "wall",
+          "wall"
+        ],
+        [
+          "wall",
+          "bed",
+          "bed",
+          "floor",
+          "floor",
+          "floor",
+          "bookshelf",
+          "floor",
+          "chest",
+          "floor",
+          "wall"
+        ],
+        [
+          "wall",
+          "bed",
+          "bed",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "table",
+          "floor",
+          "wall"
+        ],
+        [
+          "wall",
+          "floor",
+          "floor",
+          "floor",
+          "rug",
+          "rug",
+          "floor",
+          "chair",
+          "chair",
+          "floor",
+          "wall"
+        ],
+        [
+          "wall",
+          "pot",
+          "floor",
+          "floor",
+          "rug",
+          "rug",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "wall"
+        ],
+        [
+          "wall",
+          "plant",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "pot",
+          "wall"
+        ],
+        [
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "door",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall"
+        ],
+        [
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "door",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall"
+        ]
+      ],
+      "npcs": [
+        {
+          "col": 6,
+          "row": 2,
+          "name": "Aldeano"
+        },
+        {
+          "col": 3,
+          "row": 7,
+          "name": "Anciana"
+        }
       ]
     }
   ]

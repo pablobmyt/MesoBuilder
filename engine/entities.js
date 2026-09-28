@@ -4,6 +4,17 @@ export const rabbits = [];
 export const foxes = [];
 export const graves = [];
 
+// Exponer las colecciones en `window`: el SceneManager (índice espacial),
+// las utilidades de selección RTS y el HUD de debug leen `window.entities`,
+// `window.rabbits`, etc. Sin esta asignación esas rutas siempre veían listas
+// vacías (la selección por caja y "enviar a recolectar" no funcionaban).
+try {
+  window.entities = entities;
+  window.rabbits = rabbits;
+  window.foxes = foxes;
+  window.graves = graves;
+} catch (e) {}
+
 // NPC dialogue configuration (type -> { phrases: [], mood?: string })
 window.NPC_DIALOGUES = window.NPC_DIALOGUES || {};
 window.loadNpcDialogues = function(obj) { try { Object.assign(window.NPC_DIALOGUES, obj || {}); console.debug('NPC dialogues loaded', Object.keys(window.NPC_DIALOGUES)); } catch(e) {} };

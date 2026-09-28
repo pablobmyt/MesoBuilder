@@ -366,37 +366,78 @@
 </div>
 
 <!-- MENU + DYNAMIC LOADER -->
-<div id="main-menu-root" style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,#071022,#0c1b2b);z-index:99999">
-  <div id="main-menu-box" style="width:900px;max-width:94%;display:flex;background:rgba(255,255,255,0.03);border-radius:12px;padding:22px;gap:20px;box-shadow:0 12px 40px rgba(0,0,0,0.6);border:1px solid rgba(255,255,255,0.04)">
-    <div style="flex:1;display:flex;flex-direction:column;gap:12px;color:#fff">
-      <h1 style="margin:0;font-size:34px;letter-spacing:1px">MesoBuilder</h1>
-      <div style="color:#cfc6b3;max-width:520px">Construye, sobrevive y proclama tu reino. Crea una nueva ciudad o continúa una partida guardada. Personaliza tu gobernante antes de empezar.</div>
-      <div style="display:flex;gap:12px;margin-top:12px">
-        <button id="menu-new" style="padding:12px 18px;background:#2E6FA3;border:none;border-radius:8px;color:#fff;font-weight:700">Nueva partida</button>
-        <button id="menu-load" style="padding:12px 18px;background:transparent;border:1px solid rgba(255,255,255,0.06);border-radius:8px;color:#fff">Cargar partida</button>
-        <button id="menu-import" style="padding:12px 18px;background:transparent;border:1px solid rgba(255,255,255,0.06);border-radius:8px;color:#fff">Importar partida</button>
-        <button id="menu-map-editor" style="padding:12px 18px;background:transparent;border:1px solid rgba(255,255,255,0.06);border-radius:8px;color:#fff">Editor de mapas</button>
-        <button id="menu-options" style="padding:12px 18px;background:transparent;border:1px solid rgba(255,255,255,0.06);border-radius:8px;color:#fff">Opciones</button>
+<!-- Composición tipo «Mafia: The Old Country»: fondo a sangre con elementos del
+     propio juego (sala en penumbra, lámpara de aceite y una «ventana» con la
+     escena del mundo), y encima un menú LIMPIO: lista de texto en mayúsculas con
+     filete dorado al pasar el ratón, y los atajos abajo a la derecha. Todos los
+     estilos viven en styles.css (bloque .mm-*). -->
+<div id="main-menu-root">
+  <canvas id="mm-backdrop" width="640" height="360" aria-hidden="true"></canvas>
+  <div id="mm-world-window" aria-hidden="true"><canvas id="menu-scene" width="320" height="320"></canvas></div>
+
+  <div id="main-menu-box">
+    <header class="mm-hero">
+      <h1>MesoBuilder</h1>
+      <p class="mm-tagline">Ciudad, imperio y una anomal&iacute;a bajo el r&iacute;o</p>
+    </header>
+
+    <nav class="mm-actions" aria-label="Acciones del menú">
+      <button id="menu-new" class="mm-btn">
+        <span class="mm-label">Nueva partida</span>
+        <span class="mm-hint">Elige &eacute;poca, gobernante y mundo</span>
+      </button>
+      <button id="menu-load" class="mm-btn">
+        <span class="mm-label">Cargar partida</span>
+        <span class="mm-hint">Contin&uacute;a la &uacute;ltima partida guardada</span>
+      </button>
+      <button id="menu-import" class="mm-btn">
+        <span class="mm-label">Importar partida</span>
+        <span class="mm-hint">Restaura una partida desde un archivo</span>
+      </button>
+      <button id="menu-map-editor" class="mm-btn">
+        <span class="mm-label">Editor de mapas</span>
+        <span class="mm-hint">Dise&ntilde;a el terreno a mano antes de jugar</span>
+      </button>
+      <button id="menu-options" class="mm-btn">
+        <span class="mm-label">Opciones</span>
+        <span class="mm-hint">Audio, densidades, &eacute;poca y dise&ntilde;o del mapa</span>
+      </button>
+    </nav>
+
+    <section id="menu-saves" class="mm-saves-block">
+      <h2>Partida guardada</h2>
+      <div id="menu-saves-list" class="mm-saves"></div>
+    </section>
+
+    <footer id="mm-foot">
+      <div class="mm-foot-links">
+        <button id="menu-credits" class="mm-link">Cr&eacute;ditos</button>
+        <button id="menu-exit" class="mm-link">Salir del juego</button>
       </div>
-      <div style="margin-top:8px;color:#aab">Consejo: Construye cerca del río para un mejor rendimiento de cultivos.</div>
-    </div>
-    <div style="width:340px;display:flex;flex-direction:column;align-items:center;gap:10px">
-      <canvas id="menu-scene" width="320" height="320" style="width:320px;height:320px;border-radius:8px;background:linear-gradient(#8ccf8a,#3a7b3a);image-rendering:pixelated;box-shadow:inset 0 0 0 2px rgba(0,0,0,0.12)"></canvas>
-      <div id="menu-saves" style="width:100%;color:#dcd8c4;background:rgba(0,0,0,0.06);padding:8px;border-radius:6px;font-size:13px;display:flex;flex-direction:column;gap:6px;align-items:stretch">
-        <div style="font-weight:700;color:#fff">Partidas guardadas</div>
-        <div id="menu-saves-list" style="display:flex;flex-direction:column;gap:6px"></div>
-        <div style="display:flex;gap:8px;justify-content:center">
-          <button id="menu-credits" style="padding:8px 12px;background:transparent;border:1px solid rgba(255,255,255,0.06);border-radius:8px;color:#fff">Créditos</button>
-          <button id="menu-exit" style="padding:8px 12px;background:transparent;border:1px solid rgba(255,255,255,0.06);border-radius:8px;color:#fff">Salir</button>
-        </div>
+      <div class="mm-keys">
+        <span><kbd>&uarr;</kbd><kbd>&darr;</kbd> Navegar</span>
+        <span><kbd>Intro</kbd> Seleccionar</span>
+        <span><kbd>Esc</kbd> Salir</span>
       </div>
-    </div>
+    </footer>
   </div>
 
   <!-- Startup params modal (hidden) -->
   <div id="menu-startup-modal" style="position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:100000">
     <div style="background:rgba(10,10,10,0.96);padding:18px;border-radius:10px;border:1px solid rgba(255,255,255,0.04);width:700px;max-width:95vw;color:#fff">
       <h3 style="margin:0 0 8px 0">Nueva partida</h3>
+      <!-- Modo de juego: HISTORIA (personaje y época fijos, manda el guion) o
+           LIBRE (editor de personaje, época y mundo a medida). -->
+      <div id="menu-mode-row" class="mm-modes">
+        <button type="button" id="menu-mode-story" class="mm-mode" data-mode="story">
+          <b>Modo historia</b>
+          <small>Adapa y el diluvio · personaje y época fijados por el guion, tres actos</small>
+        </button>
+        <button type="button" id="menu-mode-free" class="mm-mode" data-mode="free">
+          <b>Modo libre</b>
+          <small>Crea tu gobernante, elige época y ajusta el mundo</small>
+        </button>
+      </div>
       <div style="display:flex;gap:8px;margin-bottom:10px">
         <button id="menu-start-tab-character" style="padding:8px 12px;background:#2E6FA3;border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#fff;font-weight:700">Creación de personaje</button>
         <button id="menu-start-tab-options" style="padding:8px 12px;background:transparent;border:1px solid rgba(255,255,255,0.08);border-radius:8px;color:#fff">Opciones</button>
@@ -508,6 +549,153 @@
   </div>
 
   <input type="file" id="menu-map-design-file" accept=".json,application/json" hidden>
+</div>
+
+<script>
+  // Navegación por teclado del menú principal: ↑/↓ (Inicio/Fin) mueven el foco por
+  // las acciones y Enter las activa. Se ignora mientras el modal de nueva partida
+  // está abierto o si el foco está en un campo de formulario.
+  (function () {
+    function menuAbierto() {
+      var root = document.getElementById('main-menu-root');
+      return !!root && root.isConnected;
+    }
+    function modalAbierto() {
+      var m = document.getElementById('menu-startup-modal');
+      if (!m) return false;
+      var st = window.getComputedStyle(m);
+      return st.display !== 'none' && st.visibility !== 'hidden';
+    }
+    document.addEventListener('keydown', function (ev) {
+      try {
+        if (!menuAbierto() || modalAbierto()) return;
+        var t = ev.target;
+        if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) return;
+        var key = ev.key;
+        if (key !== 'ArrowDown' && key !== 'ArrowUp' && key !== 'Home' && key !== 'End' && key !== 'Enter' && key !== 'Escape') return;
+        if (key === 'Escape') {
+          ev.preventDefault();
+          const salir = document.getElementById('menu-exit');
+          if (salir) salir.click();
+          return;
+        }
+        var lista = Array.prototype.slice.call(document.querySelectorAll('#main-menu-root .mm-actions .mm-btn'));
+        if (!lista.length) return;
+        var idx = lista.indexOf(document.activeElement);
+        if (key === 'Enter') {
+          if (idx < 0) { ev.preventDefault(); lista[0].focus(); return; }
+          ev.preventDefault();
+          lista[idx].click();
+          return;
+        }
+        ev.preventDefault();
+        if (key === 'Home') idx = 0;
+        else if (key === 'End') idx = lista.length - 1;
+        else if (idx < 0) idx = (key === 'ArrowDown') ? 0 : lista.length - 1;
+        else idx = (idx + (key === 'ArrowDown' ? 1 : -1) + lista.length) % lista.length;
+        lista[idx].focus();
+      } catch (e) {}
+    }, false);
+  })();
+
+  // Fondo del menú (composición «Mafia: The Old Country»): sala en penumbra con la
+  // lámpara de aceite encendida, la mesa con la tablilla de barro, el cuenco de
+  // bronce, el haz de trigo y la vasija. Se pinta a 320×180 y el CSS lo estira a
+  // pantalla completa, así el conjunto queda suave —fuera de foco— y el menú se
+  // lee limpio encima. La época cambia el tono (cálido / frío) y se repinta al
+  // pasar por encima de las partidas guardadas.
+  (function () {
+    function pintar(epoch) {
+      const cv = document.getElementById('mm-backdrop');
+      if (!cv) return;
+      const g = cv.getContext('2d');
+      const W = cv.width, H = cv.height;
+      const frio = (epoch === 'urss');
+      const col = frio ? [150, 180, 220] : [255, 190, 110];
+      const lum = (a) => 'rgba(' + col[0] + ',' + col[1] + ',' + col[2] + ',' + a + ')';
+      let gr = g.createLinearGradient(0, 0, 0, H);
+      gr.addColorStop(0, frio ? '#0b1119' : '#1b1309');
+      gr.addColorStop(0.55, frio ? '#0a0d13' : '#120c06');
+      gr.addColorStop(1, '#070605');
+      g.fillStyle = gr; g.fillRect(0, 0, W, H);
+      // resplandor de la lámpara (a la derecha, como la vela de la referencia)
+      gr = g.createRadialGradient(W * 0.78, H * 0.40, 2, W * 0.78, H * 0.40, H * 0.9);
+      gr.addColorStop(0, lum(0.50)); gr.addColorStop(0.35, lum(0.14)); gr.addColorStop(1, lum(0));
+      g.fillStyle = gr; g.fillRect(0, 0, W, H);
+      // mesa
+      gr = g.createLinearGradient(0, H * 0.64, 0, H);
+      gr.addColorStop(0, frio ? '#1b2029' : '#3a2716');
+      gr.addColorStop(1, '#0d0906');
+      g.fillStyle = gr; g.fillRect(0, H * 0.64, W, H * 0.36);
+      g.fillStyle = 'rgba(255,225,180,0.10)'; g.fillRect(0, H * 0.64, W, 1);
+      // tablilla de barro con renglones de escritura
+      g.fillStyle = frio ? '#6b5a3a' : '#8a6a3c';
+      g.fillRect(W * 0.14, H * 0.70, W * 0.16, H * 0.14);
+      g.fillStyle = 'rgba(45,30,14,0.50)';
+      for (let i = 0; i < 10; i++) g.fillRect(W * 0.15 + i * 10, H * 0.73, 3, H * 0.08);
+      // cuenco de bronce con su brillo
+      g.fillStyle = frio ? '#7c7f86' : '#a97f2e';
+      g.beginPath(); g.ellipse(W * 0.42, H * 0.82, W * 0.065, H * 0.055, 0, 0, Math.PI * 2); g.fill();
+      g.fillStyle = 'rgba(255,235,190,0.20)';
+      g.beginPath(); g.ellipse(W * 0.405, H * 0.80, W * 0.03, H * 0.018, 0, 0, Math.PI * 2); g.fill();
+      // haz de trigo
+      g.strokeStyle = frio ? '#8a8a6a' : '#c9a227'; g.lineWidth = 2;
+      for (let i = -2; i <= 2; i++) {
+        g.beginPath(); g.moveTo(W * 0.54, H * 0.92); g.lineTo(W * 0.56 + i * 6, H * 0.66); g.stroke();
+      }
+      // vasija
+      g.fillStyle = frio ? '#5d6470' : '#7a4b28';
+      g.beginPath(); g.ellipse(W * 0.66, H * 0.80, W * 0.05, H * 0.09, 0, 0, Math.PI * 2); g.fill();
+      g.fillStyle = 'rgba(255,230,190,0.14)';
+      g.beginPath(); g.ellipse(W * 0.645, H * 0.76, W * 0.018, H * 0.04, 0, 0, Math.PI * 2); g.fill();
+      // lámpara de aceite: pico, llama y punto brillante
+      g.fillStyle = frio ? '#6d727c' : '#907444';
+      g.beginPath(); g.ellipse(W * 0.80, H * 0.72, W * 0.045, H * 0.022, 0, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#FFD27A';
+      g.beginPath(); g.ellipse(W * 0.845, H * 0.685, 5, 10, 0, 0, Math.PI * 2); g.fill();
+      g.fillStyle = 'rgba(255,246,214,0.85)';
+      g.beginPath(); g.ellipse(W * 0.845, H * 0.69, 2, 4, 0, 0, Math.PI * 2); g.fill();
+      // polvo en suspensión
+      for (let i = 0; i < 90; i++) {
+        const x = Math.random() * W, y = Math.random() * H * 0.95;
+        g.fillStyle = lum(0.05 + Math.random() * 0.12 * (1 - y / H));
+        g.fillRect(x, y, 2, 2);
+      }
+      // viñeta
+      gr = g.createRadialGradient(W * 0.5, H * 0.45, H * 0.25, W * 0.5, H * 0.5, H * 0.95);
+      gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(0,0,0,0.88)');
+      g.fillStyle = gr; g.fillRect(0, 0, W, H);
+    }
+    function epochActual() {
+      try { return localStorage.getItem('meso.currentEpoch') || 'mesopotamia'; } catch (e) { return 'mesopotamia'; }
+    }
+    try {
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { pintar(epochActual()); });
+      else pintar(epochActual());
+      document.addEventListener('mouseover', function (ev) {
+        try {
+          if (ev.target && ev.target.closest && ev.target.closest('#menu-saves')) pintar(epochActual());
+        } catch (e) {}
+      }, true);
+    } catch (e) {}
+  })();
+</script>
+
+<script type="module">
+  // Arte del personaje COMPARTIDO con el motor (`engine/character-art.js`): la
+  // vista previa del editor dibuja exactamente el mismo sprite que el juego.
+  import {
+    DEFAULT_PALETTE, PALETTE_OPTIONS, CHARACTER_OUTFITS, CHARACTER_PRESETS,
+    PRESET_ADAPA, drawHumanoid, humanoidSpriteFor, humanoidGridSize,
+    humanoidHeadRows, mapDetailedHumanoidColor, shadeHexColor, outfitTokenColor
+  } from './engine/character-art.js';
+  window.MesoCharacterArt = {
+    DEFAULT_PALETTE, PALETTE_OPTIONS, CHARACTER_OUTFITS, CHARACTER_PRESETS, PRESET_ADAPA,
+    drawHumanoid, humanoidSpriteFor, humanoidGridSize, humanoidHeadRows,
+    mapDetailedHumanoidColor, shadeHexColor, outfitTokenColor
+  };
+  try { window.dispatchEvent(new Event('meso:character-art')); } catch (e) {}
+</script>
 
 <script>
   // External menu host flag so engine won't show its internal menu
@@ -989,6 +1177,7 @@
     optTab.style.border = active === 'options' ? '1px solid rgba(255,255,255,0.12)' : '1px solid rgba(255,255,255,0.08)';
     optTab.style.fontWeight = active === 'options' ? '700' : '400';
     try { if (window._renderMenuCharEditor) window._renderMenuCharEditor(); } catch (e) {}
+    try { if (window._syncMenuModeUi) window._syncMenuModeUi(); } catch (e) {}
     try { updateMapDesignStatus(); } catch (e) {}
     modal.style.display = 'flex';
   }
@@ -1204,10 +1393,169 @@
       try { return localStorage.getItem('meso.currentEpoch') || 'mesopotamia'; } catch (e) { return 'mesopotamia'; }
     }
 
+    // ── Arte COMPARTIDO con el motor ────────────────────────────────────────
+    // `engine/character-art.js` es la única fuente de verdad del aspecto del
+    // personaje. Las rejillas locales (8×8) que había aquí NO eran el sprite del
+    // juego, así que la vista previa mostraba a otro personaje. En cuanto el
+    // módulo está cargado, se usan SUS rejillas, su paleta y su recoloreo.
+    function getSharedArt() { return window.MesoCharacterArt || null; }
+    (function adoptSharedArt() {
+      try {
+        const shared = getSharedArt();
+        if (!shared) return;
+        Object.keys(MENU_OUTFITS).forEach(k => {
+          if (shared.CHARACTER_OUTFITS && shared.CHARACTER_OUTFITS[k]) MENU_OUTFITS[k] = shared.CHARACTER_OUTFITS[k];
+        });
+        Object.keys(MENU_PALETTE_OPTIONS).forEach(k => {
+          if (shared.PALETTE_OPTIONS && shared.PALETTE_OPTIONS[k]) MENU_PALETTE_OPTIONS[k] = shared.PALETTE_OPTIONS[k];
+        });
+      } catch (e) {}
+    })();
+
+    // Nombres soviéticos para los mismos oficios (sólo cambia el rótulo).
+    const URSS_NAMES = { scribe:'Konstantin Markov', scout:'Nadezhda Sokolova', builder:'Gavril Denisov', priest:'Arkady Volkov', merchant:'Irina Petrova' };
+    const URSS_TITLES = { scribe:'Línea Dura del Partido', scout:'Exploradora de Frontera', builder:'Reformista Campesino', priest:'Mariscal de Acero', merchant:'Intendente Estatal' };
+
+    // Modo de juego elegido en el modal (historia = personaje y época fijos).
+    function getMenuMode() {
+      try { return localStorage.getItem('meso.gameMode') || 'story'; } catch (e) { return 'story'; }
+    }
+
     function getMenuPresets() {
+      // Presets del propio juego (mismo oficio, paleta y ropa que aplica el motor).
+      const shared = getSharedArt();
+      const base = (shared && Array.isArray(shared.CHARACTER_PRESETS)) ? shared.CHARACTER_PRESETS : null;
+      if (base) {
+        const epoch = getMenuEpoch();
+        const list = base.map(p => ({ id:p.id, name:p.name, title:p.title, outfit:p.outfit, palette:{ ...p.palette } }));
+        if (epoch === 'urss') {
+          list.forEach(p => {
+            if (URSS_NAMES[p.id]) p.name = URSS_NAMES[p.id];
+            if (URSS_TITLES[p.id]) p.title = URSS_TITLES[p.id];
+          });
+        }
+        // En modo historia el protagonista es fijo: Adapa, cazador de Kidu-Lam.
+        if (getMenuMode() === 'story' && shared.PRESET_ADAPA) {
+          const a = shared.PRESET_ADAPA;
+          list.unshift({ id:a.id, name:a.name, title:a.title, outfit:a.outfit, palette:{ ...a.palette }, story:true });
+        }
+        return list;
+      }
       const epoch = getMenuEpoch();
       return MENU_PRESETS_BY_EPOCH[epoch] || MENU_PRESETS_BY_EPOCH.mesopotamia;
     }
+
+    /** ¿Está activo el modo historia (personaje y época fijos)? */
+    function isStoryMode() { return getMenuMode() === 'story'; }
+
+    /**
+     * Cambia entre MODO HISTORIA y MODO LIBRE.
+     * · historia: el protagonista es Adapa y la época la marca el guion (Acto I,
+     *   Mesopotamia); los campos de edición del personaje se ocultan y la vista
+     *   previa muestra a Adapa tal cual sale en el juego.
+     * · libre: se puede elegir oficio, colores, ropa, nombre y época.
+     */
+    function setMenuMode(mode) {
+      const story = (mode || 'story') === 'story';
+      try { localStorage.setItem('meso.gameMode', story ? 'story' : 'free'); } catch (e) {}
+
+      const bStory = document.getElementById('menu-mode-story');
+      const bFree = document.getElementById('menu-mode-free');
+      if (bStory) bStory.classList.toggle('is-active', story);
+      if (bFree) bFree.classList.toggle('is-active', !story);
+
+      // Época: en historia la fija el guion (Mesopotamia en el Acto I y II).
+      const epochSelect = document.getElementById('menu-epoch');
+      if (epochSelect) {
+        if (story) {
+          try { localStorage.setItem('meso.currentEpoch', 'mesopotamia'); } catch (e) {}
+          epochSelect.value = 'mesopotamia';
+        }
+        epochSelect.disabled = story;
+      }
+
+      // Protagonista canónico cuando toca historia.
+      if (story) {
+        const shared = getSharedArt();
+        const a = shared && shared.PRESET_ADAPA;
+        if (a && window._menuChar) {
+          window._menuChar.preset = a.id;
+          window._menuChar.title = a.title;
+          window._menuChar.outfit = a.outfit;
+          window._menuChar.palette = { ...a.palette };
+          window._menuChar.name = a.name;
+        }
+      } else if (window._menuChar && window._menuChar.preset === 'adapa') {
+        // Al volver a libre no dejamos puesto el personaje del guion: se elige el
+        // preset por defecto del juego (Urim, maestro de obras).
+        const def = getDefaultMenuPreset();
+        if (def) {
+          window._menuChar.preset = def.id;
+          window._menuChar.title = def.title;
+          window._menuChar.outfit = def.outfit;
+          window._menuChar.palette = { ...def.palette };
+          window._menuChar.name = def.name;
+        }
+      }
+
+      // Campos de edición fuera y ficha del guion en su lugar.
+      const charPanel = document.getElementById('menu-panel-character');
+      if (charPanel) {
+        const fields = charPanel.children[0];
+        const preview = charPanel.children[1];
+        if (fields) fields.style.display = story ? 'none' : 'flex';
+        if (preview) preview.style.minWidth = story ? '0' : '130px';
+        let note = document.getElementById('menu-story-note');
+        if (!note && story) {
+          note = document.createElement('div');
+          note.id = 'menu-story-note';
+          note.className = 'mm-story-note';
+          note.innerHTML = '<b>Adapa</b> · Cazador de Kidu-Lam' +
+            '<small>El guion fija al protagonista y la época: la aldea de Kidu-Lam quemada, el aviso del anciano Kishdu y el viaje a Nínagara. Los actos siguientes cambian de época por sí solos. Para crear tu propio gobernante, elige <b>Modo libre</b>.</small>';
+          charPanel.appendChild(note);
+        }
+        if (note) {
+          note.style.display = story ? 'block' : 'none';
+          note.style.gridColumn = '1 / span 2';
+        }
+      }
+
+      try { if (window._renderMenuCharEditor) window._renderMenuCharEditor(); } catch (e) {}
+      try { renderMenuPresets(); updateMenuPreview(); } catch (e) {}
+      try { if (window._syncMenuCharacterUiForEpoch) window._syncMenuCharacterUiForEpoch(); } catch (e) {}
+    }
+    window._setMenuMode = setMenuMode;
+    window._getMenuMode = getMenuMode;
+    window._getSharedArt = getSharedArt;
+    window._syncMenuModeUi = function () { try { setMenuMode(getMenuMode()); } catch (e) {} };
+
+    try {
+      const bs = document.getElementById('menu-mode-story');
+      const bf = document.getElementById('menu-mode-free');
+      if (bs) bs.addEventListener('click', () => setMenuMode('story'));
+      if (bf) bf.addEventListener('click', () => setMenuMode('free'));
+      // El arte compartido llega con el <script type="module"> del menú: cuando
+      // está listo hay que repintar la vista previa y los presets.
+      window.addEventListener('meso:character-art', () => {
+        try {
+          const shared = getSharedArt();
+          if (shared) {
+            Object.keys(MENU_OUTFITS).forEach(k => { if (shared.CHARACTER_OUTFITS[k]) MENU_OUTFITS[k] = shared.CHARACTER_OUTFITS[k]; });
+            Object.keys(MENU_PALETTE_OPTIONS).forEach(k => { if (shared.PALETTE_OPTIONS[k]) MENU_PALETTE_OPTIONS[k] = shared.PALETTE_OPTIONS[k]; });
+            // El sprite detallado del juego es único: la ropa y la dirección no
+            // cambian su dibujo (sí la paleta). Se ocultan esos controles para no
+            // prometer algo que no se ve en la vista previa ni en el mundo.
+            const outfitsBox = document.getElementById('menu-char-outfits');
+            if (outfitsBox && outfitsBox.parentElement) outfitsBox.parentElement.style.display = 'none';
+            const outfitLabel = document.getElementById('menu-preview-outfit');
+            if (outfitLabel) outfitLabel.style.display = 'none';
+            const dirBtn = document.querySelector('#menu-panel-character .mpc-dir');
+            if (dirBtn && dirBtn.parentElement) dirBtn.parentElement.style.display = 'none';
+          }
+          renderMenuPresets(); renderMenuColorRows(); renderMenuOutfits(); updateMenuPreview();
+        } catch (e) {}
+      });
+    } catch (e) {}
 
     function getDefaultMenuPreset() {
       const presets = getMenuPresets();
@@ -1249,13 +1597,28 @@
         const w = canvas.width, h = canvas.height;
         ctx.clearRect(0, 0, w, h);
         ctx.fillStyle = '#0d0d08'; ctx.fillRect(0, 0, w, h);
+        ctx.fillStyle = 'rgba(255,255,255,0.04)';
+        ctx.fillRect(4, h - 18, w - 8, 10);
+        const shared = getSharedArt();
+        const epoch = getMenuEpoch();
+        const palette = (opts && opts.palette) || { skin:'#C8956C', hair:'#2C1A0A', cloth:'#8B6914', trim:'#DAA520' };
+        if (shared && shared.drawHumanoid) {
+          // El MISMO sprite que aparece al jugar, con el mismo recoloreo. El de
+          // Mesopotamia está pintado al revés y el motor lo espeja al mirar al
+          // frente, así que aquí también.
+          const grid = shared.humanoidGridSize(epoch) || 24;
+          const scale = Math.max(1, Math.floor(Math.min(w, h) / 26));
+          const px = Math.floor((w - grid * scale) / 2);
+          const py = Math.floor((h - grid * scale) / 2);
+          shared.drawHumanoid(ctx, palette, px, py, scale, { epoch, flip: epoch === 'mesopotamia' });
+          return;
+        }
+        // Reserva (sólo si el módulo no cargó): rejilla simple local.
         const spriteMap = (MENU_OUTFITS[(opts && opts.outfit)] || MENU_OUTFITS.tunic).map;
         const scale = Math.max(1, Math.floor(Math.min(w, h) / 10));
         const px = Math.floor((w - spriteMap[0].length * scale) / 2);
         const py = Math.floor((h - spriteMap.length * scale) / 2);
-        ctx.fillStyle = 'rgba(255,255,255,0.04)';
-        ctx.fillRect(4, h - 18, w - 8, 10);
-        drawMenuPixels(ctx, (opts && opts.palette) || { skin:'#C8956C', hair:'#2C1A0A', cloth:'#8B6914', trim:'#DAA520' }, px, py, scale, opts);
+        drawMenuPixels(ctx, palette, px, py, scale, opts);
       } catch (e) {}
     }
     function updateMenuPreview() {
@@ -1672,8 +2035,14 @@
         };
         window._DEFAULT_DENSITIES = densities;
       } catch (e) {}
+      // Modo de juego (historia = personaje y época fijos). El manejador vive
+      // FUERA del bloque del editor, así que se usan los ayudantes publicados.
+      const gameMode = (window._getMenuMode ? window._getMenuMode() : null) ||
+                       (function () { try { return localStorage.getItem('meso.gameMode'); } catch (e) { return null; } })() || 'story';
+      try { localStorage.setItem('meso.gameMode', gameMode); } catch (e) {}
       try {
-        const epoch = (epochSelect && epochSelect.value) ? epochSelect.value : 'mesopotamia';
+        let epoch = (epochSelect && epochSelect.value) ? epochSelect.value : 'mesopotamia';
+        if (gameMode === 'story') epoch = 'mesopotamia';   // la época la marca el guion
         localStorage.setItem('meso.currentEpoch', epoch);
       } catch (e) {}
       try { localStorage.setItem('meso.menuDensities', JSON.stringify(densities)); } catch (e) {}
@@ -1685,13 +2054,28 @@
       // save full character data for engine to read
       try {
         const mc = window._menuChar || {};
-        const menuCharData = {
+        let menuCharData = {
           name: name || mc.name || '',
           preset: mc.preset || 'builder',
           title: mc.title || 'Maestro de obras',
           outfit: mc.outfit || 'tunic',
           palette: mc.palette || { skin:'#C8956C', hair:'#2C1A0A', cloth:'#8B6914', trim:'#DAA520' }
         };
+        // MODO HISTORIA: el protagonista es Adapa, fijo (guion narrativo).
+        if (gameMode === 'story') {
+          const sharedArt = window.MesoCharacterArt || null;
+          const a = sharedArt && sharedArt.PRESET_ADAPA;
+          menuCharData = {
+            name: (a && a.name) || 'Adapa',
+            preset: (a && a.id) || 'adapa',
+            title: (a && a.title) || 'Cazador de Kidu-Lam',
+            outfit: (a && a.outfit) || 'shawl',
+            palette: { ...((a && a.palette) || menuCharData.palette) },
+            mode: 'story'
+          };
+        } else {
+          menuCharData.mode = 'free';
+        }
         localStorage.setItem('meso.menuChar', JSON.stringify(menuCharData));
       } catch (e) {}
       // force new map then load engine

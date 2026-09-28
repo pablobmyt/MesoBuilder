@@ -1,7 +1,6 @@
 // game.js (legacy shim)
-// The full game implementation was migrated to engine/game-engine.js
-// This file intentionally contains only a minimal shim to avoid duplicate
-// runtime definitions. If your deployment or tools still reference
-// `game.js`, they will see this message; otherwise you can safely delete it.
+// ⚠️ NO USAR. El juego vive en engine/game-engine.js (módulo ES cargado por index.html).
+// Este archivo sólo evita que herramientas antiguas que referencian `game.js` fallen
+// en silencio. Se puede borrar cuando ya nada lo referencie.
 
 console.warn('game.js migrated → use engine/game-engine.js (module)');

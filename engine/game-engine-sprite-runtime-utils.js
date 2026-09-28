@@ -36,6 +36,12 @@ export async function generateSpriteImages(progress) {
     } catch (e) { spriteCache = { ts: Date.now(), sprites: {}, size: 0 }; }
     const enableSpriteServerExport = !!window.ENABLE_SPRITE_SERVER_EXPORT;
     window._spriteServerAvailable = enableSpriteServerExport && (window._spriteServerAvailable !== false);
+    // La caché de sprites en localStorage se escribía COMPLETA dentro del bucle
+    // (una vez por sprite) y cada sprite se codificaba a PNG con toDataURL: el
+    // arranque era O(n²) y tardaba minutos (96 sprites × ~1,5 s). Ahora la
+    // persistencia es OPCIONAL y se hace una sola vez al final; el sprite que de
+    // verdad usa el motor es el ImageBitmap, que se crea en milisegundos.
+    const persistSpriteCache = window.ENABLE_SPRITE_PERSIST_CACHE === true;
     const keys = Object.keys(cache);
     if (keys.length === 0) { if (progress && progress.update) progress.update(60, 'Sprites: none'); return; }
     for (let i = 0; i < keys.length; i++) {
@@ -66,44 +72,43 @@ export async function generateSpriteImages(progress) {
           console.warn('generateSpriteImages: createImageBitmap failed for', k, e);
         }
 
-        (async () => {
+        // Persistencia (opcional): se codifica a PNG sólo si está activada y se
+        // guarda al final, una vez, en lugar de en cada vuelta del bucle.
+        if (persistSpriteCache && !spriteCache.sprites[k]) {
           try {
-            try {
-              if (!spriteCache.sprites[k]) {
-                const dataURI = tmp.toDataURL('image/png');
-                const approxSize = dataURI.length * 2;
-                if ((spriteCache.size + approxSize) <= SPRITE_CACHE_LIMIT_BYTES) {
-                  spriteCache.sprites[k] = dataURI;
-                  spriteCache.size += approxSize;
-                  spriteCache.ts = Date.now();
-                }
-              }
-            } catch (e) {}
-            const server = (window.SPRITE_SERVER_URL || 'http://localhost:3001/save-sprite');
-            if (window._spriteServerAvailable && server && server.indexOf('http') === 0) {
-              try {
-                const dataURI = spriteCache.sprites[k] || tmp.toDataURL('image/png');
-                const res = await fetch(server, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ name: k + '.png', dataURI })
-                });
-                if (!res.ok) {
-                  console.warn('sprite save failed', k, res.status);
-                  window._spriteServerAvailable = false;
-                }
-              } catch (e) {
-                window._spriteServerAvailable = false;
-              }
+            const dataURI = tmp.toDataURL('image/png');
+            const approxSize = dataURI.length * 2;
+            if ((spriteCache.size + approxSize) <= SPRITE_CACHE_LIMIT_BYTES) {
+              spriteCache.sprites[k] = dataURI;
+              spriteCache.size += approxSize;
+              spriteCache.ts = Date.now();
             }
-            try { localStorage.setItem(SPRITE_CACHE_KEY, JSON.stringify(spriteCache)); } catch (e) {}
           } catch (e) {}
-        })();
+        }
+        // Servidor de sprites (sólo si se pide explícitamente): un intento por
+        // sprite hasta que falle, y a partir de ahí se desactiva solo.
+        if (window._spriteServerAvailable) {
+          try {
+            const server = (window.SPRITE_SERVER_URL || 'http://localhost:3001/save-sprite');
+            const dataURI = spriteCache.sprites[k] || tmp.toDataURL('image/png');
+            const res = await fetch(server, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name: k + '.png', dataURI })
+            });
+            if (!res.ok) window._spriteServerAvailable = false;
+          } catch (e) { window._spriteServerAvailable = false; }
+        }
+        // Ceder el hilo cada pocos sprites para que el indicador de carga se
+        // mueva y la pestaña no se quede bloqueada.
+        if ((i % 8) === 7) { try { await new Promise(r => setTimeout(r, 0)); } catch (e) {} }
 
       } catch (e) { console.warn('generateSpriteImages error', k, e); }
     }
     if (progress && progress.update) progress.update(95, 'Sprites generados');
-    try { localStorage.setItem(SPRITE_CACHE_KEY, JSON.stringify(spriteCache)); } catch (e) {}
+    if (persistSpriteCache) {
+      try { localStorage.setItem(SPRITE_CACHE_KEY, JSON.stringify(spriteCache)); } catch (e) {}
+    }
   } catch (e) { console.warn('generateSpriteImages err', e); }
 }
 

@@ -1,4 +1,13 @@
-// engine/map.js — map-related helpers (placeholder)
+// engine/map.js
+// ⚠️ PLACEHOLDER — NO IMPLEMENTADO. Nadie importa este archivo.
+//
+// Las funciones reales están dentro de engine/game-engine.js:
+//   generateMap(), isRiver(), isNearRiver(), movementMultiplier(),
+//   findNearestWalkable(), canWalkTo(), y la búsqueda de caminos del jugador.
+//
+// OJO: estas versiones devuelven valores falsos (isRiver → false, aStar → []).
+// Si alguien las importase, el juego parecería funcionar pero sin lógica de mapa.
+
 export function generateMap() {
   console.warn('engine/map.generateMap() stub — implement extraction here');
 }

@@ -1,36 +1,219 @@
 {
+  "interiorId": "house_large",
   "defaultFloor": 0,
+  "entryCol": 6,
+  "entryRow": 8,
+  "chestItems": [
+    "wheat",
+    "bread",
+    "stone"
+  ],
+  "npcs": [
+    {
+      "col": 4,
+      "row": 3,
+      "name": "Aldeano"
+    },
+    {
+      "col": 9,
+      "row": 3,
+      "name": "Aldeana"
+    },
+    {
+      "col": 6,
+      "row": 7,
+      "name": "Niña"
+    }
+  ],
   "floors": [
     {
       "name": "Planta baja",
-      "width": 12,
-      "height": 9,
-      "entryCol": 5,
-      "entryRow": 6,
-      "chestItems": ["wheat", "wheat", "wheat", "stone", "stone", "brick", "brick"],
+      "width": 13,
+      "height": 10,
+      "entryCol": 6,
+      "entryRow": 8,
       "wallPalette": {
-        "back": "#8B7050", "backDark": "#7A6040", "backLight": "#9B8060",
-        "left": "#7A6040", "leftDark": "#6A5030",
-        "right": "#9B8060", "rightDark": "#8B7050",
-        "floor": "#D4B896", "floorDark": "#C4A886",
-        "trim": "#5A3A1A", "baseboard": "#4A2A0A",
+        "back": "#A2643E",
+        "backDark": "#8B5334",
+        "backLight": "#B87A50",
+        "left": "#8B5334",
+        "leftDark": "#77452B",
+        "right": "#B87A50",
+        "rightDark": "#A2643E",
+        "floor": "#C9A87C",
+        "floorDark": "#BC9C70",
+        "trim": "#5A3A1A",
+        "baseboard": "#4A2A0A",
         "ceiling": "#3A2A1A"
       },
-      "npcs": [
-        { "col": 1, "row": 1, "name": "Patriarca" },
-        { "col": 8, "row": 2, "name": "Esposa" },
-        { "col": 3, "row": 4, "name": "Hijo" }
-      ],
       "tiles": [
-        ["wall","painting","wall","wall","painting","wall","window","wall","wall","painting","wall","wall"],
-        ["wall","bed","bed","chair","table","chair","plant","pot","floor","bed","bed","wall"],
-        ["wall","floor","floor","floor","floor","floor","floor","floor","floor","floor","floor","wall"],
-        ["wall","rug","rug","bookshelf","floor","floor","floor","chest","floor","rug","rug","wall"],
-        ["wall","floor","floor","floor","counter","floor","floor","floor","plant","floor","floor","wall"],
-        ["wall","chair","floor","floor","firepit","floor","floor","chair","floor","pot","floor","wall"],
-        ["wall","floor","floor","floor","floor","door","floor","floor","floor","floor","floor","wall"],
-        ["wall","plant","floor","floor","floor","floor","floor","floor","floor","floor","plant","wall"],
-        ["wall","wall","wall","wall","wall","wall","wall","wall","wall","wall","wall","wall"]
+        [
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall"
+        ],
+        [
+          "wall",
+          "painting",
+          "wall",
+          "wall",
+          "wall",
+          "window",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "painting",
+          "wall",
+          "wall"
+        ],
+        [
+          "wall",
+          "bed",
+          "bed",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "bookshelf",
+          "floor",
+          "chest",
+          "wall"
+        ],
+        [
+          "wall",
+          "bed",
+          "bed",
+          "floor",
+          "floor",
+          "rug",
+          "rug",
+          "floor",
+          "floor",
+          "floor",
+          "table",
+          "floor",
+          "wall"
+        ],
+        [
+          "wall",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "rug",
+          "rug",
+          "floor",
+          "chair",
+          "chair",
+          "floor",
+          "floor",
+          "wall"
+        ],
+        [
+          "wall",
+          "pot",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "wall",
+          "wall",
+          "wall",
+          "floor",
+          "floor",
+          "wall"
+        ],
+        [
+          "wall",
+          "plant",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "wall"
+        ],
+        [
+          "wall",
+          "floor",
+          "floor",
+          "table",
+          "table",
+          "floor",
+          "floor",
+          "pot",
+          "floor",
+          "plant",
+          "floor",
+          "floor",
+          "wall"
+        ],
+        [
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "door",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall"
+        ],
+        [
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "door",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall"
+        ]
+      ],
+      "npcs": [
+        {
+          "col": 4,
+          "row": 3,
+          "name": "Aldeano"
+        },
+        {
+          "col": 9,
+          "row": 3,
+          "name": "Aldeana"
+        },
+        {
+          "col": 6,
+          "row": 7,
+          "name": "Niña"
+        }
       ]
     }
   ]

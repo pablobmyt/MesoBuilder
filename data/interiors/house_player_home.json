@@ -1,33 +1,192 @@
 {
+  "interiorId": "house_player_home",
   "defaultFloor": 0,
+  "entryCol": 5,
+  "entryRow": 7,
+  "chestItems": [
+    "wheat",
+    "bread",
+    "stone"
+  ],
+  "npcs": [
+    {
+      "col": 3,
+      "row": 5,
+      "name": "Madre",
+      "npcType": "villager"
+    },
+    {
+      "col": 8,
+      "row": 3,
+      "name": "Hermana",
+      "npcType": "villager"
+    },
+    {
+      "col": 6,
+      "row": 6,
+      "name": "Padre",
+      "npcType": "villager"
+    }
+  ],
   "floors": [
     {
-      "name": "Planta baja",
-      "width": 10,
-      "height": 8,
-      "entryCol": 4,
-      "entryRow": 5,
-      "chestItems": ["wheat", "wheat", "stone", "brick"],
+      "name": "Casa familiar",
+      "width": 11,
+      "height": 9,
+      "entryCol": 5,
+      "entryRow": 7,
       "wallPalette": {
-        "back": "#8B6B4A", "backDark": "#7A5A3A", "backLight": "#9B7B5A",
-        "left": "#7A5A3A", "leftDark": "#6A4A2A",
-        "right": "#9B7B5A", "rightDark": "#8B6B4A",
-        "floor": "#C8A87A", "floorDark": "#B89868",
-        "trim": "#5A3A1A", "baseboard": "#4A2A0A",
+        "back": "#9B7B5A",
+        "backDark": "#8B6B4A",
+        "backLight": "#AB8B6A",
+        "left": "#8B6B4A",
+        "leftDark": "#7B5B3A",
+        "right": "#AB8B6A",
+        "rightDark": "#9B7B5A",
+        "floor": "#C8A87A",
+        "floorDark": "#BFA070",
+        "trim": "#5A3A1A",
+        "baseboard": "#4A2A0A",
         "ceiling": "#3A2A1A"
       },
-      "npcs": [
-        { "col": 6, "row": 2, "name": "Aldeana" }
-      ],
       "tiles": [
-        ["wall","painting","wall","wall","painting","wall","window","wall","painting","wall"],
-        ["wall","bed","bed","chair","table","chair","plant","rug","rug","wall"],
-        ["wall","pot","floor","floor","floor","floor","floor","rug","rug","wall"],
-        ["wall","bookshelf","floor","counter","floor","chest","floor","plant","floor","wall"],
-        ["wall","chair","floor","firepit","floor","floor","floor","chair","floor","wall"],
-        ["wall","floor","floor","floor","floor","door","floor","floor","floor","wall"],
-        ["wall","floor","plant","floor","floor","floor","floor","pot","floor","wall"],
-        ["wall","wall","wall","wall","wall","wall","wall","wall","wall","wall"]
+        [
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall"
+        ],
+        [
+          "wall",
+          "painting",
+          "wall",
+          "wall",
+          "window",
+          "wall",
+          "wall",
+          "wall",
+          "torch",
+          "wall",
+          "wall"
+        ],
+        [
+          "wall",
+          "bed",
+          "bed",
+          "floor",
+          "floor",
+          "floor",
+          "bookshelf",
+          "floor",
+          "floor",
+          "floor",
+          "wall"
+        ],
+        [
+          "wall",
+          "bed",
+          "bed",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "chest",
+          "floor",
+          "wall"
+        ],
+        [
+          "wall",
+          "floor",
+          "floor",
+          "rug",
+          "rug",
+          "rug",
+          "floor",
+          "floor",
+          "chair",
+          "chair",
+          "wall"
+        ],
+        [
+          "wall",
+          "pot",
+          "floor",
+          "rug",
+          "rug",
+          "rug",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "wall"
+        ],
+        [
+          "wall",
+          "plant",
+          "floor",
+          "floor",
+          "firepit",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "wall"
+        ],
+        [
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "door",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall"
+        ],
+        [
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "door",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall"
+        ]
+      ],
+      "npcs": [
+        {
+          "col": 3,
+          "row": 5,
+          "name": "Madre",
+          "npcType": "villager"
+        },
+        {
+          "col": 8,
+          "row": 3,
+          "name": "Hermana",
+          "npcType": "villager"
+        },
+        {
+          "col": 6,
+          "row": 6,
+          "name": "Padre",
+          "npcType": "villager"
+        }
       ]
     }
   ]

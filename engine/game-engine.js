@@ -37,6 +37,30 @@ import {
 } from './game-engine-preload-utils.js';
 import { createMapEditorCore } from './game-engine-map-editor-core.js';
 import { createStandaloneEditorUtils } from './game-engine-standalone-editor-utils.js';
+import { createStructureSystem } from './game-engine-structures.js';
+import { createSettlementPlanner } from './game-engine-settlement-utils.js';
+import { createFx } from './game-engine-fx-utils.js';
+import { createTextures } from './game-engine-textures.js';
+import { createDebugTools } from './game-engine-debug-utils.js';
+// Arte del personaje COMPARTIDO con el menú (vista previa del editor): una sola
+// fuente de verdad para paleta, presets, sprites detallados y recoloreo.
+import {
+  DEFAULT_PALETTE,
+  PALETTE_OPTIONS,
+  CHARACTER_OUTFITS,
+  CHARACTER_PRESETS,
+  PRESET_ADAPA,
+  DETAILED_HUMANOID_SPRITE_URSS,
+  DETAILED_HUMANOID_SPRITE_MESOPOTAMIA,
+  USE_DETAILED_HUMANOID_SPRITE,
+  clampByte,
+  shadeHexColor,
+  humanoidSpriteFor,
+  humanoidGridSize,
+  humanoidHeadRows,
+  mapDetailedHumanoidColor,
+  drawHumanoid
+} from './character-art.js';
 try { window.EventManager = EventManager; } catch (e) {}
 const DEFAULT_ENEMY_DEFS = {
   raider: { name: 'Merodeador', hp: 12, speed: 0.9, reward: { brick: 1 }, sprite: 'raider', scale: 0.82 },
@@ -106,24 +130,32 @@ let _introSynths = null;
 async function loadIntroMusicMIDI() {
   try {
     if (_introMidiData) return true; // Already loaded
-    
-    // Fetch MIDI file
-    const response = await fetch('data/Sounds/ussr.mid');
-    if (!response.ok) throw new Error(`Failed to load MIDI: ${response.status}`);
-    
-    const midiArrayBuffer = await response.arrayBuffer();
-    
-    // Parse MIDI using jsmidparser if available
-    if (typeof MidiParser !== 'undefined' && MidiParser.parse) {
-      _introMidiData = MidiParser.parse(new Uint8Array(midiArrayBuffer));
-      console.log('game-engine: MIDI intro music loaded successfully');
-      return true;
-    } else {
-      console.warn('game-engine: jsmidparser not available, MIDI playback disabled');
+
+    // El parser MIDI viene de un <script> de CDN. Si no está disponible
+    // (sin red / proxy corporativo), no tiene sentido pedir el archivo.
+    if (typeof MidiParser === 'undefined' || !MidiParser.parse) {
+      console.log('game-engine: jsmidparser no disponible; se usará data/Sounds/ussr.wav para la intro');
       return false;
     }
+
+    // Candidatos: el archivo vive en data/Music (data/Sounds se mantiene por compatibilidad)
+    const candidates = ['data/Music/ussr.mid', 'data/Sounds/ussr.mid'];
+    let response = null;
+    let usedUrl = null;
+    for (const url of candidates) {
+      try {
+        const res = await fetch(url);
+        if (res && res.ok) { response = res; usedUrl = url; break; }
+      } catch (e) { /* probar el siguiente */ }
+    }
+    if (!response) throw new Error('MIDI de intro no encontrado (probado: ' + candidates.join(', ') + ')');
+
+    const midiArrayBuffer = await response.arrayBuffer();
+    _introMidiData = MidiParser.parse(new Uint8Array(midiArrayBuffer));
+    console.log('game-engine: MIDI intro music loaded successfully from ' + usedUrl);
+    return true;
   } catch (e) {
-    console.warn('game-engine: failed to load MIDI intro music', e);
+    console.warn('game-engine: failed to load MIDI intro music', e && e.message ? e.message : e);
     return false;
   }
 }
@@ -528,6 +560,27 @@ function setupMapEditorUI() { return standaloneEditorUtils.setupMapEditorUI(); }
 
 // Async chunked terrain cache builder – yields every BATCH rows so the main
 // thread stays responsive. Builds BOTH ortho and iso caches in one call.
+// Categoría gruesa de un bioma, para las transiciones de borde (arena↔hierba,
+// agua↔tierra…). Los caminos y canales quedan aparte porque ya tienen bordillo.
+function biomeEdgeKind(b) {
+  if (!b) return 'none';
+  if (b === 'water' || b === 'deep_water') return 'water';
+  if (b === 'grass' || b === 'riparian') return 'grass';
+  if (b === 'forest') return 'forest';
+  if (b === 'marsh') return 'marsh';
+  if (b === 'hills') return 'hills';
+  if (b === 'road' || b === 'concrete_road' || b === 'canal_road') return 'road';
+  return 'sand';   // sand, steppe, alluvial, saline…
+}
+
+function biomeEdgeNeighbours(r, c) {
+  const at = (rr, cc) => biomeEdgeKind(tileBiome[rr] && tileBiome[rr][cc]);
+  return {
+    n: at(r - 1, c), e: at(r, c + 1), s: at(r + 1, c), w: at(r, c - 1),
+    nw: at(r - 1, c - 1), ne: at(r - 1, c + 1), sw: at(r + 1, c - 1), se: at(r + 1, c + 1)
+  };
+}
+
 async function rebuildMapCachesAsync() {
   if (_rebuildMapAsyncRunning) return;
   _rebuildMapAsyncRunning = true;
@@ -548,6 +601,8 @@ async function rebuildMapCachesAsync() {
         const isUrss = (window._currentEpoch || 'mesopotamia') === 'urss';
         // Add noise to match live rendering style
         const noise = ((c * 7 + r * 13) % 11) * 0.8;
+        const px = c * tileSize, py = r * tileSize;
+        const seed = (((c + 4096) * 73856093) ^ ((r + 4096) * 19349663)) >>> 0;
         if (biome === 'road') {
           oc.fillStyle = isUrss ? `rgb(${130+noise|0},${134+noise|0},${140+noise|0})` : `rgb(${210+noise|0},${180+noise|0},${130+noise|0})`;
         } else if (biome === 'concrete_road') {
@@ -555,7 +610,37 @@ async function rebuildMapCachesAsync() {
         } else {
           oc.fillStyle = getBiomeFillColor(biome);
         }
-        oc.fillRect(c * tileSize, r * tileSize, tileSize, tileSize);
+        oc.fillRect(px, py, tileSize, tileSize);
+        // La caché pintaba SÓLO colores planos, así que las texturas de camino,
+        // los puentes y el detalle del bioma no se veían nunca en el juego (sólo
+        // en el fotograma previo a tener caché). Se pintan aquí también.
+        try {
+          // Bordes entre biomas: dither y orilla húmeda (16 bits, no bloques)
+          if (biome !== 'road' && biome !== 'concrete_road') {
+            const kind = biomeEdgeKind(biome);
+            if (kind !== 'road') textures.drawTransition(oc, px, py, tileSize, kind, biomeEdgeNeighbours(r, c), seed, {});
+          }
+          if (biome === 'road' || biome === 'concrete_road' || biome === 'canal_road') {
+            if (biome === 'canal_road') {
+              // Corredor logístico: tierra apisonada (sin textura de calzada)
+            } else {
+              const kind = biome === 'concrete_road' ? 'concrete' : pathKindAt(c, r);
+              const axis = bridgeAxisAt(c, r);
+              if (axis) {
+                textures.drawBridgeCell(oc, px, py, tileSize, tileSize, axis, seed, 'wood', {});
+              } else {
+                textures.drawPathTile(oc, px, py, tileSize, tileSize, kind, seed, {});
+                const closed = {
+                  n: !isPathCell(c, r - 1), e: !isPathCell(c + 1, r),
+                  s: !isPathCell(c, r + 1), w: !isPathCell(c - 1, r)
+                };
+                textures.drawCurbs(oc, px, py, tileSize, tileSize, closed, kind, {});
+              }
+            }
+          } else if (biome !== 'water') {
+            textures.drawDetailTile(oc, px, py, tileSize, tileSize, biome, seed, {});
+          }
+        } catch (e) {}
       }
       if (r % BATCH === BATCH - 1) await new Promise(res => setTimeout(res, 0));
     }
@@ -584,6 +669,7 @@ async function rebuildMapCachesAsync() {
         const biome = tileBiome[r][c] || 'alluvial';
         const isUrss = (window._currentEpoch || 'mesopotamia') === 'urss';
         const noise = ((c * 7 + r * 13) % 11) * 0.8;
+        const seed = (((c + 4096) * 73856093) ^ ((r + 4096) * 19349663)) >>> 0;
         if (biome === 'road') {
           ic.fillStyle = isUrss ? `rgb(${130+noise|0},${134+noise|0},${140+noise|0})` : `rgb(${210+noise|0},${180+noise|0},${130+noise|0})`;
         } else if (biome === 'concrete_road') {
@@ -597,6 +683,31 @@ async function rebuildMapCachesAsync() {
         ic.lineTo(x,          y + h1);
         ic.lineTo(x - w1/2,   y + h1/2);
         ic.closePath(); ic.fill();
+        // Igual que la caché ortográfica: caminos, puentes, detalle del bioma y
+        // transiciones de borde recortados al rombo. Sin esto, en isométrico el
+        // terreno salía de color plano y los caminos desaparecían al usar caché.
+        try {
+          if (biome !== 'road' && biome !== 'concrete_road') {
+            const ekind = biomeEdgeKind(biome);
+            if (ekind !== 'road') textures.drawTransition(ic, x, y, h1, ekind, biomeEdgeNeighbours(r, c), seed, { iso: true });
+          }
+          if (biome === 'road' || biome === 'concrete_road') {
+            const kind = biome === 'concrete_road' ? 'concrete' : pathKindAt(c, r);
+            const axis = bridgeAxisAt(c, r);
+            if (axis) {
+              textures.drawBridgeCell(ic, x, y, w1, h1, axis, seed, 'wood', { iso: true });
+            } else {
+              textures.drawPathTile(ic, x, y, w1, h1, kind, seed, { iso: true });
+              const closed = {
+                n: !isPathCell(c, r - 1), e: !isPathCell(c + 1, r),
+                s: !isPathCell(c, r + 1), w: !isPathCell(c - 1, r)
+              };
+              textures.drawCurbs(ic, x, y, w1, h1, closed, kind, { iso: true });
+            }
+          } else if (biome !== 'water') {
+            textures.drawDetailTile(ic, x, y, w1, h1, biome, seed, { iso: true });
+          }
+        } catch (e) {}
       }
       if (r % BATCH === BATCH - 1) await new Promise(res => setTimeout(res, 0));
     }
@@ -746,6 +857,16 @@ const TILE    = 32;          // px per cell
 // Visual tuning: scale factor applied to building/artwork drawing (relative to tile size)
 // 1.0 = sprite occupies exactly size.w × size.h tiles → collision footprint matches visual perfectly
 const BUILDING_SCALE = 1.0;
+// Los edificios se dibujan un poco MÁS GRANDES que su huella (volumen y aleros),
+// excepto la infraestructura, que tiene que encajar celda a celda. Es sólo
+// visual: la huella y las colisiones no cambian.
+const BUILDING_VISUAL_SCALE = 1.25;
+// Vegetación baja (hierbajos): mucho más pequeña que una persona. El jugador
+// mide ~1 celda; una mata tiene que leerse como un detalle del suelo, no como
+// un arbusto de su altura.
+const VEGETATION_SIZE_SCALE = 0.34;
+// Árboles: un poco más pequeños, para que la vegetación no domine la escena.
+const TREE_SIZE_SCALE = 0.85;
 // Make the map much larger
 const COLS    = 180;
 const ROWS    = 120;
@@ -781,10 +902,10 @@ const BUILDINGS = {
   stone_house: { name:'Casa de piedra', costBrick:14, costWheat:2, prodPop:6, prodWheat:0, prodBrick:0, color:'#9A9EA3', roofColor:'#6E6E6E', desc:'Construcción en piedra.', size:{ w:3, h:3 } },
   farm:     { name:'Granja',  costBrick:1,  costWheat:3,  prodPop:0,  prodWheat:4, prodBrick:0, color:'#4A7C3F', roofColor:'#2E5028', desc:'Produce 4 trigo/turno.', size:{ w:2, h:2 } },
   farm_plot:{ name:'Parcela', costBrick:0, costWheat:0, prodPop:0, prodWheat:1, prodBrick:0, color:'#4A7C3F', roofColor:'#2E5028', desc:'Parcela cultivada con azada.', size:{ w:1, h:1 } },
-  temple:   { name:'Templo',  costBrick:15, costWheat:5,  prodPop:5,  prodWheat:1, prodBrick:1, color:'#E8D5A3', roofColor:'#A0522D', desc:'+5 pop, +1 trigo, +1 ladrillo.' },
-  market:   { name:'Mercado', costBrick:8,  costWheat:4,  prodPop:2,  prodWheat:2, prodBrick:2, color:'#D2691E', roofColor:'#8B4513', desc:'+2 trigo, +2 ladrillos.' },
-  granary:  { name:'Granero', costBrick:6,  costWheat:0,  prodPop:0,  prodWheat:0, prodBrick:3, color:'#B8860B', roofColor:'#8B6914', desc:'+3 ladrillos/turno.' },
-  ziggurat: { name:'Zigurat', costBrick:30, costWheat:10, prodPop:10, prodWheat:3, prodBrick:3, color:'#F5ECD7', roofColor:'#C8A84B', desc:'Maravilla: +10 pop, +3 todo.', size:{ w:11, h:11 } },
+  temple:   { name:'Templo',  costBrick:15, costWheat:5,  prodPop:5,  prodWheat:1, prodBrick:1, color:'#E8D5A3', roofColor:'#A0522D', desc:'+5 pop, +1 trigo, +1 ladrillo.', size:{ w:4, h:4 } },
+  market:   { name:'Mercado', costBrick:8,  costWheat:4,  prodPop:2,  prodWheat:2, prodBrick:2, color:'#D2691E', roofColor:'#8B4513', desc:'+2 trigo, +2 ladrillos.', size:{ w:4, h:3 } },
+  granary:  { name:'Granero', costBrick:6,  costWheat:0,  prodPop:0,  prodWheat:0, prodBrick:3, color:'#B8860B', roofColor:'#8B6914', desc:'+3 ladrillos/turno.', size:{ w:3, h:3 } },
+  ziggurat: { name:'Zigurat', costBrick:30, costWheat:10, prodPop:10, prodWheat:3, prodBrick:3, color:'#F5ECD7', roofColor:'#C8A84B', desc:'Maravilla: +10 pop, +3 todo.', size:{ w:12, h:12 } },
 };
 
 // House with garden variant
@@ -814,9 +935,9 @@ BUILDINGS.soviet_superblock = { name:'Superbloque residencial', costBrick:16, co
 BUILDINGS.soviet_superblock_b = { name:'Superbloque residencial B', costBrick:15, costWheat:5, prodPop:9, prodWheat:0, prodBrick:0, color:'#5E6570', roofColor:'#4A4E54', desc:'Variante de superbloque residencial de alta densidad.', size:{ w:5, h:5 } };
 BUILDINGS.party_hq = { name:'Casa del Soviet', costBrick:24, costWheat:8, prodPop:12, prodWheat:0, prodBrick:0, color:'#9A3A3F', roofColor:'#5D1F24', desc:'Centro administrativo del distrito.', size:{ w:5, h:5 } };
 BUILDINGS.collective_farm = { name:'Granja colectiva', costBrick:1, costWheat:3, prodPop:0, prodWheat:4, prodBrick:0, color:'#5E7E52', roofColor:'#415B3A', desc:'Produce 4 comida/turno.', size:{ w:3, h:2 } };
-BUILDINGS.factory = { name:'Fábrica', costBrick:15, costWheat:5, prodPop:4, prodWheat:1, prodBrick:2, color:'#6D7078', roofColor:'#4F525A', desc:'+4 población, +1 comida, +2 suministros.' };
-BUILDINGS.state_warehouse = { name:'Almacén estatal', costBrick:8, costWheat:4, prodPop:1, prodWheat:1, prodBrick:2, color:'#8C7A5E', roofColor:'#675540', desc:'+1 comida, +2 suministros.' };
-BUILDINGS.steel_foundry = { name:'Complejo metalúrgico', costBrick:30, costWheat:10, prodPop:10, prodWheat:2, prodBrick:4, color:'#70747D', roofColor:'#4B4E55', desc:'Proyecto mayor: +10 población, +2 comida, +4 suministros.', size:{ w:11, h:11 } };
+BUILDINGS.factory = { name:'Fábrica', costBrick:15, costWheat:5, prodPop:4, prodWheat:1, prodBrick:2, color:'#6D7078', roofColor:'#4F525A', desc:'+4 población, +1 comida, +2 suministros.', size:{ w:5, h:4 } };
+BUILDINGS.state_warehouse = { name:'Almacén estatal', costBrick:8, costWheat:4, prodPop:1, prodWheat:1, prodBrick:2, color:'#8C7A5E', roofColor:'#675540', desc:'+1 comida, +2 suministros.', size:{ w:4, h:3 } };
+BUILDINGS.steel_foundry = { name:'Complejo metalúrgico', costBrick:30, costWheat:10, prodPop:10, prodWheat:2, prodBrick:4, color:'#70747D', roofColor:'#4B4E55', desc:'Proyecto mayor: +10 población, +2 comida, +4 suministros.', size:{ w:10, h:10 } };
 BUILDINGS.concrete_road = { name:'Vía de hormigón', costBrick:0, costWheat:0, prodPop:0, prodWheat:0, prodBrick:0, color:'#7A7B80', roofColor:'#7A7B80', desc:'Conecta barrios e industria.', size:{ w:1, h:1 } };
 BUILDINGS.state_clinic = { name:'Clínica estatal', costBrick:16, costWheat:4, prodPop:4, prodWheat:0, prodBrick:0, color:'#8FA0B0', roofColor:'#5F7386', desc:'Mejora la calidad de vida del distrito.', size:{ w:3, h:2 } };
 BUILDINGS.checkpoint_gate = { name:'Puerta de control', costBrick:8, costWheat:0, prodPop:0, prodWheat:0, prodBrick:0, color:'#6A6D74', roofColor:'#474A51', desc:'Acceso vigilado al núcleo urbano.', size:{ w:2, h:1 } };
@@ -1243,7 +1364,7 @@ function isGroundPickupResourceSubtype(subtype) {
 
 function getBuildingDisplay(type) {
   const resolved = resolveEpochBuildingType(type);
-  const base = BUILDINGS[resolved] || BUILDINGS[type] || { name: type || 'Edificio', desc: '' };
+  const base = getBuildingDef(resolved) || getBuildingDef(type) || { name: type || 'Edificio', desc: '' };
   const ui = getEpochUiProfile(window._currentEpoch || 'mesopotamia');
   const override = (ui && ui.buildings && (ui.buildings[resolved] || ui.buildings[type])) || null;
   return override ? { ...base, ...override } : base;
@@ -1275,7 +1396,7 @@ function getEpochKeyBuildMap() {
     h: palette[0] || 'house',
     v: palette[1] || 'mesopotamian_villa_detailed',
     f: palette[2] || 'farm',
-    t: palette[3] || 'temple',
+    y: palette[3] || 'temple',   // T está reservada para la cámara (libre/seguimiento)
     k: palette[4] || 'market',
     g: palette[5] || 'granary',
     z: palette[6] || 'ziggurat',
@@ -1290,11 +1411,12 @@ function getEpochShortcutSummary() {
     + `H=${getBuildingDisplay(palette[0] || 'house').name} `
     + `V=${getBuildingDisplay(palette[1] || 'mesopotamian_villa_detailed').name} `
     + `F=${getBuildingDisplay(palette[2] || 'farm').name} `
-    + `T=${getBuildingDisplay(palette[3] || 'temple').name} `
+    + `Y=${getBuildingDisplay(palette[3] || 'temple').name} `
     + `K=${getBuildingDisplay(palette[4] || 'market').name} `
     + `G=${getBuildingDisplay(palette[5] || 'granary').name} `
     + `Z=${getBuildingDisplay(palette[6] || 'ziggurat').name} `
-    + `D=${getEpochText('demolishName', 'Demoler')}`;
+    + `D=${getEpochText('demolishName', 'Demoler')}`
+    + ` · T=${getEpochText('cameraFollow', 'Cámara libre/seguimiento')}`;
 }
 
 function updateStaticEpochUI() {
@@ -1381,6 +1503,18 @@ function saveAppStateDebounced(delay = 1200) {
   _saveTimer = setTimeout(() => { try { saveAppState(); } catch (e) {} }, finalDelay);
 }
 
+// Copia superficial de una entidad descartando los campos transitorios del modo
+// debug (rectángulo dibujado) para no ensuciar el guardado.
+function stripTransientDebugFields(ent) {
+  try {
+    if (!ent || typeof ent !== 'object') return ent;
+    const copy = { ...ent };
+    delete copy._dbgRect;
+    delete copy._dbgRectAt;
+    return copy;
+  } catch (e) { return ent; }
+}
+
 function saveAppState() {
   try {
     const panels = {};
@@ -1419,9 +1553,10 @@ function saveAppState() {
       selectedTool: selectedTool,
       tileBiome,
       grid,
+      bridges: serializeBridgeMap(),
       entities: (window._savedExterior && Array.isArray(window._savedExterior.entities))
-        ? window._savedExterior.entities.map(e => ({ ...e }))
-        : (Array.isArray(entities) ? entities.map(e => ({ ...e })) : []),
+        ? window._savedExterior.entities.map(e => stripTransientDebugFields(e))
+        : (Array.isArray(entities) ? entities.map(e => stripTransientDebugFields(e)).filter(e => e && e.kind !== 'preview') : []),
       rabbits: (window._savedExterior && Array.isArray(window._savedExterior.rabbits))
         ? window._savedExterior.rabbits.map(r => ({ ...r }))
         : (Array.isArray(rabbits) ? rabbits.map(r => ({ ...r })) : []),
@@ -1433,6 +1568,7 @@ function saveAppState() {
       effectParticles: (typeof effectParticles !== 'undefined' && Array.isArray(effectParticles)) ? effectParticles.map(p => ({ ...p })) : [],
       floatingTexts: (typeof window.floatingTexts !== 'undefined' && Array.isArray(window.floatingTexts)) ? window.floatingTexts.map(t => ({ ...t })) : [],
       villages: (window._VILLAGES && Array.isArray(window._VILLAGES)) ? window._VILLAGES.map(v => ({ ...v })) : [],
+      structures: (() => { try { return structureSystem.listPlaced(); } catch (e) { return []; } })(),
       interiorDoors: (window.INTERIOR_DOORS && Array.isArray(window.INTERIOR_DOORS)) ? window.INTERIOR_DOORS.map(d => ({ ...d })) : [],
       storyChapter: window._storyChapter || 0,
       storySceneFlags: { ...(window._storySceneFlags || {}) }
@@ -1458,6 +1594,11 @@ function loadAppState() {
         }
         for (let r = copyRows; r < ROWS; r++) tileBiome[r] = Array(COLS).fill('sand');
       }
+      // El agua dibujada y la comprobada con isRiver deben coincidir: la partida
+      // guardada trae los biomas pero no el mapa de meandros.
+      rebuildRiverMapFromBiomes();
+      // Los puentes sí viajan con la partida (sus celdas son calzada, no agua).
+      try { restoreBridgeMap(s.bridges); } catch (e) {}
     } catch (e) { console.warn('tileBiome restore skipped due to malformed data', e); }
     try {
       if (s.grid && Array.isArray(s.grid)) {
@@ -1468,6 +1609,8 @@ function loadAppState() {
           grid[r] = row;
         }
         for (let r = copyRows; r < ROWS; r++) grid[r] = Array(COLS).fill(null);
+        normalizeRestoredGrid();
+        try { growLegacyZiggurats(); } catch (e) {}
       }
     } catch (e) { console.warn('grid restore skipped due to malformed data', e); }
     if (s.player && typeof s.player.x === 'number') {
@@ -1553,6 +1696,9 @@ function loadAppState() {
       if (s.villages && Array.isArray(s.villages)) {
         try { window._VILLAGES = s.villages.map(v => ({ ...v })); } catch (e) { window._VILLAGES = window._VILLAGES || []; }
       }
+      if (s.structures && Array.isArray(s.structures)) {
+        try { structureSystem.restorePlaced(s.structures); } catch (e) { console.warn('structures restore skipped', e); }
+      }
       if (s.interiorDoors && Array.isArray(s.interiorDoors)) {
         try { window.INTERIOR_DOORS = s.interiorDoors.map(d => ({ ...d })); } catch (e) { window.INTERIOR_DOORS = window.INTERIOR_DOORS || []; }
       } else {
@@ -1617,14 +1763,9 @@ function loadAppState() {
   }
 }
 
-const DEFAULT_PALETTE = {
-  skin: '#FFAC75',
-  hair: '#B96B27',
-  cloth: '#4F772D',
-  trim: '#9E2A2B'
-};
-
-const CHARACTER_OUTFITS = {
+// La paleta, las ropas, los presets y el arte del personaje viven ahora en
+// `engine/character-art.js` (se importan al principio de este fichero).
+/* Bloque antiguo conservado fuera de compilación hasta borrarlo del todo:
   // All maps are 12 rows × 10 cols. Tokens: h=hair, s=skin, c=cloth, t=trim(accent)
   tunic: {
     name: 'Túnica',
@@ -1726,6 +1867,7 @@ const CHARACTER_PRESETS = [
   { id:'merchant', name:'Tamar', title:'Mercader', classId:'merchant', outfit:'tunic', palette:{ skin:'#C8956C', hair:'#2B1C12', cloth:'#D2691E', trim:'#C8A84B' } }
 ];
 
+*/
 const BASE_SPECIAL = { FUE:6, PER:7, RES:5, CAR:8, INT:7, AGI:5, SUE:6 };
 
 const CHARACTER_CLASSES = [
@@ -1736,6 +1878,7 @@ const CHARACTER_CLASSES = [
   { id:'merchant', name:'Mercader', title:'Señor de tratos', bonus:{ CAR:2, INT:1 } }
 ];
 
+/* (PALETTE_OPTIONS también se movió a character-art.js)
 const PALETTE_OPTIONS = {
   skin: ['#C8956C', '#CFA07A', '#D2A178', '#B7835E'],
   hair: ['#2C1A0A', '#3D2510', '#1A1208', '#5A3A1A'],
@@ -1743,6 +1886,7 @@ const PALETTE_OPTIONS = {
   trim: ['#DAA520', '#C8A84B', '#E8D5A3', '#F5ECD7']
 };
 
+*/
 const player = {
   col: 14,
   row: 12,
@@ -1753,6 +1897,10 @@ const player = {
   outfit: 'tunic',
   presetId: null
 };
+// El jugador debe estar accesible globalmente: otros módulos (spatial index,
+// selección RTS, cinemáticas con el nombre del protagonista, debug HUD) leen
+// `window.player`. Hasta ahora nunca se asignaba y esas rutas usaban (0,0).
+try { window.player = player; } catch (e) {}
 // survival stats stored on char; ensure defaults
 try {
   char.hunger = typeof char.hunger === 'number' ? char.hunger : 100;
@@ -1777,7 +1925,7 @@ player.x = player.col;
 player.y = player.row;
 player.vx = 0;
 player.vy = 0;
-player.speed = 6 / TILE; // tiles per second
+player.speed = 4.3 / TILE; // tiles por segundo al caminar (antes 6=TILE: iba demasiado rápido)
 player._baseSpeed = player.speed;
 // animation / facing defaults
 player.dir = 'down';
@@ -2164,6 +2312,513 @@ const standaloneEditorUtils = createStandaloneEditorUtils({
   getTileBiome: () => tileBiome
 });
 
+// ── SISTEMA DE ESTRUCTURAS (conjuntos de edificios preparados) ─────────────
+// Evita que los edificios singulares (zigurat, templo, mercado, fábrica…)
+// aparezcan sueltos: cada conjunto se coloca con una forma predefinida.
+const structureSystem = createStructureSystem({
+  COLS,
+  ROWS,
+  getGrid: () => grid,
+  getTileBiome: () => tileBiome,
+  getHeightMap: () => heightMap,
+  getEntities: () => entities,
+  getVillages: () => window._VILLAGES || [],
+  getEpoch: () => window._currentEpoch || 'mesopotamia',
+  getBuildingSize: (type) => getBuildingSize(type),
+  setBuildingCells: (col, row, type) => setBuildingCells(col, row, type),
+  clearBuildingCells: (col, row, type) => clearBuildingCells(col, row, type),
+  isRiver: (col, row) => isRiver(col, row),
+  carveRoadPath: (c1, r1, c2, r2) => carveRoadPath(c1, r1, c2, r2),
+  spawnNPC: (name, col, row) => spawnNPC(name, col, row),
+  isPureMapEditor: () => window._pureMapEditorMode === true,
+  markMapDirty: () => { try { mapCacheDirty = true; rebuildMapCacheDebounced(10); } catch (e) {} },
+  saveState: () => { try { saveAppStateDebounced(400); } catch (e) {} },
+  notify: (msg) => { try { notify(msg); } catch (e) {} },
+  onCatalogChanged: () => { try { if (debugTools && debugTools.refreshPanel) debugTools.refreshPanel(); } catch (e) {} }
+});
+try { window._STRUCTURES = window._STRUCTURES || []; } catch (e) {}
+try {
+  const info = structureSystem.init();
+  console.log('[estructuras] catálogo cargado:', info.count, 'definiciones (' + info.from + ')');
+} catch (e) { console.warn('structureSystem.init failed', e); }
+try { window.MESO_STRUCTURES = structureSystem; } catch (e) {}
+
+// ── PLANIFICADOR DE ASENTAMIENTOS ─────────────────────────────────────────
+// Ciudades, bases militares y aldeas se generan con una retícula de calles y
+// manzanas por distrito (ver engine/game-engine-settlement-utils.js) en lugar
+// de listas de posiciones sueltas con saltos aleatorios.
+const settlementPlanner = createSettlementPlanner({
+  COLS,
+  ROWS,
+  getBuildingSize: (type) => getBuildingSize(type)
+});
+try { window.MESO_SETTLEMENTS = settlementPlanner; } catch (e) {}
+
+// ── PARTÍCULAS Y SACUDIDAS ─────────────────────────────────────────────────
+// Polvo al andar, virutas al talar, briznas al romper un hierbajo, chispas al
+// golpear y un pequeño vaivén en la entidad golpeada (le da vida al combate).
+const fx = createFx({
+  worldToScreen: (col, row) => worldToScreen(col, row),
+  getTileSize: () => getTileSize(),
+  getBiomeAt: (col, row) => { try { return (tileBiome[row] && tileBiome[row][col]) || null; } catch (e) { return null; } }
+});
+try { window.MESO_FX = fx; } catch (e) {}
+// Estado del polvo de pisadas
+let _fxLastWalkTime = 0;
+let _fxStepAt = 0;
+let _fxFootFlip = false;
+// Misiones de «ve a tal sitio»: se comprueban un par de veces por segundo.
+let _reachMissionAt = 0;
+
+// Posición en pantalla de una entidad, aplicando su sacudida de impacto si la
+// tiene (así el sprite tiembla unos píxeles durante ~0,2 s al recibir un golpe).
+function entityScreenPos(ref) {
+  const tx = (ref && typeof ref.x === 'number') ? ref.x : ((ref && ref.col) || 0);
+  const ty = (ref && typeof ref.y === 'number') ? ref.y : ((ref && ref.row) || 0);
+  const p = worldToScreen(tx, ty);
+  try {
+    if (ref && ref._fxShake) {
+      const off = fx.shakeOffset(ref, Date.now());
+      if (off) { p.x += off.x; p.y += off.y; }
+    }
+  } catch (e) {}
+  return p;
+}
+
+// ── TEXTURAS DE CAMINO ─────────────────────────────────────────────────────
+// Los caminos son suelo: dibujarlos con las 4 rejillas de arte de una casa los
+// dejaba como un damero de cuadros planos. Ahora se generan texturas de píxel a
+// la resolución real de la celda y se cachean (engine/game-engine-textures.js),
+// con bordillos que sólo cierran donde el camino NO continúa (autotiling).
+const textures = createTextures({
+  getKind: () => ((window._currentEpoch || 'mesopotamia') === 'urss' ? 'concrete' : 'stone')
+});
+try { window.MESO_TEXTURES = textures; } catch (e) {}
+
+// Tipos de edificio que son suelo de camino, no estructura (canal_road sólo
+// existe como bioma, nunca como edificio).
+const PATH_BUILDING_TYPES = new Set(['road', 'concrete_road']);
+
+// ¿La celda es camino? Si hay un edificio, sólo cuentan los propios caminos
+// (una casa pegada a la calle no "continúa" la calzada: ahí va el bordillo).
+// Los corredores logísticos (`canal_road`) NO cuentan: son tierra apisonada.
+function isPathCell(c, r) {
+  try {
+    if (c < 0 || r < 0 || c >= COLS || r >= ROWS) return false;
+    const cell = grid[r] && grid[r][c];
+    if (cell) {
+      const type = (typeof cell === 'string') ? cell : (cell.type || '');
+      return PATH_BUILDING_TYPES.has(type);
+    }
+    const biome = (tileBiome[r] && tileBiome[r][c]) || null;
+    return biome === 'road' || biome === 'concrete_road';
+  } catch (e) {}
+  return false;
+}
+
+// Material del firme de una celda: hormigón en la época soviética, losa de
+// piedra caliza en Mesopotamia.
+function pathKindAt(c, r) {
+  try {
+    const cell = grid[r] && grid[r][c];
+    const type = cell ? ((typeof cell === 'string') ? cell : (cell.type || '')) : '';
+    if (type === 'concrete_road') return 'concrete';
+    const biome = (tileBiome[r] && tileBiome[r][c]) || null;
+    if (biome === 'concrete_road') return 'concrete';
+  } catch (e) {}
+  return ((window._currentEpoch || 'mesopotamia') === 'urss') ? 'concrete' : 'stone';
+}
+
+// Dibuja una celda de camino completa: textura determinista + bordillos de
+// autotiling + roderas en los tramos rectos.
+function drawPathCell(c, r, x, y, w, h, opts = {}) {
+  const kind = opts.kind || pathKindAt(c, r);
+  const iso = !!opts.iso;
+  const variant = (((c + 4096) * 73856093) ^ ((r + 4096) * 19349663) ^ (kind.length * 83492791)) >>> 0;
+
+  // ── PUENTE: tablones, barandilla en los lados libres y travesaños ────────
+  const bridgeAxis = bridgeAxisAt(c, r);
+  if (bridgeAxis && !iso) {
+    if (textures.drawBridgeCell(ctx, x, y, w, h, bridgeAxis, variant, 'wood', {})) {
+      if ((c + r) % 2 === 0) textures.drawBridgePost(ctx, x, y, w, h, bridgeAxis, 'wood');
+      return;
+    }
+  }
+  if (bridgeAxis && iso) {
+    // En isométrico basta con los tablones recortados al rombo.
+    if (textures.drawPathTile(ctx, x, y, w, h, 'wood', variant, { iso })) return;
+  }
+
+  if (!textures.drawPathTile(ctx, x, y, w, h, kind, variant, { iso })) {
+    // Sin canvas fuera de pantalla (entorno sin DOM): relleno plano de respaldo.
+    ctx.fillStyle = kind === 'concrete' ? '#8B8F97' : '#C9B286';
+    if (iso) ctx.fillRect(x - w * 0.5, y, w, h * 0.5);
+    else ctx.fillRect(x, y, w, h);
+    return;
+  }
+  const closed = {
+    n: !isPathCell(c, r - 1),
+    e: !isPathCell(c + 1, r),
+    s: !isPathCell(c, r + 1),
+    w: !isPathCell(c - 1, r)
+  };
+  textures.drawCurbs(ctx, x, y, w, h, closed, kind, { iso });
+  const horiz = isPathCell(c - 1, r) && isPathCell(c + 1, r) && !isPathCell(c, r - 1) && !isPathCell(c, r + 1);
+  const vert = isPathCell(c, r - 1) && isPathCell(c, r + 1) && !isPathCell(c - 1, r) && !isPathCell(c + 1, r);
+  if (horiz || vert) textures.drawRuts(ctx, x, y, w, h, horiz ? 'h' : 'v', kind);
+}
+
+// ¿Está libre el rectángulo donde va a ir el asentamiento?
+function isSettlementRectClear(col, row, halfC, halfR) {
+  if (col - halfC < 1 || row - halfR < 1) return false;
+  if (col + halfC >= COLS - 1 || row + halfR >= ROWS - 1) return false;
+  for (let r = row - halfR; r <= row + halfR; r++) {
+    for (let c = col - halfC; c <= col + halfC; c++) {
+      if (grid[r][c]) return false;
+      if (isRiver(c)) return false;
+      const b = tileBiome[r] && tileBiome[r][c];
+      if (b === 'water' || b === 'deep_water') return false;
+    }
+  }
+  return true;
+}
+
+// Genera el plano buscando un centro despejado cerca del punto pedido.
+// Primero prueba el punto exacto y va abriendo anillos de radio creciente:
+// así encuentra hueco aunque el sitio pedido esté pegado al río o al bosque.
+function buildSettlementPlanFor(type, col, row, epoch) {
+  const cfg = settlementPlanner.TEMPLATES[type];
+  if (!cfg) return null;
+  const probe = settlementPlanner.planSettlement({ type, cx: 0, cy: 0, epoch });
+  if (!probe) return null;
+  const halfC = probe.extent.halfC;
+  const halfR = probe.extent.halfR;
+  const clampC = (v) => Math.max(halfC + 1, Math.min(COLS - halfC - 2, Math.round(v)));
+  const clampR = (v) => Math.max(halfR + 1, Math.min(ROWS - halfR - 2, Math.round(v)));
+  const accept = (c, r) => {
+    if (!isSettlementRectClear(c, r, halfC, halfR)) return null;
+    const plan = settlementPlanner.planSettlement({
+      type, cx: c, cy: r, epoch,
+      seed: ((c * 73856093) ^ (r * 19349663) ^ (Date.now() & 0xffff)) >>> 0
+    });
+    return plan && plan.ok ? plan : null;
+  };
+  let found = accept(clampC(col), clampR(row));
+  if (found) return found;
+  for (let radius = 3; radius <= 70 && !found; radius += 3) {
+    const samples = 14 + radius;
+    const offset = Math.random() * Math.PI * 2;
+    for (let s = 0; s < samples && !found; s++) {
+      const ang = offset + (s / samples) * Math.PI * 2;
+      found = accept(clampC(col + Math.cos(ang) * radius), clampR(row + Math.sin(ang) * radius));
+    }
+  }
+  return found;
+}
+
+// Aplica un plano al mundo. Devuelve las piezas colocadas (formato `houses`).
+function applySettlementPlan(plan) {
+  const pieces = [];
+  const taken = new Set();
+  const key = (c, r) => r * COLS + c;
+  const mark = (c, r, w, h) => {
+    for (let rr = r; rr < r + h; rr++) for (let cc = c; cc < c + w; cc++) taken.add(key(cc, rr));
+  };
+  const isFree = (c, r, w, h) => {
+    if (c < 1 || r < 1 || c + w > COLS - 1 || r + h > ROWS - 1) return false;
+    for (let rr = r; rr < r + h; rr++) {
+      for (let cc = c; cc < c + w; cc++) {
+        if (taken.has(key(cc, rr))) return false;
+        if (grid[rr][cc]) return false;
+        if (isRiver(cc)) return false;
+        const b = tileBiome[rr] && tileBiome[rr][cc];
+        if (b === 'water' || b === 'deep_water') return false;
+      }
+    }
+    return true;
+  };
+  const putBuilding = (c, r, type, orient) => {
+    const sz = getBuildingSize(type);
+    if (!isFree(c, r, sz.w, sz.h)) return false;
+    try {
+      if (orient) setBuildingCells(c, r, type, orient); else setBuildingCells(c, r, type);
+      mark(c, r, sz.w, sz.h);
+      pieces.push({ c, r, variant: type });
+      return true;
+    } catch (e) { return false; }
+  };
+
+  // 1. Aplanar el terreno del recinto (fuera agua/bosque) y limpiar vegetación
+  const ext = plan.extent;
+  for (let r = ext.minR; r <= ext.maxR; r++) {
+    for (let c = ext.minC; c <= ext.maxC; c++) {
+      if (grid[r][c]) continue;
+      const b = tileBiome[r] && tileBiome[r][c];
+      if (b === 'forest' || b === 'water' || b === 'deep_water' || b === 'hills' || b === 'saline') {
+        try { tileBiome[r][c] = 'alluvial'; } catch (e) {}
+      }
+    }
+  }
+  try {
+    for (let i = entities.length - 1; i >= 0; i--) {
+      const ent = entities[i];
+      if (!ent || (ent.kind !== 'tree' && ent.kind !== 'resource')) continue;
+      const ec = (typeof ent.col === 'number') ? ent.col : Math.floor(Number(ent.x) || -9999);
+      const er = (typeof ent.row === 'number') ? ent.row : Math.floor(Number(ent.y) || -9999);
+      if (ec >= ext.minC && ec <= ext.maxC && er >= ext.minR && er <= ext.maxR) entities.splice(i, 1);
+    }
+  } catch (e) {}
+
+  // 2. Viario (se dibuja antes que los edificios para respetar las manzanas)
+  plan.streets.forEach(s => {
+    for (let r = s.r; r < s.r + s.h; r++) {
+      for (let c = s.c; c < s.c + s.w; c++) {
+        if (r < 1 || c < 1 || r >= ROWS - 1 || c >= COLS - 1) continue;
+        if (grid[r][c]) continue;
+        const b = tileBiome[r] && tileBiome[r][c];
+        if (b === 'water' || b === 'deep_water' || isRiver(c)) continue;
+        try { tileBiome[r][c] = s.kind; } catch (e) {}
+      }
+    }
+  });
+
+  // 3. Núcleo cívico a partir de su plantilla de estructura (si la hay)
+  if (plan.coreTemplate) {
+    try {
+      const res = structureSystem.place(plan.coreTemplate, plan.cx, plan.cy, {
+        epoch: plan.epoch,
+        transform: 'none',
+        clear: true,
+        removeEntities: true,
+        ignoreSpacing: true,
+        ignoreBiome: true,
+        ignoreRiver: true,
+        road: false
+      });
+      if (res && res.ok) {
+        (res.pieces || []).forEach(p => {
+          const sz = getBuildingSize(p.type);
+          mark(p.c, p.r, sz.w, sz.h);
+          pieces.push({ c: p.c, r: p.r, variant: p.type });
+        });
+      }
+    } catch (e) { /* sin núcleo: las manzanas siguen siendo válidas */ }
+  }
+
+  // 4. Edificios de las manzanas
+  plan.buildings.forEach(b => { putBuilding(b.c, b.r, b.type); });
+
+  // 5. Muralla: primero torres, luego lienzos (los huecos de puerta quedan libres)
+  const wallState = plan.walls || { segments: [], towers: [], gates: [] };
+  wallState.towers.forEach(t => {
+    if (!isFree(t.c, t.r, t.w, t.h)) return;
+    try {
+      setBuildingCells(t.c, t.r, 'wall_tower');
+      mark(t.c, t.r, t.w, t.h);
+      pieces.push({ c: t.c, r: t.r, variant: 'wall_tower' });
+    } catch (e) {}
+  });
+  wallState.segments.forEach(seg => {
+    for (let r = seg.r; r < seg.r + seg.h; r++) {
+      for (let c = seg.c; c < seg.c + seg.w; c++) {
+        if (!isFree(c, r, 1, 1)) continue;
+        try {
+          setBuildingCells(c, r, 'wall_segment', seg.orient);
+          const cell = grid[r] && grid[r][c];
+          if (cell && typeof cell === 'object') cell.orient = seg.orient;
+          mark(c, r, 1, 1);
+          pieces.push({ c, r, variant: 'wall_segment' });
+        } catch (e) {}
+      }
+    }
+  });
+  // Puertas: la ciudad tiene que poder ATRAVESARSE. El arco es decoración
+  // pasable (entidad ambiental, no un edificio), así que el vano queda libre y
+  // el sprite se dibuja encima. Antes se intentaba colocar como edificio de
+  // 2×1 en un hueco de 1 celda: `isFree` fallaba y no aparecía ninguna puerta.
+  wallState.gates.forEach(g => {
+    const vertical = (g.side === 'W' || g.side === 'E');
+    // Defensivo: retira cualquier lienzo que haya quedado dentro del vano.
+    for (let r = g.r; r < g.r + g.h; r++) {
+      for (let c = g.c; c < g.c + g.w; c++) {
+        if (r < 1 || c < 1 || r >= ROWS - 1 || c >= COLS - 1) continue;
+        const cell = grid[r] && grid[r][c];
+        const t = cell ? ((typeof cell === 'string') ? cell : (cell.type || '')) : '';
+        if (t === 'wall_segment') { try { clearBuildingCells(c, r, 'wall_segment'); } catch (e) {} }
+        taken.delete(key(c, r));
+      }
+    }
+    // La capital soviética no tiene muralla: el control de acceso es el propio
+    // bulevar, así que no se pone arco (uno mesopotámico quedaría fuera de lugar).
+    const subtype = plan.epoch === 'urss' ? null : (vertical ? 'mesopotamian_gate_v' : 'mesopotamian_arch');
+    if (!subtype) return;
+    try {
+      entities.push({
+        id: `gate-${g.side}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        kind: 'ambient', subtype,
+        col: g.c, row: g.r, x: g.c, y: g.r,
+        size: 1, nonInteractive: true, passable: true,
+        gateW: g.w, gateH: g.h, gateSide: g.side
+      });
+      // OJO: no se añade a `pieces` — esa lista la consume el sistema de
+      // producción/grid, que sólo entiende tipos de BUILDINGS y avisaba de
+      // "tipo de edificio desconocido en el mapa: gate".
+    } catch (e) {}
+  });
+
+  // 6. Mobiliario urbano
+  plan.props.forEach(p => {
+    if (p.c < 1 || p.r < 1 || p.c >= COLS - 1 || p.r >= ROWS - 1) return;
+    if (grid[p.r][p.c] || isRiver(p.c)) return;
+    try {
+      entities.push({
+        id: `ambient-${p.subtype}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        kind: 'ambient', subtype: p.subtype, col: p.c, row: p.r,
+        x: p.c, y: p.r, size: p.size || 1, nonInteractive: true
+      });
+    } catch (e) {}
+  });
+
+  // 7. Embarcadero si el asentamiento da al río (con su camino de acceso)
+  try {
+    let bankCol = null;
+    for (let d = 1; d <= 8 && bankCol === null; d++) {
+      if (isRiver(ext.maxC + d)) bankCol = ext.maxC + d - 1;
+      else if (isRiver(ext.minC - d)) bankCol = ext.minC - d + 1;
+    }
+    if (bankCol !== null) {
+      const row = Math.round((ext.minR + ext.maxR) / 2);
+      putBuilding(bankCol > plan.cx ? bankCol - 1 : bankCol + 1, row, 'dock');
+      // Camino del embarcadero al borde del recinto
+      const dir = bankCol > plan.cx ? -1 : 1;
+      for (let c = bankCol + dir; c <= ext.maxC && c >= ext.minC; c += dir) {
+        if (!grid[row][c] && !isRiver(c)) { try { tileBiome[row][c] = 'road'; } catch (e) {} }
+      }
+    }
+  } catch (e) {}
+
+  return pieces;
+}
+
+// ── MODO DEBUG / INSPECTOR VISUAL ──────────────────────────────────────────
+// Permite seleccionar, mover y ajustar sprites y edificios en tiempo real (F9).
+const debugTools = createDebugTools({
+  COLS,
+  ROWS,
+  getCanvas: () => canvas,
+  getEngineState: () => ({
+    player,
+    entities,
+    rabbits,
+    foxes,
+    grid,
+    tileBiome,
+    camX, camY, zoom, viewMode,
+    timeScale: window._timeScale
+  }),
+  worldToScreen: (col, row) => worldToScreen(col, row),
+  screenToWorldFloat: (sx, sy) => screenToWorldFloat(sx, sy),
+  getTileSize: () => getTileSize(),
+  getIsoTileSize: () => getIsoTileSize(),
+  getViewMode: () => viewMode,
+  getCellInfo: (col, row) => getCellInfo(col, row),
+  getBuildingSize: (type) => getBuildingSize(type),
+  getBuildingTypes: () => Object.keys(BUILDINGS),
+  // Ayudas de PRUEBA: el canvas del juego puede quedarse diminuto con la pestaña
+  // oculta, así que para comprobar que un sprite se dibuja de verdad se dibuja
+  // y se leen los píxeles desde fuera (window.MESO_DEBUG.testDraw).
+  testDraw: {
+    hasSprite: (name) => hasRegisteredSprite(name),
+    resolveKey: (type) => resolveBuildingSpriteKey(type),
+    spriteInfo: (name) => {
+      try {
+        const def = getBuildingDef(name) || null;
+        const lib = window._PIXEL_LIBRARY || null;
+        const d = lib ? lib[name] : null;
+        return d ? { grid: d.grid, gridW: d.gridW, gridH: d.gridH, pixels: (d.pixels || []).length } : { def: def ? def.name : null };
+      } catch (e) { return null; }
+    },
+    buildInfo: (type) => ({ size: getBuildingSize(type), sprite: resolveBuildingSpriteKey(type) }),
+    // Rendimiento: HUD en pantalla y contadores de cachés.
+    perf: {
+      toggle: (v) => togglePerfHud(v),
+      stats: () => perfStats(),
+      info: () => ({
+        hud: _perfHudOn,
+        cacheTerrenoLista: !mapCacheDirty && !!(mapCacheOrtho && mapCacheOrtho.width > 1),
+        framesConCache: window._terrainCachedFrames || 0,
+        mapCacheDirty: !!mapCacheDirty,
+        drawCalls: window._drawCalls || 0,
+        spritesEnCache: _spriteBitmaps.size,
+        mbSprites: +(_spriteBitmapBytes / 1048576).toFixed(2),
+        entidades: (window.entities || []).length
+      }),
+      limpiarSprites: () => clearSpriteBitmaps()
+    },
+    // Estado de animación de un personaje (para pruebas de animación).
+    animState: (ent, now) => characterAnimState(ent, now || Date.now()),
+    // Consultas de terreno para pruebas de movimiento (puentes, agua…).
+    canWalk: (c, r) => canWalkTo(c, r, { allowWater: true }),
+    waterAt: (c, r) => isWaterCell(c, r),
+    bridgeAt: (c, r) => (isBridgeCell(c, r) ? bridgeAxisAt(c, r) : null),
+    speedAt: (c, r) => movementMultiplier(c, r),
+    // Misiones de caminante: crear, aceptar, comprobar (para pruebas).
+    missions: {
+      createWild: (npc) => { try { return createWildMissionForNpc(npc); } catch (e) { return String(e); } },
+      accept: (m) => { try { window._missions = window._missions || []; window._missions.push(m); return true; } catch (e) { return String(e); } },
+      tick: () => { try { updateReachMissions(); return true; } catch (e) { return String(e); } },
+      outside: (npc) => { try { return npcIsOutsideSettlements(npc); } catch (e) { return String(e); } },
+      list: () => { try { return (window._missions || []).map(m => ({ title: m.title, watch: m.watch, done: !!m.done, dist: m.distance, target: [m.targetCol, m.targetRow] })); } catch (e) { return String(e); } }
+    },
+    // Centra la cámara en una celda (pruebas: el modo edición no sigue al jugador).
+    focusOn: (col, row) => {
+      try {
+        const ts = getTileSize();
+        const cx = canvas.width / 2 - (col + 0.5) * ts;
+        const cy = canvas.height / 2 - (row + 0.5) * ts;
+        camX = cx; camY = cy;
+        try { targetCam.x = cx; targetCam.y = cy; } catch (e) {}
+        return { camX: Math.round(camX), camY: Math.round(camY), tileSize: ts };
+      } catch (e) { return String(e); }
+    },
+    // Se resetea la transformación de cámara para que el sprite caiga en
+    // coordenadas de pantalla y se puedan leer los píxeles desde fuera.
+    drawSprite: (name, x, y, w, h) => {
+      try {
+        ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+        drawEntitySpriteAt(name, x, y, w, h, { ignoreEntityScale: true });
+        ctx.restore();
+        return true;
+      } catch (e) { return String(e); }
+    },
+    drawBuilding: (col, row, type, alpha) => {
+      try {
+        ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+        drawBuilding(col, row, type, alpha);
+        ctx.restore();
+        return true;
+      } catch (e) { return String(e); }
+    }
+  },
+  getEntityDefs: () => (window._ENTITY_DEFS || null),
+  getBuildingSizes: () => {
+    const out = {};
+    try { Object.keys(BUILDINGS).forEach(k => { const s = getBuildingSize(k); out[k] = { w: s.w, h: s.h }; }); } catch (e) {}
+    return out;
+  },
+  moveBuilding: (type, fromCol, fromRow, toCol, toRow) => moveBuildingTo(type, fromCol, fromRow, toCol, toRow),
+  spawnPreviewSprite: (key, col, row) => spawnPreviewSprite(key, col, row),
+  centerCameraOn: (col, row) => centerCameraOnWorld(col, row),
+  teleportPlayer: (x, y) => teleportPlayerTo(x, y),
+  structures: structureSystem,
+  render,
+  notify,
+  saveStateDebounced: () => saveAppStateDebounced(),
+  updateUI
+});
+try { window.MESO_DEBUG = debugTools; } catch (e) {}
+try { debugTools.init(); } catch (e) { console.warn('debugTools init failed', e); }
+
 // Input & movement state (missing globals causing runtime errors)
 let keyState = {};
 let movePath = null;   // current A* path (array of nodes) or null
@@ -2393,7 +3048,7 @@ let isZooming = false, zoomStartY = 0, zoomStart = 1;
   const FOLLOW_SMOOTH = 0.16;
 let targetCam = null; // {x,y} for smooth centering
 let fitTransition = null; // { startZoom, targetZoom, startTime, duration }
-let zoom = 1;
+let zoom = 1.5;   // zoom inicial más cercano: se ve el terreno con detalle, no el mapa entero
 const ZOOM_MIN = 0.08;
 const ZOOM_MAX = 2.5;
 // Time scale: 0 = paused, 0.5 = half speed, 1 = normal, 2/4 = fast forward
@@ -2444,11 +3099,12 @@ function drawPixelArt(ctx, pixels, scale) {
 // Create a small canvas from a pixel-definition object and register it in icon/entity caches
 window.createCanvasFromPixelDef = function(def, name, targetScale = 32) {
   try {
-    const grid = def.grid || 9;
+    const gw = def.gridW || def.grid || 9;
+    const gh = def.gridH || def.grid || 9;
     const pixels = def.pixels || [];
-    const scale = Math.max(1, Math.floor(targetScale / grid));
+    const scale = Math.max(1, Math.floor(targetScale / Math.max(gw, gh)));
     const canvas = document.createElement('canvas');
-    canvas.width = grid * scale; canvas.height = grid * scale;
+    canvas.width = gw * scale; canvas.height = gh * scale;
     const c = canvas.getContext('2d');
     c.clearRect(0,0,canvas.width, canvas.height);
     pixels.forEach(([x,y,color]) => { if (color) { c.fillStyle = color; c.fillRect(x*scale, y*scale, scale, scale); }});
@@ -2461,6 +3117,9 @@ window.createCanvasFromPixelDef = function(def, name, targetScale = 32) {
 }
 
 const CHARACTER_MAP = CHARACTER_OUTFITS.tunic.map;
+/* Sprites heredados, fuera de compilación: los VIVOS son los que importa este
+   fichero desde `engine/character-art.js` (una sola fuente de verdad, para que
+   la vista previa del menú y el juego dibujen exactamente el mismo personaje).
 const DETAILED_HUMANOID_SPRITE_URSS = {
   grid: 24,
   pixels: [
@@ -2503,42 +3162,25 @@ const DETAILED_HUMANOID_SPRITE_MESOPOTAMIA = {
     [10,5,"#222222"],[11,5,"#D9AE8C"],[12,5,"#D9AE8C"],[13,5,"#1A1A1A"],[14,5,"#111111"],[10,6,"#D9AE8C"],[10,7,"#D9AE8C"]
   ]
 };
-const USE_DETAILED_HUMANOID_SPRITE = true;
-
+*/
 function getActiveDetailedHumanoidSprite(epochId) {
-  const key = epochId || window._currentEpoch || 'mesopotamia';
-  return key === 'urss' ? DETAILED_HUMANOID_SPRITE_URSS : DETAILED_HUMANOID_SPRITE_MESOPOTAMIA;
+  // Envoltorio: el sprite real lo resuelve el módulo compartido.
+  return humanoidSpriteFor(epochId || window._currentEpoch || 'mesopotamia');
 }
 
-function clampByte(v) { return Math.max(0, Math.min(255, Math.round(v))); }
-
-function shadeHexColor(hex, factor = 1) {
-  try {
-    const value = String(hex || '').replace('#', '');
-    if (!/^[0-9a-fA-F]{6}$/.test(value)) return hex;
-    const r = parseInt(value.slice(0, 2), 16);
-    const g = parseInt(value.slice(2, 4), 16);
-    const b = parseInt(value.slice(4, 6), 16);
-    const toHex = (n) => clampByte(n).toString(16).padStart(2, '0');
-    return `#${toHex(r * factor)}${toHex(g * factor)}${toHex(b * factor)}`.toUpperCase();
-  } catch (e) {
-    return hex;
-  }
-}
+// `clampByte` y `shadeHexColor` se importan de character-art.js.
 
 function getHumanoidSpriteGridSize() {
-  if (USE_DETAILED_HUMANOID_SPRITE) return getActiveDetailedHumanoidSprite().grid;
-  const rowWidth = (CHARACTER_MAP && CHARACTER_MAP[0] && CHARACTER_MAP[0].length) ? CHARACTER_MAP[0].length : 10;
-  return Math.max(rowWidth, CHARACTER_MAP.length || 12);
+  return humanoidGridSize(window._currentEpoch || 'mesopotamia');
 }
 
 function getHumanoidHeadRows() {
-  if (!USE_DETAILED_HUMANOID_SPRITE) return 4;
-  const sprite = getActiveDetailedHumanoidSprite();
-  return sprite === DETAILED_HUMANOID_SPRITE_URSS ? 15 : 16;
+  return humanoidHeadRows(window._currentEpoch || 'mesopotamia');
 }
 
-function mapDetailedHumanoidColor(baseColor, palette, sprite) {
+// Recoloreo: la versión VIVA es la importada de `character-art.js`. Ésta queda
+// como referencia histórica y sin usar (nombre distinto para no chocar).
+function _legacyMapDetailedHumanoidColor(baseColor, palette, sprite) {
   const skin = (palette && palette.skin) || DEFAULT_PALETTE.skin;
   const hair = (palette && palette.hair) || DEFAULT_PALETTE.hair;
   const cloth = (palette && palette.cloth) || DEFAULT_PALETTE.cloth;
@@ -2577,13 +3219,100 @@ function getCharacterSpriteMap(outfitId) {
 }
 
 // drawCharacterPixels supports optional direction flip and a simple two-frame walk animation
+// ── ANIMACIÓN DE PERSONAJES ─────────────────────────────────────────────────
+// Estado de animación de un personaje a partir de su estado de juego:
+//   frame  · ciclo de 4 pasos (0 = neutral, 1 = pie derecho, 2 = neutral, 3 = izquierdo)
+//   bob    · sube/baja el tronco y la cabeza (caminar, respirar, nadar)
+//   lean   · inclina el cuerpo hacia donde mira (esprintar, golpear)
+//   swing  · mueve los brazos/columnas laterales (golpe, tajo)
+//   squash · aplasta un píxel al recibir un golpe
+// ── VIENTO ────────────────────────────────────────────────────────────────
+// Fuerza de viento global con rachas lentas: la usan los hierbajos, las matas,
+// la hierba alta y las copas de los árboles para mecerse (bend por filas).
+function windStrength() {
+  try {
+    const t = Date.now() * 0.001;
+    return Math.max(0.25, 0.55 + 0.40 * (0.5 + 0.5 * Math.sin(t * 0.37)) + 0.22 * Math.sin(t * 1.7));
+  } catch (e) { return 1; }
+}
+
+// Fase de balanceo propia de cada planta (del id): así no se mueven todas igual.
+function swayPhaseOf(ent) {
+  try {
+    if (!ent) return 0;
+    const s = String(ent.id || ent.variant || ent.subtype || 'x');
+    let h = 7;
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) & 0xffff;
+    return (h % 628) / 100;
+  } catch (e) { return 0; }
+}
+
+function characterAnimState(ent, now, opts = {}) {
+  const t = now || Date.now();
+  const out = { frame: 0, bob: 0, lean: 0, swing: 0, squash: 0 };
+  try {
+    if (!ent) return out;
+    const stride = ent._walkTime || 0;
+    // «Se mueve» si el contador de pasos ha cambiado desde el fotograma anterior
+    // (no hace falta bandera: `_walkTime` sólo crece al avanzar).
+    const prevStride = ent._animStrideSeen;
+    const moving = (prevStride !== undefined) && (stride !== prevStride);
+    ent._animStrideSeen = stride;
+    const sprint = !!ent._isSprinting;
+    const rate = sprint ? 8.5 : 6;
+    out.frame = moving ? (Math.floor(stride * rate) % 4 + 4) % 4 : 0;
+    if (moving) {
+      // Un rebote por paso: sube en los pasos y baja entre ellos
+      const step = stride * rate;
+      out.bob = sprint ? -Math.round(Math.abs(Math.sin(step * Math.PI * 0.5)) * 2) : -Math.round(Math.abs(Math.sin(step * Math.PI * 0.5)));
+      if (sprint) out.lean = 1;
+    } else {
+      // Respirando: sube y baja un píxel muy despacio
+      out.bob = Math.sin(t * 0.0022 + ((ent.id ? ent.id.length : 0) % 5)) > 0.25 ? 1 : 0;
+    }
+    // Nadar: la cabeza asoma y baja con la corriente
+    if (ent._swimming) out.bob += Math.round(Math.sin(t * 0.006) * 1);
+    // Golpe/tajo: los brazos van y vienen durante ~0,3 s
+    const sw = ent._animSwing;
+    if (sw) {
+      const p = (t - sw.born) / Math.max(80, sw.ms || 300);
+      if (p >= 1) { try { delete ent._animSwing; } catch (e) {} }
+      else {
+        out.swing = Math.sin(Math.min(1, Math.max(0, p)) * Math.PI) * (sw.power || 2);
+        out.lean += Math.round(out.swing * 0.4);
+      }
+    }
+    // Recibir un golpe: se aplasta un píxel mientras dura la sacudida
+    if (ent._fxShake && t - ent._fxShake.born < ent._fxShake.ms) out.squash = 1;
+    if (opts.noIdle) out.bob = 0;
+  } catch (e) {}
+  return out;
+}
+
+// Marca un golpe/tajo para que el personaje anime los brazos.
+function triggerCharacterSwing(ent, power) {
+  try {
+    if (!ent) return;
+    ent._animSwing = { born: Date.now(), ms: 300, power: power || 2 };
+  } catch (e) {}
+}
+
 function drawCharacterPixels(ctx, palette, x, y, scale, opts) {
   opts = opts || {};
+  const anim = opts.anim || null;
+  const animBob = anim ? (anim.bob || 0) : 0;
+  const animLean = anim ? (anim.lean || 0) : 0;
+  const animSwing = anim ? (anim.swing || 0) : 0;
+  const animSquash = anim ? (anim.squash || 0) : 0;
   if (USE_DETAILED_HUMANOID_SPRITE) {
     const detailedSprite = getActiveDetailedHumanoidSprite();
     const dir = opts.dir || 'down';
     const frame = opts.frame || 0;
-    const flip = dir === 'left';
+    // El arte de Mesopotamia está dibujado al revés que el soviético (cara y
+    // adorno al otro lado): se espeja para que mire hacia donde camina. Sin
+    // esto el personaje se veía invertido respecto al movimiento.
+    const artMirrored = (detailedSprite === DETAILED_HUMANOID_SPRITE_MESOPOTAMIA);
+    const flip = artMirrored ? (dir !== 'left') : (dir === 'left');
     const maxRow = opts.headOnly ? getHumanoidHeadRows() : detailedSprite.grid;
     for (let i = 0; i < detailedSprite.pixels.length; i++) {
       const pixel = detailedSprite.pixels[i];
@@ -2592,19 +3321,19 @@ function drawCharacterPixels(ctx, palette, x, y, scale, opts) {
       const rawColor = pixel[2];
       let col = pixel[0];
       if (flip) col = detailedSprite.grid - 1 - col;
-      let dx = 0;
-      let dy = 0;
-      if (frame === 1 && row >= 20) {
-        if (dir === 'left') dx = -1;
-        else if (dir === 'right') dx = 1;
-        else {
-          dx = col < (detailedSprite.grid / 2) ? -1 : 1;
-          dy = dir === 'up' ? -1 : 1;
-        }
+      let dx = animLean;
+      let dy = animBob;
+      // Ciclo de 4 pasos: pies alternos
+      const legRow = detailedSprite.grid - 2;
+      if (row >= legRow) {
+        dy -= animBob;   // los pies se quedan en el suelo
+        const side = col < (detailedSprite.grid / 2) ? -1 : 1;
+        if (frame === 1) dx += side;
+        else if (frame === 3) dx -= side;
       }
-      if (frame === 1 && row >= 16 && row <= 19 && (dir === 'up' || dir === 'down')) {
-        dy = dir === 'up' ? -1 : 1;
-      }
+      if (frame === 1 && row >= 16 && row <= 19 && (dir === 'up' || dir === 'down')) dy = dir === 'up' ? -1 : 1;
+      if (animSwing) dx += (dir === 'left' ? -1 : 1) * Math.round(animSwing);
+      if (animSquash && row < legRow) dy += 1;
       ctx.fillStyle = mapDetailedHumanoidColor(rawColor, palette || DEFAULT_PALETTE, detailedSprite);
       ctx.fillRect(x + (col + dx) * scale, y + (row + dy) * scale, scale, scale);
     }
@@ -2612,7 +3341,7 @@ function drawCharacterPixels(ctx, palette, x, y, scale, opts) {
   }
 
   const dir = opts.dir || 'down'; // 'down','up','left','right'
-  const frame = opts.frame || 0; // 0 or 1 (walking)
+  const frame = ((opts.frame || 0) % 4 + 4) % 4; // ciclo de 4 pasos
   const spriteMap = getCharacterSpriteMap(opts.outfit || 'tunic');
   // mirror sprite when facing left
   const flip = dir === 'left';
@@ -2627,6 +3356,7 @@ function drawCharacterPixels(ctx, palette, x, y, scale, opts) {
   const torsoMax = spriteMap.length >= 10 ? 9 : 5;
   for (let row = 0; row < maxRow; row++) {
     const line = spriteMap[row];
+    const isLegRow = (row === legRow0 || row === legRow1);
     for (let col = 0; col < line.length; col++) {
       // compute source column (flipped if facing left)
       const srcCol = flip ? (line.length - 1 - col) : col;
@@ -2638,18 +3368,27 @@ function drawCharacterPixels(ctx, palette, x, y, scale, opts) {
       if (ch === 't') color = palette.trim;
       if (!color) continue;
 
-      // Walk frame support for all directions.
-      let dx = 0;
-      let dy = 0;
-      if ((row === legRow0 || row === legRow1) && (ch === 'c' || ch === 's' || ch === 't')) {
+      // Animación: tronco y cabeza suben/bajan y se inclinan; los pies no.
+      let dx = isLegRow ? 0 : animLean;
+      let dy = isLegRow ? 0 : animBob;
+      if (animSquash && !isLegRow) dy += 1;
+
+      // Brazos: las columnas de los extremos del tronco se mueven al golpear
+      if (animSwing && row >= torsoMin - 1 && row <= torsoMax && (ch === 'c' || ch === 's')) {
+        const edge = (col <= 1) || (col >= line.length - 2);
+        if (edge) dx += (dir === 'left' ? -1 : 1) * Math.round(animSwing);
+      }
+
+      // Ciclo de 4 pasos: las piernas se alternan (antes las dos se movían igual)
+      if (isLegRow && (ch === 'c' || ch === 's' || ch === 't')) {
+        const side = col < Math.floor(line.length / 2) ? -1 : 1;
         if (dir === 'right' || dir === 'left') {
-          if (frame === 1) {
-            dx = (dir === 'right') ? 1 : -1;
-          }
+          const fwd = (dir === 'right') ? 1 : -1;
+          if (frame === 1) dx = fwd;
+          else if (frame === 3) dx = -fwd;
         } else if (dir === 'up' || dir === 'down') {
-          const side = col < Math.floor(line.length / 2) ? -1 : 1;
-          dx = frame === 1 ? side : 0;
-          dy = frame === 1 ? (dir === 'up' ? -1 : 1) : 0;
+          if (frame === 1) { dx = side; dy = dir === 'up' ? -1 : 1; }
+          else if (frame === 3) { dx = -side; dy = dir === 'up' ? 1 : -1; }
         }
       }
       if ((dir === 'up' || dir === 'down') && frame === 1 && row >= torsoMin && row <= torsoMax && (ch === 'c' || ch === 's' || ch === 't')) {
@@ -3292,12 +4031,181 @@ function drawRegisteredIcon(ctx, name, w, h) {
   } catch (e) { console.warn('drawRegisteredIcon err', name, e); ctx.clearRect(0,0,w,h); }
 }
 
+// ── CACHÉ DE SPRITES (rendimiento) ──────────────────────────────────────────
+// Dibujar los sprites pixel a pixel son MILES de fillRect por fotograma: una
+// casa son 144, el zigurat 2.496, y el mapa tiene cientos de edificios y
+// entidades. Cada sprite se rasteriza UNA vez en un lienzo offscreen y después
+// se pega con un único drawImage (que además hace la GPU). Los sprites con
+// balanceo por viento siguen dibujándose por píxeles (son matas diminutas).
+const _spriteBitmaps = new Map();
+let _spriteBitmapBytes = 0;
+const SPRITE_BITMAP_MAX_BYTES = 64 * 1024 * 1024;
+// Fuente del arte a 1 px por píxel de arte (sin escalar). Es la que se remuestrea
+// al tamaño real del solar: el arte de los edificios se genera a densidad 32.
+const _spriteSourceBitmaps = new Map();
+
+function clearSpriteBitmaps() {
+  try {
+    _spriteBitmaps.clear();
+    _spriteSourceBitmaps.clear();
+    _spriteBitmapBytes = 0;
+  } catch (e) {}
+}
+
+try { window.clearSpriteBitmaps = clearSpriteBitmaps; } catch (e) {}
+
+// ── HUD DE RENDIMIENTO ──────────────────────────────────────────────────────
+// Overlay para comprobar de un vistazo dónde se va el tiempo: FPS, ms por
+// fotograma, llamadas de dibujo, si el terreno viene de la caché (1 drawImage)
+// o se está pintando en vivo, y cuántos sprites van por drawImage en vez de
+// pixel a pixel. Se enciende con el botón «Rendimiento» del menú Dev o con
+// `MESO_DEBUG.perf.toggle()`.
+let _perfHudOn = false;
+const _perfFrames = new Float32Array(120);
+let _perfIdx = 0, _perfFilled = 0;
+
+function perfStats() {
+  const n = _perfFilled;
+  if (!n) return { fps: 0, ms: 0, ms95: 0 };
+  const arr = Array.prototype.slice.call(_perfFrames, 0, n).sort((a, b) => a - b);
+  const med = arr[Math.floor(n / 2)];
+  const p95 = arr[Math.min(n - 1, Math.floor(n * 0.95))];
+  return { fps: med > 0 ? +(1000 / med).toFixed(0) : 0, ms: +med.toFixed(1), ms95: +p95.toFixed(1) };
+}
+
+function togglePerfHud(force) {
+  _perfHudOn = (force === undefined) ? !_perfHudOn : !!force;
+  try { window._perfHudOn = _perfHudOn; } catch (e) {}
+  return _perfHudOn;
+}
+
+function drawPerfHud(dt) {
+  try { window._perfHudOn = window._perfHudOn === true ? true : _perfHudOn; } catch (e) {}
+  // muestreo (siempre, para que el panel tenga datos al abrirse)
+  try { _perfFrames[_perfIdx % _perfFrames.length] = dt * 1000; _perfIdx++; if (_perfFilled < _perfFrames.length) _perfFilled++; } catch (e) {}
+  if (!_perfHudOn) return;
+  try {
+    const s = perfStats();
+    const cached = (window._terrainCachedFrames || 0) > 0;
+    const lines = [
+      `FPS ${s.fps}   ${s.ms} ms (p95 ${s.ms95})`,
+      `terreno: ${cached ? 'caché (1 drawImage)' : 'EN VIVO (caro!)'}`,
+      `draw/dibujos: ${window._drawCalls || 0}   imgs: ${window._drawImageCalls || 0}`,
+      `entidades: ${(window.entities || []).length} (dibujadas ${window._entitiesDrawn || 0})`,
+      `sprites en caché: ${_spriteBitmaps.size} (${(_spriteBitmapBytes / 1048576).toFixed(1)} MB)`,
+      `zoom ${zoom.toFixed(2)} · ${viewMode}`
+    ];
+    ctx.save();
+    ctx.font = 'bold 12px monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    let wMax = 0;
+    for (const l of lines) wMax = Math.max(wMax, ctx.measureText(l).width);
+    const x = 10, y = 10, lh = 15;
+    ctx.fillStyle = 'rgba(0,0,0,0.62)';
+    ctx.fillRect(x - 6, y - 6, wMax + 14, lines.length * lh + 12);
+    lines.forEach((l, i) => {
+      ctx.fillStyle = (i === 1 && !cached) ? '#FF8A6A' : (i === 0 ? '#9BE38B' : '#E8E8E8');
+      ctx.fillText(l, x, y + i * lh);
+    });
+    ctx.restore();
+  } catch (e) {}
+}
+
+// Lienzo con el arte ORIGINAL (1 px por píxel de arte), la fuente para reescalar.
+// El arte de los edificios se genera a densidad 32 (×8 sobre la rejilla base) y el
+// motor lo REDUCE al tamaño de su huella en pantalla: sin esta fuente limpia habría
+// que pintar cientos de miles de fillRect por fotograma.
+function getSpriteSourceBitmap(name, pixels, gw, gh) {
+  const hit = _spriteSourceBitmaps.get(name);
+  if (hit !== undefined) return hit;
+  let out = null;
+  try {
+    if (Array.isArray(pixels) && pixels.length) {
+      // Algunos iconos heredados tienen el último píxel justo fuera de la rejilla
+      // (p. ej. `typha`): el lienzo se ajusta a la extensión REAL para no recortarlo.
+      let mx = gw - 1, my = gh - 1;
+      for (let i = 0; i < pixels.length; i++) {
+        const p = pixels[i];
+        if (!p) continue;
+        if ((p[0] | 0) > mx) mx = p[0] | 0;
+        if ((p[1] | 0) > my) my = p[1] | 0;
+      }
+      const sw = Math.max(1, mx + 1), sh = Math.max(1, my + 1);
+      const cv = document.createElement('canvas');
+      cv.width = sw; cv.height = sh;
+      const g = cv.getContext('2d');
+      for (let i = 0; i < pixels.length; i++) {
+        const p = pixels[i];
+        if (!p || !p[2]) continue;
+        g.fillStyle = p[2];
+        g.fillRect(p[0] | 0, p[1] | 0, 1, 1);
+      }
+      out = { cv, w: sw, h: sh };
+    }
+  } catch (e) { out = null; }
+  _spriteSourceBitmaps.set(name, out);
+  return out;
+}
+
+// Sprite ya rasterizado al tamaño de dibujo (píxeles de pantalla).
+// Admite ESCALAS FRACCIONARIAS: el arte de alta densidad se reduce al solar y, al
+// reducir, se suaviza el remuestreo (si no, el detalle fino produce aliaseado).
+// Antes sólo se aceptaban escalas enteras y el sprite quedaba más pequeño que su
+// solar en cuanto el zoom no era un múltiplo exacto.
+function getSpriteBitmap(name, gw, gh, tw, th, pixels) {
+  try {
+    const w = Math.max(1, Math.round(tw)), h = Math.max(1, Math.round(th));
+    if (w > 2048 || h > 2048) return null;
+    const key = name + '|' + w + 'x' + h;
+    const hit = _spriteBitmaps.get(key);
+    if (hit !== undefined) return hit;
+    const src = getSpriteSourceBitmap(name, pixels, gw, gh);
+    if (!src) { _spriteBitmaps.set(key, null); return null; }
+    const bytes = w * h * 4;
+    if (_spriteBitmapBytes + bytes > SPRITE_BITMAP_MAX_BYTES) { _spriteBitmaps.set(key, null); return null; }
+    const cv = document.createElement('canvas');
+    cv.width = w; cv.height = h;
+    const g = cv.getContext('2d');
+    // Reducir → suavizar (conserva el grano fino). Ampliar → píxel nítido, que es
+    // lo que se espera del pixel art.
+    g.imageSmoothingEnabled = (w < gw || h < gh);
+    if (g.imageSmoothingEnabled) { try { g.imageSmoothingQuality = 'high'; } catch (e) {} }
+    g.drawImage(src.cv, 0, 0, src.w, src.h, 0, 0, w, h);
+    _spriteBitmapBytes += bytes;
+    _spriteBitmaps.set(key, cv);
+    return cv;
+  } catch (e) { return null; }
+}
+
 // Draw a registered sprite centered at world coords (x,y) using caches or pixel defs
+// options.ent  → entidad asociada (necesario para los ajustes del modo debug)
 function drawEntitySpriteAt(name, x, y, w, h, options) {
   try {
+    const dbgEnt = (options && options.ent) ? options.ent : null;
     const standaloneScale = (options && options.ignoreEntityScale) ? 1 : getStandaloneEditorEntityScale();
-    const drawW = w * standaloneScale;
-    const drawH = h * standaloneScale;
+    let drawW = w * standaloneScale;
+    let drawH = h * standaloneScale;
+
+    // ── Ajustes del MODO DEBUG (por sprite y/o por entidad concreta) ──
+    let dbgAlpha = 1;
+    try {
+      const entAdj = (dbgEnt && dbgEnt._dbg) ? dbgEnt._dbg : null;
+      const sprAdj = (window._mesoDbgSprite && window._mesoDbgSprite[name]) || null;
+      if (entAdj || sprAdj) {
+        const mul = (entAdj && Number.isFinite(entAdj.scale) ? entAdj.scale : 1) *
+                    (sprAdj && Number.isFinite(sprAdj.scale) ? sprAdj.scale : 1);
+        if (mul !== 1) { drawW *= mul; drawH *= mul; }
+        const offX = (entAdj && Number.isFinite(entAdj.offsetX) ? entAdj.offsetX : 0) +
+                     (sprAdj && Number.isFinite(sprAdj.offsetX) ? sprAdj.offsetX : 0);
+        const offY = (entAdj && Number.isFinite(entAdj.offsetY) ? entAdj.offsetY : 0) +
+                     (sprAdj && Number.isFinite(sprAdj.offsetY) ? sprAdj.offsetY : 0);
+        if (offX) x += offX * drawW;
+        if (offY) y += offY * drawH;
+        if (entAdj && Number.isFinite(entAdj.alpha)) dbgAlpha *= entAdj.alpha;
+        if (sprAdj && Number.isFinite(sprAdj.alpha)) dbgAlpha *= sprAdj.alpha;
+      }
+    } catch (e) {}
 
     // Shadow
     ctx.save();
@@ -3314,15 +4222,69 @@ function drawEntitySpriteAt(name, x, y, w, h, options) {
     if (window.ENTITY_PIXEL_LIBRARY && window.ENTITY_PIXEL_LIBRARY[name]) {
       try {
         const def = window.ENTITY_PIXEL_LIBRARY[name];
-        const grid = def.grid || 9;
-        const scale = Math.max(1, Math.floor(Math.min(drawW, drawH) / grid));
-        const offX = Math.round(x - (grid * scale) / 2);
-        const offY = Math.round(y - (grid * scale) + (drawH * 0.08));
+        const gw = def.gridW || def.grid || 9;
+        const gh = def.gridH || def.grid || 9;
+        const shaped = !!(def.gridW || def.gridH);   // rejilla con la proporción de la huella
+        let scale;
+        if (shaped) {
+          // Manda el ANCHO: así la casa comunal (5×2) llena su solar y un pozo o
+          // una atalaya (1×1) pueden sobresalir hacia arriba sin deformarse.
+          // Se admite escala FRACCIONARIA: el arte de alta densidad se reduce al
+          // solar (y se remuestrea suave), de modo que el edificio siempre ocupa
+          // su huella sea cual sea el zoom.
+          const maxH = Math.max(drawH * 2.5, drawH + 8);
+          const raw = Math.min(drawW / gw, maxH / gh);
+          scale = Math.max(0.2, raw);
+        } else {
+          const rawScale = Math.min(drawW, drawH) / gw;
+          // En modo debug permitimos escalas fraccionarias para poder afinar a mano
+          scale = window._mesoDbgPrecise ? Math.max(0.4, rawScale) : Math.max(1, Math.floor(rawScale));
+        }
+        const cellPx = Math.max(1, Math.ceil(scale));
+        const spriteW = gw * scale;
+        const spriteH = gh * scale;
+        const offX = x - spriteW / 2;
+        const offY = y - spriteH + (drawH * 0.08);
+        // ── Balanceo por viento ───────────────────────────────────────────
+        // Con `sway` la fila se desplaza más cuanto más arriba está: la mata,
+        // la hierba o el árbol se DOBLAN en vez de moverse en bloque. El pie
+        // queda clavado en el suelo. La fase sale del id (cada planta lleva su
+        // ritmo) y la fuerza del viento es global.
+        let swayPx = 0;
+        let swaySpan = 0;
+        if (options && options.sway) {
+          const wind = windStrength();
+          const phase = Number(options.phase) || 0;
+          const amp = (Number.isFinite(options.sway) ? options.sway : 1.8) * wind;
+          swayPx = Math.sin(Date.now() * 0.0016 + phase) * amp;
+          swaySpan = Math.max(1, gh - 1);
+        }
+        if (dbgAlpha !== 1) ctx.globalAlpha = dbgAlpha;
+        // Atajo rápido: sprite ya rasterizado en un lienzo → un solo drawImage.
+        if (!(options && options.sway)) {
+          const bmp = getSpriteBitmap(name, gw, gh, spriteW, spriteH, def.pixels);
+          if (bmp) {
+            ctx.drawImage(bmp, Math.round(x - bmp.width / 2), Math.round(y - bmp.height + drawH * 0.08));
+            try { window._entitiesDrawn = (window._entitiesDrawn || 0) + 1; } catch (e) {}
+            if (dbgEnt && window._mesoDebugActive) {
+              try { dbgEnt._dbgRect = { x: offX, y: offY, w: spriteW, h: spriteH }; dbgEnt._dbgRectAt = Date.now(); } catch (e) {}
+            }
+            ctx.restore();
+            return;
+          }
+        }
         for (let i = 0; i < def.pixels.length; i++) {
           const p = def.pixels[i];
-          if (p && p[2]) { ctx.fillStyle = p[2]; ctx.fillRect(offX + p[0] * scale, offY + p[1] * scale, scale, scale); }
+          if (p && p[2]) {
+            const bend = swaySpan ? swayPx * ((swaySpan - Math.min(swaySpan, p[1])) / swaySpan) : 0;
+            ctx.fillStyle = p[2];
+            ctx.fillRect(Math.round(offX + p[0] * scale + bend), Math.round(offY + p[1] * scale), cellPx, cellPx);
+          }
         }
         try { window._entitiesDrawn = (window._entitiesDrawn || 0) + 1; } catch (e) {}
+        if (dbgEnt && window._mesoDebugActive) {
+          try { dbgEnt._dbgRect = { x: offX, y: offY, w: spriteW, h: spriteH }; dbgEnt._dbgRectAt = Date.now(); } catch (e) {}
+        }
         ctx.restore();
         return;
       } catch (e) { /* fall through to image-based rendering */ }
@@ -3335,8 +4297,12 @@ function drawEntitySpriteAt(name, x, y, w, h, options) {
     if (img) {
       const px = Math.round(x - drawW/2);
       const py = Math.round(y - drawH + (drawH*0.08));
+      if (dbgAlpha !== 1) ctx.globalAlpha = dbgAlpha;
       try { ctx.drawImage(img, px, py, drawW, drawH); } catch (e) {}
       try { window._entitiesDrawn = (window._entitiesDrawn || 0) + 1; } catch (e) {}
+      if (dbgEnt && window._mesoDebugActive) {
+        try { dbgEnt._dbgRect = { x: px, y: py, w: drawW, h: drawH }; dbgEnt._dbgRectAt = Date.now(); } catch (e) {}
+      }
     }
     ctx.restore();
   } catch (e) { /* silent */ }
@@ -3471,11 +4437,40 @@ function resolveBuildingSpriteKey(type) {
   return alias && hasRegisteredSprite(alias) ? alias : null;
 }
 
+// Copia editable de la librería de sprites.
+// Los datos que llegan por contextBridge (preload de Electron) están CONGELADOS,
+// así que mutarlos lanza "Cannot add property …, object is not extensible" y se
+// perdían las variantes generadas (p. ej. las del bloque soviético).
+function clonePixelLibrary(src) {
+  const out = {};
+  try {
+    const keys = Object.keys(src || {});
+    for (const k of keys) {
+      const def = src[k] || {};
+      out[k] = {
+        grid: def.grid,
+        // Rejilla real del arte (puede no ser cuadrada: casa comunal 5×2, arco 2×1,
+        // pozo o atalaya 1×1 que sobresalen). Si se perdían, el sprite se dibujaba
+        // con la proporción equivocada.
+        gridW: def.gridW,
+        gridH: def.gridH,
+        pixels: Array.isArray(def.pixels) ? def.pixels.map(p => (Array.isArray(p) ? p.slice() : p)) : []
+      };
+    }
+  } catch (e) { console.warn('clonePixelLibrary failed', e); }
+  return out;
+}
+
 function augmentSovietBlockVariants(lib) {
   try {
     if (!lib || !lib.soviet_block || !Array.isArray(lib.soviet_block.pixels)) return;
     const base = lib.soviet_block;
-    const clone = () => ({ grid: base.grid || 27, pixels: (base.pixels || []).map(p => [p[0], p[1], p[2]]) });
+    const clone = () => ({
+      grid: base.grid || 27,
+      gridW: base.gridW,
+      gridH: base.gridH,
+      pixels: (base.pixels || []).map(p => [p[0], p[1], p[2]])
+    });
 
     if (!lib.soviet_block_warm) {
       const warm = clone();
@@ -3546,6 +4541,13 @@ function drawWheatIcon(ctx, w, h) {
   try {
     async function loadLibrary() {
       try {
+        // Cede un tick antes de tocar estado del módulo.
+        // Si los datos vienen del preload (Electron) esta función avanza de forma
+        // totalmente SÍNCRONA, y sin este await se ejecutaba durante la evaluación
+        // del módulo: acceder a `GLOBAL_TREE_TEMPLATES` (declarado mucho más abajo
+        // con `let`) lanzaba ReferenceError por TDZ y los árboles del mundo perdían
+        // sus plantillas pixel-art. En navegador no pasaba porque había un await.
+        await Promise.resolve();
         let json = null;
 
         // Electron preload: use data injected via contextBridge (avoids file:// fetch CORS)
@@ -3574,7 +4576,8 @@ function drawWheatIcon(ctx, w, h) {
         }
 
         if (!json) throw new Error('entity-pixels.json not found');
-        window.ENTITY_PIXEL_LIBRARY = json.icons || json || {};
+        // Clonamos: en Electron el objeto viene congelado desde contextBridge
+        window.ENTITY_PIXEL_LIBRARY = clonePixelLibrary(json.icons || json || {});
         try {
           if (!window.ENTITY_PIXEL_LIBRARY.ma_g && window.ENTITY_PIXEL_LIBRARY.ussr_flag) {
             window.ENTITY_PIXEL_LIBRARY.ma_g = window.ENTITY_PIXEL_LIBRARY.ussr_flag;
@@ -3976,8 +4979,7 @@ function centerCameraSmooth() {
   targetCam = { x: tx, y: ty };
 }
 
-function worldToScreen(col, row) {
-  if (viewMode === 'iso') {
+function worldToScreen(col, row) {  if (viewMode === 'iso') {
     const p = projectIso(col, row);
     return { x: p.x + camX, y: p.y + camY };
   }
@@ -4019,8 +5021,29 @@ function screenToWorldFloat(sx, sy) {
 function lerp(a,b,t){return a+(b-a)*t}
 
 function getBuildingSize(type) {
-  const b = BUILDINGS[type];
-  return b && b.size ? b.size : { w: 1, h: 1 };
+  // Huella del edificio. Si falta la definición se asume 1×1 (nunca undefined,
+  // que rompía los bucles de colocación y el recorte de dibujo).
+  try {
+    const def = getBuildingDef(type);
+    if (def && def.size && Number.isFinite(def.size.w) && Number.isFinite(def.size.h)) return def.size;
+  } catch (e) {}
+  return { w: 1, h: 1 };
+}
+
+// Huella más grande del catálogo: se usa como margen de recorte al dibujar
+// edificios (ver el bucle de BUILDINGS en el render).
+let _maxBuildingTiles = 0;
+function getMaxBuildingTiles() {
+  if (_maxBuildingTiles) return _maxBuildingTiles;
+  let m = 1;
+  try {
+    Object.keys(BUILDINGS).forEach(k => {
+      const s = getBuildingSize(k);
+      if (s && Number.isFinite(s.w) && Number.isFinite(s.h)) m = Math.max(m, s.w, s.h);
+    });
+  } catch (e) {}
+  _maxBuildingTiles = m;
+  return m;
 }
 
 function isShelterBuildingType(type) {
@@ -4030,6 +5053,113 @@ function isShelterBuildingType(type) {
   } catch (e) {
     return false;
   }
+}
+
+// ── DEFINICIÓN SEGURA DE EDIFICIO ─────────────────────────────────────────
+// El grid se restaura tal cual desde la partida guardada, así que puede
+// contener tipos antiguos o desconocidos (partidas viejas, mapas importados,
+// celdas guardadas como texto). Cualquier lectura de BUILDINGS[type] sin
+// comprobar el resultado reventaba la producción diaria y, con ella, el
+// fotograma completo. Este resolutor NUNCA devuelve undefined.
+const PRODUCTION_FALLBACK = { prodWheat: 0, prodBrick: 0, prodPop: 0, costBrick: 0, costWheat: 0, color: '#B08A5A', roofColor: '#8A6A42', size: { w: 1, h: 1 } };
+const _unknownBuildingTypes = new Set();
+function getBuildingDef(type) {
+  if (!type) return null;
+  const key = String(type);
+  const known = BUILDINGS[key] || BUILDINGS[resolveEpochBuildingType(key)];
+  if (known) return known;
+  // Tipos que sólo existen en data/entities-defs.json (packs de época, mods…)
+  try {
+    // OJO: el global es `_ENTITY_DEFS` (con guion bajo) y ya trae BUILDINGS + el JSON.
+    const defs = window._ENTITY_DEFS && window._ENTITY_DEFS.buildings;
+    const ext = defs && defs[key];
+    if (ext) {
+      const size = (ext.size && ext.size.w) ? ext.size : { w: Number(ext.width) || 1, h: Number(ext.height) || 1 };
+      return Object.assign({}, PRODUCTION_FALLBACK, ext, { size });
+    }
+  } catch (e) {}
+  if (_unknownBuildingTypes.size < 20 && !_unknownBuildingTypes.has(key)) {
+    _unknownBuildingTypes.add(key);
+    console.warn('[grid] tipo de edificio desconocido en el mapa:', key, '(se ignora en la producción)');
+  }
+  return Object.assign({ name: key, desc: '', unknown: true }, PRODUCTION_FALLBACK);
+}
+
+// Repara el grid recién restaurado de una partida guardada:
+//   * celdas guardadas como texto (formato antiguo) se convierten en objetos
+//   * celdas sin tipo ni base se descartan (no son edificios)
+//   * se avisa por consola de los tipos que ya no existen en el motor
+function normalizeRestoredGrid() {
+  const unknown = new Map();
+  let converted = 0, dropped = 0;
+  for (let r = 0; r < ROWS; r++) {
+    const row = grid[r];
+    if (!Array.isArray(row)) { grid[r] = Array(COLS).fill(null); continue; }
+    for (let c = 0; c < COLS; c++) {
+      const cell = row[c];
+      if (cell == null) continue;
+      if (typeof cell === 'string') {
+        grid[r][c] = { type: cell, baseCol: c, baseRow: r };
+        converted++;
+      } else if (typeof cell === 'object') {
+        if (!cell.type) { grid[r][c] = null; dropped++; continue; }
+        if (cell.baseCol == null) cell.baseCol = c;
+        if (cell.baseRow == null) cell.baseRow = r;
+      } else {
+        grid[r][c] = null; dropped++;
+      }
+      const t = grid[r][c] && grid[r][c].type;
+      if (t && !BUILDINGS[t] && !BUILDINGS[resolveEpochBuildingType(t)]) {
+        unknown.set(t, (unknown.get(t) || 0) + 1);
+      }
+    }
+  }
+  if (converted || dropped || unknown.size) {
+    const list = [...unknown.entries()].map(([t, n]) => `${t}×${n}`).join(', ');
+    console.warn(`[grid] partida reparada: ${converted} celdas de texto convertidas, ${dropped} descartadas` + (unknown.size ? `, tipos desconocidos: ${list}` : ''));
+  }
+  return { converted, dropped, unknown: [...unknown.keys()] };
+}
+
+// Un zigurat guardado con la huella ANTIGUA (9×9, o una escritura interrumpida
+// que lo dejó a medias) se completa al cargar la partida hasta la huella actual
+// (12×12)… pero sólo se RELLENAN celdas LIBRES: nunca se pisa otro edificio, así
+// que es imposible provocar solapes. Si no cabe, el zigurat se queda como está.
+function growLegacyZiggurats() {
+  try {
+    const want = getBuildingSize('ziggurat');
+    if (!want || !want.w || !want.h) return 0;
+    const grupos = new Map();
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const cell = grid[r][c];
+        if (!cell || typeof cell !== 'object' || cell.type !== 'ziggurat') continue;
+        const bc = (cell.baseCol == null) ? c : cell.baseCol;
+        const br = (cell.baseRow == null) ? r : cell.baseRow;
+        const k = bc + ',' + br;
+        if (!grupos.has(k)) grupos.set(k, { c: bc, r: br, n: 0 });
+        grupos.get(k).n++;
+      }
+    }
+    let rellenadas = 0;
+    for (const g of grupos.values()) {
+      if (g.n >= want.w * want.h) continue;
+      for (let r = g.r; r < g.r + want.h; r++) {
+        for (let c = g.c; c < g.c + want.w; c++) {
+          if (c < 0 || r < 0 || c >= COLS || r >= ROWS) continue;
+          if (grid[r][c]) continue;                     // respeta lo que ya hay
+          grid[r][c] = { type: 'ziggurat', baseCol: g.c, baseRow: g.r };
+          rellenadas++;
+        }
+      }
+    }
+    if (rellenadas) {
+      console.debug('[grid] huella del zigurat completada en ' + rellenadas + ' celdas libres');
+      try { rebuildInteriorDoorsFromGrid(); } catch (e) {}
+      try { mapCacheDirty = true; rebuildMapCacheDebounced(); } catch (e) {}
+    }
+    return rellenadas;
+  } catch (e) { return 0; }
 }
 
 function getCellInfo(col, row) {
@@ -4101,6 +5231,109 @@ function setBuildingCells(baseCol, baseRow, type, orient) {
   try { rebuildInteriorDoorsFromGrid(); } catch (e) {}
   try { saveAppStateDebounced(); } catch (e) {}
   try { mapCacheDirty = true; rebuildMapCacheDebounced(); } catch (e) {}
+}
+
+// ── HELPERS DEL MODO DEBUG ────────────────────────────────────────────────
+// Mueve un edificio completo (huella) de una celda base a otra conservando el tipo.
+function moveBuildingTo(type, fromCol, fromRow, toCol, toRow) {
+  try {
+    const size = getBuildingSize(type);
+    const tc = Math.max(0, Math.min(COLS - size.w, Math.floor(toCol)));
+    const tr = Math.max(0, Math.min(ROWS - size.h, Math.floor(toRow)));
+    if (tc === fromCol && tr === fromRow) return false;
+
+    // conservar orientación si la tenía
+    let orient;
+    try {
+      const cell = grid[fromRow] && grid[fromRow][fromCol];
+      if (cell && typeof cell === 'object' && cell.orient) orient = cell.orient;
+    } catch (e) {}
+
+    // ¿destino ocupado? (en debug permitimos el movimiento, solo avisamos)
+    let blocked = false;
+    try {
+      for (let r = 0; r < size.h && !blocked; r++) {
+        for (let c = 0; c < size.w; c++) {
+          const cell = grid[tr + r] && grid[tr + r][tc + c];
+          if (!cell) continue;
+          // ignora las celdas que pertenecen al propio edificio que estamos moviendo
+          const sameOwner = (typeof cell === 'object' && cell.baseCol === fromCol && cell.baseRow === fromRow);
+          if (!sameOwner) { blocked = true; break; }
+        }
+      }
+    } catch (e) {}
+
+    clearBuildingCells(fromCol, fromRow, type);
+    setBuildingCells(tc, tr, type, orient);
+    try { mapCacheDirty = true; rebuildMapCacheDebounced(10); } catch (e) {}
+    try { rebuildMapSceneTriggers(); } catch (e) {}
+    try { rebuildInteriorDoorsFromGrid(); } catch (e) {}
+    try { saveAppStateDebounced(10); } catch (e) {}
+    try { notify(blocked ? `Edificio movido a ${tc},${tr} (aviso: destino ocupado)` : `Edificio movido a ${tc},${tr}`); } catch (e) {}
+    return true;
+  } catch (e) {
+    console.warn('moveBuildingTo failed', e);
+    return false;
+  }
+}
+
+// Crea una entidad de previsualización para poder ver y ajustar cualquier sprite.
+function spawnPreviewSprite(key, col, row) {
+  try {
+    if (!key) return null;
+    const c = Math.max(0, Math.min(COLS - 1, Math.floor(col)));
+    const r = Math.max(0, Math.min(ROWS - 1, Math.floor(row)));
+    const created = {
+      id: 'preview-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+      kind: 'preview',
+      sprite: key,
+      col: c,
+      row: r,
+      x: c,
+      y: r,
+      size: 1,
+      _preview: true
+    };
+    entities.push(created);
+    try { mapCacheDirty = true; } catch (e) {}
+    try { if (window.SceneManager && window.SceneManager.rebuild) window.SceneManager.rebuild(entities); } catch (e) {}
+    return created;
+  } catch (e) {
+    console.warn('spawnPreviewSprite failed', e);
+    return null;
+  }
+}
+
+// Centra suavemente la cámara en una coordenada de mundo
+function centerCameraOnWorld(col, row) {
+  try {
+    const cx = Number(col) || 0;
+    const cy = Number(row) || 0;
+    if (viewMode === 'iso') {
+      const p = projectIso(cx, cy);
+      targetCam = { x: canvas.width / 2 - p.x, y: canvas.height / 2 - p.y };
+    } else {
+      const tileSize = getTileSize();
+      targetCam = { x: canvas.width / 2 - cx * tileSize, y: canvas.height / 2 - cy * tileSize };
+    }
+    followPlayer = false;
+    markCameraInput();
+  } catch (e) {}
+}
+
+// Teletransporta al jugador (útil para inspeccionar zonas del mapa)
+function teleportPlayerTo(x, y) {
+  try {
+    const cx = Math.max(0.5, Math.min(COLS - 1.5, Number(x) || 0));
+    const cy = Math.max(0.5, Math.min(ROWS - 1.5, Number(y) || 0));
+    player.x = cx; player.y = cy;
+    player.col = Math.floor(cx); player.row = Math.floor(cy);
+    player.path = null;
+    try { movePath = null; moveTarget = null; } catch (e) {}
+    try { centerCameraOnWorld(cx, cy); } catch (e) {}
+    try { saveAppStateDebounced(10); } catch (e) {}
+    return true;
+  } catch (e) { return false; }
 }
 
 function setupHomePrologueSpawn(anchorCol, anchorRow) {
@@ -4177,6 +5410,8 @@ function setupHomePrologueSpawn(anchorCol, anchorRow) {
       objectiveHintShownAt: 0,
       homeCol,
       homeRow,
+      homeW,
+      homeH,
       homeDoorCol,
       homeDoorRow,
       military: [
@@ -4217,6 +5452,29 @@ function setupHomePrologueSpawn(anchorCol, anchorRow) {
               'Haz clic y arrastra sobre suelo cultivable.'
             ]
           );
+          // Objetivos libres del prólogo: el jugador puede seguir otro (tecla O o
+          // botón «Cambiar» del panel) en vez de plantar todo el rato.
+          try {
+            addObjective({
+              id: 'free_explore', title: 'Reconocer los alrededores', source: 'free',
+              desc: 'Da una vuelta por el campo: reconoce el terreno, los árboles y el agua cercanos.',
+              steps: ['Aléjate 24 celdas de casa.', 'Mira el minimapa (abajo a la derecha).'],
+              target: null, _from: { col: player.col, row: player.row }
+            });
+            addObjective({
+              id: 'free_materials', title: 'Hacer acopio', source: 'free',
+              desc: 'La casa necesita madera y piedra: reúne un poco antes de que anochezca.',
+              steps: ['Golpea un árbol para conseguir madera.', 'Recoge 5 de madera y 5 de piedra.'],
+              target: null
+            });
+            addObjective({
+              id: 'free_family', title: 'Hablar con tu familia', source: 'free',
+              desc: 'Tu familia está preocupada por las patrullas: acércate a la puerta de casa y escúchala.',
+              steps: ['Ve a la puerta de tu casa.'],
+              target: { col: homeDoorCol, row: homeDoorRow }
+            });
+            objectiveHudPatch();
+          } catch (e) {}
         }
       } catch (e) {}
     }, 800);
@@ -4382,6 +5640,25 @@ function spawnVillage(baseCol, baseRow, opts) {
   let capitalCx = bc;
   let capitalCy = br;
   let capitalRingR = 11;
+
+  // ── PLAN DEL ASENTAMIENTO ───────────────────────────────────────────────
+  // Retícula de calles + manzanas por distrito (settlement-utils). El trazado
+  // antiguo por listas de posiciones queda como respaldo (presets de zona).
+  const hasCustomZonePreset = (() => {
+    try {
+      const p = (window._ZONE_SPAWN_PRESETS || {})[villageType];
+      return !!(p && ((p.terrain && p.terrain.length) || (p.buildings && p.buildings.length) || (p.entities && p.entities.length)));
+    } catch (e) { return false; }
+  })();
+  const settlementPlan = hasCustomZonePreset ? null : buildSettlementPlanFor(villageType, bc, br, epochNow);
+  if (settlementPlan) {
+    const planPieces = applySettlementPlan(settlementPlan);
+    planPieces.forEach(p => houses.push(p));
+    capitalCx = settlementPlan.cx;
+    capitalCy = settlementPlan.cy;
+    capitalRingR = settlementPlan.extent.halfR;
+    try { console.log('[asentamiento] ' + villageType + ' planificado:', JSON.stringify(settlementPlan.summary)); } catch (e) {}
+  }
 
   // ── CAPITAL: structured city layout ──────────────────────────
   // Districts: [ziggurat center] [temple N] [market S] [villas NE/NW]
@@ -4632,7 +5909,7 @@ function spawnVillage(baseCol, baseRow, opts) {
     };
     const useCustomZonePreset = applyCustomZonePreset();
 
-    if (!useCustomZonePreset && epochNow === 'urss') {
+    if (!useCustomZonePreset && !settlementPlan && epochNow === 'urss') {
       if (isMilitaryBase) {
         const baseR = 9;
         capitalRingR = baseR;
@@ -4787,7 +6064,7 @@ function spawnVillage(baseCol, baseRow, opts) {
           pushAmbient('crate_stack', ac, ar, 0.95);
         });
       }
-    } else if (!useCustomZonePreset) {
+    } else if (!useCustomZonePreset && !settlementPlan) {
       if (isMilitaryBase) {
         const fortR = 7;
         capitalRingR = fortR;
@@ -4819,6 +6096,30 @@ function spawnVillage(baseCol, baseRow, opts) {
           }
         }
       } else {
+        // 1. CORE: el núcleo cívico sale de la plantilla "zigurat_complejo"
+        // (docs/ESTRUCTURAS.md). Así la forma del conjunto está preparada y
+        // versionada como datos; si por lo que sea no cupiera, se usa el
+        // trazado clásico de respaldo que viene justo debajo.
+        let corePlaced = false;
+        try {
+          const res = structureSystem.place('zigurat_complejo', cx, cy, {
+            epoch: epochNow,
+            transform: 'none',
+            clear: true,
+            removeEntities: true,
+            ignoreSpacing: true,
+            ignoreBiome: true,
+            ignoreRiver: true,
+            road: false
+          });
+          if (res.ok) {
+            corePlaced = true;
+            // registrar las piezas como parte de la villa (métricas/bbox/carreteras)
+            (res.pieces || []).forEach(pf => houses.push({ c: pf.c, r: pf.r, variant: pf.type }));
+          }
+        } catch (e) { corePlaced = false; }
+
+        if (!corePlaced) {
         // 1. CORE: Ziggurat at center (size-driven)
         try {
           const zsize = getBuildingSize('ziggurat');
@@ -4846,9 +6147,10 @@ function spawnVillage(baseCol, baseRow, opts) {
         tryPlace(cx + 7, cy + 5, 'granary');
         // 11. GRANARY: NE far edge
         tryPlace(cx + 11, cy - 4, 'granary');
+        } // fin del núcleo cívico de respaldo (cuando la plantilla no cupo)
       }
     }
-    if (!useCustomZonePreset && !isMilitaryBase) {
+    if (!useCustomZonePreset && !settlementPlan && !isMilitaryBase) {
       // 12-19. RESIDENTIAL RING — mesopotamian_houses radiating from center
       const resRing = [
         [cx - 7, cy + 1], [cx + 5, cy + 1],       // E/W mid
@@ -4896,6 +6198,9 @@ function spawnVillage(baseCol, baseRow, opts) {
       });
     }
 
+    // Viario y muralla del trazado clásico: sólo cuando NO hay plan
+    // (el plan ya coloca su propio viario, muros y puertas).
+    if (!settlementPlan) {
     // Carve main N-S road through city
     for (let r = cy - 13; r <= cy + 10; r++) {
       const c = Math.max(0, Math.min(COLS-1, cx));
@@ -4985,6 +6290,7 @@ function spawnVillage(baseCol, baseRow, opts) {
         }
       } catch (e) {}
     }
+    } // fin del viario/muralla clásicos
 
   } else {
 
@@ -5011,6 +6317,9 @@ function spawnVillage(baseCol, baseRow, opts) {
     });
     // Well near center
     try { const wc = bc + 1, wr = br - 1; if (!grid[wr]?.[wc] && !isRiver(wc)) setBuildingCells(wc, wr, 'well'); } catch (e) {}
+
+  } else if (settlementPlan) {
+    // El plano ya se aplicó antes de entrar aquí (manzanas + viario).
 
   } else if (villageType === 'trading_post') {
     // Linear market street layout
@@ -5130,9 +6439,18 @@ function spawnVillage(baseCol, baseRow, opts) {
   // Small farm/granary near non-origin, non-capital villages
   if (villageType !== 'origin' && villageType !== 'capital') {
     try {
-      const fc = Math.min(COLS-2, bc + layoutCols + 1);
-      const fr = Math.min(ROWS-2, br + 1);
-      if (!grid[fr][fc] && tileBiome[fr] && tileBiome[fr][fc] !== 'forest' && !isRiver(fc))
+      const fc = Math.min(COLS - 3, bc + layoutCols + 1);
+      const fr = Math.min(ROWS - 3, br + 1);
+      // Comprobar la huella completa (antes sólo la celda superior izquierda,
+      // y el campo se solapaba con lo que hubiera al lado).
+      const fsize = getBuildingSize('farm');
+      let blocked = false;
+      for (let dr = 0; dr < fsize.h && !blocked; dr++) {
+        for (let dc = 0; dc < fsize.w; dc++) {
+          if (grid[fr + dr] && grid[fr + dr][fc + dc]) { blocked = true; break; }
+        }
+      }
+      if (!blocked && tileBiome[fr] && tileBiome[fr][fc] !== 'forest' && tileBiome[fr][fc] !== 'water' && !isRiver(fc))
         setBuildingCells(fc, fr, 'farm');
     } catch (e) {}
   }
@@ -5140,7 +6458,7 @@ function spawnVillage(baseCol, baseRow, opts) {
   if (houses.length === 0) return;
 
   // Roads connecting all houses to the first (hub-and-spoke) — only for non-capital (capital has own road layout)
-  if (villageType !== 'capital') {
+  if (villageType !== 'capital' && !settlementPlan) {
     const hub = houses[0];
     for (let i = 1; i < houses.length; i++) {
       carveRoadPath(hub.c, hub.r, houses[i].c, houses[i].r);
@@ -5169,7 +6487,9 @@ function spawnVillage(baseCol, baseRow, opts) {
   let roadCells = 0;
   for (let rr = minR; rr <= maxR; rr++) {
     for (let cc = minC; cc <= maxC; cc++) {
-      if (tileBiome[rr] && tileBiome[rr][cc] === 'road') roadCells++;
+      const tb = tileBiome[rr] && tileBiome[rr][cc];
+      // Cuenta cualquier pavimento: en la era URSS las calles son de hormigón.
+      if (tb === 'road' || tb === 'concrete_road' || tb === 'canal_road') roadCells++;
     }
   }
   const density = builtArea / bboxArea;
@@ -5237,8 +6557,9 @@ function spawnVillage(baseCol, baseRow, opts) {
         if (!grid[pr2][pc] && !isRiver(pc)) placeTree(pc, pr2, 'birch');
       }
       // Scatter trees and gardens throughout city interior for visual richness
+      // (sólo con el trazado clásico: un plano ya reparte su propio arbolado)
       const cityTreeTypes = ['birch', 'aspen', 'hay', 'steppe_shrub', 'pine'];
-      for (let attempt = 0; attempt < 60; attempt++) {
+      for (let attempt = 0; settlementPlan ? false : attempt < 60; attempt++) {
         const tx = capitalCx + Math.floor(Math.random() * 22) - 11;
         const ty = capitalCy + Math.floor(Math.random() * 22) - 11;
         if (tx < 1 || ty < 1 || tx >= COLS-1 || ty >= ROWS-1) continue;
@@ -5363,7 +6684,11 @@ function spawnVillage(baseCol, baseRow, opts) {
         }
       }
       // Priestess at the temple — story NPC
-      const templeH = houses.find(h => h.variant === 'temple') || houses[0];
+      // (con el planificador urbano el templo puede no haber salido en el
+      //  barrio cívico: se acepta también el zigurat del núcleo)
+      const templeH = houses.find(h => h.variant === 'temple')
+        || houses.find(h => h.variant === 'ziggurat' || h.variant === 'steel_foundry')
+        || houses[0];
       const priestess = spawnNPC(epochNow === 'urss' ? 'Comisaria Irina Markova' : 'Sacerdotisa Enlil-Ama', templeH.c + 1, templeH.r + 1);
       if (priestess) {
         priestess.npcType = (epochNow === 'urss') ? 'commissar' : 'priestess';
@@ -5585,11 +6910,185 @@ function forEachFootprint(baseCol, baseRow, type, fn) {
   }
 }
 
+// ── PUENTES ────────────────────────────────────────────────────────────────
+// Una calzada no puede cruzar el río a nado: donde una vía toca el agua se
+// construye un PUENTE (tablones + barandilla), que es transitable. El mapa se
+// guarda en `window._BRIDGE_MAP` (0 = nada, 1 = puente horizontal, 2 = vertical).
+function isBridgeCell(c, r) {
+  try {
+    const m = window._BRIDGE_MAP;
+    return !!(m && m[r] && m[r][c]);
+  } catch (e) { return false; }
+}
+
+function bridgeAxisAt(c, r) {
+  try {
+    const m = window._BRIDGE_MAP;
+    const v = (m && m[r] && m[r][c]) || 0;
+    return v === 2 ? 'v' : (v === 1 ? 'h' : null);
+  } catch (e) { return null; }
+}
+
+// ¿Esta celda "continúa" por el otro lado? Sirve para saber si una vía que toca
+// el agua llega a la otra orilla (entonces hay puente) o es un callejón sin salida.
+function continuesAcrossWater(c, r, dc, dr, maxSpan) {
+  try {
+    for (let step = 1; step <= maxSpan; step++) {
+      const cc = c + dc * step, rr = r + dr * step;
+      if (cc < 0 || rr < 0 || cc >= COLS || rr >= ROWS) return false;
+      const b = tileBiome[rr] && tileBiome[rr][cc];
+      const water = b === 'water' || isRiver(cc, rr);
+      if (!water) {
+        // Tierra: vale si hay calzada o si es suelo firme (la vía sigue a campo abierto)
+        return b !== 'deep_water';
+      }
+    }
+  } catch (e) {}
+  return false;
+}
+
+// Construye puentes donde una vía cruza el agua y anota los tramos.
+function buildBridges() {
+  const map = Array.from({ length: ROWS }, () => new Uint8Array(COLS));
+  window._BRIDGE_MAP = map;
+  let built = 0;
+  try {
+    const isRoadBiome = (c, r) => {
+      const b = tileBiome[r] && tileBiome[r][c];
+      return b === 'road' || b === 'concrete_road' || b === 'canal_road';
+    };
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        if (!isRoadBiome(c, r)) continue;
+        for (const [dc, dr] of [[1, 0], [0, 1]]) {
+          const nc = c + dc, nr = r + dr;
+          if (nc >= COLS || nr >= ROWS) continue;
+          const nb = tileBiome[nr] && tileBiome[nr][nc];
+          const waterAhead = nb === 'water' || isRiver(nc, nr);
+          if (!waterAhead) continue;
+          // ¿Se llega a la otra orilla en pocas celdas?
+          if (!continuesAcrossWater(c, r, dc, dr, 8)) continue;
+          // Punza el tramo de agua: se vuelve calzada y se marca como puente
+          for (let step = 1; step <= 8; step++) {
+            const cc = c + dc * step, rr = r + dr * step;
+            if (cc < 0 || rr < 0 || cc >= COLS || rr >= ROWS) break;
+            const b = tileBiome[rr] && tileBiome[rr][cc];
+            if (!(b === 'water' || isRiver(cc, rr))) break;
+            const gc = grid[rr][cc];
+            if (gc) {
+              const gt = (typeof gc === 'string') ? gc : (gc.type || '');
+              // Una vía anotada como EDIFICIO sobre el agua (calzada flotante) no
+              // impide el puente: se retira y el puente ocupa su sitio. Cualquier
+              // otro edificio sí corta el tramo.
+              if (gt === 'road' || gt === 'concrete_road') { try { clearBuildingCells(cc, rr, gt); } catch (e) {} }
+              else break;
+            }
+            tileBiome[rr][cc] = 'road';
+            map[rr][cc] = dc === 1 ? 1 : 2;
+            built++;
+          }
+          break; // una dirección por celda basta
+        }
+      }
+    }
+    if (built) console.debug('[mapa] puentes construidos sobre el río: ' + built + ' celdas');
+  } catch (e) {}
+  return built;
+}
+
+// El agua que se DIBUJA y la que se comprueba con isRiver tienen que salir del
+// mismo dato. Al cargar una partida guardada llega `tileBiome` (con su agua)
+// pero NO el mapa de meandros `_RIVER_FULL_MAP`, así que isRiver caía al rango
+// de columnas de respaldo: el motor pintaba una banda ancha de agua sobre
+// tierra y los caminos y los árboles de esa banda aparecían "dentro del río".
+// Los puentes no se pueden deducir del bioma (sus celdas quedan como calzada),
+// así que viajan con la partida: una fila por tramo y un dígito por celda
+// (0 = nada, 1 = puente horizontal, 2 = vertical). Se recortan los ceros del
+// final de cada fila para no engordar el guardado.
+function serializeBridgeMap() {
+  try {
+    const m = window._BRIDGE_MAP;
+    if (!m) return '';
+    const rows = [];
+    for (let r = 0; r < ROWS; r++) {
+      let line = '';
+      for (let c = 0; c < COLS; c++) line += String((m[r] && m[r][c]) || 0);
+      rows.push(line.replace(/0+$/, ''));
+    }
+    while (rows.length && !rows[rows.length - 1]) rows.pop();
+    return rows.join('|');
+  } catch (e) { return ''; }
+}
+
+function restoreBridgeMap(str) {
+  try {
+    if (!str || typeof str !== 'string') return 0;
+    const lines = str.split('|');
+    const map = Array.from({ length: ROWS }, () => new Uint8Array(COLS));
+    let n = 0;
+    for (let r = 0; r < Math.min(ROWS, lines.length); r++) {
+      const line = lines[r] || '';
+      for (let c = 0; c < Math.min(COLS, line.length); c++) {
+        const v = line.charCodeAt(c) - 48;
+        if (v === 1 || v === 2) { map[r][c] = v; n++; }
+      }
+    }
+    window._BRIDGE_MAP = map;
+    if (n) console.debug('[mapa] puentes restaurados de la partida: ' + n + ' celdas');
+    return n;
+  } catch (e) { return 0; }
+}
+
+function rebuildRiverMapFromBiomes() {  try {
+    const map = Array.from({ length: ROWS }, () => new Uint8Array(COLS));
+    const cols = new Uint8Array(COLS);
+    for (let r = 0; r < ROWS; r++) {
+      const row = tileBiome[r];
+      if (!row) continue;
+      for (let c = 0; c < COLS; c++) {
+        if (row[c] !== 'water') continue;
+        map[r][c] = 1;
+        cols[c] = 1;
+      }
+    }
+    window._RIVER_FULL_MAP = map;
+    window._RIVER_COLS = cols;
+    return true;
+  } catch (e) { return false; }
+}
+
+// Índice de columnas con agua: permite responder a isRiver(col) sin fila usando
+// el mapa real en vez de un rango de columnas fijo.
+function refreshRiverCols() {
+  try {
+    const map = window._RIVER_FULL_MAP;
+    if (!map) return false;
+    const cols = new Uint8Array(COLS);
+    for (let r = 0; r < ROWS; r++) {
+      const row = map[r];
+      if (!row) continue;
+      for (let c = 0; c < COLS; c++) if (row[c]) cols[c] = 1;
+    }
+    window._RIVER_COLS = cols;
+    return true;
+  } catch (e) { return false; }
+}
+
 // Precise river cell check – uses meander map when available, falls back to column ranges
 function isRiver(col, row) {
   try {
-    if (typeof row === 'number' && row >= 0 && row < ROWS && window._RIVER_FULL_MAP && window._RIVER_FULL_MAP[row]) {
-      return !!window._RIVER_FULL_MAP[row][col];
+    if (typeof row === 'number' && row >= 0 && row < ROWS) {
+      // Partida guardada o mapa sin meandros: se reconstruye desde los biomas
+      // (así el agua comprobada es exactamente la que se ve).
+      if (!window._RIVER_FULL_MAP) rebuildRiverMapFromBiomes();
+      const map = window._RIVER_FULL_MAP;
+      if (map && map[row]) return !!map[row][col];
+    } else if (window._RIVER_COLS) {
+      // Sin fila (ayudantes de colocación): la columna es río si el mapa real
+      // tiene agua en ella. Antes se usaba un rango de columnas fijo que NO
+      // coincide con los meandros generados, y por ahí se colaban caminos
+      // pintados encima del río (vías de acceso del embarcadero, etc.).
+      return !!window._RIVER_COLS[col];
     }
     // Broad column-range fallback (used by placement helpers that lack row)
     return (col >= RIVER_A_BASE - 1 && col < RIVER_A_BASE + RIVER_WIDTH_BASE + 3) ||
@@ -5611,10 +7110,22 @@ function isNearRiver(col, row) {
   } catch (e) { return false; }
 }
 
+// El agua para el MOVIMIENTO: las celdas de puente están sobre el río pero se
+// pisan como calzada (sin nadar, sin lentitud y sin bloquear el salto).
+function isWaterCell(c, r) {
+  try {
+    if (isBridgeCell(c, r)) return false;
+    const b = tileBiome[r] && tileBiome[r][c];
+    if (b === 'water' || b === 'deep_water') return true;
+    return isRiver(c, r);
+  } catch (e) { return false; }
+}
+
 // Movement speed multiplier depending on terrain
 function movementMultiplier(col, row) {
   try {
     if (col < 0 || row < 0 || row >= ROWS || col >= COLS) return 1;
+    if (isBridgeCell(col, row)) return 1;   // el puente es calzada, no agua
     const b = tileBiome[row] && tileBiome[row][col];
     if (b === 'canal_road') return 1; // logistics corridor: full walking speed, treated as road
     if (b === 'water' || isRiver(col, row)) return 0.35;
@@ -5640,8 +7151,18 @@ function isStaticEntityBlockingTile(col, row) {
       const ec = (typeof ent.col === 'number') ? ent.col : (typeof ent.x === 'number' ? Math.floor(ent.x) : null);
       const er = (typeof ent.row === 'number') ? ent.row : (typeof ent.y === 'number' ? Math.floor(ent.y) : null);
       if (ec === null || er === null || ec !== col || er !== row) continue;
-      if (ent.kind === 'tree' || ent.kind === 'resource') return true;
+      // Sólo bloquean los árboles y los recursos grandes: los hierbajos, la
+      // hierba alta y las flores se pisan. Antes cualquier recurso bloqueaba la
+      // celda entera y el personaje chocaba "con el aire".
+      if (ent.kind === 'tree') return true;
+      if (ent.kind === 'resource') {
+        const sub = String(ent.subtype || '').toLowerCase();
+        if (sub !== 'weed' && sub !== 'tallgrass' && sub !== 'flower' && sub !== 'grass' && sub !== 'bush' && sub !== 'shrub') return true;
+      }
       if (ent.kind === 'ambient') {
+        // Un vano de puerta (o cualquier pieza marcada como pasable) no bloquea:
+        // si bloqueara, la muralla cerraría la ciudad por completo.
+        if (ent.passable) continue;
         const st = String(ent.subtype || '');
         if (st !== 'soviet_fighter_jet') return true;
       }
@@ -5669,6 +7190,13 @@ function findNearestWalkable(col, row, maxRadius = 12) {
   return { col, row }; // fallback: original position
 }
 
+// Tiles de interior que BLOQUEAN el paso: muros y muebles. El suelo, la
+// alfombra y el vano de la puerta se pisan (el vano dispara la salida).
+const INTERIOR_SOLID_TILES = new Set([
+  'wall', 'painting', 'window', 'torch',
+  'bed', 'table', 'bookshelf', 'chest', 'counter', 'pot', 'firepit', 'chair', 'plant', 'oven', 'barrel'
+]);
+
 function canWalkTo(col, row, options = null) {
   const allowWater = !!(options && options.allowWater);
   if (window.currentInterior) {
@@ -5677,9 +7205,10 @@ function canWalkTo(col, row, options = null) {
     const rows = interior.height || interior.rows || (interior.tiles ? interior.tiles.length : 6);
     if (col < 0 || col >= cols || row < 0 || row >= rows) return false;
     const tile = (interior.tiles && interior.tiles[row] && interior.tiles[row][col]) ? interior.tiles[row][col] : 'floor';
-    // wall, furniture blocking, door is passable (triggers exit)
-    const blocked = new Set(['wall']);
-    return !blocked.has(tile);
+    // Sólo bloquean los MUROS y los MUEBLES. El suelo, la alfombra y el vano de
+    // la puerta se pisan. Antes sólo bloqueaba `wall`: se atravesaban camas,
+    // mesas y estanterías (y por eso las hitboxes parecían rotas).
+    return !INTERIOR_SOLID_TILES.has(tile);
   }
   if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return false;
   // Check grid (buildings) FIRST — a building on the grid blocks movement
@@ -5692,10 +7221,12 @@ function canWalkTo(col, row, options = null) {
     return false; // Any other building blocks movement
   }
   const biome = (tileBiome[row] && tileBiome[row][col]) || null;
+  // Un puente se pisa siempre: por debajo hay río, por encima calzada.
+  if (isBridgeCell(col, row)) return true;
   // Logistics corridors and natural road biomes are walkable only if no building occupies the tile.
   if (biome === 'canal_road' || biome === 'road' || biome === 'concrete_road') return true;
   // Water remains non-walkable unless explicitly allowed (player swimming).
-  if (!allowWater && (biome === 'water' || isRiver(col, row))) return false;
+  if (!allowWater && isWaterCell(col, row)) return false;
   if (isStaticEntityBlockingTile(col, row)) return false;
   return true;
 }
@@ -5775,6 +7306,15 @@ function generateMap(mapType) {
     }
     for (let r=0;r<ROWS;r++) tileBiome[r]=copy[r].slice();
   }
+  // Los biomas y el mapa de río deben coincidir: el agua se DIBUJA por bioma y
+  // se COMPRUEBA con isRiver, así que cualquier divergencia se ve como agua
+  // pintada sobre tierra (o al revés).
+  try {
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) rFullMap[r][c] = (tileBiome[r][c] === 'water') ? 1 : 0;
+    }
+    refreshRiverCols();
+  } catch (e) {}
   // Skipping old refineBiomes call – biome zones are geographically determined now
   // ── 5. Heightmap (flat alluvial, elevated steppe/hills) ──
   try {
@@ -5829,6 +7369,7 @@ function generateMap(mapType) {
   } catch(e){}
   // ── 7. Villages (placed on dry alluvial land) ──
   window._VILLAGES=[];
+  try { structureSystem.clearPlaced(); } catch (e) {}
   const isDrySpawnCell = (c, r) => {
     try {
       if (c < 1 || r < 1 || c >= COLS - 1 || r >= ROWS - 1) return false;
@@ -5866,8 +7407,9 @@ function generateMap(mapType) {
       ];
   for (const planned of spawnPlan) {
     const anchor = findSpawnNear(planned.c, planned.r, 20);
-    if (!anchor) continue;
-    try { spawnVillage(anchor.c, anchor.r, { villageType: planned.type }); } catch (e) {}
+    if (!anchor) { console.warn('[asentamiento] sin sitio para ' + planned.type + ' cerca de ' + planned.c + ',' + planned.r); continue; }
+    try { spawnVillage(anchor.c, anchor.r, { villageType: planned.type }); }
+    catch (e) { console.warn('[asentamiento] fallo generando ' + planned.type, e); }
   }
   const extraVillages = (window._currentEpoch === 'urss') ? 1 : (1 + Math.floor(Math.random() * 2));
   for (let vi = 0; vi < extraVillages; vi++) {
@@ -5886,7 +7428,13 @@ function generateMap(mapType) {
     if (!hasCapital) {
       const fallbackCapital = findSpawnNear(Math.round(COLS * 0.54), Math.round(ROWS * 0.42), 36);
       if (fallbackCapital) {
-        try { spawnVillage(fallbackCapital.c, fallbackCapital.r, { villageType: 'capital' }); } catch (e) {}
+        try { spawnVillage(fallbackCapital.c, fallbackCapital.r, { villageType: 'capital' }); }
+        catch (e) { console.warn('[asentamiento] fallo generando la capital de respaldo', e); }
+      } else {
+        console.warn('[asentamiento] no se encontró ubicación seca para la capital');
+      }
+      if (!(window._VILLAGES || []).some(v => v.type === 'capital')) {
+        console.warn('[asentamiento] el mapa se queda sin capital (spawnVillage salió antes de registrar la villa)');
       }
     }
   } catch (e) {}
@@ -5926,6 +7474,15 @@ function generateMap(mapType) {
       spawnC=Math.max(0,Math.min(COLS-1,Math.floor((v.minC+v.maxC)/2)));
       spawnR=Math.max(0,Math.min(ROWS-1,Math.floor((v.minR+v.maxR)/2)));
     } else { spawnC=Math.floor(COLS/2); spawnR=Math.floor(ROWS/2); }
+    // El prólogo transcurre en una casa AISLADA en el campo. Si se deja el
+    // spawn en el centro del pueblo, la casa se planta sobre el núcleo
+    // monumental y el jugador aparece dentro del recinto del zigurat (era el
+    // caso: «aparezco al lado del zigurat todo el rato»).
+    try {
+      const firstVillage = (window._VILLAGES && window._VILLAGES[0]) || null;
+      const homeSpot = findHomeSpotForPrologue(firstVillage, spawnC, spawnR);
+      if (homeSpot) { spawnC = homeSpot.c; spawnR = homeSpot.r; }
+    } catch (e) { console.warn('[prólogo] sin claro para la casa aislada', e); }
     // ensure the player does not start on a blocked tile (building, wall, etc.)
     try { const safe = findNearestWalkable(spawnC, spawnR); spawnC = safe.col; spawnR = safe.row; } catch(e2) {}
     player.col=spawnC; player.row=spawnR;
@@ -5943,11 +7500,81 @@ function generateMap(mapType) {
       }
     } catch (e) {}
   } catch(e){}
+  // ── 8b. ESTRUCTURAS / CONJUNTOS ──
+  // Los edificios singulares (zigurat, templo, mercado, granjas, bloques…)
+  // se levantan como conjuntos con una forma predefinida en vez de sueltos.
+  // Ver docs/ESTRUCTURAS.md y la sección "Estructuras" del modo debug (F9).
+  try {
+    const extraBoxes = [];
+    try {
+      const px = Math.floor(player.x), py = Math.floor(player.y);
+      extraBoxes.push({ name: 'zona del jugador', minC: px - 9, maxC: px + 9, minR: py - 9, maxR: py + 9 });
+    } catch (e) {}
+    // La casa del prólogo no es negociable: ninguna estructura puede caer
+    // encima (antes el complejo del zigurat se levantaba sobre ella).
+    try {
+      const hp = window._homePrologue;
+      if (hp && typeof hp.homeCol === 'number' && typeof hp.homeRow === 'number') {
+        const hw = (typeof hp.homeW === 'number' && hp.homeW > 0) ? hp.homeW : 4;
+        const hh = (typeof hp.homeH === 'number' && hp.homeH > 0) ? hp.homeH : 3;
+        extraBoxes.push({
+          name: 'casa del prólogo',
+          minC: hp.homeCol - 3, maxC: hp.homeCol + hw + 3,
+          minR: hp.homeRow - 3, maxR: hp.homeRow + hh + 3
+        });
+      }
+    } catch (e) {}
+    const structResult = structureSystem.generatePass({
+      epoch: window._currentEpoch || 'mesopotamia',
+      cap: (window._currentEpoch === 'urss') ? 7 : 8,
+      attempts: 320,
+      extraBoxes
+    });
+    window._STRUCTURES = structureSystem.listPlaced();
+    if (structResult.placed.length) {
+      console.log('[estructuras] conjuntos colocados: ' + structResult.placed.map(p => `${p.name} @${p.c},${p.r}`).join(' · '));
+    }
+    if (structResult.failed.length) {
+      console.debug('[estructuras] sin sitio: ' + structResult.failed.map(f => `${f.id} (${f.reason})`).join(' · '));
+    }
+  } catch (e) { console.warn('generatePass (estructuras) failed', e); }
+
+  // ── 8c. CAMINANTES DEL YERMO ──
+  // NPCs sueltos por el campo, lejos de los pueblos: son los que sueltan
+  // encargos raros («ve a ver qué hace mi hijo en la cueva»). Sin ellos, todas
+  // las misiones salían de dentro de los núcleos urbanos.
+  try {
+    const nombres = ['Ur-Ninurta', 'Lugal-zage', 'Ninti', 'En-hedu', 'Aba-indara', 'Shu-Sin',
+      'Ninkasi', 'Humbaba', 'Puabi', 'Ilshu-ibni', 'Ku-Aya', 'Zuzu'];
+    const apodos = ['el Errante', 'la Caminante', 'el Pastor', 'la Curandera', 'el Cazador'];
+    const yermos = [];
+    const cx0 = Math.floor(player.x), cy0 = Math.floor(player.y);
+    for (let i = 0; i < 30; i++) {
+      const anclaC = Math.floor(Math.random() * COLS);
+      const anclaR = Math.floor(Math.random() * ROWS);
+      const spot = pickWildSpot(anclaC, anclaR, 8, 40);
+      if (!spot) continue;
+      // Fuera de los pueblos (en el campo abierto)
+      if (!npcIsOutsideSettlements({ col: spot.c, row: spot.r }, 10)) continue;
+      let tooClose = false;
+      for (const y of yermos) if (Math.hypot(y.c - spot.c, y.r - spot.r) < 10) { tooClose = true; break; }
+      if (tooClose) continue;
+      if (Math.hypot(spot.c - cx0, spot.r - cy0) < 12) continue; // no encima del jugador
+      const nombre = nombres[Math.floor(Math.random() * nombres.length)] + ' ' + apodos[Math.floor(Math.random() * apodos.length)];
+      let npc = null;
+      try { if (typeof spawnNPC === 'function') npc = spawnNPC(nombre, spot.c, spot.r); } catch (e2) {}
+      if (npc) { npc.npcType = 'survivor'; npc.isWanderer = true; }
+      yermos.push({ c: spot.c, r: spot.r });
+    }
+    if (yermos.length) console.log('[mundo] caminantes en el yermo: ' + yermos.length);
+  } catch (e) { console.warn('caminantes del yermo failed', e); }
   // ── 9. Resource nodes ──
   for (let i=0;i<70;i++) {
     const c=Math.floor(Math.random()*COLS),r=Math.floor(Math.random()*ROWS);
     if (grid[r][c]||rFullMap[r][c]) continue;
     const b=tileBiome[r][c];
+    // Nunca sobre calzada ni agua: salían espigas de trigo en medio de la avenida.
+    if (b === 'water' || b === 'road' || b === 'concrete_road' || b === 'canal_road') continue;
     let type='wheat';
     if (b==='steppe'||b==='hills') type='stone';
     else if (b==='alluvial'||b==='riparian') { const rnd=Math.random(); type=rnd<0.55?'wheat':rnd<0.80?'brick':'stone'; }
@@ -5958,6 +7585,7 @@ function generateMap(mapType) {
     const c = Math.floor(Math.random() * COLS), r = Math.floor(Math.random() * ROWS);
     if (grid[r][c] || rFullMap[r][c] || isRiver(c)) continue;
     const b = tileBiome[r] && tileBiome[r][c];
+    if (b === 'water' || b === 'road' || b === 'concrete_road' || b === 'canal_road') continue;
     if (b !== 'grass' && b !== 'alluvial' && b !== 'forest' && b !== 'riparian' && b !== 'steppe' && b !== 'marsh') continue;
     if (Math.random() < 0.80) placeResource(c, r, 'weed');
   }
@@ -6036,6 +7664,50 @@ function generateMap(mapType) {
   } catch (e) {}
 
   // ----- finalize
+  // Puentes: primero se construyen los cruces de vía sobre el agua, y después se
+  // revisa que no quede calzada "flotando" sin puente (eso sí se devuelve a agua).
+  try { buildBridges(); } catch (e) { console.warn('buildBridges failed', e); }
+  // Coherencia final del agua: donde el mapa de río dice agua, el bioma tiene
+  // que ser agua (si no, la celda se ve como tierra pero no se puede pisar) y
+  // no puede quedar calzada pintada encima (una carretera cruzando el río).
+  try {
+    let fixed = 0;
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        if (!rFullMap[r][c] || tileBiome[r][c] === 'water') continue;
+        if (isBridgeCell(c, r)) continue;   // el puente sí puede estar sobre agua
+        tileBiome[r][c] = 'water';
+        const cell = grid[r][c];
+        const ctype = cell ? ((typeof cell === 'string') ? cell : (cell.type || '')) : '';
+        if (ctype === 'road' || ctype === 'concrete_road') { try { clearBuildingCells(c, r, ctype); } catch (e) {} }
+        fixed++;
+      }
+    }
+    if (fixed) console.debug('[mapa] celdas de río corregidas (bioma y calzada): ' + fixed);
+    refreshRiverCols();
+  } catch (e) {}
+  // Última pasada: ni vegetación ni recursos sobre calzada, agua o dentro de un
+  // edificio. El orden de las fases (calles después de sembrar hierbajos, vías
+  // de acceso del embarcadero, corredores soviéticos…) dejaba matas y trigo en
+  // medio de las avenidas y del río.
+  try {
+    let cleaned = 0;
+    for (let i = entities.length - 1; i >= 0; i--) {
+      const ent = entities[i];
+      if (!ent || (ent.kind !== 'tree' && ent.kind !== 'resource')) continue;
+      const ec = (typeof ent.col === 'number') ? ent.col : Math.floor(Number(ent.x));
+      const er = (typeof ent.row === 'number') ? ent.row : Math.floor(Number(ent.y));
+      if (!Number.isFinite(ec) || !Number.isFinite(er) || ec < 0 || er < 0 || ec >= COLS || er >= ROWS) continue;
+      const b = tileBiome[er] && tileBiome[er][ec];
+      const isVeg = ent.kind === 'tree' || ent.subtype === 'weed';
+      const blocked = !!grid[er][ec] || b === 'water' || isRiver(ec, er) ||
+        (isVeg && (b === 'road' || b === 'concrete_road' || b === 'canal_road'));
+      if (!blocked) continue;
+      entities.splice(i, 1);
+      cleaned++;
+    }
+    if (cleaned) console.debug('[mapa] vegetación/recursos retirados de calzada, agua o edificios: ' + cleaned);
+  } catch (e) {}
   try { rebuildInteriorDoorsFromGrid(); } catch (e) {}
   // Kick off an async chunked rebuild of BOTH terrain caches (ortho + iso).
   // This never blocks the main thread; the render loop falls back to per-tile
@@ -6048,9 +7720,9 @@ function generateMap(mapType) {
 
 // Draw a single building on the canvas
 function drawBuilding(col, row, type, alpha) {
-  const b = BUILDINGS[type];
+  const b = getBuildingDef(type);
   if (!b) return;
-  const { x, y } = worldToScreen(col, row);
+  let { x, y } = worldToScreen(col, row);
   const baseT = getTileSize();
   const editorScale = getStandaloneEditorBuildingScale();
   const DT = baseT * BUILDING_SCALE * editorScale; // draw tile size (scaled up)
@@ -6066,11 +7738,32 @@ function drawBuilding(col, row, type, alpha) {
 
   // Per-building visual scale tweaks (render-only; does not change footprint/collision)
   let visualScale = 1;
-  if (type === 'soviet_block') visualScale = (viewMode === 'iso') ? 5.0 : 4.5;
+  // Infraestructura que debe encajar celda a celda (sin solaparse con la vecina).
+  const SEAMLESS_BUILDINGS = new Set([
+    'road', 'concrete_road', 'wall_segment', 'wall_tower',
+    'mesopotamian_arch', 'mesopotamian_gate_v', 'farm_plot',
+    'steel_foundry', 'soviet_streetlight'
+  ]);
+  if (!SEAMLESS_BUILDINGS.has(type)) visualScale = BUILDING_VISUAL_SCALE;
+  // Un bloque soviético es más alto que su huella, pero 4,5× lo dibujaba de
+  // 13,5 celdas de ancho: se comía las manzanas vecinas enteras.
+  if (type === 'soviet_block') visualScale = 1.5;
   if (visualScale !== 1) {
     W *= visualScale;
     H *= visualScale;
   }
+
+  // ── MODO DEBUG: ajustes por tipo de edificio (escala / desplazamiento) ──
+  try {
+    if (window._mesoDbgBuilding) {
+      const badj = window._mesoDbgBuilding[type];
+      if (badj) {
+        if (Number.isFinite(badj.scale) && badj.scale !== 1) { W *= badj.scale; H *= badj.scale; }
+        if (Number.isFinite(badj.offsetX) && badj.offsetX) x += badj.offsetX * W;
+        if (Number.isFinite(badj.offsetY) && badj.offsetY) y += badj.offsetY * H;
+      }
+    }
+  } catch (e) {}
 
   const pad = Math.max(1, Math.round(Math.min(W, H) * 0.05));
 
@@ -6084,7 +7777,43 @@ function drawBuilding(col, row, type, alpha) {
   houseTypes.add('house_isolated');
   const spriteKey = resolveBuildingSpriteKey(type);
 
-  if (houseTypes.has(type)) {
+  // ── COMPLEJO METALÚRGICO (retícula de módulos) ───────────────────────────
+  // Tenía una huella de 11×11 y un sprite heredado de 16×16 px: al escalarlo,
+  // cada píxel de arte se volvía un bloque de 16 px y el edificio parecía un
+  // mosaico con huecos. Ahora se dibuja como una RETÍCULA de módulos
+  // industriales de 2×2 celdas (densidad 4, la misma que el resto del arte).
+  if (type === 'steel_foundry' && hasRegisteredSprite('foundry_module')) {
+    const modW = Math.max(1, Math.floor(size.w / 2));
+    const modH = Math.max(1, Math.floor(size.h / 2));
+    try {
+      for (let ry = 0; ry < modH; ry++) {
+        for (let rx = 0; rx < modW; rx++) {
+          const bx = x + rx * DT * 2;
+          const by = y + ry * DT * 2;
+          drawEntitySpriteAt('foundry_module', bx + DT, by + DT * 2, DT * 2, DT * 2, { ignoreEntityScale: true });
+        }
+      }
+      // Sombra de contacto del recinto y banda de terreno al pie.
+      ctx.save();
+      ctx.fillStyle = 'rgba(0,0,0,0.22)';
+      ctx.beginPath();
+      ctx.ellipse(Math.round(x + W / 2), Math.round(y + H * 0.98), Math.max(6, Math.round(W * 0.48)), Math.max(3, Math.round(H * 0.06)), 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(168,148,104,0.85)';
+      ctx.fillRect(Math.round(x), Math.round(y + H - DT * 0.22), Math.round(W), Math.round(DT * 0.22));
+      ctx.restore();
+    } catch (e) {}
+    ctx.restore();
+    return;
+  }
+
+  // Cualquier edificio con sprite registrado se dibuja con su sprite. Antes
+  // esta rama estaba limitada a las casas, así que todo lo demás caía al
+  // dibujo procedural… y lo que no tenía rama (fábrica, clínica, almacén,
+  // casa del Soviet, granja colectiva, puerta de control, complejo
+  // metalúrgico, alfarería, pozo…) se dibujaba como NADA: sólo su sombra.
+  // Los caminos quedan fuera: son suelo y se pintan con textura (drawPathCell).
+  if (!PATH_BUILDING_TYPES.has(type) && (spriteKey || houseTypes.has(type))) {
     // Prefer shaded variants when available
     const shadedAlias = type === 'mesopotamian_house' ? 'mesopotamian_house_shaded' : type;
     let useKey = hasRegisteredSprite(shadedAlias) ? shadedAlias : spriteKey;
@@ -6206,6 +7935,14 @@ function drawBuilding(col, row, type, alpha) {
   if (type === 'wall_segment') {
     // Read stored orientation: 'h' = horizontal (N/S row), 'v' = vertical (E/W column)
     const _wallOrient = (grid[row] && grid[row][col] && grid[row][col].orient) ? grid[row][col].orient : 'h';
+    // Sprite de verdad si existe (arte dibujado a mano); si no, dibujo
+    // procedural de respaldo, que se ve borroso por usar fracciones de celda.
+    const _wallKey = _wallOrient === 'v' ? 'wall_segment_v' : 'wall_segment_h';
+    if (hasRegisteredSprite(_wallKey)) {
+      drawEntitySpriteAt(_wallKey, x + W * 0.5, y + H, W, H, { ignoreEntityScale: true });
+      ctx.restore();
+      return;
+    }
     const wc1 = '#C8B870', wc2 = '#A89850', wcd = '#7A6830';
 
     if (_wallOrient === 'v') {
@@ -6259,6 +7996,11 @@ function drawBuilding(col, row, type, alpha) {
 
   // ── WALL TOWER ────────────────────────────────────────────────
   if (type === 'wall_tower') {
+    if (hasRegisteredSprite('wall_tower')) {
+      drawEntitySpriteAt('wall_tower', x + W * 0.5, y + H, W, H, { ignoreEntityScale: true });
+      ctx.restore();
+      return;
+    }
     const tc1 = '#B8A860', tc2 = '#9A8A48', tcd = '#6A5A28';
     // Tower body — taller than wall, slight inset
     ctx.fillStyle = tc1;
@@ -6282,7 +8024,7 @@ function drawBuilding(col, row, type, alpha) {
     return;
   }
 
-  if (spriteKey && type !== 'road') {
+  if (spriteKey && !PATH_BUILDING_TYPES.has(type)) {
     if (viewMode === 'iso' && zoom < 0.6) {
       try { ctx.save(); ctx.fillStyle = b.color || '#C8A84B'; ctx.fillRect(Math.round(x - W * 0.5), Math.round(y + (getIsoTileSize().h * 0.2)), Math.round(W), Math.round(H * 0.6)); ctx.restore(); } catch(e) {}
     } else {
@@ -6292,9 +8034,21 @@ function drawBuilding(col, row, type, alpha) {
     return;
   }
 
-  // Shadow
-  ctx.fillStyle = 'rgba(0,0,0,0.25)';
-  ctx.fillRect(x + pad, y + H * 0.62, W - pad * 2, H * 0.34);
+  // Sombra de contacto (elipse). Antes era un rectángulo oscuro pegado abajo
+  // que quedaba a la vista en cuanto el edificio no cubría toda su huella,
+  // y era lo único que se veía de los edificios sin sprite.
+  ctx.save();
+  try {
+    ctx.fillStyle = 'rgba(0,0,0,0.22)';
+    ctx.beginPath();
+    ctx.ellipse(Math.round(x + W / 2), Math.round(y + H * 0.94),
+      Math.max(3, Math.round(W * 0.42)), Math.max(2, Math.round(H * 0.10)), 0, 0, Math.PI * 2);
+    ctx.fill();
+  } catch (e) {
+    ctx.fillStyle = 'rgba(0,0,0,0.20)';
+    ctx.fillRect(x + pad, y + H * 0.82, W - pad * 2, H * 0.13);
+  }
+  ctx.restore();
 
   if (type === 'house') {
     // Roof with slight eave
@@ -6499,12 +8253,14 @@ function drawBuilding(col, row, type, alpha) {
     // small stone pattern
     ctx.fillStyle = 'rgba(0,0,0,0.06)';
     for (let ry = 0; ry < 3; ry++) for (let rx = 0; rx < 4; rx++) ctx.fillRect(x + pad + rx * (DT * 0.22), y + DT * 0.34 + ry * (DT * 0.18), DT * 0.18, DT * 0.14);
-  } else if (type === 'road') {
-    // simple road tile: draw textured path
-    ctx.fillStyle = '#6E5B46';
-    ctx.fillRect(x, y + DT*0.6, DT, DT*0.36);
-    ctx.fillStyle = '#9C8B6B';
-    for (let i=0;i<3;i++) ctx.fillRect(x + (i+1)*(DT/4) - 1, y + DT*0.66, 2, DT*0.2);
+  } else if (PATH_BUILDING_TYPES.has(type)) {
+    // ── CAMINO ────────────────────────────────────────────────
+    // Textura de empedrado a la resolución real de la celda + bordillos de
+    // autotiling. Antes eran tres tablones planos sobre un rectángulo marrón.
+    drawPathCell(col, row, x, y, DT, DT, {
+      kind: type === 'concrete_road' ? 'concrete' : pathKindAt(col, row),
+      iso: false
+    });
   }
 
   ctx.restore();
@@ -6652,6 +8408,19 @@ function drawWorldMapOverlay(W, H) {
       }
     }
 
+    // Niebla de guerra: en el mapa cenital lo no explorado también va negro (con
+    // el mismo lienzo de 1 px por celda que usa el juego, escalado aquí).
+    try {
+      if (window._fogEnabled) {
+        if (!_fogCanvas || _fogDirty) buildFogCanvas();
+        if (_fogCanvas) {
+          ctx.imageSmoothingEnabled = false;
+          ctx.drawImage(_fogCanvas, 0, 0, COLS, ROWS, mapX, mapY, Math.ceil(mapW), Math.ceil(mapH));
+          ctx.imageSmoothingEnabled = false;
+        }
+      }
+    } catch (e) {}
+
     try {
       const samples = [[0, 0], [W, 0], [W, H], [0, H], [W * 0.5, 0], [W * 0.5, H], [0, H * 0.5], [W, H * 0.5]]
         .map(([sx, sy]) => screenToWorldFloat(sx, sy))
@@ -6723,7 +8492,7 @@ function drawPlayer() {
     const px = Math.floor(x - spriteW / 2);
     // position sprite so feet sit on bottom vertex of the diamond
     const pCol = Math.floor(player.x), pRow = Math.floor(player.y);
-    const inWater = movementMultiplier(pCol, pRow) < 1;
+    const inWater = isWaterCell(pCol, pRow);
     const headRows = getHumanoidHeadRows();
     const headH = headRows * scale;
     const _jDur = 380, _jNow = Date.now();
@@ -6799,7 +8568,7 @@ function drawPlayer() {
     const spriteH = spriteGrid * scale;
     const px = Math.floor(x + tileSize * 0.5 - spriteW / 2);
     const pCol = Math.floor(player.x), pRow = Math.floor(player.y);
-    const inWater = movementMultiplier(pCol, pRow) < 1;
+    const inWater = isWaterCell(pCol, pRow);
     const headRows = getHumanoidHeadRows();
     const headH = headRows * scale;
     const _jDur2 = 380, _jNow2 = Date.now();
@@ -6809,6 +8578,9 @@ function drawPlayer() {
     const walkFrame = player._walkFrame || 0;
     const dir = player.dir || 'down';
     const downed = isPlayerDowned(now);
+    // Estado de animación (paso, respiración, inclinación, golpe)
+    player._swimming = inWater;
+    const _animPlayer = characterAnimState(player, now);
     if (downed) {
       const cx = px + spriteW * 0.5;
       const cy = py + spriteH * 0.78;
@@ -6824,7 +8596,7 @@ function drawPlayer() {
       drawCharacterPixels(ctx, player.palette, Math.floor(-spriteW * 0.5), Math.floor(-spriteH * 0.65), scale, { dir: 'right', frame: 0, outfit: player.outfit || 'tunic' });
       ctx.restore();
     } else {
-      drawCharacterPixels(ctx, player.palette, px, py, scale, { dir, frame: walkFrame, headOnly: inWater, outfit: player.outfit || 'tunic' });
+      drawCharacterPixels(ctx, player.palette, px, py, scale, { dir, frame: walkFrame, headOnly: inWater, outfit: player.outfit || 'tunic', anim: _animPlayer });
     }
     // draw equipped item on player (orthographic)
     try {
@@ -6914,6 +8686,56 @@ function shouldShowEntityHealthBar(entity, nowTs) {
 }
 
 // ── MAIN RENDER ─────────────────────────────────────────────--
+// Agua animada de una celda ya visible. La base del terreno (bioma, camino,
+// puente, detalle) la pone la caché; aquí sólo van los trazos que se mueven,
+// que son 3 por celda de agua en pantalla. Antes se redibujaba el mundo entero
+// (decenas de miles de fillRect) para poder animar el agua.
+function drawWaterAnimCell(c, r, now, cameraBusy) {
+  try {
+    if (cameraBusy) return;
+    const isUrss = (window._currentEpoch || 'mesopotamia') === 'urss';
+    const { x, y } = worldToScreen(c, r);
+    const flowPhase = now * 0.0012 + c * 0.15 + r * 0.1;
+    ctx.strokeStyle = isUrss ? 'rgba(200,220,240,0.10)' : 'rgba(255,255,255,0.10)';
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.14;
+    if (viewMode === 'iso') {
+      const { w, h } = getIsoTileSize();
+      for (let i = 0; i < 3; i++) {
+        const ry = y + h * (0.25 + i * 0.25) + Math.sin(flowPhase + i * 1.8) * 3;
+        const waveOffset = Math.sin(flowPhase * 0.7 + i) * w * 0.08;
+        const halfW = w * 0.35 + Math.abs(waveOffset) * 0.3;
+        ctx.beginPath();
+        ctx.moveTo(x - halfW + waveOffset, ry);
+        ctx.lineTo(x + halfW + waveOffset, ry);
+        ctx.stroke();
+      }
+      if ((c + r + Math.floor(now * 0.01)) % 12 === 0) {
+        ctx.strokeStyle = isUrss ? 'rgba(180,210,240,0.07)' : 'rgba(255,255,255,0.07)';
+        ctx.lineWidth = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(x,          y + h * 0.25);
+        ctx.lineTo(x + w * 0.25, y + h * 0.5);
+        ctx.lineTo(x,          y + h * 0.75);
+        ctx.lineTo(x - w * 0.25, y + h * 0.5);
+        ctx.closePath();
+        ctx.stroke();
+      }
+    } else {
+      const ts = getTileSize();
+      for (let i = 0; i < 3; i++) {
+        const ry = y + 4 + i * (ts / 3) + Math.sin(flowPhase + i * 1.8) * 2;
+        const waveOffset = Math.sin(flowPhase * 0.7 + i) * ts * 0.08;
+        ctx.beginPath();
+        ctx.moveTo(x + 2 + waveOffset, ry);
+        ctx.lineTo(x + ts - 2 + waveOffset, ry);
+        ctx.stroke();
+      }
+    }
+    ctx.globalAlpha = 1;
+  } catch (e) {}
+}
+
 function render() {
   const W = canvas.width, H = canvas.height;
   const now = Date.now();
@@ -7102,7 +8924,8 @@ function render() {
       if (moved) {
         try { if (Math.abs(nx) > Math.abs(ny)) player.dir = nx > 0 ? 'right' : 'left'; else player.dir = ny > 0 ? 'down' : 'up'; } catch (e) {}
         player._walkTime = (player._walkTime || 0) + gdt;
-        player._walkFrame = Math.floor(player._walkTime * 3) % 2;
+        player._walkFrame = Math.floor(player._walkTime * 3) % 4;
+        player._movingNow = true;
       } else {
         // collision on path; cancel path and fallback
         movePath = null; moveTarget = null;
@@ -7130,7 +8953,8 @@ function render() {
         if (moved) {
           try { if (Math.abs(nx) > Math.abs(ny)) player.dir = nx > 0 ? 'right' : 'left'; else player.dir = ny > 0 ? 'down' : 'up'; } catch (e) {}
           player._walkTime = (player._walkTime || 0) + gdt;
-          player._walkFrame = Math.floor(player._walkTime * 3) % 2;
+          player._walkFrame = Math.floor(player._walkTime * 3) % 4;
+          player._movingNow = true;
         } else {
           moveTarget = null;
         }
@@ -7178,10 +9002,23 @@ function render() {
               else player.dir = screenMvy > 0 ? 'down' : 'up';
             } catch (e) {}
             player._walkTime = (player._walkTime || 0) + gdt;
-            player._walkFrame = Math.floor(player._walkTime * 3) % 2;
+            player._walkFrame = Math.floor(player._walkTime * 3) % 4;
+            player._movingNow = true;
           }
         }
     }
+    // Polvo de pisadas: una nube pequeña cada ~0,24 s de avance (más a menudo al esprintar)
+    try {
+      if (player._walkTime !== _fxLastWalkTime) {
+        _fxLastWalkTime = player._walkTime;
+        const gap = player._isSprinting ? 0.15 : 0.24;
+        if (!_fxStepAt || player._walkTime - _fxStepAt > gap) {
+          _fxStepAt = player._walkTime;
+          _fxFootFlip = !_fxFootFlip;
+          fx.onFootstep(player.x, player.y, { offsetX: _fxFootFlip ? -0.17 : 0.17, sprint: !!player._isSprinting });
+        }
+      }
+    } catch (e) {}
   } else if (editMode) {
     // snap float position to grid when in edit mode
     player.x = player.col; player.y = player.row;
@@ -7191,6 +9028,18 @@ function render() {
   try {
     if (now - lastSavePosTime > 3000) { savePlayerPos(false); lastSavePosTime = now; }
   } catch (err) { /* ignore */ }
+
+  // Misiones de «ve a tal sitio» (encargos de los NPCs del yermo)
+  try {
+    if (!_reachMissionAt || now - _reachMissionAt > 400) {
+      _reachMissionAt = now;
+      updateReachMissions();
+    }
+  } catch (e) {}
+  // Objetivos libres del prólogo (se completan solos al cumplir su condición)
+  try { updateFreeObjectives(now); } catch (e) {}
+  // Niebla de guerra: marcar lo explorado alrededor del jugador
+  try { if (window._fogEnabled && (!_fogTickAt || now - _fogTickAt > 500)) { _fogTickAt = now; markExploredNow(10); } } catch (e) {}
 
   // Survival tick: decay hunger/thirst and apply penalties
   try {
@@ -7429,36 +9278,16 @@ function render() {
         if (pct >= 1) { const cb = fo.onDone; window._interiorFadeOut = null; try { cb(); } catch(e) {} }
       }
 
-      // ── Pseudo-3D room projection ──
-      // Room is centered on canvas with perspective effect
-      const floorTileH = Math.max(18, Math.floor(Math.min(W, H) / (iRows + 2.5)));
-      const floorTileW = Math.max(18, Math.floor(Math.min(W, H) / (iCols + 2)));
-      const backWallH = Math.floor(floorTileH * 1.25);
-      const sideWallH = Math.floor(floorTileH * 0.7);
-      // Perspective: back of room is narrower than front
-      const perspFactor = 0.82; // 1.0 = no perspective, <1 = back narrower
-      const roomFrontW = iCols * floorTileW;
-      const roomBackW = roomFrontW * perspFactor;
-      const roomFloorH = iRows * floorTileH;
-      // Center room on screen, with back wall at top giving space for wall height
-      const roomLeft = Math.floor((W - roomFrontW) / 2);
-      const roomTop = Math.floor((H - roomFloorH - backWallH) / 2) + backWallH;
-      const roomRight = roomLeft + roomFrontW;
-      const roomBottom = roomTop + roomFloorH;
-      // Back wall corners (narrower)
-      const backLeft = Math.floor((W - roomBackW) / 2);
-      const backRight = backLeft + roomBackW;
-
-      // Helper: project tile (col, row) to screen position with perspective
-      const tileToScreen = (col, row) => {
-        const rowFrac = iRows > 1 ? row / (iRows - 1) : 0;
-        const frontX = roomLeft + (col / Math.max(1, iCols - 1)) * roomFrontW;
-        const backX = backLeft + (col / Math.max(1, iCols - 1)) * roomBackW;
-        const x = backX + (frontX - backX) * rowFrac;
-        const y = roomTop + row * floorTileH;
-        const tw = (roomBackW + (roomFrontW - roomBackW) * rowFrac) / iCols;
-        return { x: Math.round(x), y: Math.round(y), w: Math.round(tw), h: floorTileH };
-      };
+      // ── Planta en rejilla (vista de arriba) ──
+      // Antes había una proyección en falso 3D: los muebles se pintaban en
+      // sitios que no eran los de su celda, así que lo que se veía y lo que
+      // chocaba no coincidían (de ahí las "hitboxes rotas"). Ahora la sala usa
+      // la MISMA tubería que el exterior: celdas de getTileSize() y worldToScreen,
+      // que es lo que usan el jugador, los NPCs y las entidades.
+      const ts = getTileSize();
+      camX = Math.round((W - iCols * ts) / 2);
+      camY = Math.round((H - iRows * ts) / 2);
+      const tileToScreen = (col, row) => ({ x: Math.round(camX + col * ts), y: Math.round(camY + row * ts), w: ts, h: ts });
 
       const wp = interior.wallPalette || {
         back: '#7A4D38', backBrick: '#6B4030', backBrick2: '#8A5A41',
@@ -7466,7 +9295,7 @@ function render() {
         right: '#8A5A41', rightBrick: '#7A5535'
       };
 
-      // Helper: draw pixel sprite directly with fillRect (no drawImage)
+      // Helper: sprite de pixel-art directo con fillRect (sin drawImage)
       const drawInteriorPixelSprite = (name, sx, sy, sw, sh) => {
         const def = window.ENTITY_PIXEL_LIBRARY && window.ENTITY_PIXEL_LIBRARY[name];
         if (!def || !def.pixels) return false;
@@ -7480,104 +9309,72 @@ function render() {
         } catch (e) { return false; }
       };
 
-      // ── Draw back wall ──
-      const backWallTop = roomTop - backWallH;
-      // Wall face
-      ctx.fillStyle = wp.back;
-      ctx.fillRect(backLeft, backWallTop, roomBackW, backWallH);
-      // Brick lines
-      ctx.fillStyle = wp.backBrick;
-      for (let br = 0; br < Math.floor(backWallH / (floorTileH * 0.4)); br++) {
-        const by = backWallTop + br * floorTileH * 0.4;
-        ctx.fillRect(backLeft, Math.floor(by), roomBackW, Math.max(1, Math.floor(floorTileH * 0.15)));
-      }
-      // Top shadow
-      ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(backLeft, backWallTop, roomBackW, 2);
-      // Baseboard
-      ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(backLeft, roomTop - 3, roomBackW, 3);
+      const wallTop  = wp.backLight || wp.right || '#AB8B6A';
+      const wallFace = wp.back || '#9B7B5A';
+      const wallDark = wp.backDark || '#8B6B4A';
+      const floorA   = wp.floor || '#C8A87A';
+      const floorB   = wp.floorDark || '#BFA070';
+      const isWallish = (t) => t === 'wall' || t === 'painting' || t === 'window' || t === 'torch';
 
-      // ── Wall decorations on back wall ──
-      for (let c = 0; c < iCols; c++) {
-        const t = (interior.tiles && interior.tiles[0] && interior.tiles[0][c]) || 'wall';
-        if (t === 'painting' || t === 'window' || t === 'torch' ||
-            (t === 'wall' && c === Math.floor(iCols / 2))) {
-          const colW = roomBackW / iCols;
-          const cx = backLeft + c * colW;
-          const cy = backWallTop + backWallH * 0.25;
-          const cw = colW * 0.65;
-          const ch = backWallH * 0.45;
-
-          if (t === 'painting' || (t === 'wall' && c === Math.floor(iCols / 2))) {
-            const pk = (t === 'painting' && c % 2 === 0) ? 'interior_painting_1' : 'interior_painting_2';
-            const useKey = (t === 'painting') ? pk : (hasRegisteredSprite('ma_g') ? 'ma_g' : 'ussr_flag');
-            // Frame
-            ctx.fillStyle = '#3A2512';
-            ctx.fillRect(Math.floor(cx + colW * 0.17), Math.floor(cy), Math.floor(cw), Math.floor(ch));
-            ctx.fillStyle = '#D8B16B';
-            ctx.fillRect(Math.floor(cx + colW * 0.17) + 1, Math.floor(cy) + 1, Math.floor(cw) - 2, Math.floor(ch) - 2);
-            if (!drawInteriorPixelSprite(useKey, Math.floor(cx + colW * 0.17) + 2, Math.floor(cy) + 2, Math.floor(cw) - 4, Math.floor(ch) - 4)) {
-              ctx.fillStyle = '#6E2A1F';
-              ctx.fillRect(Math.floor(cx + colW * 0.17) + 2, Math.floor(cy) + 2, Math.floor(cw) - 4, Math.floor(ch) - 4);
-            }
-          } else if (t === 'window') {
-            drawInteriorPixelSprite('interior_window', Math.floor(cx + colW * 0.2), Math.floor(cy), Math.floor(cw), Math.floor(ch));
-          } else if (t === 'torch') {
-            const tw = colW * 0.35, th = backWallH * 0.4;
-            drawInteriorPixelSprite('interior_torch', Math.floor(cx + colW * 0.32), Math.floor(backWallTop + backWallH * 0.05), Math.floor(tw), Math.floor(th));
-            const fl = 0.4 + 0.6 * Math.sin(nowInt * 0.008 + c * 2.3);
-            ctx.fillStyle = `rgba(255,160,20,${0.22 * fl})`;
-            ctx.beginPath(); ctx.arc(cx + colW * 0.5, backWallTop + backWallH * 0.22, colW * 0.22, 0, Math.PI * 2); ctx.fill();
-          }
+      // Suelo de toda la sala (los muros se pintan encima)
+      for (let r = 0; r < iRows; r++) {
+        for (let c = 0; c < iCols; c++) {
+          const p = tileToScreen(c, r);
+          ctx.fillStyle = ((r + c) % 2 === 0) ? floorA : floorB;
+          ctx.fillRect(p.x, p.y, p.w, p.h);
         }
       }
 
-      // ── Draw left wall ──
-      ctx.fillStyle = wp.left;
-      ctx.beginPath();
-      ctx.moveTo(backLeft, roomTop);
-      ctx.lineTo(backLeft, backWallTop);
-      ctx.lineTo(roomLeft, roomTop - sideWallH);
-      ctx.lineTo(roomLeft, roomTop);
-      ctx.closePath(); ctx.fill();
-      // Brick lines
-      ctx.fillStyle = wp.leftBrick;
-      for (let i = 0; i < 3; i++) {
-        const t = i / 3;
-        const bx1 = backLeft + (roomLeft - backLeft) * t;
-        const by1 = backWallTop + (roomTop - sideWallH - backWallTop) * t;
-        const bx2 = backLeft + (roomLeft - backLeft) * (t + 0.15);
-        const by2 = roomTop;
-        ctx.fillRect(Math.floor(bx1), Math.floor(by1 + (by2 - by1) * 0.3), Math.max(1, Math.floor((bx2 - bx1) * 0.8)), 1);
+      // Muros: bloque con cara superior iluminada, cara frontal y base oscura
+      const tb = Math.max(3, Math.round(ts * 0.14));
+      for (let r = 0; r < iRows; r++) {
+        for (let c = 0; c < iCols; c++) {
+          const t = ((interior.tiles && interior.tiles[r] && interior.tiles[r][c]) || 'floor');
+          const p = tileToScreen(c, r);
+          if (isWallish(t)) {
+            ctx.fillStyle = wallFace; ctx.fillRect(p.x, p.y, p.w, p.h);
+            ctx.fillStyle = wallTop;  ctx.fillRect(p.x, p.y, p.w, tb);
+            ctx.fillStyle = wallDark; ctx.fillRect(p.x, p.y + p.h - tb, p.w, tb);
+            // Hiladas de ladrillo
+            ctx.fillStyle = 'rgba(0,0,0,0.16)';
+            for (let y = p.y + tb * 2; y < p.y + p.h - tb; y += tb * 2) {
+              ctx.fillRect(p.x, Math.round(y), p.w, 1);
+              ctx.fillRect(Math.round(p.x + ((Math.round(y / tb) % 2) ? p.w * 0.5 : p.w * 0.25)), Math.round(y - tb), 1, tb);
+            }
+            // Decoración montada en el muro
+            if (t === 'painting') {
+              ctx.fillStyle = '#3A2512'; ctx.fillRect(Math.round(p.x + p.w * 0.18), Math.round(p.y + tb * 1.5), Math.round(p.w * 0.64), Math.round(p.h * 0.5));
+              ctx.fillStyle = '#D8B16B'; ctx.fillRect(Math.round(p.x + p.w * 0.18) + 1, Math.round(p.y + tb * 1.5) + 1, Math.round(p.w * 0.64) - 2, Math.round(p.h * 0.5) - 2);
+              ctx.fillStyle = '#6E2A1F'; ctx.fillRect(Math.round(p.x + p.w * 0.24), Math.round(p.y + tb * 2), Math.round(p.w * 0.52), Math.round(p.h * 0.32));
+            } else if (t === 'window') {
+              const ok = drawInteriorPixelSprite('interior_window', p.x + p.w * 0.16, p.y + tb * 1.2, p.w * 0.68, p.h * 0.6);
+              if (!ok) { ctx.fillStyle = '#2E4A6A'; ctx.fillRect(Math.round(p.x + p.w * 0.16), Math.round(p.y + tb * 1.2), Math.round(p.w * 0.68), Math.round(p.h * 0.6)); }
+            } else if (t === 'torch') {
+              const ok = drawInteriorPixelSprite('interior_torch', p.x + p.w * 0.34, p.y + tb, p.w * 0.32, p.h * 0.7);
+              if (!ok) { ctx.fillStyle = '#6B4E10'; ctx.fillRect(Math.round(p.x + p.w * 0.45), Math.round(p.y + tb), Math.max(2, Math.round(p.w * 0.1)), Math.round(p.h * 0.6)); }
+              const fl = 0.4 + 0.6 * Math.sin(nowInt * 0.008 + c * 2.3);
+              ctx.fillStyle = `rgba(255,160,20,${0.20 * fl})`;
+              ctx.beginPath(); ctx.arc(p.x + p.w * 0.5, p.y + p.h * 0.35, p.w * 0.55, 0, Math.PI * 2); ctx.fill();
+            }
+          } else if (t === 'door') {
+            // Vano: marco oscuro con la hoja abierta y el umbral al exterior
+            ctx.fillStyle = '#3A2512'; ctx.fillRect(p.x, p.y, p.w, p.h);
+            ctx.fillStyle = '#C8A87A'; ctx.fillRect(Math.round(p.x + p.w * 0.12), Math.round(p.y + p.h * 0.16), Math.round(p.w * 0.76), Math.round(p.h * 0.84));
+            ctx.fillStyle = '#8B6914'; ctx.fillRect(Math.round(p.x + p.w * 0.84), Math.round(p.y + p.h * 0.55), Math.max(2, Math.round(p.w * 0.06)), Math.max(2, Math.round(p.w * 0.06)));
+          }
+        }
       }
-      // Shadow on wall base
-      ctx.fillStyle = 'rgba(0,0,0,0.25)';
-      ctx.fillRect(roomLeft, roomTop, Math.floor((backLeft - roomLeft) * 0.3), roomFloorH);
-
-      // ── Draw right wall ──
-      ctx.fillStyle = wp.right;
-      ctx.beginPath();
-      ctx.moveTo(backRight, roomTop);
-      ctx.lineTo(backRight, backWallTop);
-      ctx.lineTo(roomRight, roomTop - sideWallH);
-      ctx.lineTo(roomRight, roomTop);
-      ctx.closePath(); ctx.fill();
-      // Shadow
-      ctx.fillStyle = 'rgba(0,0,0,0.25)';
-      ctx.fillRect(roomRight - Math.floor((roomRight - backRight) * 0.3), roomTop, Math.floor((roomRight - backRight) * 0.3), roomFloorH);
-
-      // ── Draw floor tiles and furniture (back to front for correct occlusion) ──
       for (let r = 0; r < iRows; r++) {
         for (let c = 0; c < iCols; c++) {
           const pos = tileToScreen(c, r);
           const t = (interior.tiles && interior.tiles[r] && interior.tiles[r][c]) || 'floor';
           const isWallTile = t === 'wall' || t === 'painting' || t === 'window' || t === 'torch';
 
-          // Floor base (skip wall tiles on row 0, they're the back wall)
-          if (r === 0 && isWallTile) continue;
-          if (c === 0 && r > 0 && t === 'wall') continue;
-          if (c === iCols - 1 && r > 0 && t === 'wall') continue;
+          // Los muros ya se han pintado como bloques: aquí sólo queda el suelo,
+          // la alfombra, el vano y los muebles.
+          if (isWallTile) continue;
 
-          // Floor color
+          // Color del suelo
           ctx.fillStyle = (r + c) % 2 === 0 ? '#C8A87A' : '#BFA070';
           ctx.fillRect(pos.x, pos.y, pos.w, pos.h);
 
@@ -7623,8 +9420,11 @@ function render() {
         // Exit prompt
         const ec = interior.entryCol || 1;
         const er = (interior.height || iRows) - 2;
-        const hasDoor = !!(interior.tiles && interior.tiles[er] && interior.tiles[er][ec] === 'door');
-        const nearDoor = hasDoor && Math.abs(Math.floor(player.x) - ec) <= 1 && Math.abs(Math.floor(player.y) - er) <= 1;
+        // El vano puede estar en la penúltima fila o pegado al muro del fondo
+        const doorRowA = er, doorRowB = (interior.height || iRows) - 1;
+        const hasDoor = !!((interior.tiles && interior.tiles[doorRowA] && interior.tiles[doorRowA][ec] === 'door') ||
+                           (interior.tiles && interior.tiles[doorRowB] && interior.tiles[doorRowB][ec] === 'door'));
+        const nearDoor = hasDoor && Math.abs(Math.floor(player.x) - ec) <= 1 && Math.abs(Math.floor(player.y) - er) <= 2;
         if (nearDoor) {
           const ppos = tileToScreen(player.x, player.y - 0.6);
           ctx.save();
@@ -7716,53 +9516,45 @@ function render() {
     } catch (err) { /* ignore debug drawing errors */ }
   }
 
+  // ── TERRENO ───────────────────────────────────────────────────────────
+  // El terreno es estático (bioma + caminos + puentes + detalle) y se pintó una
+  // vez en una caché al tamaño base: aquí se vuelca de un solo golpe con un
+  // drawImage escalado y encima sólo se anima el agua visible. Antes se dibujaba
+  // TODO el mapa celda a celda en cada fotograma (decenas de miles de fillRect).
+  const _mc = viewMode === 'iso' ? mapCacheIso : mapCacheOrtho;
+  const _terrainCached = !mapCacheDirty && !!_mc && _mc.width > 1 && _mc.height > 1;
+  if (_terrainCached) {
+    const scale = zoom; // la caché está siempre a cacheZoom = 1
+    const prevSmoothing = ctx.imageSmoothingEnabled;
+    ctx.imageSmoothingEnabled = false;   // pixel-art: sin suavizado (más nítido y rápido)
+    if (viewMode === 'iso' && _mc._isoOffset) {
+      const destX = Math.round(_mc._isoOffset.minX * scale + camX);
+      const destY = Math.round(_mc._isoOffset.minY * scale + camY);
+      ctx.drawImage(_mc, 0, 0, _mc.width, _mc.height, destX, destY, Math.round(_mc.width * scale), Math.round(_mc.height * scale));
+    } else if (viewMode !== 'iso') {
+      ctx.drawImage(_mc, 0, 0, _mc.width, _mc.height, Math.round(camX), Math.round(camY), Math.round(_mc.width * scale), Math.round(_mc.height * scale));
+    }
+    ctx.imageSmoothingEnabled = prevSmoothing;
+    try { window._terrainCachedFrames = (window._terrainCachedFrames || 0) + 1; } catch (e) {}
+  }
+
   for (let r = minR; r <= maxR; r++) {
     for (let c = minC; c <= maxC; c++) {
-      const { x, y } = worldToScreen(c, r);
-      // PERF: always use cached terrain map when available – avoids per-tile fillRect calls every frame.
-      // The cache is built at base TILE resolution and scaled by drawImage(zoom) cheaply on the GPU.
-      // Exception: in free mode at higher zoom, bypass cache so subdiv micro-detail renders live.
-      const _mc = viewMode === 'iso' ? mapCacheIso : mapCacheOrtho;
-      const _useCache = false; // Disabled: always render live for consistent water/animation
-      if (_useCache) {
-        const scale = zoom; // cache is always at cacheZoom=1
-        if (viewMode === 'iso' && _mc._isoOffset) {
-          // draw iso cache aligned with cam, scaled to current zoom
-          const destX = Math.round(_mc._isoOffset.minX * scale + camX);
-          const destY = Math.round(_mc._isoOffset.minY * scale + camY);
-          const destW = Math.round(_mc.width * scale);
-          const destH = Math.round(_mc.height * scale);
-          // always use high-quality smoothing when scaling the terrain cache
-          const prevSmoothing = ctx.imageSmoothingEnabled;
-          const prevQuality = ctx.imageSmoothingQuality;
-          ctx.imageSmoothingEnabled = true;
-          try { ctx.imageSmoothingQuality = 'high'; } catch(e){}
-          ctx.drawImage(_mc, 0, 0, _mc.width, _mc.height, destX, destY, destW, destH);
-          ctx.imageSmoothingEnabled = prevSmoothing;
-          try { ctx.imageSmoothingQuality = prevQuality; } catch(e){}
-          // skip the tile loop entirely
-          r = maxR; // break outer loop
-          break;
-        } else if (viewMode !== 'iso') {
-          // orthographic: draw cached map positioned at camX/camY, scaled to current zoom
-          const destW = Math.round(_mc.width * scale);
-          const destH = Math.round(_mc.height * scale);
-          const prevSmoothing = ctx.imageSmoothingEnabled;
-          const prevQuality = ctx.imageSmoothingQuality;
-          ctx.imageSmoothingEnabled = true;
-          try { ctx.imageSmoothingQuality = 'high'; } catch(e){}
-          ctx.drawImage(_mc, 0, 0, _mc.width, _mc.height, Math.round(camX), Math.round(camY), destW, destH);
-          ctx.imageSmoothingEnabled = prevSmoothing;
-          try { ctx.imageSmoothingQuality = prevQuality; } catch(e){}
-          r = maxR; break;
-        }
+      // Con la caché puesta, del terreno sólo queda animar el agua.
+      if (_terrainCached) {
+        if (tileBiome[r] && tileBiome[r][c] === 'water') drawWaterAnimCell(c, r, now, cameraBusy);
+        continue;
       }
+      const { x, y } = worldToScreen(c, r);
       if (viewMode === 'iso') {
         const isUrss = (window._currentEpoch || 'mesopotamia') === 'urss';
         const w = isoSize.w;
         const h = isoSize.h;
         if (x + w / 2 < 0 || x - w / 2 > W || y + h < 0 || y > H) continue;
-        if (tileBiome[r][c] === 'water' || (tileBiome[r][c] !== 'canal_road' && isRiver(c, r))) {
+        // Agua = bioma agua. El rango de columnas de respaldo de isRiver pintaba
+        // una banda ancha de agua sobre tierra: los árboles y los caminos de esa
+        // banda parecían estar dentro del río.
+        if (tileBiome[r][c] === 'water') {
           // Water rendering with depth gradient, animated ripples and flow
           const isDeep = tileBiome[r][c] === 'water'; // lake/sea vs river
           const flowTime = now * 0.001;
@@ -7819,12 +9611,14 @@ function render() {
         } else {
           const biome = tileBiome[r][c] || 'sand';
           if (biome === 'road') {
-            drawDiamond(x, y, w, h, isUrss ? '#8B8F95' : '#D7C59A', null, null);
-            // slight border for cobblestone separation
-            drawDiamond(x, y, w, h, null, isUrss ? 'rgba(200,205,215,0.22)' : 'rgba(160,130,70,0.30)', 0.7);
+            // Suelo de camino: textura de empedrado recortada al rombo.
+            drawPathCell(c, r, x, y, w, h, { kind: pathKindAt(c, r), iso: true });
           } else if (biome === 'concrete_road') {
-            drawDiamond(x, y, w, h, '#8B8F97', null, null);
-            drawDiamond(x, y, w, h, null, 'rgba(200,205,215,0.25)', 0.7);
+            drawPathCell(c, r, x, y, w, h, { kind: 'concrete', iso: true });
+          } else if (biome === 'canal_road') {
+            // Corredor logístico: tierra apisonada transitable, no calzada
+            // (pintarlo con textura de camino parecía una carretera en el río).
+            drawDiamond(x, y, w, h, getBiomeFillColor('canal_road'), null, null);
           } else if (biome === 'alluvial') {
             drawDiamond(x, y, w, h, getBiomeFillColor('alluvial'), null, null);
           } else if (biome === 'steppe') {
@@ -7852,22 +9646,15 @@ function render() {
               drawDiamond(x, y, w, h, sand, null, null);
             }
           }
-          // Small ground vegetation on fertile biomes — visible at all zoom levels >= 0.5
-          if (!lowDetail && zoom >= 0.5 && (biome === 'alluvial' || biome === 'riparian' || biome === 'grass' || biome === 'steppe')) {
-            const vegSeed = ((c * 17 + r * 31) % 13) / 13;
-            if (vegSeed > 0.48) {
-              const dotW = Math.max(1, Math.round(w * 0.08));
-              const dotH = Math.max(1, Math.round(h * 0.06));
-              const ddx = Math.round((((c * 11 + r * 7) % Math.max(1, w - 6)) / Math.max(1, w - 6)) * w * 0.6 + w * 0.2);
-              const ddy = Math.round((((c * 5 + r * 23) % Math.max(1, h - 6)) / Math.max(1, h - 6)) * h * 0.6 + h * 0.2);
-              ctx.fillStyle = vegSeed > 0.78 ? '#5AAA3A' : '#4A8A3A';
-              ctx.globalAlpha = 0.30 + vegSeed * 0.25;
-              ctx.fillRect(x + ddx - w * 0.5, y + ddy - h * 0.5, dotW, dotH * 2);
-              ctx.fillRect(x + ddx - w * 0.5 - dotW, y + ddy - h * 0.5 + dotH, dotW, dotH);
-              ctx.fillRect(x + ddx - w * 0.5 + dotW, y + ddy - h * 0.5 + dotH, dotW, dotH);
-              ctx.globalAlpha = 1;
+          // Detalle del terreno (dunas, guijarros, matas, flores, grietas…): una
+          // capa fina cacheada por bioma. Antes eran sólo tres rectángulos verdes
+          // en los biomas fértiles.
+          try {
+            if (!lowDetail || zoom < 0.45) {
+              const dSeed = ((c * 73856093) ^ (r * 19349663)) >>> 0;
+              textures.drawDetailTile(ctx, x, y, w, h, biome, dSeed, { iso: true });
             }
-          }
+          } catch (e) {}
           if (isNearRiver(c, r)) drawDiamond(x, y, w, h, isUrss ? 'rgba(220,232,245,0.10)' : 'rgba(74,124,63,0.15)', null, null);
         }
         
@@ -7875,7 +9662,8 @@ function render() {
         if (editMode) drawDiamond(x, y, w, h, null, 'rgba(0,0,0,0.1)', 0.5);
       } else {
         if (x + tileSize < 0 || x > W || y + tileSize < 0 || y > H) continue;
-        if (tileBiome[r][c] === 'water' || (tileBiome[r][c] !== 'canal_road' && isRiver(c, r))) {
+        // Mismo criterio que en isométrico: agua = bioma agua (ver comentario arriba).
+        if (tileBiome[r][c] === 'water') {
           const isUrss = (window._currentEpoch || 'mesopotamia') === 'urss';
           const flowTime = now * 0.001;
           // Base water color with gentle animation — stronger blue for visibility at distance
@@ -7922,20 +9710,16 @@ function render() {
                 const nx = x + sx * sw;
                 const ny = y + sy * sw;
                 const v = tileNoise(c, r, sx, sy);
-                if (biome === 'road') {
-                  // compressed-earth cobblestone path at high detail
-                  const stoneIdx = (sx + sy * 3 + c + r) % 5;
-                  if ((window._currentEpoch || 'mesopotamia') === 'urss') {
-                    const lum = 132 + stoneIdx * 6;
-                    ctx.fillStyle = `rgb(${lum},${lum + 4},${lum + 10})`;
-                  } else {
-                    const lum = 190 + stoneIdx * 5;
-                    ctx.fillStyle = `rgb(${lum},${lum - 28},${lum - 78})`;
-                  }
-                } else if (biome === 'concrete_road') {
-                  const stoneIdx = (sx + sy * 3 + c + r) % 5;
-                  const lum = 140 + stoneIdx * 5;
-                  ctx.fillStyle = `rgb(${lum},${lum + 3},${lum + 8})`;
+                if (biome === 'road' || biome === 'concrete_road') {
+                  // El firme ya no se pica en subcuadros planos: una sola textura
+                  // de empedrado por celda (se dibuja en el primer subcuadro).
+                  if (sx === 0 && sy === 0) drawPathCell(c, r, x, y, tileSize, tileSize, { kind: pathKindAt(c, r) });
+                  continue;
+                } else if (biome === 'canal_road') {
+                  // Corredor logístico: es tierra apisonada transitable, NO calzada
+                  // (pintarlo con textura de camino parecía una carretera en el río).
+                  if (sx === 0 && sy === 0) { ctx.fillStyle = getBiomeFillColor('canal_road'); ctx.fillRect(x, y, tileSize, tileSize); }
+                  continue;
                 } else if (biome === 'forest') {
                   // darker/lighter greens
                   if ((window._currentEpoch || 'mesopotamia') === 'urss') {
@@ -8014,34 +9798,13 @@ function render() {
               }
             }
           } else {
-            if (biome === 'road') {
-              // draw cobblestone-like road tile
-              const isUrss = (window._currentEpoch || 'mesopotamia') === 'urss';
-              ctx.fillStyle = isUrss ? '#8B8F95' : '#D7C59A'; ctx.fillRect(x, y, tileSize, tileSize);
-              ctx.fillStyle = isUrss ? '#A6ABB4' : '#C9B286';
-              const stoneW = Math.max(4, Math.floor(tileSize/4));
-              const stoneH = Math.max(4, Math.floor(tileSize/6));
-              for (let ry=0; ry<3; ry++) {
-                for (let rx=0; rx<3; rx++) {
-                  const sx = x + rx * (stoneW + 2) + (ry%2 ? 2 : 0);
-                  const sy = y + ry * (stoneH + 2) + 2;
-                  ctx.fillStyle = isUrss ? ((rx+ry)%2 ? '#7A7F89' : '#B3B9C3') : ((rx+ry)%2 ? '#C5A96A' : '#E0C99A');
-                  ctx.fillRect(sx, sy, stoneW, stoneH);
-                }
-              }
-            } else if (biome === 'concrete_road') {
-              ctx.fillStyle = '#8B8F97'; ctx.fillRect(x, y, tileSize, tileSize);
-              ctx.fillStyle = '#9BA1AB';
-              const cw = Math.max(4, Math.floor(tileSize/4));
-              const ch = Math.max(4, Math.floor(tileSize/6));
-              for (let ry=0; ry<3; ry++) {
-                for (let rx=0; rx<3; rx++) {
-                  const sx = x + rx * (cw + 2) + (ry%2 ? 2 : 0);
-                  const sy = y + ry * (ch + 2) + 2;
-                  ctx.fillStyle = (rx+ry)%2 ? '#7A7F89' : '#A0A6B0';
-                  ctx.fillRect(sx, sy, cw, ch);
-                }
-              }
+            if (biome === 'road' || biome === 'concrete_road') {
+              // Suelo de camino: empedrado + bordillos de autotiling.
+              drawPathCell(c, r, x, y, tileSize, tileSize, { kind: pathKindAt(c, r) });
+            } else if (biome === 'canal_road') {
+              // Corredor logístico: tierra apisonada, no calzada.
+              ctx.fillStyle = getBiomeFillColor('canal_road');
+              ctx.fillRect(x, y, tileSize, tileSize);
             } else if (biome === 'alluvial') {
               ctx.fillStyle = getBiomeFillColor('alluvial');
               ctx.fillRect(x, y, tileSize, tileSize);
@@ -8077,33 +9840,12 @@ function render() {
               }
               ctx.fillRect(x, y, tileSize, tileSize);
             }
-            // Small ground vegetation for visual variety — visible at all zoom levels >= 0.5
-            if (!lowDetail && zoom >= 0.5) {
-              const vegSeed = ((c * 17 + r * 31) % 13) / 13;
-              if (biome === 'alluvial' || biome === 'riparian' || biome === 'grass' || biome === 'steppe') {
-                if (vegSeed > 0.48) {
-                  const gx = x + 2 + ((c * 11 + r * 7) % Math.max(1, tileSize - 4));
-                  const gy = y + 2 + ((c * 5 + r * 23) % Math.max(1, tileSize - 4));
-                  ctx.fillStyle = vegSeed > 0.78 ? '#5AAA3A' : '#4A8A3A';
-                  ctx.globalAlpha = 0.30 + vegSeed * 0.25;
-                  // Draw small tuft
-                  ctx.fillRect(gx, gy, 2, 4);
-                  ctx.fillRect(gx - 1, gy + 1, 2, 2);
-                  ctx.fillRect(gx + 1, gy + 1, 2, 2);
-                  ctx.globalAlpha = 1;
-                }
-                // Extra weed-like tufts (taller)
-                if (vegSeed > 0.75) {
-                  const wx = x + 3 + ((c * 13 + r * 11) % Math.max(1, tileSize - 6));
-                  const wy = y + ((c * 7 + r * 17) % Math.max(1, tileSize - 2));
-                  ctx.fillStyle = vegSeed > 0.88 ? '#6ABA4A' : '#5AAA3A';
-                  ctx.globalAlpha = 0.35 + vegSeed * 0.2;
-                  ctx.fillRect(wx, wy, 1, 6);
-                  ctx.fillRect(wx + 2, wy + 1, 1, 5);
-                  ctx.globalAlpha = 1;
-                }
-              }
-            }
+            // Detalle del terreno por bioma (capa fina cacheada): dunas, guijarros,
+            // matas, flores, grietas, sal… Antes eran dos manchas verdes fijas.
+            try {
+              const dSeed = ((c * 73856093) ^ (r * 19349663)) >>> 0;
+              textures.drawDetailTile(ctx, x, y, tileSize, tileSize, biome, dSeed);
+            } catch (e) {}
           }
           if (isNearRiver(c, r)) {
             ctx.fillStyle = (window._currentEpoch || 'mesopotamia') === 'urss' ? 'rgba(220,232,245,0.10)' : 'rgba(74,124,63,0.15)';
@@ -8132,10 +9874,15 @@ function render() {
   // ── BUILDINGS ─────────────────────────────────────────────
   // Depth-sorted: buildings "behind" the player draw first; buildings "in front"
   // are deferred and drawn after the player to correctly occlude them.
-  const bMinC = Math.max(0, minC - 4);
-  const bMaxC = Math.min(COLS - 1, maxC + 4);
-  const bMinR = Math.max(0, minR - 4);
-  const bMaxR = Math.min(ROWS - 1, maxR + 4);
+  // OJO con el margen: un edificio se dibuja desde su celda ANCLA (la de arriba
+  // a la izquierda), así que recortar sólo por la vista hacía desaparecer los
+  // grandes (el zigurat de 11×11 no se dibujaba al mirarlo de cerca: su ancla
+  // quedaba fuera del encuadre). El margen es el del edificio más grande.
+  const _bMargin = getMaxBuildingTiles() + 2;
+  const bMinC = Math.max(0, minC - _bMargin);
+  const bMaxC = Math.min(COLS - 1, maxC + _bMargin);
+  const bMinR = Math.max(0, minR - _bMargin);
+  const bMaxR = Math.min(ROWS - 1, maxR + _bMargin);
 
   // Depth key: in iso, col+row (higher = closer to camera); in top-down, row
   const _playerDepthKey = (viewMode === 'iso')
@@ -8204,8 +9951,39 @@ function render() {
       } catch (e) {}
     }
     // provide a fallback top-left coords for existing drawing code that expects x,y
-    const { x, y } = worldToScreen(ent.x, ent.y);
+    const { x, y } = entityScreenPos(ent);
     const nowEnt = Date.now();
+    // ── MODO DEBUG: entidades de previsualización ──
+    // Dibujan cualquier sprite registrado (útil para inspeccionar/ajustar sprites sueltos).
+    if (ent.kind === 'preview') {
+      if (isOffscreen) return;
+      const pkey = ent.sprite || ent.subtype;
+      const psz = Math.max(0.3, Number(ent.size) || 1);
+      const pTile = getTileSize();
+      if (pkey && hasRegisteredSprite(pkey)) {
+        const ph = pTile * psz * 1.3;
+        const paspect = Math.max(0.35, Math.min(2.4, getRegisteredSpriteAspect(pkey)));
+        const pw = ph * paspect;
+        drawEntitySpriteAt(pkey, x + pTile * 0.5, y + pTile * 0.95, pw, ph, { ent, noShadow: !ent.shadow });
+      } else {
+        // Sprite no registrado: caja de aviso (respeta el ajuste de escala del debug)
+        const dbgS = (ent._dbg && Number.isFinite(ent._dbg.scale)) ? ent._dbg.scale : 1;
+        const boxW = pTile * 0.6 * psz * dbgS;
+        const boxH = pTile * 0.6 * psz * dbgS;
+        const bx = x + pTile * 0.5 - boxW / 2;
+        const by = y + pTile * 0.95 - boxH;
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,90,90,0.9)';
+        ctx.fillStyle = 'rgba(255,90,90,0.25)';
+        ctx.fillRect(bx, by, boxW, boxH);
+        ctx.strokeRect(bx, by, boxW, boxH);
+        ctx.restore();
+        try {
+          if (window._mesoDebugActive) { ent._dbgRect = { x: bx, y: by, w: boxW, h: boxH }; ent._dbgRectAt = Date.now(); }
+        } catch (e) {}
+      }
+      return;
+    }
     if (ent.kind === 'resource') {
       if (isOffscreen) return;
       const subtype = ent.subtype;
@@ -8244,7 +10022,7 @@ function render() {
           ctx.beginPath();
           ctx.arc(x + w * 0.5, y + h * 0.55, Math.max(3, w * 0.08), 0, Math.PI * 2);
           ctx.fill();
-          drawEntitySpriteAt('wheat', x, y + h * 0.12, sizeW, sizeH, { ignoreEntityScale: true });
+          drawEntitySpriteAt('wheat', x, y + h * 0.12, sizeW, sizeH, { ignoreEntityScale: true, ent });
         } else if (subtype === 'meat') {
           const mw = Math.max(10, w * 0.38 * pulse);
           const mh = Math.max(9, h * 0.34 * pulse);
@@ -8276,7 +10054,7 @@ function render() {
           for (let i=0;i<3;i++) ctx.fillRect(lx + 2 + i* (lw/4), ly + 2 + (i%2), 1, lh-4);
         } else if (subtype === 'weed') {
           const { w: ww, h: wh } = getIsoTileSize();
-          const sz = Math.max(ww * 0.55, Math.round(ww * 0.95 * 1.38));
+          const sz = Math.max(5, Math.round(ww * 0.95 * 1.38 * VEGETATION_SIZE_SCALE));
           // Always draw fallback tuft first (visible if sprite render fails, e.g. Electron GPU)
           ctx.fillStyle = '#4A8A3A';
           ctx.beginPath();
@@ -8289,7 +10067,7 @@ function render() {
             ctx.fillRect(tx - 1, ty - 3, 2, 5);
           }
           // Draw pixel-art sprite on top (uses hard fillRect fallback if drawImage fails)
-          drawEntitySpriteAt('weed', x + ww * 0.5, y + wh * 0.95, sz, sz * 1.05);
+          drawEntitySpriteAt('weed', x + ww * 0.5, y + wh * 0.95, sz, sz * 1.05, { ent, sway: 2.2, phase: swayPhaseOf(ent) });
         } else if (subtype === 'stone') {
           const rw = Math.max(10, Math.floor(w * 0.7 * pulse));
           const rh = Math.max(10, Math.floor(h * 0.7 * pulse));
@@ -8316,7 +10094,7 @@ function render() {
             // make mountain clearly larger than trees so horizon looks coherent
             const mw = Math.max(24, Math.floor(iw * 2.1));
             const mh = Math.max(24, Math.floor(ih * 2.8));
-            drawEntitySpriteAt('mountain', x, y - ih*0.28, mw, mh);
+            drawEntitySpriteAt('mountain', x, y - ih*0.28, mw, mh, { ent });
           } catch (e) { console.warn('mountain draw err', e); }
         } else if (subtype === 'campfire' || subtype === 'furnace') {
           // isometric campfire / furnace with animated fire
@@ -8355,7 +10133,7 @@ function render() {
           ctx.beginPath();
           ctx.arc(x + tileSize * 0.5, y + tileSize * 0.58, Math.max(3, tileSize * 0.08), 0, Math.PI * 2);
           ctx.fill();
-          drawEntitySpriteAt('wheat', x + tileSize * 0.5, y + tileSize * 0.72, spriteSize, spriteSize, { ignoreEntityScale: true });
+          drawEntitySpriteAt('wheat', x + tileSize * 0.5, y + tileSize * 0.72, spriteSize, spriteSize, { ignoreEntityScale: true, ent });
         } else if (subtype === 'meat') {
           const mx = x + tileSize * 0.5;
           const my = y + tileSize * 0.58;
@@ -8379,7 +10157,7 @@ function render() {
           ctx.fillStyle = '#7A4A2A';
           for (let i=0;i<3;i++) ctx.fillRect(cx + 2 + i*(sz/4), cy + sz*0.2, 1, sz*0.6);
         } else if (subtype === 'weed') {
-          const wSz = Math.max(tileSize * 0.46, Math.round(tileSize * 0.95 * 1.38));
+          const wSz = Math.max(5, Math.round(tileSize * 0.95 * 1.38 * VEGETATION_SIZE_SCALE));
           // Always draw fallback tuft first (visible if sprite render fails, e.g. Electron GPU)
           ctx.fillStyle = '#4A8A3A';
           ctx.beginPath();
@@ -8392,7 +10170,7 @@ function render() {
             ctx.fillRect(tx - 1, ty - 3, 2, 5);
           }
           // Draw pixel-art sprite on top (uses hard fillRect fallback if drawImage fails)
-          drawEntitySpriteAt('weed', x + tileSize * 0.5, y + tileSize * 0.98, wSz, wSz * 1.05);
+          drawEntitySpriteAt('weed', x + tileSize * 0.5, y + tileSize * 0.98, wSz, wSz * 1.05, { ent, sway: 2.2, phase: swayPhaseOf(ent) });
         } else if (subtype === 'stone') {
           const stoneSprite = (window._ENTITY_BITMAPS && window._ENTITY_BITMAPS['stone']) || (window._SPRITE_IMAGES && window._SPRITE_IMAGES['stone']);
           if (stoneSprite) {
@@ -8492,7 +10270,8 @@ function render() {
             }
             // update simple walking frame
             ent._walkTime = (ent._walkTime || 0) + dt;
-            ent._walkFrame = Math.floor(ent._walkTime * 3) % 2;
+            ent._walkFrame = Math.floor(ent._walkTime * 3) % 4;
+            ent._movingNow = true;
           }
         } catch (e) {}
       if (isOffscreen) return;
@@ -8529,7 +10308,9 @@ function render() {
           if (npcCustomSprite) {
             try { ctx.save(); ctx.imageSmoothingEnabled = false; ctx.drawImage(npcCustomSprite, px, py, spriteW, spriteH); ctx.restore(); } catch(e) {}
           } else {
-            drawCharacterPixels(ctx, palette, px, py, scale, { dir, frame: walkFrame });
+            ent._swimming = ent._swimming || false;
+            const _animNpc = characterAnimState(ent, now);
+            drawCharacterPixels(ctx, palette, px, py, scale, { dir, frame: walkFrame, anim: _animNpc });
           }
         }
         // draw hp bar above the tile
@@ -8647,7 +10428,7 @@ function render() {
           }
           ctx.restore();
         } else {
-          drawEntitySpriteAt('pet_dog', cx, cy + baseH * 0.12, baseW, baseH, { ignoreEntityScale: true });
+          drawEntitySpriteAt('pet_dog', cx, cy + baseH * 0.12, baseW, baseH, { ignoreEntityScale: true, ent });
         }
         const hpPct = Math.max(0, (ent.hp || 0) / Math.max(1, ent.maxHp || 1));
         if (shouldShowEntityHealthBar(ent, now)) {
@@ -8692,9 +10473,9 @@ function render() {
           const angle = ent._flyAngle ?? 0;
           ctx.translate(cx2, cy2);
           ctx.rotate(angle);
-          drawEntitySpriteAt('soviet_fighter_jet', 0, 0, jetW, jetH);
+          drawEntitySpriteAt('soviet_fighter_jet', 0, 0, jetW, jetH, { ent });
         } else {
-          drawEntitySpriteAt('soviet_fighter_jet', cx2, cy2, jetW, jetH);
+          drawEntitySpriteAt('soviet_fighter_jet', cx2, cy2, jetW, jetH, { ent });
         }
         ctx.restore();
       } catch (e) {}
@@ -8706,19 +10487,30 @@ function render() {
         if (subtype === 'soviet_monument') {
           const w = Math.max(tileSize * 1.6, tileSize * 1.55 * scale);
           const h = Math.max(tileSize * 2.0, tileSize * 2.1 * scale);
-          drawEntitySpriteAt(subtype, x + tileSize * 0.5, y + tileSize * 0.95, w, h);
+          drawEntitySpriteAt(subtype, x + tileSize * 0.5, y + tileSize * 0.95, w, h, { ent });
         } else if (subtype === 'soviet_streetlight') {
           const w = Math.max(tileSize * 0.55, tileSize * 0.6 * scale);
           const h = Math.max(tileSize * 1.3, tileSize * 1.35 * scale);
-          drawEntitySpriteAt(subtype, x + tileSize * 0.5, y + tileSize * 0.98, w, h);
+          drawEntitySpriteAt(subtype, x + tileSize * 0.5, y + tileSize * 0.98, w, h, { ent });
         } else if (subtype === 'guard_booth') {
           const w = Math.max(tileSize * 0.95, tileSize * 1.0 * scale);
           const h = Math.max(tileSize * 0.95, tileSize * 1.0 * scale);
-          drawEntitySpriteAt(subtype, x + tileSize * 0.5, y + tileSize * 0.98, w, h);
+          drawEntitySpriteAt(subtype, x + tileSize * 0.5, y + tileSize * 0.98, w, h, { ent });
         } else if (subtype === 'crate_stack') {
           const w = Math.max(tileSize * 0.85, tileSize * 0.9 * scale);
           const h = Math.max(tileSize * 0.72, tileSize * 0.76 * scale);
-          drawEntitySpriteAt(subtype, x + tileSize * 0.5, y + tileSize * 0.98, w, h);
+          drawEntitySpriteAt(subtype, x + tileSize * 0.5, y + tileSize * 0.98, w, h, { ent });
+        } else if (subtype === 'mesopotamian_arch' || subtype === 'checkpoint_gate') {
+          // Puerta monumental (huella 2×1): el arco ocupa el vano de la muralla.
+          const key = hasRegisteredSprite(subtype) ? subtype : 'mesopotamian_arch';
+          drawEntitySpriteAt(key, x + tileSize * 0.5, y + tileSize * 0.98, tileSize * 2, tileSize, { ent });
+        } else if (subtype === 'mesopotamian_gate_v') {
+          // Puerta vista de lado (huella 1×2): el vano va en vertical, así que
+          // el sprite apoya en la base de la SEGUNDA celda.
+          drawEntitySpriteAt(subtype, x + tileSize * 0.5, y + tileSize * 1.98, tileSize, tileSize * 2, { ent });
+        } else if (subtype === 'cueva') {
+          // Cueva donde acaba la misión del hijo perdido.
+          drawEntitySpriteAt('cueva', x + tileSize * 0.5, y + tileSize * 0.98, tileSize * 1.3, tileSize * 1.1, { ent });
         }
       } catch (e) {}
     } else if (ent.kind === 'tree') {
@@ -8763,8 +10555,8 @@ function render() {
         if ((window._currentEpoch || 'mesopotamia') === 'urss' && variant === 'tallgrass') return;
         // weed: prefer sprite path (legacy tree-kind weed saved in old games)
         if (variant === 'weed' && hasRegisteredSprite('weed')) {
-          const sz = Math.max(tileSize * 0.46, Math.round(tileSize * (ent.size || 0.95) * 1.38));
-          drawEntitySpriteAt('weed', x + tileSize * 0.5, y + tileSize * 0.98, sz, sz * 1.05);
+          const sz = Math.max(5, Math.round(tileSize * (ent.size || 0.95) * 1.38 * VEGETATION_SIZE_SCALE));
+          drawEntitySpriteAt('weed', x + tileSize * 0.5, y + tileSize * 0.98, sz, sz * 1.05, { ent, sway: 2.2, phase: swayPhaseOf(ent) });
           return;
         }
         const tpl = GLOBAL_TREE_TEMPLATES[6];
@@ -8800,11 +10592,11 @@ function render() {
         const renderVariant = resolveTreeSpriteVariant(variant, ent.col || 0, ent.row || 0);
         if (hasRegisteredSprite(renderVariant)) {
           const lodFactor = zoom >= GRAPHICS_CONFIG.smoothingThreshold ? 1 : 0.8;
-          const spriteH = Math.max(tileSize * 0.72, Math.round(tileSize * (ent.size || 1) * 1.28 * lodFactor));
+          const spriteH = Math.max(tileSize * 0.72, Math.round(tileSize * (ent.size || 1) * 1.28 * lodFactor * TREE_SIZE_SCALE));
           const aspect = Math.max(0.45, Math.min(1.9, getRegisteredSpriteAspect(renderVariant)));
           const spriteW = Math.max(tileSize * 0.46, Math.round(spriteH * aspect));
           const jitterX = Math.floor((tileNoise(ent.col||0, ent.row||0, 7, 8) - 0.5) * tileSize * 0.18);
-          drawEntitySpriteAt(renderVariant, x + tileSize * 0.5 + jitterX, y + tileSize, spriteW, spriteH, { noShadow: true });
+          drawEntitySpriteAt(renderVariant, x + tileSize * 0.5 + jitterX, y + tileSize, spriteW, spriteH, { noShadow: true, ent, sway: 0.9, phase: swayPhaseOf(ent) });
         } else {
         // try atlas draw first (use atlasDrawn flag to skip fallback)
         let atlasDrawn = false;
@@ -8875,6 +10667,8 @@ function render() {
         ctx.arc(cx, cy, r, -Math.PI/2, -Math.PI/2 + pct * Math.PI * 2); ctx.stroke();
         // finish chopping
         if (nowEnt >= ent._chopUntil) {
+          // Partículas del estallido (virutas/hojas o briznas verdes) antes de quitar la entidad
+          try { fx.onChopped(ent); } catch (e) {}
           try {
             // remove the tree entity
             const idx = entities.findIndex(e => e && e.id === ent.id);
@@ -8908,7 +10702,7 @@ function render() {
     if (typeof rab.y !== 'number') rab.y = rab.row;
     const downedRab = isDownedEntity(rab, now);
     const { col, row, hp, maxHp, size } = rab;
-    const { x, y } = worldToScreen(rab.x, rab.y);
+    const { x, y } = entityScreenPos(rab);
     const tileSize = getTileSize();
     const offPad = viewMode === 'iso' ? Math.max(24, isoSize.w) : Math.max(24, tileSize);
     if (x < -offPad || x > W + offPad || y < -offPad || y > H + offPad) return;
@@ -9296,6 +11090,12 @@ function render() {
       ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = '#a8aabf';
       ctx.beginPath(); ctx.arc(sp.x, sp.y, radius, 0, Math.PI*2); ctx.fill(); ctx.restore();
     }
+  } catch (e) {}
+
+  // ── Partículas de impacto / polvo / virutas (coordenadas de mundo) ───────
+  try {
+    fx.update(now);
+    fx.draw(ctx, W, H);
   } catch (e) {}
 
   // draw effect particles
@@ -10294,6 +12094,8 @@ function render() {
   if (worldMapOverlayVisible) {
     try { drawWorldMapOverlay(W, H); } catch (e) {}
   }
+  // Niebla de guerra: tapa lo no explorado (terreno, edificios y entidades)
+  try { drawFogOfWar(now); } catch (e) {}
   // Mini-map overlay (bottom-right corner)
   try { if (!editMode && !worldMapOverlayVisible && window._gameStarted && !cinematicActive && window._hudVisible) drawMiniMap(ctx, W, H); } catch (e) {}
   // Story objective HUD (top-left, free mode)
@@ -10338,15 +12140,14 @@ function render() {
   try {
     const diag = document.getElementById('engine-status');
     if (diag) {
-      const fps = (dt > 0) ? Math.round(1 / dt) : 0;
-      const ms = Math.round(dt * 1000);
+      const s = perfStats();
       const draw = (window._drawCalls || 0);
-      const imgs = (window._drawImageCalls || 0);
-      const fills = (window._fillRectCalls || 0);
+      const cached = (window._terrainCachedFrames || 0) > 0;
       const ents = (window.entities && window.entities.length) || 0;
-      diag.textContent = `Engine: ${fps} FPS | ${ms} ms | draw:${draw} imgs:${imgs} fills:${fills} ents:${ents}`;
+      diag.textContent = `Engine: ${s.fps} FPS | ${s.ms} ms | draw:${draw} | terreno:${cached ? 'caché' : 'vivo'} | sprites:${_spriteBitmaps.size} | ents:${ents}`;
     }
   } catch (e) {}
+  try { drawPerfHud(dt); } catch (e) {}
   try {
     const shots = window._shotProjectiles;
     if (Array.isArray(shots) && shots.length > 0) {
@@ -10465,8 +12266,8 @@ function render() {
 // ═══════════════════════════════════════════════════════════════
 function canBuild(type) {
   if (window._standaloneEditorMode) return true;
-  const b = BUILDINGS[resolveEpochBuildingType(type)] || BUILDINGS[type];
-  if (!b) return false;
+  const b = getBuildingDef(type);
+  if (!b || b.unknown) return false;
   return res.brick >= b.costBrick && res.wheat >= b.costWheat;
 }
 
@@ -10601,10 +12402,10 @@ function placeBuild(col, row) {
     notify('Recursos insuficientes.'); return;
   }
   const effectiveType = resolveEpochBuildingType(selectedTool);
-  const b = BUILDINGS[effectiveType] || BUILDINGS[selectedTool];
-  if (!window._standaloneEditorMode) {
-    res.brick -= b.costBrick;
-    res.wheat -= b.costWheat;
+  const b = getBuildingDef(effectiveType) || getBuildingDef(selectedTool);
+  if (!window._standaloneEditorMode && b) {
+    res.brick -= (b.costBrick || 0);
+    res.wheat -= (b.costWheat || 0);
   }
   setBuildingCells(col, row, effectiveType);
   updateUI();
@@ -10686,7 +12487,8 @@ function demolishCell(col, row) {
   const info = getCellInfo(col, row);
   if (!info) return;
   const type = info.type;
-  const b = BUILDINGS[type];
+  const b = getBuildingDef(type);
+  if (!b) return;
   if (!window._standaloneEditorMode) {
     res.brick += Math.floor(b.costBrick * 0.5);
     res.wheat += Math.floor(b.costWheat * 0.5);
@@ -10791,11 +12593,15 @@ function applyDailyProduction() {
     for (let c = 0; c < COLS; c++) {
       const info = getCellInfo(c, r);
       if (!info || !info.isBase) continue;
-      const b = BUILDINGS[info.type];
+      // OJO: getBuildingDef nunca devuelve undefined; antes esto lanzaba
+      // "Cannot read properties of undefined (reading 'prodWheat')" con
+      // partidas que contenían tipos de edificio antiguos y abortaba el frame.
+      const b = getBuildingDef(info.type);
+      if (!b) continue;
       const bonus = isNearRiver(c) ? 1.25 : 1;
-      dWheat += Math.floor(b.prodWheat * bonus);
-      dBrick += Math.floor(b.prodBrick * bonus);
-      dPop   += b.prodPop;
+      dWheat += Math.floor((b.prodWheat || 0) * bonus);
+      dBrick += Math.floor((b.prodBrick || 0) * bonus);
+      dPop   += (b.prodPop || 0);
     }
   }
   // Consumption
@@ -11347,7 +13153,7 @@ function updateProduction() {
   for (let r=0;r<ROWS;r++) for (let c=0;c<COLS;c++) {
     const info = getCellInfo(c, r);
     if (!info || !info.isBase) continue;
-    const b = BUILDINGS[info.type];
+    const b = getBuildingDef(info.type);
     if (!b) continue; // guard: unknown/legacy cell type
     const bonus = isNearRiver(c) ? 1.25 : 1;
     dW += Math.floor((b.prodWheat || 0) * bonus);
@@ -11474,6 +13280,10 @@ function applyPlayerAttackDamage(targetInfo, damage, weaponName) {
   target.maxHp = target.maxHp || target.hp || damage || 1;
   target.hp = Math.max(0, (target.hp || target.maxHp) - damage);
   target._flashUntil = Date.now() + 420;
+  // Partículas y sacudida del objetivo (le da "peso" al golpe)
+  try { fx.onWeaponHit(target, { bucket: targetInfo.bucket, weapon: weaponName }); } catch (e) {}
+  // El personaje acompaña el golpe con los brazos (animación de ataque)
+  triggerCharacterSwing(player, 2.4);
 
   try {
     const { x: sx, y: sy } = worldToScreen((typeof target.x === 'number' ? target.x : target.col) || 0, (typeof target.y === 'number' ? target.y : target.row) || 0);
@@ -11547,6 +13357,7 @@ function performAction(actionId) {
       if (Math.abs(ent.col - player.col) <= 1 && Math.abs(ent.row - player.row) <= 1) {
         addToInventory(ent.subtype, 1);
         if (ent.subtype === 'weed') addToInventory('seed', 1);
+        try { fx.onPickup(ent); } catch (e2) {}
         entities.splice(i,1);
         if (ent.subtype === 'weed') addLog('Recolectaste: weed + seed');
         else addLog(`Recolectaste: ${ent.subtype}`);
@@ -11720,33 +13531,218 @@ try { window.showInstruction = showInstruction; } catch (e) {}
 
 // ── ACTIVE OBJECTIVE / QUEST SYSTEM ──────────────────────────
 // window._activeObjective = { title, desc, target: { col, row } } or null
-function setActiveObjective(title, desc, targetCol, targetRow, steps = []) {
+//
+// OBJETIVOS ELEGIBLES: el panel «Objetivo activo» mostraba SIEMPRE el último
+// objetivo puesto. En el prólogo eso significaba ver «preparar cultivo» una y
+// otra vez aunque el jugador quisiera hacer otra cosa. Ahora cada objetivo se
+// registra en una lista y el jugador elige cuál sigue (tecla O o botón
+// «Cambiar») o lo aparta («Ocultar»), sin perder el hilo de la historia.
+window._objectives = window._objectives || [];
+window._objectiveTrackedKey = window._objectiveTrackedKey || null;
+window._objectivesHidden = window._objectivesHidden || {};
+
+function objectiveKeyOf(o) { return String((o && (o.id || o.title)) || ''); }
+
+function findObjective(keyOrId) {
+  const k = String(keyOrId);
+  return window._objectives.find(x => objectiveKeyOf(x) === k || String(x.id) === k) || null;
+}
+
+function objectiveHudPatch() {
   try {
-    const normalizedSteps = Array.isArray(steps) ? steps.filter(Boolean).map(s => String(s)) : [];
-    window._activeObjective = {
-      title: title || '',
-      desc: desc || '',
-      steps: normalizedSteps,
-      target: (targetCol != null && targetRow != null) ? { col: targetCol, row: targetRow } : null
+    const hud = document.getElementById('quest-hud');
+    if (!hud) return;
+    let foot = document.getElementById('quest-hud-foot');
+    if (!foot) {
+      foot = document.createElement('div');
+      foot.id = 'quest-hud-foot';
+      foot.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px;padding-top:6px;border-top:1px solid rgba(255,210,122,0.22);';
+      hud.appendChild(foot);
+    }
+    const visibles = window._objectives.filter(o => !window._objectivesHidden[objectiveKeyOf(o)]);
+    const total = window._objectives.length;
+    const idx = visibles.findIndex(o => objectiveKeyOf(o) === window._objectiveTrackedKey);
+    foot.innerHTML = '';
+    const mkBtn = (label, title, fn) => {
+      const b = document.createElement('button');
+      b.textContent = label; b.title = title || label;
+      b.style.cssText = 'background:rgba(255,210,122,0.12);border:1px solid rgba(255,210,122,0.45);color:#FFD27A;border-radius:6px;font:600 10px sans-serif;padding:3px 7px;cursor:pointer;';
+      b.addEventListener('click', (ev) => { ev.stopPropagation(); ev.preventDefault(); fn(); (window.rememberPanelFocus ? null : null); });
+      b.addEventListener('pointerdown', (ev) => ev.stopPropagation());
+      return b;
     };
+    const info = document.createElement('span');
+    info.style.cssText = 'font:600 10px monospace;color:rgba(240,235,215,0.75);';
+    info.textContent = total > 1 ? `Objetivo ${Math.max(1, idx + 1)} de ${total}` : 'Objetivo único';
+    foot.appendChild(info);
+    if (total > 1) foot.appendChild(mkBtn('🔄 Cambiar (O)', 'Seguir otro objetivo', () => cycleObjective(1)));
+    foot.appendChild(mkBtn('✖ Ocultar', 'No mostrar este objetivo (puedes recuperarlo con O)', () => hideTrackedObjective()));
+    const ocultos = total - visibles.length;
+    if (ocultos > 0) foot.appendChild(mkBtn(`↺ Mostrar (${ocultos})`, 'Volver a mostrar los objetivos ocultos', () => showAllObjectives()));
+  } catch (e) {}
+}
+
+function applyObjectiveToHud(o) {
+  try {
     const hud = document.getElementById('quest-hud');
     const hudTitle = document.getElementById('quest-hud-title');
     const hudDesc = document.getElementById('quest-hud-desc');
-    if (hudTitle) hudTitle.textContent = title || '';
+    if (hudTitle) hudTitle.textContent = (o && o.title) || '';
     if (hudDesc) {
-      const stepsText = normalizedSteps.length
-        ? `\n\nPasos:\n${normalizedSteps.map((s, i) => `${i + 1}. ${s}`).join('\n')}`
-        : '';
-      hudDesc.textContent = (desc || '') + stepsText;
+      const steps = (o && Array.isArray(o.steps)) ? o.steps : [];
+      const stepsText = steps.length ? `\n\nPasos:\n${steps.map((s, i) => `${i + 1}. ${s}`).join('\n')}` : '';
+      hudDesc.textContent = ((o && o.desc) || '') + stepsText;
     }
     if (hud) {
       hud.classList.remove('active');
       void hud.offsetHeight;
       hud.classList.add('active');
+      const oculto = o && window._objectivesHidden[objectiveKeyOf(o)];
+      hud.style.opacity = oculto ? '0.45' : '';
     }
+    objectiveHudPatch();
+  } catch (e) {}
+}
+
+function addObjective(obj) {
+  try {
+    if (!obj || !obj.title) return null;
+    const key = objectiveKeyOf(obj);
+    const entry = {
+      id: obj.id || key,
+      title: obj.title,
+      desc: obj.desc || '',
+      steps: Array.isArray(obj.steps) ? obj.steps.slice() : [],
+      target: obj.target || null,
+      source: obj.source || 'free',
+      done: false
+    };
+    const i = window._objectives.findIndex(x => objectiveKeyOf(x) === key);
+    if (i >= 0) window._objectives[i] = Object.assign({}, window._objectives[i], entry);
+    else window._objectives.push(entry);
+    const stored = (i >= 0) ? window._objectives[i] : entry;
+    if (!window._objectiveTrackedKey) trackObjective(key);
+    else if (window._objectiveTrackedKey === key) applyObjectiveToHud(stored);
+    else objectiveHudPatch();
+    return stored;
+  } catch (e) { return null; }
+}
+
+function removeObjective(keyOrId) {
+  try {
+    const k = String(keyOrId);
+    const before = window._objectives.length;
+    window._objectives = window._objectives.filter(o => objectiveKeyOf(o) !== k && String(o.id) !== k);
+    if (window._objectiveTrackedKey === k) {
+      window._objectiveTrackedKey = null;
+      const nxt = window._objectives.find(o => !window._objectivesHidden[objectiveKeyOf(o)]);
+      if (nxt) trackObjective(objectiveKeyOf(nxt)); else clearActiveObjective();
+    } else objectiveHudPatch();
+    return window._objectives.length !== before;
+  } catch (e) { return false; }
+}
+
+function trackObjective(keyOrId) {
+  try {
+    const o = findObjective(keyOrId);
+    if (!o) return false;
+    window._objectiveTrackedKey = objectiveKeyOf(o);
+    delete window._objectivesHidden[window._objectiveTrackedKey];
+    window._activeObjective = { title: o.title, desc: o.desc, steps: o.steps.slice(), target: o.target || null, id: o.id, key: window._objectiveTrackedKey };
+    applyObjectiveToHud(o);
+    return true;
+  } catch (e) { return false; }
+}
+
+function cycleObjective(step) {
+  try {
+    const visibles = window._objectives.filter(o => !window._objectivesHidden[objectiveKeyOf(o)]);
+    if (!visibles.length) return false;
+    const dir = (step === -1 || step === true) ? -1 : 1;
+    const i = visibles.findIndex(o => objectiveKeyOf(o) === window._objectiveTrackedKey);
+    const next = visibles[(i + dir + visibles.length) % visibles.length] || visibles[0];
+    trackObjective(objectiveKeyOf(next));
+    try { notify('Objetivo: ' + next.title); } catch (e) {}
+    return true;
+  } catch (e) { return false; }
+}
+
+function hideTrackedObjective() {
+  try {
+    const key = window._objectiveTrackedKey;
+    if (!key) return false;
+    window._objectivesHidden[key] = true;
+    const hud = document.getElementById('quest-hud');
+    if (hud) hud.style.opacity = '0.45';
+    const nxt = window._objectives.find(o => !window._objectivesHidden[objectiveKeyOf(o)]);
+    if (nxt) { trackObjective(objectiveKeyOf(nxt)); try { notify('Objetivo apartado. Sigues: ' + nxt.title); } catch (e) {} }
+    else { window._activeObjective = null; if (hud) hud.classList.remove('active'); }
+    objectiveHudPatch();
+    return true;
+  } catch (e) { return false; }
+}
+
+function showAllObjectives() {
+  try {
+    window._objectivesHidden = {};
+    const first = window._objectives[0];
+    if (first) trackObjective(objectiveKeyOf(first));
+    else objectiveHudPatch();
+    try { notify('Objetivos restaurados'); } catch (e) {}
+    return true;
+  } catch (e) { return false; }
+}
+
+// Objetivos libres del prólogo: se completan solos cuando se cumple su
+// condición (mirar el inventario o acercarse a un sitio), así el jugador puede
+// dedicarse a lo que quiera en vez de ver «plantar» todo el rato.
+function updateFreeObjectives(now) {
+  try {
+    if (window._freeObjAt && (now - window._freeObjAt) < 700) return;
+    window._freeObjAt = now;
+    const inv = (typeof inventory !== 'undefined' && inventory) ? inventory : {};
+    const wood = (inv['wood'] || inv['madera'] || 0);
+    const stone = (inv['stone'] || 0);
+    const wheat = (inv['wheat'] || 0);
+    const p = window.player;
+    for (const o of window._objectives.slice()) {
+      if (o.source !== 'free') continue;
+      let done = false;
+      if (o.id === 'free_materials') done = (wood >= 5 && stone >= 5);
+      else if (o.id === 'free_explore' && p && o._from) done = (Math.hypot((p.col || 0) - o._from.col, (p.row || 0) - o._from.row) >= 24);
+      else if (o.id === 'free_family' && p && o.target) done = (Math.hypot((p.col || 0) - o.target.col, (p.row || 0) - o.target.row) <= 3);
+      else if (o.id === 'free_store' && p && o.target) done = (wheat >= 10);
+      if (done) {
+        removeObjective(objectiveKeyOf(o));
+        try { notify('✔ ' + o.title + ' completado'); } catch (e) {}
+        try { if (window.MESO_FX && MESO_FX.burst) MESO_FX.burst(p ? p.col + 0.5 : 0, p ? p.row + 0.5 : 0, { kind: 'spark', count: 10 }); } catch (e) {}
+      }
+    }
+  } catch (e) {}
+}
+
+function setActiveObjective(title, desc, targetCol, targetRow, steps = []) {
+  try {
+    const normalizedSteps = Array.isArray(steps) ? steps.filter(Boolean).map(s => String(s)) : [];
+    const entry = addObjective({
+      id: 'story:' + String(title || '').toLowerCase().replace(/\s+/g, '_'),
+      title: title || '',
+      desc: desc || '',
+      steps: normalizedSteps,
+      target: (targetCol != null && targetRow != null) ? { col: targetCol, row: targetRow } : null,
+      source: 'mission'
+    });
+    if (entry) trackObjective(objectiveKeyOf(entry));
   } catch (e) { console.warn('setActiveObjective', e); }
 }
 try { window.setActiveObjective = setActiveObjective; } catch (e) {}
+try {
+  window.MESO_OBJECTIVES = {
+    add: addObjective, remove: removeObjective, track: trackObjective, cycle: cycleObjective,
+    hide: hideTrackedObjective, showAll: showAllObjectives,
+    list: () => window._objectives.map(o => ({ id: o.id, title: o.title, source: o.source, tracked: objectiveKeyOf(o) === window._objectiveTrackedKey, hidden: !!window._objectivesHidden[objectiveKeyOf(o)] }))
+  };
+} catch (e) {}
 
 function startMission(title, desc, targetCol, targetRow, steps = [], duration = 10000) {
   try {
@@ -12332,24 +14328,14 @@ function createOverlayUI() {
   const centerBtn = document.getElementById('btn-center-player');
   if (centerBtn) {
     function updateCenterBtn() {
-      centerBtn.textContent = followPlayer ? 'Ir a jugador — Seguir: ON' : 'Ir a jugador';
+      centerBtn.textContent = followPlayer ? 'Ir a jugador — Seguir: ON (T)' : 'Ir a jugador (T = seguir)';
     }
+    _updateFollowButtonUI = updateCenterBtn;
     updateCenterBtn();
     centerBtn.addEventListener('click', () => {
       if (!editMode) {
         centerCameraOnPlayer();
-        followPlayer = !followPlayer;
-        updateCenterBtn();
-        notify(followPlayer ? 'Camara: siguiendo jugador' : 'Camara: libre');
-        if (followPlayer) {
-          const tileSize = getTileSize();
-          if (viewMode === 'iso') {
-            const p = projectIso(player.x, player.y);
-            targetCam = { x: canvas.width/2 - p.x, y: canvas.height/2 - p.y };
-          } else {
-            targetCam = { x: canvas.width/2 - player.x * tileSize, y: canvas.height/2 - player.y * tileSize };
-          }
-        } else targetCam = null;
+        toggleCameraFollow();
       } else {
         centerCameraOnPlayer();
       }
@@ -12873,6 +14859,23 @@ function createMenuBar() {
   const optOverlay = document.createElement('label'); optOverlay.style.display='block'; optOverlay.style.cursor='pointer'; optOverlay.style.marginTop='6px'; optOverlay.innerHTML = `<input type='checkbox' ${window.DEBUG_ISO ? 'checked' : ''}> Mostrar overlay debug`;
   optOverlay.querySelector('input').addEventListener('change', (e) => { window.DEBUG_ISO = !!e.target.checked; });
   devMenu.appendChild(optLogPlayer); devMenu.appendChild(optLogCam); devMenu.appendChild(optOverlay);
+  // Rendimiento: HUD en pantalla con FPS, ms, llamadas de dibujo y estado de
+  // las cachés de terreno y de sprites.
+  const optPerf = document.createElement('label'); optPerf.style.display='block'; optPerf.style.cursor='pointer'; optPerf.style.marginTop='6px';
+  optPerf.innerHTML = `<input type='checkbox' ${_perfHudOn ? 'checked' : ''}> Rendimiento (HUD)`;
+  optPerf.querySelector('input').addEventListener('change', (e) => { togglePerfHud(!!e.target.checked); });
+  devMenu.appendChild(optPerf);
+  // Niebla de guerra: todo lo no explorado se ve negro (para probar el efecto)
+  const optFog = document.createElement('label'); optFog.style.display='block'; optFog.style.cursor='pointer'; optFog.style.marginTop='6px';
+  optFog.innerHTML = `<input type='checkbox' ${window._fogEnabled ? 'checked' : ''}> Niebla de guerra (sólo mapa explorado)`;
+  optFog.querySelector('input').addEventListener('change', (e) => { try { MESO_FOG.enable(!!e.target.checked); } catch (err) {} });
+  devMenu.appendChild(optFog);
+  const fogRevealBtn = document.createElement('button'); fogRevealBtn.textContent = 'Revelar todo el mapa (probar)'; fogRevealBtn.style.display='block'; fogRevealBtn.style.marginTop='6px';
+  fogRevealBtn.addEventListener('click', () => { try { MESO_FOG.revealAll(); notify('Mapa revelado'); } catch (err) {} });
+  devMenu.appendChild(fogRevealBtn);
+  const fogClearBtn = document.createElement('button'); fogClearBtn.textContent = 'Ocultar todo otra vez'; fogClearBtn.style.display='block'; fogClearBtn.style.marginTop='6px';
+  fogClearBtn.addEventListener('click', () => { try { MESO_FOG.clear(); notify('Mapa sin explorar'); } catch (err) {} });
+  devMenu.appendChild(fogClearBtn);
   const devModeHdr = document.createElement('div'); devModeHdr.textContent = 'Modo'; devModeHdr.style.marginTop = '10px'; devModeHdr.style.marginBottom = '6px'; devModeHdr.style.fontWeight = '700';
   const devModeRow = document.createElement('div'); devModeRow.style.display = 'flex'; devModeRow.style.gap = '6px'; devModeRow.style.marginBottom = '6px';
   const devModeFreeBtn = document.createElement('button'); devModeFreeBtn.id = 'btn-dev-mode-free'; devModeFreeBtn.textContent = 'Libre'; devModeFreeBtn.className = 'tool-btn';
@@ -13465,7 +15468,43 @@ function createMenuBar() {
   left.appendChild(setBtn); left.appendChild(setMenu);
 
   bar.appendChild(left);
-  // hide the bar by default; reveal when hovering at the very top of the window
+
+  // ── Controles de la derecha: fijar / ocultar ──────────────────────────
+  // La barra se oculta sola; sin estos controles no hay forma evidente de
+  // mantenerla abierta (y su ✕ de "cerrar" no funcionaba: styles.css fuerza
+  // `display: flex !important` en #top-menubar, así que display:none se ignoraba).
+  const rightControls = document.createElement('div');
+  rightControls.style.marginLeft = 'auto';
+  rightControls.style.display = 'flex';
+  rightControls.style.gap = '8px';
+  rightControls.style.alignItems = 'center';
+
+  const pinBtn = document.createElement('button');
+  pinBtn.type = 'button';
+  pinBtn.className = 'meso-menu-btn';
+  pinBtn.style.cursor = 'pointer';
+  function updatePinButton() {
+    try {
+      pinBtn.textContent = _topBarPinned ? '📌 Fijado' : '📌 Fijar';
+      pinBtn.title = _topBarPinned
+        ? 'El menú se mantiene visible (clic para soltarlo)'
+        : 'Mantener el menú siempre visible';
+      pinBtn.style.color = _topBarPinned ? '#FFD27A' : '#c8c8c8';
+    } catch (e) {}
+  }
+
+  const hideBtn = document.createElement('button');
+  hideBtn.type = 'button';
+  hideBtn.className = 'meso-menu-btn';
+  hideBtn.textContent = '▴ Ocultar';
+  hideBtn.title = 'Ocultar el menú (se puede reabrir con la pestaña ☰ o F10)';
+  hideBtn.style.cursor = 'pointer';
+
+  rightControls.appendChild(pinBtn);
+  rightControls.appendChild(hideBtn);
+  bar.appendChild(rightControls);
+
+  // hide the bar by default; reveal when hovering the top edge, the ☰ tab or with F10
   bar.style.transition = 'top 220ms ease, opacity 220ms ease';
   bar.style.top = '-44px';
   bar.style.opacity = '0';
@@ -13475,24 +15514,79 @@ function createMenuBar() {
   // show/hide helpers: reveal when mouse is near the top edge, keep visible while over bar
   let _topBarTimer = null;
   let _isHoveringTopBar = false;
+  let _topBarPinned = false;
+
   function showTopBar() {
     if (_topBarTimer) { clearTimeout(_topBarTimer); _topBarTimer = null; }
     bar.style.top = '0px';
     bar.style.opacity = '1';
     bar.style.pointerEvents = 'auto';
+    try { updatePinButton(); } catch (e) {}
+  }
+  function hideTopBarNow() {
+    if (_topBarTimer) { clearTimeout(_topBarTimer); _topBarTimer = null; }
+    bar.style.top = '-44px';
+    bar.style.opacity = '0';
+    bar.style.pointerEvents = 'none';
   }
   function hideTopBarSoon(delay = 800) {
+    if (_topBarPinned) return; // el usuario lo ha fijado: no se oculta solo
     if (_topBarTimer) clearTimeout(_topBarTimer);
     _topBarTimer = setTimeout(() => {
       if (hasOpenMenus()) return;
       if (_isHoveringTopBar) return;
-      bar.style.top = '-44px'; bar.style.opacity = '0'; bar.style.pointerEvents = 'none';
+      if (_topBarPinned) return;
+      hideTopBarNow();
     }, delay);
   }
 
+  pinBtn.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    _topBarPinned = !_topBarPinned;
+    updatePinButton();
+    if (_topBarPinned) showTopBar(); else hideTopBarSoon(150);
+  });
+  hideBtn.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    _topBarPinned = false;
+    updatePinButton();
+    closeAllMenus();
+    hideTopBarNow();
+  });
+  updatePinButton();
+
+  // ── Pestaña siempre visible para abrir el menú ────────────────────────
+  // Sin ella, la única forma de descubrir el menú era acertar en la franja
+  // de 8 px del borde superior (que en Electron, con ventana sin marco,
+  // coincide además con el área de redimensionado).
+  const handle = document.createElement('button');
+  handle.id = 'menubar-handle';
+  handle.type = 'button';
+  handle.textContent = '☰ MENÚ';
+  handle.title = 'Abrir el menú superior (F10). Clic para fijarlo abierto.';
+  Object.assign(handle.style, {
+    position: 'fixed', top: '0px', left: '50%', transform: 'translateX(-50%)',
+    height: '13px', minWidth: '66px', padding: '0 10px',
+    background: 'rgba(12,10,6,0.72)', color: '#FFD27A',
+    border: '1px solid rgba(255,210,122,0.30)', borderTop: 'none',
+    borderRadius: '0 0 6px 6px', cursor: 'pointer',
+    fontFamily: 'sans-serif', fontSize: '10px', lineHeight: '13px',
+    letterSpacing: '1px', zIndex: '99998', opacity: '0.6',
+    transition: 'opacity 160ms ease, background 160ms ease', userSelect: 'none'
+  });
+  document.body.appendChild(handle);
+  handle.addEventListener('mouseenter', () => { handle.style.opacity = '1'; handle.style.background = 'rgba(30,22,8,0.92)'; showTopBar(); });
+  handle.addEventListener('mouseleave', () => { handle.style.opacity = '0.6'; handle.style.background = 'rgba(12,10,6,0.72)'; });
+  handle.addEventListener('click', (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (_topBarPinned) { _topBarPinned = false; updatePinButton(); hideTopBarNow(); }
+    else { _topBarPinned = true; updatePinButton(); showTopBar(); }
+  });
+
   document.addEventListener('mousemove', (ev) => {
     if (ev.clientY <= 8) showTopBar();
-    else if (ev.clientY > 48 && !hasOpenMenus() && !_isHoveringTopBar) hideTopBarSoon(350);
+    else if (ev.clientY > 48 && !hasOpenMenus() && !_isHoveringTopBar && !_topBarPinned) hideTopBarSoon(350);
   });
 
   // keep bar visible while hovering it
@@ -13502,7 +15596,7 @@ function createMenuBar() {
   // Close any open menu when clicking outside menus or menu buttons
   document.addEventListener('click', (e) => {
     const target = e.target;
-    if (target.closest && (target.closest('.meso-menu') || target.closest('.meso-menu-btn'))) {
+    if (target.closest && (target.closest('.meso-menu') || target.closest('.meso-menu-btn') || target.closest('#menubar-handle'))) {
       return; // clicked inside a menu or on a menu button
     }
     closeAllMenus();
@@ -13512,7 +15606,15 @@ function createMenuBar() {
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       closeAllMenus();
-      hideTopBarSoon(200);
+      _topBarPinned = false;
+      updatePinButton();
+      hideTopBarNow();
+    }
+    if (e.key === 'F10') {
+      // Atajo estándar de Windows para la barra de menús
+      e.preventDefault();
+      if (_topBarPinned) { _topBarPinned = false; updatePinButton(); hideTopBarNow(); }
+      else { _topBarPinned = true; updatePinButton(); showTopBar(); }
     }
   });
 }
@@ -14001,14 +16103,13 @@ function drawTreeOcclusionOverlay(ent) {
     const tileSize = getTileSize();
     const ex = (typeof ent.x === 'number') ? ent.x : ent.col;
     const ey = (typeof ent.y === 'number') ? ent.y : ent.row;
-    const { x, y } = worldToScreen(ex, ey);
+    const { x, y } = entityScreenPos(ent);
     const variant = ent.variant || 'oak';
-
     if (variant === 'tallgrass' || variant === 'weed') {
       if (variant === 'tallgrass' && (window._currentEpoch || 'mesopotamia') === 'urss') return null;
       if (variant === 'weed' && hasRegisteredSprite('weed')) {
         const sz = Math.max(tileSize * 0.46, Math.round(tileSize * (ent.size || 0.95) * 1.38));
-        drawEntitySpriteAt('weed', x + tileSize * 0.5, y + tileSize * 0.98, sz, sz * 1.05);
+        drawEntitySpriteAt('weed', x + tileSize * 0.5, y + tileSize * 0.98, sz, sz * 1.05, { ent, sway: 2.2, phase: swayPhaseOf(ent) });
         return { x: x + tileSize * 0.5, y: y + tileSize * 0.98 - sz, dist: Math.hypot(ex - player.x, ey - player.y) };
       }
       const tpl = GLOBAL_TREE_TEMPLATES[6];
@@ -14046,11 +16147,11 @@ function drawTreeOcclusionOverlay(ent) {
     const renderVariant = resolveTreeSpriteVariant(variant, ent.col || 0, ent.row || 0);
     if (hasRegisteredSprite(renderVariant)) {
       const lodFactor = zoom >= GRAPHICS_CONFIG.smoothingThreshold ? 1 : 0.8;
-      const spriteH = Math.max(tileSize * 0.72, Math.round(tileSize * (ent.size || 1) * 1.28 * lodFactor));
+      const spriteH = Math.max(tileSize * 0.72, Math.round(tileSize * (ent.size || 1) * 1.28 * lodFactor * TREE_SIZE_SCALE));
       const aspect = Math.max(0.45, Math.min(1.9, getRegisteredSpriteAspect(renderVariant)));
       const spriteW = Math.max(tileSize * 0.46, Math.round(spriteH * aspect));
       const jitterX = Math.floor((tileNoise(ent.col || 0, ent.row || 0, 7, 8) - 0.5) * tileSize * 0.18);
-      drawEntitySpriteAt(renderVariant, x + tileSize * 0.5 + jitterX, y + tileSize, spriteW, spriteH, { noShadow: true });
+      drawEntitySpriteAt(renderVariant, x + tileSize * 0.5 + jitterX, y + tileSize, spriteW, spriteH, { noShadow: true, ent, sway: 1.3, phase: swayPhaseOf(ent) });
       return { x: x + tileSize * 0.5 + jitterX, y: y - spriteH * 0.35, dist: Math.hypot(ex - player.x, ey - player.y) };
     }
 
@@ -14483,7 +16584,10 @@ function makeUiElementClosable(el, opts = {}) {
 
 function registerClosableUIElements() {
   const defs = [
-    { id: 'top-menubar', title: 'Menú superior' },
+    // NOTA: 'top-menubar' se excluye a propósito. Su ✕ no podía funcionar
+    // (styles.css fuerza `display: flex !important`) y como "panel flotante"
+    // guardaba/restauraba su posición de oculto (top:-44px). Ahora tiene sus
+    // propios controles 📌 Fijar / ▴ Ocultar y la pestaña ☰ MENÚ.
     { id: 'topbar', title: 'Barra superior' },
     { id: 'toolbar', title: 'Barra de herramientas' },
     { id: 'panel', title: 'Panel de construcción' },
@@ -14967,6 +17071,58 @@ function enhanceTopBarIcons() {
     } catch (err) { /* ignore */ }
   });
 }
+
+// Icono de MODO EDICIÓN: un botón claro para entrar y salir, con insignia fija
+// mientras el editor está activo (antes solo se podía desde Dev ▸ Modo o con
+// atajos, y no había forma evidente de volver a jugar).
+function updateEditModeButton() {
+  try {
+    const btn = document.getElementById('btn-editmode');
+    if (btn) {
+      btn.textContent = editMode ? '🎮 Jugar' : '✏️ Editar';
+      btn.title = editMode ? 'Salir del modo edición y volver a jugar' : 'Entrar en modo edición (construir y colocar)';
+      btn.style.background = editMode ? 'rgba(255,210,122,0.22)' : 'transparent';
+      btn.style.color = editMode ? '#FFD27A' : 'inherit';
+      btn.style.border = editMode ? '1px solid rgba(255,210,122,0.55)' : 'none';
+    }
+    let badge = document.getElementById('editmode-badge');
+    if (editMode) {
+      if (!badge) {
+        badge = document.createElement('div');
+        badge.id = 'editmode-badge';
+        badge.style.cssText = 'position:fixed;left:50%;top:6px;transform:translateX(-50%);z-index:4300;pointer-events:none;' +
+          'background:rgba(120,80,10,0.92);border:1px solid #FFD27A;color:#FFE9A8;border-radius:999px;' +
+          'font:700 11px sans-serif;padding:4px 12px;letter-spacing:0.6px;box-shadow:0 2px 10px rgba(0,0,0,0.45);';
+        badge.textContent = '✏️ MODO EDICIÓN · pulsa «Jugar» para salir';
+        document.body.appendChild(badge);
+      }
+      badge.style.display = 'block';
+    } else if (badge) {
+      badge.style.display = 'none';
+    }
+  } catch (e) {}
+}
+
+function createEditModeButton() {
+  try {
+    if (document.getElementById('btn-editmode')) return;
+    const btn = document.createElement('button');
+    btn.id = 'btn-editmode';
+    btn.className = 'tool-btn';
+    // Esquina SUPERIOR IZQUIERDA, siempre visible (el menú superior está oculto
+    // por defecto y ahí no se encontraba).
+    btn.style.cssText = 'position:fixed;left:10px;top:8px;z-index:4400;cursor:pointer;' +
+      'background:rgba(18,18,18,0.85);border:1px solid rgba(255,255,255,0.25);color:#F0EBD7;' +
+      'border-radius:8px;font:700 12px sans-serif;padding:6px 12px;box-shadow:0 2px 8px rgba(0,0,0,0.45);';
+    btn.addEventListener('click', () => {
+      try { setEditMode(!editMode); updateEditModeButton(); } catch (e) {}
+    });
+    document.body.appendChild(btn);
+    updateEditModeButton();
+  } catch (e) {}
+}
+
+try { window.updateEditModeButton = updateEditModeButton; } catch (e) {}
 
 // Add a camera button to the topbar that hides UI and captures a screenshot
 function createCameraButton() {
@@ -16284,9 +18440,254 @@ function hasActiveSideMissionFromNpc(npcId) {
   }
 }
 
+// ── MISIONES DEL YERMO (NPCs fuera de los núcleos urbanos) ─────────────────
+// Los caminantes de fuera de los pueblos encargan cosas raras y concretas
+// («ve a ver qué hace mi hijo en la cueva»), casi siempre con un SITIO al que
+// ir. No todos los NPCs las ofrecen: sólo los que están lejos de un asentamiento
+// y con probabilidad (así aparecen como evento, no como rutina).
+function npcIsOutsideSettlements(npc, radius = 14) {
+  try {
+    const c = (typeof npc.col === 'number') ? npc.col : Math.floor(Number(npc.x) || 0);
+    const r = (typeof npc.row === 'number') ? npc.row : Math.floor(Number(npc.y) || 0);
+    const villages = window._VILLAGES || [];
+    for (let i = 0; i < villages.length; i++) {
+      const v = villages[i];
+      if (!v) continue;
+      if (c >= (v.minC || 0) - radius && c <= (v.maxC || 0) + radius &&
+          r >= (v.minR || 0) - radius && r <= (v.maxR || 0) + radius) return false;
+    }
+    // Sin lista de pueblos (partida cargada a medias): basta con que no haya
+    // edificios alrededor.
+    for (let rr = r - radius; rr <= r + radius; rr += 2) {
+      for (let cc = c - radius; cc <= c + radius; cc += 2) {
+        if (rr < 0 || cc < 0 || rr >= ROWS || cc >= COLS) continue;
+        if (grid[rr][cc]) return false;
+      }
+    }
+    return true;
+  } catch (e) { return false; }
+}
+
+// Sitio para la casa AISLADA del prólogo.
+//
+// El prólogo ocurre en el campo («casa aislada, antes del amanecer»), pero el
+// spawn se calculaba en el CENTRO del primer asentamiento, que es justo donde
+// el planificador reserva el núcleo monumental: el jugador aparecía dentro del
+// recinto del zigurat. Ahora se busca un claro en el campo, fuera de los
+// pueblos (a 14–30 celdas de su centro) y lejos de cualquier edificio.
+function findHomeSpotForPrologue(village, fallbackC, fallbackR) {
+  // Ojo: `num()` es de los submódulos de asentamientos, aquí no existe.
+  const nn = (v, d) => (typeof v === 'number' && isFinite(v)) ? v : d;
+  try {
+    const homeW = (BUILDINGS.house_isolated && BUILDINGS.house_isolated.size && BUILDINGS.house_isolated.size.w) || 8;
+    const homeH = (BUILDINGS.house_isolated && BUILDINGS.house_isolated.size && BUILDINGS.house_isolated.size.h) || 5;
+    const baseC = village
+      ? Math.floor((nn(village.minC, fallbackC) + nn(village.maxC, fallbackC)) / 2)
+      : Math.floor(nn(fallbackC, Math.floor(COLS / 2)));
+    const baseR = village
+      ? Math.floor((nn(village.minR, fallbackR) + nn(village.maxR, fallbackR)) / 2)
+      : Math.floor(nn(fallbackR, Math.floor(ROWS / 2)));
+
+    const dry = (cc, rr) => {
+      const b = tileBiome[rr] && tileBiome[rr][cc];
+      if (!b || b === 'water' || b === 'deep_water') return false;
+      if (isRiver(cc, rr)) return false;
+      return true;
+    };
+
+    // La casa se levanta ENCIMA de la celda del jugador (setupHomePrologueSpawn),
+    // así que hay que comprobar el rectángulo completo de la huella más un borde.
+    const fits = (c, r) => {
+      const hc = c - Math.floor(homeW / 2);
+      const hr = r - homeH - 1;
+      if (hc < 3 || hr < 3 || hc + homeW + 1 >= COLS - 3 || hr + homeH + 1 >= ROWS - 3) return false;
+      for (let rr = hr - 1; rr <= hr + homeH + 1; rr++) {
+        for (let cc = hc - 1; cc <= hc + homeW + 1; cc++) {
+          if (grid[rr][cc]) return false;
+          if (!dry(cc, rr)) return false;
+        }
+      }
+      const b0 = tileBiome[r] && tileBiome[r][c];
+      if (!b0 || b0 === 'road' || b0 === 'concrete_road' || b0 === 'canal_road') return false;
+      return dry(c, r);
+    };
+
+    // Anillos de 14 a 30 celdas: el más cercano que valga y esté fuera de los
+    // pueblos (sin edificar alrededor). Se sortea entre los candidatos del
+    // primer anillo útil para que dos partidas no salgan idénticas.
+    for (let d = 14; d <= 30; d += 2) {
+      const found = [];
+      for (let a = 0; a < 32; a++) {
+        const ang = (a / 32) * Math.PI * 2 + d * 0.11;
+        const c = Math.round(baseC + Math.cos(ang) * d);
+        const r = Math.round(baseR + Math.sin(ang) * d);
+        if (c < 4 || r < 4 || c >= COLS - 4 || r >= ROWS - 4) continue;
+        if (!fits(c, r)) continue;
+        if (!npcIsOutsideSettlements({ col: c, row: r }, 3)) continue;
+        found.push({ c, r, d });
+      }
+      if (found.length) return found[Math.floor(Math.random() * found.length)];
+    }
+  } catch (e) {
+    console.warn('[prólogo] no se pudo buscar el claro de la casa aislada', e);
+  }
+  return null;
+}
+
+// Celda de campo abierto a cierta distancia (para mandar al jugador a algún sitio).
+function pickWildSpot(c0, r0, minDist, maxDist) {
+  const ok = (c, r) => {
+    if (c < 2 || r < 2 || c >= COLS - 2 || r >= ROWS - 2) return false;
+    if (grid[r][c]) return false;
+    const b = tileBiome[r] && tileBiome[r][c];
+    if (!b || b === 'water' || b === 'deep_water' || b === 'road' || b === 'concrete_road' || b === 'canal_road') return false;
+    return !isRiver(c, r);
+  };
+  let best = null;
+  for (let i = 0; i < 120; i++) {
+    const ang = Math.random() * Math.PI * 2;
+    const dist = minDist + Math.random() * Math.max(2, maxDist - minDist);
+    const c = Math.round(c0 + Math.cos(ang) * dist);
+    const r = Math.round(r0 + Math.sin(ang) * dist);
+    if (!ok(c, r)) continue;
+    best = { c, r };
+    break;
+  }
+  if (!best) {
+    // Reserva: anillo creciente alrededor del NPC
+    for (let d = minDist; d <= maxDist && !best; d++) {
+      for (let a = 0; a < 12 && !best; a++) {
+        const ang = (a / 12) * Math.PI * 2;
+        const c = Math.round(c0 + Math.cos(ang) * d);
+        const r = Math.round(r0 + Math.sin(ang) * d);
+        if (ok(c, r)) best = { c, r };
+      }
+    }
+  }
+  return best || { c: c0, r: r0 };
+}
+
+// Cueva: se levanta en el destino de la misión del hijo (piedra con entrada oscura).
+function spawnCaveAt(c, r) {
+  try {
+    if (c < 1 || r < 1 || c >= COLS - 1 || r >= ROWS - 1) return null;
+    const ent = {
+      id: 'cueva-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+      kind: 'ambient', subtype: 'cueva', col: c, row: r, x: c, y: r,
+      size: 1, nonInteractive: false
+    };
+    entities.push(ent);
+    return ent;
+  } catch (e) { return null; }
+}
+
+// «Hijo» perdido: un NPC niño junto a la cueva (no reparte misiones).
+function spawnLostChildAt(c, r, parentName) {
+  try {
+    const cc = (c + 1 < COLS - 1) ? c + 1 : c;
+    if (typeof spawnNPC === 'function') {
+      const npc = spawnNPC(parentName ? ('Hijo de ' + parentName) : 'Niño perdido', cc, r);
+      if (npc) { npc.npcType = 'child'; npc.isChild = true; }
+      return npc;
+    }
+  } catch (e) {}
+  return null;
+}
+
+function createWildMissionForNpc(npc) {
+  const npcName = npc.name || 'Caminante';
+  const c0 = (typeof npc.col === 'number') ? npc.col : Math.floor(Number(npc.x) || 0);
+  const r0 = (typeof npc.row === 'number') ? npc.row : Math.floor(Number(npc.y) || 0);
+  const templates = [
+    {
+      key: 'visit_cave',
+      title: '¿Qué hace mi hijo en la cueva?',
+      desc: `Mi hijo dijo que iba a la cueva del páramo y no ha vuelto. Ve a ver qué hace.`,
+      minDist: 20, maxDist: 44,
+      reward: { brick: 3, wheat: 2 }
+    },
+    {
+      key: 'lost_goat',
+      title: 'La cabra perdida',
+      desc: `Se me escapó la cabra y no la encuentro. Ve al descampado y mira si está por allí.`,
+      minDist: 12, maxDist: 30,
+      reward: { seed: 2, food: 2 }
+    },
+    {
+      key: 'far_ruins',
+      title: 'Ruinas al horizonte',
+      desc: `Cuentan que hay ruinas viejas por donde nadie va. Acércate y mira qué queda.`,
+      minDist: 26, maxDist: 50,
+      reward: { wheat: 4, brick: 1 }
+    },
+    {
+      key: 'dry_well',
+      title: 'El pozo seco',
+      desc: `El pozo viejo del páramo lleva seco desde mi infancia. Comprueba si sigue así.`,
+      minDist: 16, maxDist: 36,
+      reward: { brick: 2, food: 2 }
+    }
+  ];
+  const tpl = templates[Math.floor(Math.random() * templates.length)];
+  const spot = pickWildSpot(c0, r0, tpl.minDist, tpl.maxDist);
+  if (tpl.key === 'visit_cave') {
+    // La cueva y el crío existen de verdad: la misión se puede completar y ver.
+    spawnCaveAt(spot.c, spot.r);
+    spawnLostChildAt(spot.c, spot.r, npcName);
+  }
+  const dist = Math.round(Math.hypot(spot.c - c0, spot.r - r0));
+  return {
+    id: `wild_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    title: tpl.title,
+    desc: `«${tpl.desc}» — ${npcName}`,
+    target: 1,
+    progress: 0,
+    watch: 'reach',
+    targetCol: spot.c,
+    targetRow: spot.r,
+    radius: 3,
+    reward: tpl.reward,
+    isStory: false,
+    isSide: true,
+    isWild: true,
+    done: false,
+    giverNpcId: npc.id,
+    giverNpcName: npcName,
+    giverNpcType: String(npc.npcType || 'villager'),
+    approxDist: dist,
+    offeredAt: Date.now()
+  };
+}
+
+// Comprueba las misiones de «ve a tal sitio»: se completan al llegar.
+function updateReachMissions() {
+  try {
+    const list = window._missions;
+    if (!Array.isArray(list) || !list.length) return;
+    for (let i = 0; i < list.length; i++) {
+      const m = list[i];
+      if (!m || m.done || m.watch !== 'reach') continue;
+      const d = Math.hypot(player.x - m.targetCol, player.y - m.targetRow);
+      m.distance = Math.round(d);
+      m.progress = d <= (m.radius || 3) ? (m.target || 1) : 0;
+      if (d <= (m.radius || 3)) {
+        completeSideMission(m);
+        notify(m.isWild ? 'Has llegado: le encontraste allí.' : 'Objetivo alcanzado');
+      }
+    }
+  } catch (e) {}
+}
+
 function createSecondaryMissionForNpc(npc) {
   const epoch = window._currentEpoch || 'mesopotamia';
   const npcName = npc.name || 'Habitante';
+  // Fuera de los núcleos urbanos los encargos son de caminante: ir a mirar algo
+  // concreto en mitad del mapa (y sólo a veces: el 55% sigue siendo rutina).
+  try {
+    if (npcIsOutsideSettlements(npc) && Math.random() < 0.55) {
+      return createWildMissionForNpc(npc);
+    }
+  } catch (e) {}
   const foodKey = epoch === 'urss' ? 'food' : 'wheat';
   const fieldBuildKey = (getEpochBuildPalette(epoch)[2]) || 'farm';
   const type = String(npc.npcType || 'villager');
@@ -16746,6 +19147,182 @@ function drawDialoguePanel(ctx, W, H) {
 // ── MINI-MAP ──────────────────────────────────────────────────
 // Renders a small overview map in the bottom-right corner.
 // Shows terrain, buildings, and player position.
+// Capa estática del minimapa (terreno + edificios). Antes se recorría el mapa
+// ENTERO (180×120 = 21.600 celdas) en cada fotograma para pintar el minimapa:
+// eso solo ya son más operaciones que todo el terreno. Ahora se rasteriza una
+// vez y se refresca como mucho cada 1,5 s (el mapa cambia poco).
+let _miniMapCache = null, _miniMapCacheAt = 0;
+function buildMiniMapCache(mapW, mapH, scaleX, scaleY) {
+  try {
+    if (!_miniMapCache || _miniMapCache.width !== mapW || _miniMapCache.height !== mapH) {
+      _miniMapCache = document.createElement('canvas');
+      _miniMapCache.width = mapW; _miniMapCache.height = mapH;
+    }
+    const mc = _miniMapCache.getContext('2d');
+    mc.clearRect(0, 0, mapW, mapH);
+    const step = 3;
+    for (let r = 0; r < ROWS; r += step) {
+      for (let c = 0; c < COLS; c += step) {
+        let color = '#C8A87A';
+        const biome = tileBiome && tileBiome[r] && tileBiome[r][c];
+        if (biome === 'grass') color = '#6A9B4A';
+        else if (biome === 'forest') color = '#2E5E2A';
+        else if (biome === 'road') color = '#8B7B5B';
+        else if (biome === 'hills') color = '#A57A30';
+        try { if (window._RIVER_FULL_MAP && window._RIVER_FULL_MAP[r] && window._RIVER_FULL_MAP[r][c]) color = '#2060A0'; } catch (e) {}
+        try { if (window._CANAL_MAP && window._CANAL_MAP[r] && window._CANAL_MAP[r][c]) color = '#C4A055'; } catch (e) {}
+        mc.fillStyle = color;
+        mc.fillRect(c * scaleX, r * scaleY, step * scaleX + 0.5, step * scaleY + 0.5);
+      }
+    }
+    // Edificios: una sola pasada por el grid (sólo al refrescar la caché).
+    for (let r = 0; r < ROWS; r++) {
+      const row = grid[r];
+      if (!row) continue;
+      for (let c = 0; c < COLS; c++) {
+        const cell = row[c];
+        if (!cell) continue;
+        if (typeof cell === 'object' && (cell.baseCol !== c || cell.baseRow !== r)) continue; // sólo el ancla
+        const bt = (typeof cell === 'object') ? cell.type : cell;
+        let bColor = '#D4A030';
+        if (bt === 'temple' || bt === 'ziggurat') bColor = '#F0E0A0';
+        else if (bt === 'farm') bColor = '#50AA40';
+        else if (bt === 'market' || bt === 'granary') bColor = '#C07820';
+        else if (bt === 'tower') bColor = '#808080';
+        mc.fillStyle = bColor;
+        mc.fillRect(c * scaleX, r * scaleY, Math.max(2, scaleX), Math.max(2, scaleY));
+      }
+    }
+    return true;
+  } catch (e) { return false; }
+}
+
+// ── NIEBLA DE GUERRA ────────────────────────────────────────────────────────
+// Todo lo que el jugador no ha visitado se pinta NEGRO: no se ve el terreno, ni
+// los edificios, ni las entidades. La exploración se guarda por celda
+// (`window._explored`, 1 byte por celda) y se pinta con un lienzo de 1 px por
+// celda escalado al mapa: barato y con el borde suave. Se puede encender y
+// apagar en DEV ▸ «Niebla de guerra» para comparar.
+window._explored = window._explored || null;
+window._fogEnabled = (window._fogEnabled === undefined) ? true : !!window._fogEnabled;
+let _fogCanvas = null;
+let _fogDirty = true;
+let _fogTickAt = 0;
+
+function ensureExploredMap() {
+  if (!window._explored || window._explored.length !== ROWS * COLS) {
+    window._explored = new Uint8Array(ROWS * COLS);
+    _fogDirty = true;
+  }
+  return window._explored;
+}
+
+function markExplored(col, row, radius) {
+  try {
+    const ex = ensureExploredMap();
+    const r = Math.max(1, radius || 9);
+    const c0 = Math.max(0, Math.floor(col - r)), c1 = Math.min(COLS - 1, Math.ceil(col + r));
+    const r0 = Math.max(0, Math.floor(row - r)), r1 = Math.min(ROWS - 1, Math.ceil(row + r));
+    for (let rr = r0; rr <= r1; rr++) {
+      const dy = rr - row;
+      for (let cc = c0; cc <= c1; cc++) {
+        const dx = cc - col;
+        if (dx * dx + dy * dy > r * r) continue;
+        const i = rr * COLS + cc;
+        if (!ex[i]) { ex[i] = 1; _fogDirty = true; }
+      }
+    }
+  } catch (e) {}
+}
+
+function markExploredNow(radius) {
+  try { if (player && Number.isFinite(player.col)) markExplored(player.col, player.row, radius || 10); } catch (e) {}
+  // Los núcleos urbanos ya conocidos se revelan enteros (no tiene sentido que
+  // un pueblo al que acabas de llegar siga negro).
+  try {
+    for (const v of (window._VILLAGES || [])) {
+      if (!v) continue;
+      const cx = Math.floor(((v.minC || 0) + (v.maxC || 0)) / 2);
+      const cy = Math.floor(((v.minR || 0) + (v.maxR || 0)) / 2);
+      if (Number.isFinite(cx) && Number.isFinite(cy)) markExplored(cx, cy, 15);
+    }
+  } catch (e) {}
+}
+
+function buildFogCanvas() {
+  try {
+    const ex = ensureExploredMap();
+    if (!_fogCanvas || _fogCanvas.width !== COLS || _fogCanvas.height !== ROWS) {
+      _fogCanvas = document.createElement('canvas');
+      _fogCanvas.width = COLS; _fogCanvas.height = ROWS;
+    }
+    const g = _fogCanvas.getContext('2d');
+    g.clearRect(0, 0, COLS, ROWS);
+    g.fillStyle = '#000';
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        if (!ex[r * COLS + c]) g.fillRect(c, r, 1, 1);
+      }
+    }
+    _fogDirty = false;
+    return true;
+  } catch (e) { return false; }
+}
+
+function drawFogOfWar(now) {
+  try {
+    if (!window._fogEnabled) return;
+    if (window.currentInterior) return;
+    // Marcar lo explorado alrededor del jugador (y de los pueblos conocidos).
+    if (!_fogTickAt || now - _fogTickAt > 500) {
+      _fogTickAt = now;
+      markExploredNow(10);
+    }
+    if (!_fogCanvas || _fogDirty) buildFogCanvas();
+    if (!_fogCanvas) return;
+    const ts = getTileSize();
+    if (viewMode === 'iso') {
+      const { w, h } = getIsoTileSize();
+      const ex = window._explored;
+      ctx.save();
+      ctx.fillStyle = '#000';
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          if (ex[r * COLS + c]) continue;
+          const p = worldToScreen(c, r);
+          if (p.x + w < 0 || p.x - w > canvas.width || p.y + h < 0 || p.y > canvas.height) continue;
+          ctx.beginPath();
+          ctx.moveTo(p.x, p.y);
+          ctx.lineTo(p.x + w / 2, p.y + h / 2);
+          ctx.lineTo(p.x, p.y + h);
+          ctx.lineTo(p.x - w / 2, p.y + h / 2);
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
+      ctx.restore();
+      return;
+    }
+    // Ortogonal: el mapa es un rectángulo, así que basta un drawImage escalado
+    // (con suavizado para que el borde no salga a celdas cuadradas).
+    const origin = worldToScreen(0, 0);
+    const prevSmoothing = ctx.imageSmoothingEnabled;
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(_fogCanvas, 0, 0, COLS, ROWS, Math.round(origin.x), Math.round(origin.y), Math.round(COLS * ts), Math.round(ROWS * ts));
+    ctx.imageSmoothingEnabled = prevSmoothing;
+  } catch (e) {}
+}
+
+try {
+  window.MESO_FOG = {
+    enable: (v) => { window._fogEnabled = (v === undefined) ? true : !!v; _fogDirty = true; return window._fogEnabled; },
+    toggle: () => { window._fogEnabled = !window._fogEnabled; _fogDirty = true; return window._fogEnabled; },
+    clear: () => { ensureExploredMap().fill(0); _fogDirty = true; },
+    revealAll: () => { ensureExploredMap().fill(1); _fogDirty = true; },
+    stats: () => { const ex = ensureExploredMap(); let n = 0; for (let i = 0; i < ex.length; i++) if (ex[i]) n++; return { activa: !!window._fogEnabled, exploradas: n, total: ex.length, pct: +(100 * n / ex.length).toFixed(1) }; }
+  };
+} catch (e) {}
+
 function drawMiniMap(ctx, W, H) {
   const mapW = 140, mapH = 90;
   const padR = 12, padB = 48; // offset from bottom-right edge
@@ -16764,39 +19341,21 @@ function drawMiniMap(ctx, W, H) {
   ctx.strokeRect(ox - 2, oy - 2, mapW + 4, mapH + 4);
 
   ctx.globalAlpha = 1;
-  // Terrain columns (sampled every 3 tiles for performance)
-  const step = 3;
-  for (let r = 0; r < ROWS; r += step) {
-    for (let c = 0; c < COLS; c += step) {
-      let color = '#C8A87A'; // sand default
-      const biome = tileBiome && tileBiome[r] && tileBiome[r][c];
-      if (biome === 'grass')  color = '#6A9B4A';
-      else if (biome === 'forest') color = '#2E5E2A';
-      else if (biome === 'road')   color = '#8B7B5B';
-      else if (biome === 'hills')  color = '#A57A30';
-      // River
-      try { if (window._RIVER_FULL_MAP && window._RIVER_FULL_MAP[r] && window._RIVER_FULL_MAP[r][c]) color = '#2060A0'; } catch(e){}
-      try { if (window._CANAL_MAP && window._CANAL_MAP[r] && window._CANAL_MAP[r][c]) color = '#C4A055'; } catch(e){} // logistics corridor shown as road on minimap
-      ctx.fillStyle = color;
-      ctx.fillRect(ox + c * scaleX, oy + r * scaleY, step * scaleX + 0.5, step * scaleY + 0.5);
-    }
+  // Capa estática del minimapa: cacheada (1 drawImage) y refrescada a lo sumo
+  // cada 1,5 s. Antes se recorría el mapa entero en cada fotograma.
+  const _mmNow = Date.now();
+  if (!_miniMapCache || (_mmNow - _miniMapCacheAt) > 1500) {
+    if (buildMiniMapCache(mapW, mapH, scaleX, scaleY)) _miniMapCacheAt = _mmNow;
   }
-
-  // Buildings
-  for (let r = 0; r < ROWS; r++) {
-    for (let c = 0; c < COLS; c++) {
-      const cell = grid[r][c];
-      if (!cell) continue;
-      let bColor = '#D4A030'; // default building tan
-      const bt = typeof cell === 'object' ? cell.type : cell;
-      if (bt === 'temple' || bt === 'ziggurat') bColor = '#F0E0A0';
-      else if (bt === 'farm') bColor = '#50AA40';
-      else if (bt === 'market' || bt === 'granary') bColor = '#C07820';
-      else if (bt === 'tower') bColor = '#808080';
-      ctx.fillStyle = bColor;
-      ctx.fillRect(ox + c * scaleX, oy + r * scaleY, Math.max(2, scaleX), Math.max(2, scaleY));
+  if (_miniMapCache) { try { ctx.drawImage(_miniMapCache, ox, oy); } catch (e) {} }
+  // La niebla también en el minimapa: mismo lienzo de 1 px por celda, escalado.
+  try {
+    if (window._fogEnabled && _fogCanvas) {
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(_fogCanvas, 0, 0, COLS, ROWS, ox, oy, mapW, mapH);
+      ctx.imageSmoothingEnabled = false;
     }
-  }
+  } catch (e) {}
 
   // Player dot (white with black outline)
   const px = ox + player.x * scaleX;
@@ -17441,6 +20000,7 @@ function setEditMode(enabled) {
   const devFreeBtn = document.getElementById('btn-dev-mode-free');
   [editBtn, devEditBtn].filter(Boolean).forEach(btn => btn.classList.toggle('active', editMode));
   [freeBtn, devFreeBtn].filter(Boolean).forEach(btn => btn.classList.toggle('active', !editMode));
+  try { updateEditModeButton(); } catch (e) {}
   if (!editMode) {
     selectedTool = null;
     document.querySelectorAll('.build-btn, #btn-demolish').forEach(b => b.classList.remove('selected'));
@@ -17491,6 +20051,34 @@ function setAdvStatsVisible(visible) {
 const btnModeEdit = document.getElementById('btn-mode-edit');
 const btnModeFree = document.getElementById('btn-mode-free');
 const btnCenterPlayer = document.getElementById('btn-center-player');
+
+// ── Cámara libre / de seguimiento ─────────────────────────────────────────
+// Atajo: T (y L, por compatibilidad con la versión anterior). También el botón
+// "Ir a jugador" alterna el seguimiento.
+let _updateFollowButtonUI = null;
+function setCameraFollow(on, opts = {}) {
+  followPlayer = !!on;
+  try { if (_updateFollowButtonUI) _updateFollowButtonUI(); } catch (e) {}
+  if (followPlayer) {
+    // fijar el objetivo suave de inmediato para que no haya salto
+    try {
+      const tileSize = getTileSize();
+      if (viewMode === 'iso') {
+        const p = projectIso(player.x, player.y);
+        targetCam = { x: canvas.width / 2 - p.x, y: canvas.height / 2 - p.y };
+      } else {
+        targetCam = { x: canvas.width / 2 - player.x * tileSize, y: canvas.height / 2 - player.y * tileSize };
+      }
+    } catch (e) {}
+  } else {
+    targetCam = null;
+  }
+  if (!opts.silent) {
+    try { notify(followPlayer ? 'Cámara: seguimiento del jugador (T)' : 'Cámara libre (T)'); } catch (e) {}
+  }
+  return followPlayer;
+}
+function toggleCameraFollow() { return setCameraFollow(!followPlayer); }
 
 function centerCameraOnPlayer() {
   const tileSize = getTileSize();
@@ -17778,27 +20366,28 @@ document.addEventListener('keydown', e => {
     e.preventDefault();
     return;
   }
+  // Cámara libre / de seguimiento: T (L se mantiene por compatibilidad)
+  if (e.key && (e.key.toLowerCase() === 't' || e.key.toLowerCase() === 'l')) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return; // no pisar atajos con modificador
+    toggleCameraFollow();
+    e.preventDefault();
+    return;
+  }
   if (!editMode && e.key && e.key.toLowerCase() === 'p') {
     try { applyPlayerDeathConsequences(); } catch (err) {}
     e.preventDefault();
     return;
   }
-  // toggle camera follow with 'l'
-  if (e.key && e.key.toLowerCase() === 'l') {
-    followPlayer = !followPlayer;
-    notify(followPlayer ? 'Camara: siguiendo jugador' : 'Camara: libre');
-    if (followPlayer) {
-      // initialize smooth target immediately
-      const tileSize = getTileSize();
-      if (viewMode === 'iso') {
-        const p = projectIso(player.x, player.y);
-        targetCam = { x: canvas.width/2 - p.x, y: canvas.height/2 - p.y };
-      } else {
-        targetCam = { x: canvas.width/2 - player.x * tileSize, y: canvas.height/2 - player.y * tileSize };
-      }
-    } else {
-      targetCam = null;
-    }
+  // Cambiar de objetivo (O) y apartarlo (Shift+O): así «preparar cultivo» no es
+  // lo único que se puede seguir en el prólogo.
+  if (e.code === 'KeyO' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    try {
+      const tag = (document.activeElement && document.activeElement.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea') return;
+      if (e.shiftKey) hideTrackedObjective(); else cycleObjective(e.altKey ? -1 : 1);
+      e.preventDefault();
+      return;
+    } catch (err) {}
   }
 });
 
@@ -17812,7 +20401,7 @@ document.addEventListener('keydown', e => {
       try {
         const now2 = Date.now();
         const pCol = Math.floor(player.x), pRow = Math.floor(player.y);
-        const inDeepWater = movementMultiplier(pCol, pRow) < 0.5;
+        const inDeepWater = isWaterCell(pCol, pRow);
         if (!isPlayerDowned(now2) && !inDeepWater && !(player._jumpUntil && player._jumpUntil > now2)) {
           player._jumpUntil = now2 + 380;
         }
@@ -18052,7 +20641,7 @@ document.addEventListener('keydown', e => {
         try {
           const found = it.ref;
           const now = Date.now();
-          if (!found._chopUntil) { found._chopStart = now; found._chopUntil = now + 2000; notify('Talas el árbol...'); }
+          if (!found._chopUntil) { found._chopStart = now; found._chopUntil = now + 2000; notify('Talas el árbol...'); try { fx.onChopStart(found); } catch (e) {} triggerCharacterSwing(player, 2.4); }
           else { notify('Acción en progreso...'); }
         } catch (err) {}
         e.preventDefault();
@@ -18174,6 +20763,9 @@ function init() {
   // Create build panel controls (collapse / minimize)
   try { createBuildPanelControls(); } catch (e) {}
   try { createCameraButton(); } catch (e) {}
+  try { createEditModeButton(); } catch (e) {}
+  // Niebla de guerra: revelar la zona inicial (casa y alrededores)
+  try { markExploredNow(12); } catch (e) {}
   try { registerClosableUIElements(); } catch (e) {}
   setTimeout(() => { try { registerClosableUIElements(); } catch (e) {} }, 120);
   // Create restore button for minimized panel
@@ -18276,6 +20868,19 @@ function init() {
               if (_mc.palette && typeof _mc.palette === 'object') player.palette = Object.assign({}, player.palette, _mc.palette);
               try { localStorage.removeItem('meso.menuChar'); } catch (e) {}
             }
+            // MODO DE JUEGO (lo elige el menú):
+            //  · historia → el guion manda: personaje fijo (Adapa) y época fija.
+            //  · libre    → el jugador decide personaje, época y mundo.
+            try {
+              const _modo = localStorage.getItem('meso.gameMode');
+              if (_modo === 'story') {
+                window._storyMode = true;
+                window._currentEpoch = 'mesopotamia';
+                try { localStorage.setItem('meso.currentEpoch', 'mesopotamia'); } catch (e) {}
+              } else if (_modo === 'free') {
+                window._storyMode = false;
+              }
+            } catch (e) {}
           } catch (e) {}
           try {
             ensurePetDogCompanion();
