@@ -212,6 +212,150 @@ const INTERIORS = {
         { col: 6, row: 6, name: 'Padre', npcType: 'villager' }
       ]
     }]
+  },
+
+  // ── Edificios cívicos y de trabajo ────────────────────────────────────────
+  // Antes SÓLO las casas tenían interior: al templo, al mercado, al granero o
+  // al taller se les daba a «E» y no pasaba nada («no aparece ningún interior»).
+  temple: {
+    palette: 'ladrillo',
+    defaultFloor: 0,
+    chestItems: ['wheat', 'bread', 'stone', 'brick'],
+    floors: [{
+      name: 'Sala del santuario',
+      art: [
+        '#############',
+        '#T##W###W##T#',
+        '#...........#',
+        '#..p.s.s.p..#',
+        '#l...rrr...l#',
+        '#..t.rrr.t..#',
+        '#..c.rrr.c..#',
+        '#f.........f#',
+        '######D######',
+        '######D######'
+      ],
+      npcs: [
+        { col: 6, row: 3, name: 'Sacerdotisa', npcType: 'priestess' },
+        { col: 3, row: 6, name: 'Oferente', npcType: 'villager' }
+      ]
+    }]
+  },
+
+  market: {
+    palette: 'adobe',
+    defaultFloor: 0,
+    chestItems: ['wheat', 'bread', 'brick', 'stone'],
+    floors: [{
+      name: 'Nave del mercado',
+      art: [
+        '#############',
+        '#T#W#####W#T#',
+        '#...........#',
+        '#ooo.ooo.ooo#',
+        '#...p...p...#',
+        '#..t..k..t..#',
+        '#l.........l#',
+        '#p.........p#',
+        '#####D#######',
+        '#####D#######'
+      ],
+      npcs: [
+        { col: 3, row: 3, name: 'Mercader', npcType: 'merchant' },
+        { col: 9, row: 5, name: 'Comprador', npcType: 'villager' }
+      ]
+    }]
+  },
+
+  granary: {
+    palette: 'adobe',
+    defaultFloor: 0,
+    chestItems: ['wheat', 'wheat', 'wheat', 'brick'],
+    floors: [{
+      name: 'Almacén de grano',
+      art: [
+        '###########',
+        '#T#W###W#T#',
+        '#.........#',
+        '#sss...sss#',
+        '#p.p...p.p#',
+        '#.........#',
+        '#s.s...s.s#',
+        '#p.p.k.p.p#',
+        '#####D#####',
+        '#####D#####'
+      ],
+      npcs: [{ col: 5, row: 4, name: 'Almacenero', npcType: 'merchant' }]
+    }]
+  },
+
+  workshop: {
+    palette: 'ladrillo',
+    defaultFloor: 0,
+    chestItems: ['brick', 'stone', 'stone'],
+    floors: [{
+      name: 'Taller',
+      art: [
+        '###########',
+        '#T#W###W#T#',
+        '#.........#',
+        '#ttt...ff.#',
+        '#cc....cc.#',
+        '#.........#',
+        '#p..s.s..p#',
+        '#l...o...l#',
+        '#####D#####',
+        '#####D#####'
+      ],
+      npcs: [{ col: 6, row: 3, name: 'Alfarero', npcType: 'villager' }]
+    }]
+  },
+
+  barracks: {
+    palette: 'soviet',
+    defaultFloor: 0,
+    chestItems: ['brick', 'stone', 'bread'],
+    floors: [{
+      name: 'Cuadra',
+      art: [
+        '#############',
+        '#T##W###W##T#',
+        '#bb...bb...b#',
+        '#bb...bb...b#',
+        '#...........#',
+        '#s.s.s...s.s#',
+        '#t.........t#',
+        '#p.k.....k.p#',
+        '######D######',
+        '######D######'
+      ],
+      npcs: [
+        { col: 6, row: 4, name: 'Sargento', npcType: 'guard' },
+        { col: 2, row: 6, name: 'Recluta', npcType: 'guard' }
+      ]
+    }]
+  },
+
+  baths: {
+    palette: 'ladrillo',
+    defaultFloor: 0,
+    chestItems: ['bread', 'wheat'],
+    floors: [{
+      name: 'Sala de baños',
+      art: [
+        '#############',
+        '#T##W###W##T#',
+        '#...........#',
+        '#rrrrr.rrrrr#',
+        '#rrrrr.rrrrr#',
+        '#...........#',
+        '#l.p.....p.l#',
+        '#t.........t#',
+        '######D######',
+        '######D######'
+      ],
+      npcs: [{ col: 6, row: 6, name: 'Bañista', npcType: 'villager' }]
+    }]
   }
 };
 

@@ -79,7 +79,13 @@ const DISTRICTS = {
 
 // ── Plantillas geométricas ──────────────────────────────────────────────────
 // block ......... tamaño de una celda de manzana (ancho × alto) en celdas
-// street ........ ancho de calle entre manzanas (1 celda)
+// street ........ ancho de calle entre manzanas (2 celdas: es el cambio que
+//                 hace que los asentamientos se puedan RECORRER. Con 1 celda,
+//                 sumada al retranqueo 0 y a que los sprites se dibujan un 25 %
+//                 más grandes que su huella, las fachadas se tocaban, no se
+//                 veía el suelo entre casas y parecía que no se podía pasar.)
+// setback ....... retranqueo: celdas libres entre la manzana y la calle, para
+//                 que los edificios no den directamente al bordillo.
 // coreRings ..... 0 = núcleo de 1 celda · 1 = núcleo de 3×3 celdas (recinto)
 // rings ......... anillos de manzanas alrededor del núcleo
 //                (nº total de celdas por eje = 1 + 2*(coreRings + rings))
@@ -88,14 +94,18 @@ const DISTRICTS = {
 const TEMPLATES = {
   capital: {
     kind: 'capital',
-    block: { w: 5, h: 5 },
-    street: 1,
-    coreRings: 1,            // recinto monumental de 3×3 celdas (17×17)
-    rings: 1,                // 16 manzanas alrededor
+    block: { w: 6, h: 6 },
+    street: 3,
+    setback: 0,
+    coreRings: 2,            // recinto monumental (una corona de celdas): el
+                             // zigurat (12×12) respira dentro de su explanada
+    rings: 1,                // una corona de manzanas alrededor
     perimeter: 1,
     wall: true,
     noWallEpochs: ['urss'],      // la capital soviética usa bulevares y controles de acceso
     coreTemplate: 'nucleo_capital',
+    // Callejones de la manzana: 2 celdas entre edificios (no pegados).
+    blockGap: 2,
     gates: [
       // len = 2 en los cuatro lados: el arco (2×1 o 1×2) cabe en el vano y la
       // puerta se ve de verdad (con len 1 no había hueco suficiente).
@@ -108,12 +118,14 @@ const TEMPLATES = {
   },
   military_base: {
     kind: 'military_base',
-    block: { w: 6, h: 5 },
-    street: 1,
+    block: { w: 6, h: 6 },
+    street: 3,
+    setback: 0,
     coreRings: 0,            // patio de armas de una celda
     rings: 1,                // 8 manzanas alrededor
     perimeter: 1,
     wall: true,
+    blockGap: 1,
     coreTemplate: null,
     gates: [{ side: 'S', at: -1, len: 2 }],
     coreBuildings: ['well'],
@@ -126,12 +138,14 @@ const TEMPLATES = {
   },
   village: {
     kind: 'village',
-    block: { w: 4, h: 4 },
-    street: 1,
+    block: { w: 5, h: 5 },
+    street: 2,
+    setback: 0,
     coreRings: 0,            // plazuela central con pozo
     rings: 1,                // 8 manzanas
     perimeter: 0,
     wall: false,
+    blockGap: 1,
     coreTemplate: null,
     gates: [],
     coreBuildings: ['well'],
@@ -140,12 +154,14 @@ const TEMPLATES = {
   },
   trading_post: {
     kind: 'trading_post',
-    block: { w: 4, h: 4 },
-    street: 1,
+    block: { w: 5, h: 5 },
+    street: 2,
+    setback: 0,
     coreRings: 0,
     rings: 1,
     perimeter: 1,
     wall: false,
+    blockGap: 1,
     coreTemplate: null,
     gates: [],
     coreBuildings: ['market'],
@@ -247,44 +263,68 @@ export function createSettlementPlanner(deps) {
     const out = [];
     const maxB = (opts && opts.maxBuildings) || 99;
     if (!pool || !pool.length) return out;
-    const gap = 1;
+    // Callejón entre edificios de la misma manzana (la capital usa 2 celdas).
+    const gap = Math.max(1, Math.round(Number(opts && opts.gap) || 1));
+    // RETRANQUEO: los edificios no se pegan a la calle; queda una franja libre
+    // de `inset` celdas por dentro del bordillo de la manzana. Es lo que hace
+    // que se vea el suelo y que las fachadas no se solapen con los sprites del
+    // lado de enfrente (que se dibujan un 25 % más anchos que su huella).
+    const inset = Math.max(0, Math.round(Number(opts && opts.setback) || 0));
+    const usable = {
+      c: block.c + inset,
+      r: block.r + inset,
+      w: block.w - inset * 2,
+      h: block.h - inset * 2
+    };
+    if (usable.w < 1 || usable.h < 1) return out;
     const sizes = pool.map(t => ({ t, s: getSize(t) }));
 
     const monuments = sizes
-      .filter(x => x.s.w >= block.w - 1 && x.s.h >= block.h - 1)
+      .filter(x => x.s.w >= usable.w - 1 && x.s.h >= usable.h - 1)
       .sort((a, b) => (b.s.w * b.s.h) - (a.s.w * a.s.h));
-    if (monuments.length && rng() < 0.6) {
+    if (monuments.length && rng() < 0.35) {
       const m = monuments[0];
       out.push({
-        c: block.c + Math.floor((block.w - m.s.w) / 2),
-        r: block.r + Math.floor((block.h - m.s.h) / 2),
+        c: usable.c + Math.floor((usable.w - m.s.w) / 2),
+        r: usable.r + Math.floor((usable.h - m.s.h) / 2),
         w: m.s.w, h: m.s.h, type: m.t, district
       });
-      if (out.length >= maxB) return out;
+      // OJO: aquí hay que CORTAR. Antes seguía el relleno por bandas y levantaba
+      // casas ENCIMA del monumento (el granero y la casa compartían celda, y el
+      // pueblo parecía un apilamiento de sprites: era el «están muy
+      // apelotonados»). Un monumento ocupa la manzana entera.
+      return out;
     }
 
     // Manzana cívica: un edificio representativo y el resto libre
     const civicPool = (opts && opts.civicPool) || [];
-    if (district === 'residential' && civicPool.length && rng() < 0.34) {
+    if (district === 'residential' && civicPool.length && rng() < 0.25) {
       const pick = civicPool[Math.floor(rng() * civicPool.length)];
       const sz = getSize(pick);
       out.push({
-        c: block.c + Math.max(0, Math.floor((block.w - sz.w) / 2)),
-        r: block.r + Math.max(0, Math.floor((block.h - sz.h) / 2)),
+        c: usable.c + Math.max(0, Math.floor((usable.w - sz.w) / 2)),
+        r: usable.r + Math.max(0, Math.floor((usable.h - sz.h) / 2)),
         w: sz.w, h: sz.h, type: pick, district: 'civic'
       });
       return out;
     }
 
-    let r = block.r;
+    let r = usable.r;
     // En manzanas no residenciales se evita repetir el mismo taller varias
     // veces en la misma manzana (si no, salían 19 alfarerías seguidas).
     const usedTypes = new Set();
-    for (const bandH of bandsOf(block.h)) {
-      let c = block.c;
+    // Las bandas se separan también en VERTICAL (misma `gap`): antes se apilaban
+    // pegadas (`r += bandH`) y dos casas de bandas contiguas quedaban adosadas
+    // por el tejado, que es lo que hacía que los pueblos pareciesen un bloque.
+    while (r < usable.r + usable.h) {
+      const remainingH = usable.r + usable.h - r;
+      const bandH = Math.min(remainingH >= 5 ? 3 : 2, remainingH);
+      if (bandH < 1) break;
+      let c = usable.c;
       let guard = 0;
-      while (c + 1 <= block.c + block.w && out.length < maxB && guard++ < 12) {
-        const free = block.c + block.w - c;
+      let colocadosEnBanda = 0;
+      while (c + 1 <= usable.c + usable.w && out.length < maxB && guard++ < 12) {
+        const free = usable.c + usable.w - c;
         const candidates = sizes.filter(x => x.s.h <= bandH && x.s.w <= free);
         if (!candidates.length) break;
         const fresh = district === 'residential' ? candidates : candidates.filter(x => !usedTypes.has(x.t));
@@ -295,9 +335,11 @@ export function createSettlementPlanner(deps) {
           c, r: r + (bandH - choice.s.h),
           w: choice.s.w, h: choice.s.h, type: choice.t, district
         });
+        colocadosEnBanda++;
         c += choice.s.w + gap;
       }
-      r += bandH;
+      if (!colocadosEnBanda) break;   // ya no cabe nada más en esta manzana
+      r += bandH + gap;
     }
     return out;
   }
@@ -383,13 +425,68 @@ export function createSettlementPlanner(deps) {
     return rects;
   }
 
+  // ── Puertas alineadas con las avenidas ──────────────────────────────────
+  // Las puertas de la plantilla llevan una posición (`at`) «a ojo». Si esa
+  // columna/fila no es una avenida real, la calle muere contra el lienzo: se ve
+  // la calzada llegar a la muralla y cortarse. Aquí cada puerta se desplaza a la
+  // avenida LIBRE más cercana (columna o fila que cruza todo el asentamiento).
+  function snapGatesToStreets(geo, gates) {
+    const list = (gates || []).map(g => ({ ...g }));
+    if (!list.length) return list;
+    const { perC, perR } = geo;
+    const rects = buildStreets(geo, STREET_ROAD);
+    const W = perC * 2 + 1;
+    const H = perR * 2 + 1;
+    const cover = [];
+    for (let r = 0; r < H; r++) cover.push(new Array(W).fill(false));
+    rects.forEach(rc => {
+      for (let r = rc.r; r < rc.r + rc.h; r++) {
+        for (let c = rc.c; c < rc.c + rc.w; c++) {
+          const rr = r + perR;
+          const cc = c + perC;
+          if (rr >= 0 && rr < H && cc >= 0 && cc < W) cover[rr][cc] = true;
+        }
+      }
+    });
+    const isStreet = (c, r) => {
+      const rr = r + perR;
+      const cc = c + perC;
+      return rr >= 0 && rr < H && cc >= 0 && cc < W && cover[rr][cc];
+    };
+    const fullCols = [];
+    const fullRows = [];
+    for (let c = -perC; c <= perC; c++) {
+      let ok = true;
+      for (let r = -perR; r <= perR && ok; r++) if (!isStreet(c, r)) ok = false;
+      if (ok) fullCols.push(c);
+    }
+    for (let r = -perR; r <= perR; r++) {
+      let ok = true;
+      for (let c = -perC; c <= perC && ok; c++) if (!isStreet(c, r)) ok = false;
+      if (ok) fullRows.push(r);
+    }
+    list.forEach(g => {
+      const lines = (g.side === 'N' || g.side === 'S') ? fullCols : fullRows;
+      if (!lines.length) return;
+      let best = null;
+      let bestD = Infinity;
+      lines.forEach(v => {
+        const d = Math.abs(v - g.at);
+        if (d < bestD) { bestD = d; best = v; }
+      });
+      if (best !== null) g.at = best;
+    });
+    return list;
+  }
+
   // ── Muralla + puertas + torres ──────────────────────────────────────────
   function buildWalls(geo) {
     const { cfg, wallC, wallR } = geo;
     if (!cfg.wall) return { segments: [], towers: [], gatePieces: [] };
     const segments = [];
     const towers = [];
-    const gates = cfg.gates || [];
+    // `geo.gates` ya viene alineado con las avenidas (snapGatesToStreets).
+    const gates = geo.gates || cfg.gates || [];
     const inGate = (side, pos) => gates.some(g => g.side === side && pos >= g.at && pos < g.at + g.len);
 
     // Muros N/S
@@ -505,8 +602,8 @@ export function createSettlementPlanner(deps) {
         props.push({ subtype: soviet ? 'soviet_streetlight' : 'lamp_post', c, r: core.r + core.h, size: 1 });
       }
     }
-    // Garitas junto a las puertas
-    (cfg.gates || []).forEach(g => {
+    // Garitas junto a las puertas (las alineadas con las avenidas)
+    (geo.gates || cfg.gates || []).forEach(g => {
       if (g.side === 'N') props.push({ subtype: 'guard_booth', c: g.at + 1, r: -geo.wallR + 1, size: 0.95 });
       if (g.side === 'S') props.push({ subtype: 'guard_booth', c: g.at + g.len, r: geo.wallR - 1, size: 0.95 });
       if (g.side === 'W') props.push({ subtype: 'guard_booth', c: -geo.wallC + 1, r: g.at - 1, size: 0.95 });
@@ -543,7 +640,7 @@ export function createSettlementPlanner(deps) {
     geo.blocks.forEach(b => {
       b.district = districtFor(b, geo);
       const pool = pools[b.district] || pools.residential;
-      const pieces = fillBlock(b, b.district, pool, rng, { maxBuildings: cfg.maxBuildingsPerBlock, civicPool: pools.civic });
+      const pieces = fillBlock(b, b.district, pool, rng, { maxBuildings: cfg.maxBuildingsPerBlock, civicPool: pools.civic, gap: cfg.blockGap, setback: cfg.setback });
       pieces.forEach(p => buildings.push(p));
     });
 
@@ -560,12 +657,15 @@ export function createSettlementPlanner(deps) {
     }
 
     const streets = buildStreets(geo, epoch === 'urss' ? STREET_CONCRETE : STREET_ROAD);
+    // Las puertas se colocan sobre las AVENIDAS reales: así la calle siempre
+    // desemboca en un vano y no se ve la calzada cortada contra el lienzo.
+    geo.gates = snapGatesToStreets(geo, cfg.gates);
     const withoutWall = !!(cfg.noWallEpochs && cfg.noWallEpochs.indexOf(epoch) >= 0);
     const walls = (cfg.wall && !withoutWall)
       ? buildWalls(geo)
       : { segments: [], towers: [], gates: [] };
     // Sin muralla (capital URSS) las avenidas siguen teniendo control de acceso
-    const gateList = walls.gates.length ? walls.gates : (withoutWall ? (cfg.gates || []) : []);
+    const gateList = walls.gates.length ? walls.gates : (withoutWall ? geo.gates : []);
     const props = cfg.props ? buildProps(geo, epoch, rng) : [];
 
     // Extensión total (incluye muralla) para reservar terreno y limpiar

@@ -1,0 +1,215 @@
+{
+  "interiorId": "market",
+  "defaultFloor": 0,
+  "entryCol": 5,
+  "entryRow": 8,
+  "chestItems": [
+    "wheat",
+    "bread",
+    "brick",
+    "stone"
+  ],
+  "npcs": [
+    {
+      "col": 3,
+      "row": 3,
+      "name": "Mercader",
+      "npcType": "merchant"
+    },
+    {
+      "col": 9,
+      "row": 5,
+      "name": "Comprador",
+      "npcType": "villager"
+    }
+  ],
+  "floors": [
+    {
+      "name": "Nave del mercado",
+      "width": 13,
+      "height": 10,
+      "entryCol": 5,
+      "entryRow": 8,
+      "wallPalette": {
+        "back": "#9B7B5A",
+        "backDark": "#8B6B4A",
+        "backLight": "#AB8B6A",
+        "left": "#8B6B4A",
+        "leftDark": "#7B5B3A",
+        "right": "#AB8B6A",
+        "rightDark": "#9B7B5A",
+        "floor": "#C8A87A",
+        "floorDark": "#BFA070",
+        "trim": "#5A3A1A",
+        "baseboard": "#4A2A0A",
+        "ceiling": "#3A2A1A"
+      },
+      "tiles": [
+        [
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall"
+        ],
+        [
+          "wall",
+          "torch",
+          "wall",
+          "window",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "window",
+          "wall",
+          "torch",
+          "wall"
+        ],
+        [
+          "wall",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "wall"
+        ],
+        [
+          "wall",
+          "counter",
+          "counter",
+          "counter",
+          "floor",
+          "counter",
+          "counter",
+          "counter",
+          "floor",
+          "counter",
+          "counter",
+          "counter",
+          "wall"
+        ],
+        [
+          "wall",
+          "floor",
+          "floor",
+          "floor",
+          "pot",
+          "floor",
+          "floor",
+          "floor",
+          "pot",
+          "floor",
+          "floor",
+          "floor",
+          "wall"
+        ],
+        [
+          "wall",
+          "floor",
+          "floor",
+          "table",
+          "floor",
+          "floor",
+          "chest",
+          "floor",
+          "floor",
+          "table",
+          "floor",
+          "floor",
+          "wall"
+        ],
+        [
+          "wall",
+          "plant",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "plant",
+          "wall"
+        ],
+        [
+          "wall",
+          "pot",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "pot",
+          "wall"
+        ],
+        [
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "door",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall"
+        ],
+        [
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "door",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall"
+        ]
+      ],
+      "npcs": [
+        {
+          "col": 3,
+          "row": 3,
+          "name": "Mercader",
+          "npcType": "merchant"
+        },
+        {
+          "col": 9,
+          "row": 5,
+          "name": "Comprador",
+          "npcType": "villager"
+        }
+      ]
+    }
+  ]
+}

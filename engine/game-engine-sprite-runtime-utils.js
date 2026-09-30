@@ -59,7 +59,14 @@ export async function generateSpriteImages(progress) {
           if (window.createImageBitmap) {
             const bmp = await createImageBitmap(tmp);
             window._SPRITE_IMAGES[k] = bmp;
-            try { const blob = await new Promise((resolve) => tmp.toBlob(resolve, 'image/png')); if (blob) window._SPRITE_URLS[k] = URL.createObjectURL(blob); } catch (e) {}
+            // El object URL por sprite (que obliga a CODIFICAR un PNG con toBlob)
+            // sólo lo necesita el camino antiguo de <img>. Encodeaba 93 PNG en
+            // cada arranque (segundos de espera, y con la pestaña en segundo plano
+            // podía dejar la pantalla de carga colgada minutos). El motor dibuja
+            // siempre desde el ImageBitmap, así que ahora es opcional.
+            if (window.ENABLE_SPRITE_OBJECT_URLS === true) {
+              try { const blob = await new Promise((resolve) => tmp.toBlob(resolve, 'image/png')); if (blob) window._SPRITE_URLS[k] = URL.createObjectURL(blob); } catch (e) {}
+            }
           } else {
             const blob = await new Promise((resolve) => tmp.toBlob(resolve, 'image/png'));
             if (!blob) continue;

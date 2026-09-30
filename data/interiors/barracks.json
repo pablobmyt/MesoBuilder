@@ -1,0 +1,214 @@
+{
+  "interiorId": "barracks",
+  "defaultFloor": 0,
+  "entryCol": 6,
+  "entryRow": 8,
+  "chestItems": [
+    "brick",
+    "stone",
+    "bread"
+  ],
+  "npcs": [
+    {
+      "col": 6,
+      "row": 4,
+      "name": "Sargento",
+      "npcType": "guard"
+    },
+    {
+      "col": 2,
+      "row": 6,
+      "name": "Recluta",
+      "npcType": "guard"
+    }
+  ],
+  "floors": [
+    {
+      "name": "Cuadra",
+      "width": 13,
+      "height": 10,
+      "entryCol": 6,
+      "entryRow": 8,
+      "wallPalette": {
+        "back": "#8A8F96",
+        "backDark": "#6E737A",
+        "backLight": "#A2A7AE",
+        "left": "#7A7F86",
+        "leftDark": "#63686E",
+        "right": "#9AA0A8",
+        "rightDark": "#848A92",
+        "floor": "#9A9186",
+        "floorDark": "#8C8478",
+        "trim": "#4A4E54",
+        "baseboard": "#3A3E44",
+        "ceiling": "#2E3238"
+      },
+      "tiles": [
+        [
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall"
+        ],
+        [
+          "wall",
+          "torch",
+          "wall",
+          "wall",
+          "window",
+          "wall",
+          "wall",
+          "wall",
+          "window",
+          "wall",
+          "wall",
+          "torch",
+          "wall"
+        ],
+        [
+          "wall",
+          "bed",
+          "bed",
+          "floor",
+          "floor",
+          "floor",
+          "bed",
+          "bed",
+          "floor",
+          "floor",
+          "floor",
+          "bed",
+          "wall"
+        ],
+        [
+          "wall",
+          "bed",
+          "bed",
+          "floor",
+          "floor",
+          "floor",
+          "bed",
+          "bed",
+          "floor",
+          "floor",
+          "floor",
+          "bed",
+          "wall"
+        ],
+        [
+          "wall",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "wall"
+        ],
+        [
+          "wall",
+          "bookshelf",
+          "floor",
+          "bookshelf",
+          "floor",
+          "bookshelf",
+          "floor",
+          "floor",
+          "floor",
+          "bookshelf",
+          "floor",
+          "bookshelf",
+          "wall"
+        ],
+        [
+          "wall",
+          "table",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "table",
+          "wall"
+        ],
+        [
+          "wall",
+          "pot",
+          "floor",
+          "chest",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "chest",
+          "floor",
+          "pot",
+          "wall"
+        ],
+        [
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "door",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall"
+        ],
+        [
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "door",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall"
+        ]
+      ],
+      "npcs": [
+        {
+          "col": 6,
+          "row": 4,
+          "name": "Sargento",
+          "npcType": "guard"
+        },
+        {
+          "col": 2,
+          "row": 6,
+          "name": "Recluta",
+          "npcType": "guard"
+        }
+      ]
+    }
+  ]
+}

@@ -5,6 +5,7 @@
  *   · la paleta por defecto y las opciones de color del editor,
  *   · los presets (oficio, título, paleta y ropa),
  *   · las rejillas de los sprites detallados por época (24×24),
+ *   · la armadura del guardia de puerta (se pinta encima, deducida del sprite),
  *   · el recoloreo (`mapDetailedHumanoidColor`) y el dibujo (`drawHumanoid`).
  *
  * Lo importan DOS sitios:
@@ -153,6 +154,22 @@ export const PRESET_ADAPA = {
   palette: { skin: '#C79063', hair: '#2C1A0A', cloth: '#8F7A4E', trim: '#A0522D' }
 };
 
+/**
+ * Paleta de la GUARDIA DE PUERTA (control militar y aduanero). La armadura se
+ * pinta encima con `drawSoldierKit`; aquí sólo van los colores de debajo (piel,
+ * pelo, ropa): la túnica de lana y el sayal rojo bajo la coraza de bronce en
+ * Mesopotamia, y el uniforme y la pelliza sobre el peto de acero en la URSS.
+ */
+export const GATE_GUARD_PALETTES = {
+  mesopotamia: { skin: '#C79063', hair: '#2C1A0A', cloth: '#7A3A2A', trim: '#8E2B23' },
+  urss: { skin: '#E0B48C', hair: '#3B2A1A', cloth: '#3E4A5A', trim: '#8E2B23' }
+};
+
+/** Paleta del guardia según la época (Mesopotamia por defecto). */
+export function gateGuardPalette(epochId) {
+  return (epochId === 'urss') ? GATE_GUARD_PALETTES.urss : GATE_GUARD_PALETTES.mesopotamia;
+}
+
 // ── Sprites detallados por época (24×24) ────────────────────────────────────
 export const DETAILED_HUMANOID_SPRITE_URSS = {
   grid: 24,
@@ -183,8 +200,14 @@ export const DETAILED_HUMANOID_SPRITE_URSS = {
 
 export const DETAILED_HUMANOID_SPRITE_MESOPOTAMIA = {
   grid: 24,
+  // OJO con las filas 3 y 4: el pelo de arriba (filas 0-2) y la cara (filas 5-8)
+  // estaban separados por dos filas vacias, y eso se veia como una LINEA
+  // TRANSPARENTE cruzando la cabeza. Ahora las filas 3 y 4 son pelo (y el borde
+  // oscuro de la linea del pelo justo encima de la cara).
   pixels: [
     [11,0,"#111111"],[12,0,"#111111"],[10,1,"#111111"],[11,1,"#222222"],[12,1,"#222222"],[13,1,"#111111"],[10,2,"#222222"],[11,2,"#1A1A1A"],[12,2,"#1A1A1A"],[13,2,"#222222"],[14,2,"#222222"],[9,3,"#111111"],
+    [10,3,"#222222"],[11,3,"#222222"],[12,3,"#1A1A1A"],[13,3,"#1A1A1A"],[14,3,"#222222"],
+    [10,4,"#111111"],[11,4,"#1A1A1A"],[12,4,"#1A1A1A"],[13,4,"#1A1A1A"],[14,4,"#111111"],
     [11,6,"#B88A68"],[12,6,"#D9AE8C"],[13,6,"#000000"],[14,6,"#D9AE8C"],[11,7,"#D9AE8C"],[12,7,"#B88A68"],[13,7,"#D9AE8C"],[14,7,"#111111"],[11,8,"#B88A68"],[12,8,"#B88A68"],
     [10,9,"#C89D42"],[11,9,"#40E0D0"],[12,9,"#C89D42"],[13,9,"#7F1F24"],[14,9,"#C89D42"],[8,10,"#D9AE8C"],[9,10,"#D9AE8C"],[10,10,"#B88A68"],[11,10,"#24324F"],[12,10,"#1A253A"],[13,10,"#24324F"],[14,10,"#D9AE8C"],[15,10,"#D9AE8C"],
     [8,11,"#B88A68"],[9,11,"#D9AE8C"],[10,11,"#1A253A"],[11,11,"#24324F"],[12,11,"#24324F"],[13,11,"#1A253A"],[14,11,"#B88A68"],[15,11,"#B88A68"],[9,12,"#B88A68"],[10,12,"#1A253A"],[11,12,"#C89D42"],[12,12,"#C89D42"],[13,12,"#C89D42"],[14,12,"#24324F"],[15,12,"#D9AE8C"],
@@ -297,6 +320,172 @@ export function drawHumanoid(ctx, palette, x, y, scale, opts) {
     const px = flip ? (grid - 1 - p[0]) : p[0];
     ctx.fillStyle = mapDetailedHumanoidColor(p[2], pal, sprite);
     ctx.fillRect(Math.round(x + px * s), Math.round(y + p[1] * s), s, s);
+  }
+}
+
+// ── GUARDIA DE PUERTA (control de paso) ─────────────────────────────────────
+// El sprite detallado es ÚNICO por época (24×24) y la ropa no cambia el dibujo,
+// así que la armadura NO puede ser otra rejilla: se pinta ENCIMA, en las mismas
+// coordenadas de arte, para que quede alineada con el personaje.
+//
+// La silueta se DEDUCE del propio sprite: se clasifican sus píxeles en piel,
+// pelo y ropa, y la armadura sólo se pinta donde hay cuerpo (así el casco sigue
+// la forma de la cabeza y el peto la del torso en las dos épocas).
+const SPRITE_CLASSES = {
+  mesopotamia: {
+    skin: ['#D9AE8C', '#B88A68', '#8E6B4B'],
+    hair: ['#111111', '#1A1A1A', '#222222'],
+    cloth: ['#24324F', '#1A253A', '#7F1F24', '#9B2A2D']
+  },
+  urss: {
+    skin: ['#FFAC75'],
+    hair: ['#98551B', '#B96B27'],
+    cloth: ['#4F772D', '#3A5A40', '#D6E2E6', '#9E2A2B', '#7D838C']
+  }
+};
+
+// Material de la armadura por época: bronce con penacho (Mesopotamia) o acero
+// con estrella y fusil (URSS).
+const KIT_COLORS = {
+  mesopotamia: { metal: '#C08A3E', dark: '#7C5522', accent: '#8E2B23', weapon: '#6B4A2A' },
+  urss: { metal: '#8A93A0', dark: '#525A67', accent: '#8E2B23', weapon: '#2C2C2C' }
+};
+
+const _soldierKitCache = new Map();
+
+/**
+ * Píxeles de la armadura de un guardia, en coordenadas del sprite (24×24).
+ * @param {string} [epochId] 'mesopotamia' (por defecto) o 'urss'
+ * @returns {{x:number,y:number,color:string}[]}
+ */
+export function soldierKitPixels(epochId) {
+  const epoch = (epochId === 'urss') ? 'urss' : 'mesopotamia';
+  if (_soldierKitCache.has(epoch)) return _soldierKitCache.get(epoch);
+  const sprite = humanoidSpriteFor(epoch);
+  const cls = SPRITE_CLASSES[epoch];
+  const pal = KIT_COLORS[epoch];
+  const grid = sprite.grid || 24;
+  const classMap = new Map();
+  const head = { c0: Infinity, c1: -Infinity, r0: Infinity, r1: -Infinity };
+  const body = { c0: Infinity, c1: -Infinity, r0: Infinity, r1: -Infinity };
+  // Primera fila con PIEL = donde empieza la cara. El casco cubre justo lo de
+  // arriba (pelo y frente) y deja la cara a la vista.
+  let faceTop = Infinity;
+  let hairTop = Infinity;
+  const grow = (box, x, y) => {
+    if (x < box.c0) box.c0 = x;
+    if (x > box.c1) box.c1 = x;
+    if (y < box.r0) box.r0 = y;
+    if (y > box.r1) box.r1 = y;
+  };
+  const clsOf = (hex) => {
+    const h = String(hex || '').toUpperCase();
+    if (cls.skin.indexOf(h) >= 0) return 'skin';
+    if (cls.hair.indexOf(h) >= 0) return 'hair';
+    if (cls.cloth.indexOf(h) >= 0) return 'cloth';
+    return null;
+  };
+  (sprite.pixels || []).forEach(p => {
+    if (!p || !p[2]) return;
+    const kind = clsOf(p[2]);
+    classMap.set(p[0] + ',' + p[1], kind);
+    if (kind === 'skin' || kind === 'hair') grow(head, p[0], p[1]);
+    else if (kind === 'cloth') grow(body, p[0], p[1]);
+    if (kind === 'skin' && p[1] < faceTop) faceTop = p[1];
+    if (kind === 'hair' && p[1] < hairTop) hairTop = p[1];
+  });
+
+  const out = [];
+  const push = (x, y, color) => {
+    if (y < -2 || y > grid - 1 || x < 0 || x > grid - 1) return;
+    out.push({ x, y, color });
+  };
+
+  // ── Casco: pelo y frente, con el borde justo encima de los ojos ────────────
+  if (head.c1 >= head.c0) {
+    const top = Number.isFinite(hairTop) ? hairTop : head.r0;
+    const brow = Number.isFinite(faceTop) ? Math.max(top + 2, faceTop - 1) : (head.r0 + 3);
+    for (let r = top; r <= brow; r++) {
+      for (let c = head.c0; c <= head.c1; c++) {
+        const k = classMap.get(c + ',' + r);
+        if (k !== 'skin' && k !== 'hair') continue;
+        push(c, r, (r === brow) ? pal.dark : pal.metal);
+      }
+    }
+    // Guardas de las mejillas: dos filas por debajo del borde, sólo en los
+    // laterales (el centro queda libre para la cara).
+    for (let r = brow + 1; r <= brow + 2; r++) {
+      [head.c0, head.c0 + 1, head.c1 - 1, head.c1].forEach(c => {
+        if (classMap.get(c + ',' + r) !== 'skin') return;
+        push(c, r, pal.dark);
+      });
+    }
+    // Penacho / estrella del casco, sobre la frente
+    const mid = Math.round((head.c0 + head.c1) / 2);
+    [-1, 0, 1].forEach(dc => push(mid + dc, top - 1, pal.accent));
+    push(mid, top - 2, pal.accent);
+  }
+
+  // ── Coraza: peto de metal sobre la ropa + hombreras + cinto ────────────────
+  if (body.c1 >= body.c0) {
+    const beltRow = Math.min(body.r1, body.r0 + 4);
+    for (let r = body.r0; r <= beltRow; r++) {
+      for (let c = body.c0; c <= body.c1; c++) {
+        if (classMap.get(c + ',' + r) !== 'cloth') continue;
+        push(c, r, (r === beltRow) ? pal.dark : pal.metal);
+      }
+    }
+    for (const c of [body.c0 - 1, body.c1 + 1]) {
+      for (let r = body.r0; r <= body.r0 + 1; r++) push(c, r, pal.dark);
+    }
+    const midB = Math.round((body.c0 + body.c1) / 2);
+    push(midB, body.r0, pal.accent);
+    push(midB, body.r0 + 1, pal.accent);
+  }
+
+  // ── Arma en ristre: lanza (Mesopotamia) o fusil (URSS) junto al cuerpo ─────
+  const anchorRight = Math.max(body.c1, head.c1);
+  const wx = Math.min(grid - 2, Math.max(anchorRight + 3, head.c0));
+  const top = Math.max(1, Math.min(body.r0 || head.r1, grid - 8) - 2);
+  for (let r = top + 2; r < grid; r++) push(wx, r, pal.weapon);
+  push(wx, top, pal.metal);
+  push(wx, top + 1, pal.metal);
+
+  const kit = Object.freeze(out);
+  _soldierKitCache.set(epoch, kit);
+  return kit;
+}
+
+/**
+ * Dibuja la armadura del guardia ENCIMA del personaje (mismo origen y escala que
+ * `drawHumanoid`, así que se alinea píxel a píxel con el sprite del jugador).
+ *
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {number} x  esquina izquierda (px de destino)
+ * @param {number} y  esquina superior (px de destino)
+ * @param {number} scale  px de pantalla por píxel de arte
+ * @param {{epoch?:string, dir?:string, flip?:boolean, anim?:{bob?:number}}} [opts]
+ */
+export function drawSoldierKit(ctx, x, y, scale, opts) {
+  const options = opts || {};
+  const epoch = (options.epoch === 'urss') ? 'urss' : 'mesopotamia';
+  const pixels = soldierKitPixels(epoch);
+  const sprite = humanoidSpriteFor(epoch);
+  const grid = sprite.grid || 24;
+  const s = Math.max(1, scale || 1);
+  const dir = options.dir || 'down';
+  // Mismo convenio de espejo que `drawCharacterPixels`: el arte de Mesopotamia
+  // está pintado al revés, así que se espeja para mirar hacia donde camina.
+  const artMirrored = (sprite === DETAILED_HUMANOID_SPRITE_MESOPOTAMIA);
+  const flip = (options.flip !== undefined)
+    ? !!options.flip
+    : (artMirrored ? (dir !== 'left') : (dir === 'left'));
+  const bob = (options.anim && options.anim.bob) || 0;
+  for (let i = 0; i < pixels.length; i++) {
+    const p = pixels[i];
+    const px = flip ? (grid - 1 - p.x) : p.x;
+    ctx.fillStyle = p.color;
+    ctx.fillRect(Math.round(x + px * s), Math.round(y + (p.y + bob) * s), s, s);
   }
 }
 

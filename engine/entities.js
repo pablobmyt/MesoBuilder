@@ -113,7 +113,10 @@ export function tickEntities(now) {
     for (let i = entities.length - 1; i >= 0; i--) {
       const en = entities[i];
       if (!en || en.kind !== 'player' || !en.id || en.id.indexOf('npc-') !== 0) continue;
-      // ensure NPC movement timers
+      // Puesto fijo (guardias de puerta): no se les echa a andar por el pueblo,
+      // siguen su ronda de control desde el bucle principal.
+      if (en._keepPost) continue;
+      // ensure NPC movement timersd
       if (!en.nextMove) en.nextMove = now + 1000 + Math.floor(Math.random() * 4000);
       if (now >= en.nextMove) {
         en.nextMove = now + 1500 + Math.floor(Math.random() * 5000);

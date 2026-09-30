@@ -873,6 +873,10 @@
   let _menuUiSfxBound = false;
 
   function clampPercent(v, fallback) {
+    // OJO: `Number(null)` es 0, así que sin este guardia `clampPercent(null, 70)`
+    // devolvía 0?el volumen maestro arrancaba en 0, el audio quedaba mudo
+    // (`muted = masterNorm <= 0`) y NINGÚN efecto del juego sonaba nunca.
+    if (v === null || v === undefined || v === '') return fallback;
     const n = Number(v);
     if (!Number.isFinite(n)) return fallback;
     return Math.max(0, Math.min(100, n));
@@ -997,6 +1001,9 @@
   function loadEngineAndStart(opts){
      // set externalMenu flag so engine doesn't re-show its internal menu
     window._externalMenu = true;
+    // «Cargar partida» es una orden EXPLÍCITA: el motor debe restaurar el guardado
+    // aunque la última sesión sea vieja (si no, se quedaba sin mundo).
+    try { window._forceLoadSave = !!(opts && opts.loadSave); } catch (e) {}
     try {
       const editorMode = !!(opts && opts.editorMode);
       window._standaloneEditorMode = editorMode;
@@ -1192,7 +1199,7 @@
         return;
       }
     } catch (e) {}
-    loadEngineAndStart({ forceNew:false });
+    loadEngineAndStart({ forceNew:false, loadSave:true });
   });
   try { bindMenuUiSfx(); } catch (e) {}
   try { initMenuMusic(); } catch (e) {}
@@ -1248,7 +1255,7 @@
         try { stopMenuMusic(); } catch (e) {}
         try { const root = document.getElementById('main-menu-root'); if (root) root.style.display = 'none'; } catch (e) {}
         // small delay to allow DOM to settle before loading engine
-        setTimeout(() => { try { loadEngineAndStart({ forceNew: false }); } catch (e) {} }, 40);
+        setTimeout(() => { try { loadEngineAndStart({ forceNew: false, loadSave: true }); } catch (e) {} }, 40);
       }
     } catch (e) { /* ignore */ }
   })();
@@ -1287,7 +1294,7 @@
             if (!state || typeof state !== 'object') throw new Error('Formato de partida no válido');
             // store normalized save into local cache key used by loader
             try { localStorage.setItem('meso.appState', JSON.stringify(state)); } catch (e) {}
-            loadEngineAndStart({ forceNew:false });
+            loadEngineAndStart({ forceNew:false, loadSave:true });
           } catch (e) { alert('Error importando partida: ' + (e && e.message)); }
         };
         r.readAsText(f);
@@ -2128,7 +2135,7 @@
           const btn = document.createElement('button'); 
           btn.textContent='Cargar'; 
           btn.style.padding='6px 8px'; 
-          btn.addEventListener('click', () => { loadEngineAndStart({ forceNew:false }); }); 
+          btn.addEventListener('click', () => { loadEngineAndStart({ forceNew:false, loadSave:true }); }); 
           s.appendChild(btn); 
           savesList.appendChild(s);
           

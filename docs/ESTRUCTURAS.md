@@ -151,3 +151,62 @@ con la misma idea de offsets (`dc`/`dr`). Se siguen aplicando dentro de
 * *Estructura* → añade conjuntos nuevos por todo el mapa.
 
 Se pueden usar los dos a la vez.
+
+---
+
+## 8. Distribución urbana: que se pueda CAMINAR por los pueblos (2026-09-30)
+
+Queja del usuario: «están muy apelotonados y no se puede caminar por esos sitios,
+la sensación de inmersión no es igual de buena». Al medirlo aparecieron **dos
+defectos reales**, no sólo una impresión:
+
+### 8.1 Edificios solapados (el gordo)
+
+`fillBlock` intentaba primero una pieza monumental que ocupa la manzana entera…
+pero **no cortaba ahí**: seguía con el relleno por bandas y levantaba casas
+**encima** del monumento. El auditor lo veía como huellas solapadas
+(`granary` + `house_small` con la misma celda) y en pantalla eran sprites
+apilados. Ahora ese ramo hace `return out;`.
+
+Segundo solape: **dos asentamientos encima**. `spawnVillage` sólo miraba que el
+ancla estuviera seca; con el jitter de posiciones dos pueblos podían caer
+prácticamente en el mismo sitio. Ahora, en el bucle de anclajes, se puntúa cada
+candidato y se prefiere el que **no pisa el rectángulo de otro pueblo ya
+levantado** (`settlementOverlapsExisting`) y no tiene agua
+(`settlementWaterFraction`).
+
+### 8.2 Más aire entre edificios (parámetros de las plantillas)
+
+| Parámetro | Antes | Ahora | Por qué |
+|---|---|---|---|
+| `street` | 1 celda | **3** (capital/base) · **2** (aldea/puesto) | con 1 celda, y los sprites dibujados un 25 % más grandes que su huella, las fachadas de enfrente se tocaban: parecía que no se podía pasar |
+| `block` | 5×5 / 4×4 | **6×6 / 5×5** | manzanas algo mayores para que las construcciones no vayan adosadas |
+| `blockGap` | 1-2 | 1 (capital 2) | separación entre edificios de la misma manzana |
+| `setback` | — | 0 (soportado) | retranqueo opcional respecto a la calle |
+| bandas | pegadas (`r += bandH`) | con `gap` vertical (`r += bandH + gap`) | dos casas de bandas contiguas quedaban adosadas por el techo |
+| manzana monumental | 60 % | 35 % | deja más manzanas para viviendas |
+| manzana cívica | 34 % | 25 % | idem |
+
+Además, al agrandarse los planos las cuatro posiciones planificadas del
+`spawnPlan` chocaban entre sí (el rechazo de solapes empujaba tres pueblos al
+borde oeste): ahora van a las cuatro esquinas del mapa con un jitter del ±5 %.
+
+La casa aislada del prólogo también se benefició: `findHomeSpotForPrologue`
+busca claros hasta 70 celdas (antes 30) porque junto a una capital de 69×69 no
+encontraba ninguno y la casa acababa **en el centro del pueblo, encima del
+zigurat** (6 celdas solapadas, `ziggurat` + `house_isolated`).
+
+### 8.3 Resultado medido (mapa nuevo, 5 asentamientos)
+
+| | Antes | Ahora |
+|---|---|---|
+| Densidad del casco (capital) | 0.257 | **0.104** |
+| Densidad (base militar) | 0.372 | **0.211** |
+| Celdas transitables dentro del casco (capital) | 72 % | **88 %** |
+| Callejones sin salida (capital) | 40 | **18** |
+| Huellas solapadas en todo el mapa | 2-6 | **0** |
+| Asentamientos | 4-5 apelotonados al oeste | 5 repartidos (capital centro-norte, base al sureste, puesto al noreste, aldeas al noroeste y sur) |
+
+La capital queda así (una letra por celda, `·` = calzada, `W` = muralla):
+manzanas de 6×6 con uno o dos edificios y **avenidas de 3 celdas** que cruzan de
+lado a lado, con el ziggurat y su explanada en el núcleo.

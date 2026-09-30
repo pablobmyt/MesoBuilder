@@ -40,14 +40,63 @@
 const STORAGE_KEY = 'meso.structures';
 const FILE_PATH = 'data/structures.json';
 
+// ── Núcleo de la capital: la explanada del zigurat ──────────────────────────
+// El planificador reserva el centro de la capital (`coreRings: 2` en
+// settlement-utils) y ese hueco mide 29×29 celdas (-14…+14). El zigurat (12×12)
+// ocupa -6…+5, así que quedan 8 celdas libres por lado: es lo que hace que el
+// monumento NO esté apretado contra las casas.
+//
+// La plantilla de aquí abajo usa esas 8 celdas: corona pavimentada de dos celdas
+// pegada al monumento, avenidas procesionales de dos celdas hasta el borde de la
+// reserva y palmeras espaciadas en los rincones. Antes el núcleo eran 17×17 (2
+// celdas de margen), con las avenidas pegadas a la fachada del zigurat.
+const NUCLEO_CAPITAL_HALF = 14;
+
+// Corona pavimentada alrededor del zigurat (2 celdas de ancho, sin tocar el arte).
+function nucleoCapitalEsplanade() {
+  const out = [];
+  for (let dc = -10; dc <= 10; dc++) {
+    for (let dr = -10; dr <= 10; dr++) {
+      const edge = Math.max(Math.abs(dc + 0.5), Math.abs(dr + 0.5));
+      if (edge < 6.5 || edge > 8.5) continue;
+      out.push({ terrain: 'road', dc, dr });
+    }
+  }
+  return out;
+}
+
+// Avenidas procesionales (N-S y E-O), de dos celdas de ancho, desde la corona
+// hasta el borde de la reserva: conectan el monumento con las calles de la ciudad.
+function nucleoCapitalAvenues() {
+  const out = [];
+  for (let d = 9; d <= NUCLEO_CAPITAL_HALF; d++) {
+    out.push({ terrain: 'road', dc: 0, dr: -d }, { terrain: 'road', dc: 1, dr: -d });
+    out.push({ terrain: 'road', dc: 0, dr: d }, { terrain: 'road', dc: 1, dr: d });
+    out.push({ terrain: 'road', dc: -d, dr: 0 }, { terrain: 'road', dc: -d, dr: 1 });
+    out.push({ terrain: 'road', dc: d, dr: 0 }, { terrain: 'road', dc: d, dr: 1 });
+  }
+  return out;
+}
+
+// Palmeras de los rincones y de los testeros, ya FUERA de la corona pavimentada.
+function nucleoCapitalPalms() {
+  const spots = [
+    [-11, -11], [11, -11], [-11, 11], [11, 11],   // rincones
+    [-11, 3], [11, 3], [3, -11], [3, 11],         // testeros
+    [-11, -3], [11, -3], [-3, -11], [-3, 11]
+  ];
+  return spots.map(([dc, dr]) => ({ kind: 'ambient', subtype: 'date_palm', dc, dr }));
+}
+
 // ── Plantillas por defecto ──────────────────────────────────────────────────
 // Mesopotamia: vocabulario mesopotámico (el mapa de épocas lo traduce a URSS).
 // URSS: piezas soviéticas (bloques, control, industria).
 export const DEFAULT_STRUCTURES = {
   // Núcleo monumental de una capital: el zigurat con su explanada y su vía
-  // procesional. Está dimensionado para caber en el rectángulo reservado de
-  // 15×15 que deja libre el planificador de asentamientos (settlement-utils),
-  // de modo que la retícula de manzanas se construye justo alrededor.
+  // procesional. Está dimensionado para la reserva de 29×29 celdas que deja
+  // libre el planificador de asentamientos (settlement-utils, `coreRings: 2`),
+  // de modo que la retícula de manzanas se construye ALREDEDOR sin pegarse al
+  // monumento: 8 celdas de explanada por lado.
   nucleo_capital: {
     name: 'Núcleo de la capital',
     epochs: ['*'],
@@ -59,33 +108,20 @@ export const DEFAULT_STRUCTURES = {
     roadToNearest: false,
     pieces: [
       // El zigurat es 12×12 y se centra en el ancla: ocupa -6…+5.
-      { type: 'ziggurat', dc: 0, dr: 0, required: true }
+      { type: 'ziggurat', dc: 0, dr: 0, required: true },
+      // Pozos de la explanada, en las esquinas y lejos de la fachada.
+      { type: 'well', dc: -9, dr: -9, chance: 0.6 },
+      { type: 'well', dc: 8, dr: 8, chance: 0.6 }
     ],
     terrain: [
-      // Vía procesional por los cuatro cardinales, siempre FUERA de la huella
-      // del zigurat y dentro de la reserva de 17×17 del núcleo.
-      { terrain: 'road', dc: 0, dr: -8 }, { terrain: 'road', dc: 1, dr: -8 },
-      { terrain: 'road', dc: 0, dr: -7 }, { terrain: 'road', dc: 1, dr: -7 },
-      { terrain: 'road', dc: 0, dr: 6 }, { terrain: 'road', dc: 1, dr: 6 },
-      { terrain: 'road', dc: 0, dr: 7 }, { terrain: 'road', dc: 1, dr: 7 },
-      { terrain: 'road', dc: 0, dr: 8 }, { terrain: 'road', dc: 1, dr: 8 },
-      { terrain: 'road', dc: -8, dr: 0 }, { terrain: 'road', dc: -8, dr: 1 },
-      { terrain: 'road', dc: -7, dr: 0 }, { terrain: 'road', dc: -7, dr: 1 },
-      { terrain: 'road', dc: 6, dr: 0 }, { terrain: 'road', dc: 7, dr: 0 },
-      { terrain: 'road', dc: 6, dr: 1 }, { terrain: 'road', dc: 7, dr: 1 },
-      { terrain: 'road', dc: 8, dr: 0 }, { terrain: 'road', dc: 8, dr: 1 }
+      ...nucleoCapitalEsplanade(),
+      ...nucleoCapitalAvenues()
     ],
-    entities: [
-      { kind: 'ambient', subtype: 'date_palm', dc: -7, dr: -7 },
-      { kind: 'ambient', subtype: 'date_palm', dc: 7, dr: -7 },
-      { kind: 'ambient', subtype: 'date_palm', dc: -7, dr: 7 },
-      { kind: 'ambient', subtype: 'date_palm', dc: 7, dr: 7 },
-      { kind: 'ambient', subtype: 'date_palm', dc: -2, dr: 7 },
-      { kind: 'ambient', subtype: 'date_palm', dc: 3, dr: 7 }
-    ],
+    entities: nucleoCapitalPalms(),
     npcs: [
-      { npcType: 'priestess', name: 'Sacerdotisa', dc: 0, dr: -7 },
-      { npcType: 'scribe', name: 'Escriba', dc: 6, dr: 6 }
+      // La sacerdotisa preside la escalinata; el escriba, al pie de la avenida.
+      { npcType: 'priestess', name: 'Sacerdotisa', dc: 0, dr: -9 },
+      { npcType: 'scribe', name: 'Escriba', dc: 7, dr: 8 }
     ]
   },
 
@@ -100,17 +136,18 @@ export const DEFAULT_STRUCTURES = {
     roadToNearest: true,
     pieces: [
       // El zigurat es 12×12 y se centra en el ancla: ocupa -6…+5. Las piezas de
-      // alrededor van fuera de ese cuadrado (el mercado, el pozo y la casa están
-      // desplazados respecto al arte antiguo de 9×9).
+      // alrededor van fuera de ese cuadrado y con AIRE de por medio (el templo a
+      // 4 celdas, el granero y el mercado a 6): antes se pegaban al monumento y
+      // el conjunto se veía apelotonado.
       { type: 'ziggurat', dc: 0, dr: 0, required: true },
-      { type: 'temple', dc: -1, dr: -11, required: true },
-      { type: 'mesopotamian_arch', dc: -1, dr: -15 },
-      { type: 'granary', dc: -12, dr: 5 },
-      { type: 'market', dc: 11, dr: 5 },
-      { type: 'mesopotamian_baths', dc: -13, dr: -2, chance: 0.6 },
-      { type: 'well', dc: 4, dr: 10, chance: 0.8 },
-      { type: 'house_small', dc: -5, dr: 12, chance: 0.5 },
-      { type: 'house_small', dc: 3, dr: -15, chance: 0.4 }
+      { type: 'temple', dc: -1, dr: -13, required: true },
+      { type: 'mesopotamian_arch', dc: -1, dr: -17 },
+      { type: 'granary', dc: -14, dr: 5 },
+      { type: 'market', dc: 13, dr: 5 },
+      { type: 'mesopotamian_baths', dc: -15, dr: -2, chance: 0.6 },
+      { type: 'well', dc: 5, dr: 12, chance: 0.8 },
+      { type: 'house_small', dc: -6, dr: 14, chance: 0.5 },
+      { type: 'house_small', dc: 4, dr: -17, chance: 0.4 }
     ],
     terrain: [
       // Avenida al sur del zigurat, ya FUERA de su huella (dr 6-8) y camino de

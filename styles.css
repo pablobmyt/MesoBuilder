@@ -2190,3 +2190,571 @@ body.theme-urw #notif {
   #main-menu-box { justify-content: flex-start; padding-top: 12vh; }
   #mm-foot { flex-direction: column; align-items: flex-start; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   HUD MINIMALISTA (capa moderna)
+   ───────────────────────────────────────────────────────────────────────────────
+   El HUD antiguo era «bronce y madera»: bordes gruesos, tipografía monoespaciada,
+   dorados saturados y cajas cuadradas. Esta capa (al final del fichero, así que
+   gana por orden) lo cambia por vidrio translúcido, radios grandes, hairlines,
+   tipografía de sistema y acentos suaves. No toca la lógica: sólo la piel.
+   Elementos: barra superior, HUD de misión, caja de instrucciones, barra de
+   habilidades, panel lateral y toolbar.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+:root {
+  --hud-font: system-ui, -apple-system, 'Segoe UI', Inter, Roboto, 'Helvetica Neue', sans-serif;
+  --hud-glass: rgba(13, 14, 17, 0.66);
+  --hud-glass-strong: rgba(11, 12, 15, 0.86);
+  --hud-line: rgba(255, 255, 255, 0.075);
+  --hud-line-soft: rgba(255, 255, 255, 0.045);
+  --hud-text: rgba(238, 240, 245, 0.94);
+  --hud-dim: rgba(206, 213, 226, 0.58);
+  --hud-accent: #e3c98c;
+  --hud-radius: 14px;
+  --hud-shadow: 0 14px 34px rgba(0, 0, 0, 0.45);
+}
+
+/* ── Barra superior (título + recursos + turno) ───────────────────────────── */
+#topbar {
+  /* FLOTANTE: antes era una franja pegada al borde superior que recortaba la
+     escena. Ahora va posicionada encima del lienzo (que gana el alto) con
+     esquinas redondeadas y sombra, y se puede retirar con una transición (por
+     eso el centrado se hace con margen automático y no con `transform`). */
+  position: fixed;
+  top: 10px;
+  left: 12px;
+  right: 12px;
+  max-width: 1180px;
+  margin: 0 auto;
+  z-index: 1200;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(18, 19, 23, 0.94), rgba(11, 12, 15, 0.82)) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(130%);
+  backdrop-filter: blur(18px) saturate(130%);
+  border: 1px solid var(--hud-line) !important;
+  border-top: none !important;
+  padding: 7px 14px !important;
+  gap: 12px !important;
+  font-family: var(--hud-font);
+  box-shadow: var(--hud-shadow, 0 14px 34px rgba(0, 0, 0, 0.45));
+}
+#topbar h1 {
+  font-family: var(--hud-font) !important;
+  font-size: 12.5px !important;
+  font-weight: 650 !important;
+  letter-spacing: 1.6px !important;
+  text-transform: uppercase;
+  color: var(--hud-text) !important;
+  text-shadow: none !important;
+  opacity: 0.9;
+}
+.res-group { gap: 8px !important; }
+.res-item {
+  gap: 6px !important;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid var(--hud-line-soft);
+  font-size: 11.5px !important;
+  color: var(--hud-dim) !important;
+}
+.res-icon { width: 14px !important; height: 14px !important; opacity: 0.95; }
+.res-val { color: var(--hud-text) !important; font-weight: 600 !important; font-size: 12px !important; }
+#turn-info {
+  font-family: var(--hud-font);
+  font-size: 11px !important;
+  letter-spacing: 0.4px;
+  color: var(--hud-dim) !important;
+  text-transform: uppercase;
+}
+#turn-info span, #turn-info div { font-size: inherit !important; }
+#btn-endturn {
+  font-family: var(--hud-font) !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.5px !important;
+  text-transform: none !important;
+  padding: 6px 14px !important;
+  border-radius: 999px !important;
+  border: 1px solid rgba(227, 201, 140, 0.32) !important;
+  background: rgba(227, 201, 140, 0.13) !important;
+  color: #f0e2c2 !important;
+  transition: background 0.18s ease, transform 0.18s ease, border-color 0.18s ease;
+}
+#btn-endturn:hover {
+  background: rgba(227, 201, 140, 0.24) !important;
+  border-color: rgba(227, 201, 140, 0.55) !important;
+  color: #fff8e8 !important;
+  transform: translateY(-1px);
+}
+
+/* ── HUD de misión ───────────────────────────────────────────────────────── */
+#quest-hud {
+  top: 100px !important;
+  right: 18px !important;
+  padding: 12px 15px 13px !important;
+  min-width: 210px;
+  max-width: 268px;
+  border-radius: var(--hud-radius) !important;
+  border: 1px solid var(--hud-line) !important;
+  border-right: 1px solid var(--hud-line) !important;
+  background: var(--hud-glass) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(135%);
+  backdrop-filter: blur(16px) saturate(135%);
+  font-family: var(--hud-font) !important;
+  box-shadow: var(--hud-shadow) !important;
+  overflow: hidden;
+}
+#quest-hud::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 2px;
+  background: linear-gradient(180deg, rgba(227, 201, 140, 0.85), rgba(227, 201, 140, 0.05));
+}
+.quest-hud-label {
+  font-size: 9px !important;
+  font-weight: 600;
+  letter-spacing: 1.7px !important;
+  color: var(--hud-accent) !important;
+  opacity: 0.85 !important;
+  margin-bottom: 6px !important;
+}
+.quest-hud-title {
+  font-size: 13px !important;
+  font-weight: 620 !important;
+  letter-spacing: 0.1px;
+  color: var(--hud-text) !important;
+  margin-bottom: 5px !important;
+  line-height: 1.35 !important;
+}
+.quest-hud-desc {
+  font-size: 11.5px !important;
+  line-height: 1.5 !important;
+  color: var(--hud-dim) !important;
+}
+
+/* ── Caja de instrucciones ───────────────────────────────────────────────── */
+#instruction-box {
+  border-radius: var(--hud-radius) !important;
+  border: 1px solid var(--hud-line) !important;
+  background: var(--hud-glass) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(135%);
+  backdrop-filter: blur(16px) saturate(135%);
+  box-shadow: var(--hud-shadow) !important;
+  font-family: var(--hud-font) !important;
+  padding: 12px 14px !important;
+}
+.instruction-title {
+  font-family: var(--hud-font) !important;
+  font-size: 10px !important;
+  font-weight: 650 !important;
+  letter-spacing: 1.6px !important;
+  color: var(--hud-accent) !important;
+  text-shadow: none !important;
+  margin-bottom: 6px !important;
+}
+.instruction-text {
+  font-family: var(--hud-font) !important;
+  font-size: 12px !important;
+  line-height: 1.5 !important;
+  color: var(--hud-dim) !important;
+  text-shadow: none !important;
+}
+
+/* ── Barra de habilidades / hotbar ───────────────────────────────────────── */
+#ability-bar {
+  gap: 7px !important;
+  padding: 7px !important;
+  border-radius: 20px !important;
+  background: var(--hud-glass) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(135%);
+  backdrop-filter: blur(16px) saturate(135%);
+  border: 1px solid var(--hud-line) !important;
+  box-shadow: var(--hud-shadow) !important;
+  font-family: var(--hud-font) !important;
+}
+#equipped-slot {
+  width: 54px !important; height: 54px !important;
+  border-radius: 13px !important;
+  background: rgba(255, 255, 255, 0.055) !important;
+  border: 1px solid var(--hud-line) !important;
+  margin-right: 5px !important;
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+#equipped-slot:hover { background: rgba(255, 255, 255, 0.09) !important; }
+#equipped-label { font-size: 9.5px !important; color: var(--hud-dim) !important; letter-spacing: 0.2px; }
+.ability-slot {
+  width: 54px !important; height: 54px !important;
+  border-radius: 13px !important;
+  background: rgba(255, 255, 255, 0.055) !important;
+  border: 1px solid var(--hud-line) !important;
+  font-family: var(--hud-font) !important;
+  font-size: 10px !important;
+  color: var(--hud-text) !important;
+  transition: transform 0.16s ease, background 0.16s ease, border-color 0.16s ease;
+  cursor: pointer;
+}
+.ability-slot:hover {
+  background: rgba(255, 255, 255, 0.10) !important;
+  border-color: rgba(227, 201, 140, 0.35) !important;
+  transform: translateY(-2px);
+}
+.ability-slot > div:first-child { font-size: 18px !important; line-height: 1 !important; }
+.ability-slot > div:nth-child(2) {
+  font-size: 9.5px !important;
+  font-weight: 550 !important;
+  letter-spacing: 0.2px;
+  color: var(--hud-dim) !important;
+  margin-top: 2px;
+}
+.ability-slot > div:nth-child(3) {
+  position: absolute;
+  top: 3px; right: 5px;
+  font-size: 9px !important;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.42) !important;
+}
+.ability-slot .cd { width: 54px !important; height: 54px !important; border-radius: 13px !important; background: rgba(4, 5, 8, 0.55) !important; }
+
+/* ── Panel lateral y toolbar ─────────────────────────────────────────────── */
+#toolbar {
+  gap: 10px !important;
+  padding: 8px 12px !important;
+  background: rgba(13, 14, 17, 0.72) !important;
+  border-bottom: 1px solid var(--hud-line) !important;
+  font-family: var(--hud-font) !important;
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+.tool-label {
+  font-family: var(--hud-font) !important;
+  font-size: 9.5px !important;
+  font-weight: 600;
+  letter-spacing: 1.2px !important;
+  color: rgba(206, 213, 226, 0.42) !important;
+}
+.tool-btn {
+  font-family: var(--hud-font) !important;
+  font-size: 10.5px !important;
+  font-weight: 550 !important;
+  letter-spacing: 0.3px !important;
+  text-transform: none !important;
+  padding: 5px 11px !important;
+  border-radius: 999px !important;
+  border: 1px solid var(--hud-line) !important;
+  background: rgba(255, 255, 255, 0.045) !important;
+  color: var(--hud-dim) !important;
+  transition: background 0.16s ease, color 0.16s ease, border-color 0.16s ease;
+}
+.tool-btn:hover {
+  background: rgba(255, 255, 255, 0.09) !important;
+  border-color: rgba(255, 255, 255, 0.16) !important;
+  color: var(--hud-text) !important;
+}
+.tool-btn.active {
+  background: rgba(227, 201, 140, 0.16) !important;
+  border-color: rgba(227, 201, 140, 0.42) !important;
+  color: #f4e8cd !important;
+}
+#panel {
+  background: rgba(12, 13, 16, 0.78) !important;
+  border-left: 1px solid var(--hud-line) !important;
+  font-family: var(--hud-font) !important;
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+}
+.panel-section { border-bottom: 1px solid var(--hud-line-soft) !important; }
+.panel-title {
+  font-family: var(--hud-font) !important;
+  font-size: 9.5px !important;
+  font-weight: 650 !important;
+  letter-spacing: 1.5px !important;
+  color: rgba(206, 213, 226, 0.5) !important;
+  border-bottom: none !important;
+  padding-bottom: 0 !important;
+  margin-bottom: 9px !important;
+}
+.build-btn {
+  border-radius: 10px !important;
+  border: 1px solid var(--hud-line) !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+  font-family: var(--hud-font) !important;
+  color: var(--hud-text) !important;
+  transition: background 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
+}
+.build-btn:hover {
+  background: rgba(255, 255, 255, 0.085) !important;
+  border-color: rgba(227, 201, 140, 0.35) !important;
+  transform: translateY(-1px);
+}
+.build-btn.active {
+  background: rgba(227, 201, 140, 0.15) !important;
+  border-color: rgba(227, 201, 140, 0.5) !important;
+}
+
+/* ── Ficha de objetivo (panel creado por drawStoryObjectiveHUD) ───────────── */
+/* El HTML se genera con estilos en línea de la versión «bronce» (monoespaciada,
+   radio 4px, recuadro marrón), así que aquí se reescribe con !important. */
+#story-objective-overlay {
+  border-radius: var(--hud-radius) !important;
+  border: 1px solid var(--hud-line) !important;
+  background: var(--hud-glass) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(135%);
+  backdrop-filter: blur(16px) saturate(135%);
+  box-shadow: var(--hud-shadow) !important;
+  padding: 12px 14px !important;
+  font-family: var(--hud-font) !important;
+}
+#story-objective-overlay .story-objective-content > div { gap: 11px !important; }
+#story-objective-overlay .story-objective-content > div > div:first-child {
+  flex: 0 0 56px !important;
+  padding: 7px 6px !important;
+  border-radius: 10px !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid var(--hud-line) !important;
+}
+#story-objective-overlay .story-objective-content > div > div:first-child > div {
+  font-family: var(--hud-font) !important;
+  font-size: 9px !important;
+  font-weight: 650 !important;
+  letter-spacing: 1.2px !important;
+  text-transform: uppercase !important;
+  color: var(--hud-accent) !important;
+}
+#story-objective-overlay .story-objective-content > div > div:first-child > div:last-child {
+  margin-top: 4px !important;
+  letter-spacing: 0.6px !important;
+  opacity: 0.7;
+}
+#story-objective-overlay .story-objective-content > div > div:last-child > div {
+  font-family: var(--hud-font) !important;
+  font-size: 11.5px !important;
+  font-weight: 500 !important;
+  line-height: 1.45 !important;
+  color: var(--hud-text) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   HUD DINÁMICO (estilo GTA) — la interfaz aparece cuando pasa algo
+   ───────────────────────────────────────────────────────────────────────────
+   El motor pone `body.hud-idle` cuando no hay nada que mirar (ver el «director
+   del HUD» en `engine/game-engine.js`): no hay avisos, ni cambios de objetivo,
+   ni daño, ni el jugador tocando los controles. Aquí se decide cómo se retira
+   cada bloque. Todo con transiciones de opacidad/posición (barato: no toca el
+   ligero por fotograma) y se recupera al instante con el ratón encima o al
+   despertarse la interfaz.
+
+   Regla: lo INFORMATIVO se va; lo que se PULSA (menú, herramientas) se queda,
+   sólo se atenúa.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --hud-idle-out: 260ms;
+  --hud-idle-in: 180ms;
+}
+
+/* Transición común (sólo para los bloques que se retiran) */
+#quest-hud,
+#story-objective-overlay,
+#ability-bar,
+#char-card,
+#panel,
+#task-panel,
+#action-bar,
+#turn-info {
+  transition: opacity var(--hud-idle-out) ease, transform var(--hud-idle-out) ease, filter var(--hud-idle-out) ease;
+}
+
+/* ── Estado tranquilo ──────────────────────────────────────────────────── */
+body.hud-idle #quest-hud,
+body.hud-idle #story-objective-overlay,
+body.hud-idle #turn-info,
+body.hud-idle #action-bar {
+  opacity: 0 !important;
+  transform: translateY(-6px) !important;
+  pointer-events: none;
+  filter: blur(0.4px);
+}
+
+/* La barra de HABILIDADES (Golpear, Dash, Heal, Beacon, Perro...) se queda
+   SIEMPRE visible: es la que se usa a cada rato y tener que mover el raton para
+   que aparezca era peor. La ficha de personaje si se retira en reposo. */
+body.hud-idle #char-card {
+  opacity: 0 !important;
+  transform: translateY(8px) !important;
+  pointer-events: none;
+}
+
+/* Recuperación al pasar el ratón o al enfocar (por si el jugador va directo) */
+body.hud-idle #quest-hud:hover,
+body.hud-idle #story-objective-overlay:hover,
+body.hud-idle #action-bar:hover,
+body.hud-idle #char-card:hover {
+  opacity: 1 !important;
+  transform: none !important;
+  pointer-events: auto;
+  filter: none;
+}
+
+/* La barra superior se queda SIEMPRE visible (en reposo baja un poco el brillo,
+   pero no se va): esconderla obligaba a "cazar" el borde de arriba para ver los
+   recursos y en la practica se veia como que la barra no aparecia. */
+#topbar,
+#toolbar,
+#top-menubar {
+  transition: opacity var(--hud-idle-out) ease, transform var(--hud-idle-out) ease;
+}
+body.hud-idle #topbar,
+body.hud-idle #toolbar,
+body.hud-idle #top-menubar {
+  opacity: 0.86 !important;
+}
+body.hud-idle #topbar:hover,
+body.hud-idle #toolbar:hover,
+body.hud-idle #top-menubar:hover,
+body.hud-idle #topbar:focus-within,
+body.hud-idle #toolbar:focus-within {
+  opacity: 1 !important;
+}
+
+/* El aviso emergente y la caja de instrucciones se desvanecen un poco más
+   despacio que el resto (son los que traen la información importante). */
+#instruction-box,
+#notif {
+  transition: opacity 320ms ease, transform 220ms ease;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LISTA DE ACCIONES DEL PERSONAJE (panel flotante)
+   Cada fila es un gesto o una acción de turno. Se abre con V o con el botón
+   flotante, y como lo abre el jugador NO se oculta en el estado tranquilo.
+   ═══════════════════════════════════════════════════════════════════════════ */
+#action-list-panel {
+  font-family: var(--hud-font);
+  background: linear-gradient(180deg, rgba(18, 19, 23, 0.94), rgba(11, 12, 15, 0.88)) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(130%);
+  backdrop-filter: blur(16px) saturate(130%);
+  border: 1px solid var(--hud-line) !important;
+  border-radius: 14px !important;
+  box-shadow: var(--hud-shadow) !important;
+  padding: 8px 8px 6px !important;
+  color: var(--hud-text);
+}
+#action-list-panel .pa-head {
+  display: flex; align-items: center; gap: 6px;
+  padding: 2px 4px 8px;
+  font-size: 11.5px; letter-spacing: 1.2px; text-transform: uppercase;
+  color: var(--hud-dim);
+}
+#action-list-panel .pa-scroll { max-height: 48vh; overflow-y: auto; padding-right: 2px; }
+#action-list-panel .pa-sec {
+  margin: 8px 4px 4px;
+  font-size: 10px; letter-spacing: 1.1px; text-transform: uppercase;
+  color: rgba(206, 213, 226, 0.5);
+}
+#action-list-panel .pa-tip { text-transform: none; letter-spacing: 0; opacity: 0.7; }
+#action-list-panel .pa-row { display: flex; align-items: center; gap: 4px; margin-bottom: 3px; }
+#action-list-panel .pa-btn {
+  flex: 1; display: flex; align-items: center; gap: 9px;
+  padding: 6px 9px; border-radius: 9px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid var(--hud-line-soft);
+  color: var(--hud-text); font: inherit; font-size: 12.5px;
+  cursor: pointer; text-align: left;
+  transition: background 140ms ease, transform 140ms ease, border-color 140ms ease;
+}
+#action-list-panel .pa-btn:hover { background: rgba(255, 255, 255, 0.11); transform: translateX(1px); }
+#action-list-panel .pa-btn:active { transform: scale(0.985); }
+#action-list-panel .pa-ico { width: 18px; text-align: center; font-size: 14px; }
+#action-list-panel .pa-cost { margin-left: auto; font-size: 10px; color: var(--hud-dim); }
+#action-list-panel .pa-off .pa-btn { opacity: 0.38; }
+#action-list-panel .pa-mini {
+  width: 22px; height: 22px; flex: 0 0 22px;
+  border-radius: 7px; cursor: pointer;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--hud-line-soft);
+  color: var(--hud-dim); font-size: 11px; line-height: 1;
+}
+#action-list-panel .pa-mini:hover { color: var(--hud-text); background: rgba(255, 255, 255, 0.1); }
+#action-list-panel .pa-mini.on { color: #12131a; background: var(--hud-accent, #e3c98c); }
+#action-list-panel input[type="checkbox"] { accent-color: var(--hud-accent, #e3c98c); cursor: pointer; }
+
+/* Botón flotante para abrir la lista sin recordar la tecla. */
+#btn-actions-open {
+  position: fixed; left: 12px; bottom: 58px; z-index: 1979;
+  display: flex; align-items: center; gap: 7px;
+  padding: 7px 12px; border-radius: 999px; cursor: pointer;
+  font-family: var(--hud-font); font-size: 12px;
+  color: var(--hud-text);
+  background: linear-gradient(180deg, rgba(18, 19, 23, 0.9), rgba(11, 12, 15, 0.78));
+  border: 1px solid var(--hud-line);
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.4);
+  transition: opacity var(--hud-idle-out) ease, transform 140ms ease;
+}
+#btn-actions-open:hover { transform: translateY(-1px); border-color: var(--hud-accent, #e3c98c); }
+body.hud-idle #btn-actions-open { opacity: 0 !important; pointer-events: none; }
+body.hud-idle #action-list-panel { opacity: 1 !important; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   FICHA DEL JUGADOR (Tab): esquema del cuerpo con las heridas + vitales.
+   ═══════════════════════════════════════════════════════════════════════════ */
+#player-info-panel {
+  font-family: var(--hud-font);
+  background: linear-gradient(180deg, rgba(18, 19, 23, 0.96), rgba(11, 12, 15, 0.92)) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(130%);
+  backdrop-filter: blur(18px) saturate(130%);
+  border: 1px solid var(--hud-line) !important;
+  border-radius: 16px !important;
+  box-shadow: var(--hud-shadow) !important;
+  padding: 12px 14px 14px !important;
+  color: var(--hud-text);
+}
+#player-info-panel .pi-head {
+  display: flex; align-items: baseline; gap: 10px;
+  padding-bottom: 9px; margin-bottom: 10px;
+  border-bottom: 1px solid var(--hud-line-soft);
+}
+#player-info-panel .pi-head b { font-size: 14px; letter-spacing: 1px; }
+#player-info-panel .pi-sub { font-size: 11px; color: var(--hud-dim); }
+#player-info-panel .pi-x {
+  width: 24px; height: 24px; border-radius: 8px; cursor: pointer;
+  background: rgba(255, 255, 255, 0.05); border: 1px solid var(--hud-line-soft);
+  color: var(--hud-dim); font-size: 12px; line-height: 1;
+}
+#player-info-panel .pi-x:hover { color: var(--hud-text); background: rgba(255, 255, 255, 0.1); }
+#player-info-panel .pi-body { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+#player-info-panel .pi-scheme {
+  flex: 0 0 132px; text-align: center;
+  padding: 8px; border-radius: 12px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--hud-line-soft);
+}
+#player-info-panel .pi-scheme-tip { margin-top: 6px; font-size: 10.5px; color: var(--hud-dim); }
+#player-info-panel .pi-side { flex: 1 1 320px; min-width: 280px; }
+#player-info-panel .pi-vitals { display: grid; gap: 5px; margin-bottom: 10px; }
+#player-info-panel .pi-vital { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--hud-dim); }
+#player-info-panel .pi-vital > span:first-child { width: 62px; }
+#player-info-panel .pi-bar {
+  flex: 1; height: 7px; border-radius: 999px; overflow: hidden;
+  background: rgba(255, 255, 255, 0.08); border: 1px solid var(--hud-line-soft);
+}
+#player-info-panel .pi-bar > i { display: block; height: 100%; }
+#player-info-panel .pi-vital b { width: 38px; text-align: right; color: var(--hud-text); font-size: 11px; }
+#player-info-panel .pi-wounds { display: grid; gap: 3px; }
+#player-info-panel .pi-wound {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; padding: 5px 8px; border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--hud-line-soft);
+}
+#player-info-panel .pi-dot { width: 9px; height: 9px; border-radius: 50%; box-shadow: 0 0 6px currentColor; }
+#player-info-panel .pi-wound b { min-width: 108px; font-weight: 600; }
+#player-info-panel .pi-lvl { min-width: 52px; }
+#player-info-panel .pi-eff { color: var(--hud-dim); font-size: 11px; }
+#player-info-panel .pi-note {
+  margin-top: 10px; font-size: 11px; line-height: 1.35;
+  color: rgba(206, 213, 226, 0.62);
+  border-top: 1px solid var(--hud-line-soft); padding-top: 8px;
+}

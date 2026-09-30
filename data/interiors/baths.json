@@ -1,0 +1,201 @@
+{
+  "interiorId": "baths",
+  "defaultFloor": 0,
+  "entryCol": 6,
+  "entryRow": 8,
+  "chestItems": [
+    "bread",
+    "wheat"
+  ],
+  "npcs": [
+    {
+      "col": 6,
+      "row": 6,
+      "name": "Bañista",
+      "npcType": "villager"
+    }
+  ],
+  "floors": [
+    {
+      "name": "Sala de baños",
+      "width": 13,
+      "height": 10,
+      "entryCol": 6,
+      "entryRow": 8,
+      "wallPalette": {
+        "back": "#A2643E",
+        "backDark": "#8B5334",
+        "backLight": "#B87A50",
+        "left": "#8B5334",
+        "leftDark": "#77452B",
+        "right": "#B87A50",
+        "rightDark": "#A2643E",
+        "floor": "#C9A87C",
+        "floorDark": "#BC9C70",
+        "trim": "#5A3A1A",
+        "baseboard": "#4A2A0A",
+        "ceiling": "#3A2A1A"
+      },
+      "tiles": [
+        [
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall"
+        ],
+        [
+          "wall",
+          "torch",
+          "wall",
+          "wall",
+          "window",
+          "wall",
+          "wall",
+          "wall",
+          "window",
+          "wall",
+          "wall",
+          "torch",
+          "wall"
+        ],
+        [
+          "wall",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "wall"
+        ],
+        [
+          "wall",
+          "rug",
+          "rug",
+          "rug",
+          "rug",
+          "rug",
+          "floor",
+          "rug",
+          "rug",
+          "rug",
+          "rug",
+          "rug",
+          "wall"
+        ],
+        [
+          "wall",
+          "rug",
+          "rug",
+          "rug",
+          "rug",
+          "rug",
+          "floor",
+          "rug",
+          "rug",
+          "rug",
+          "rug",
+          "rug",
+          "wall"
+        ],
+        [
+          "wall",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "wall"
+        ],
+        [
+          "wall",
+          "plant",
+          "floor",
+          "pot",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "pot",
+          "floor",
+          "plant",
+          "wall"
+        ],
+        [
+          "wall",
+          "table",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "floor",
+          "table",
+          "wall"
+        ],
+        [
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "door",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall"
+        ],
+        [
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "door",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall",
+          "wall"
+        ]
+      ],
+      "npcs": [
+        {
+          "col": 6,
+          "row": 6,
+          "name": "Bañista",
+          "npcType": "villager"
+        }
+      ]
+    }
+  ]
+}
