@@ -1,4 +1,5 @@
 {
+  "estilo": "clasico",
   "plantilla": {
     "house": {
       "sistema": "nuevo",
@@ -475,6 +476,25 @@
       },
       "ajusteHuella": true,
       "hoja": "data/sheets/Granero.png"
+    },
+    "observatory": {
+      "sistema": "nuevo",
+      "vistas": {
+        "sup": {
+          "x": 394,
+          "y": 104,
+          "w": 342,
+          "h": 207
+        },
+        "iso": {
+          "x": 785,
+          "y": 89,
+          "w": 355,
+          "h": 292
+        }
+      },
+      "ajusteHuella": true,
+      "hoja": "data/sheets/Observatory.png"
     }
   }
 }

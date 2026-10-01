@@ -131,6 +131,9 @@ export function createDebugTools(deps) {
   // Ayudas de prueba del motor (dibujar un sprite y leer los píxeles), para
   // comprobar desde fuera que algo se dibuja de verdad.
   if (deps.testDraw) api.testDraw = deps.testDraw;
+  // Ayudas de las vistas del motor que viven en su propio módulo (el observatorio:
+  // abrir la cúpula, apuntar a una constelación por id, forzar la revelación…).
+  if (deps.observatorio) api.observatorio = deps.observatorio;
   try { window.MESO_DEBUG = api; } catch (e) {}
 
   const dom = { overlay: null, ctx: null, panel: null, body: null, root: null };

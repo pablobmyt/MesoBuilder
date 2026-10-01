@@ -70,6 +70,24 @@ if (spriteAdjustments) {
     Object.keys(spriteAdjustments.buildings || {}).length + ' edificios');
 }
 
+// Vistas de entidad: el «arte nuevo» recortado de los PNG de data/sheets/.
+// Es IMPRESCINDIBLE tenerlo en el preload: la ventana se carga con loadFile(),
+// así que la página vive en un origen `file://` y Chromium BLOQUEA cualquier
+// fetch a file:// (CORS). Sin esta vía, el motor no leía data/entity-views.json
+// en Electron, no registraba ni una vista y seguía dibujando los sprites
+// clásicos aunque las hojas estuviesen en el proyecto (en el navegador, servido
+// por http, sí se veía). El motor lo prefiere por `meso-local://` y usa esto
+// como respaldo.
+const entityViews = readJsonFile('data/entity-views.json', true);
+if (entityViews) {
+  const ent = entityViews.entidades || {};
+  const nuevas = Object.keys(ent).filter((k) => ent[k] && ent[k].sistema === 'nuevo').length;
+  console.log('[preload] entity-views.json cargado:',
+    Object.keys(ent).length + ' entidades (' + nuevas + ' con arte recortado de PNG)');
+} else {
+  console.log('[preload] entity-views.json: no encontrado (se usan los sprites clásicos)');
+}
+
 // Estructuras (conjuntos de edificios) definidas por el usuario. Opcional.
 const structures = readJsonFile('data/structures.json', true);
 if (structures) {
@@ -81,6 +99,7 @@ if (structures) {
 contextBridge.exposeInMainWorld('__mesoPreload', {
   entityPixels,
   entityDefs,
+  entityViews,
   npcDialogues,
   interiors,
   spriteAdjustments,

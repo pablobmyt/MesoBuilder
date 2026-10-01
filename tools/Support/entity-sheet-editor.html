@@ -7,6 +7,7 @@
   :root {
     --bg: #121417; --panel: rgba(24,26,30,.96); --line: rgba(255,255,255,.10);
     --gold: #e3c98c; --txt: #e8e8e8; --dim: #9aa0a6; --ok: #8ee08a; --bad: #ff8a6a;
+    --anim: #78beff;
   }
   * { box-sizing: border-box; }
   body {
@@ -40,10 +41,17 @@
   .fila > * { flex: 1; }
   .lista { max-height: 44vh; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
   .item { padding: 5px 8px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,.05); display: flex; justify-content: space-between; gap: 6px; }
+  .item > .nom { flex: 1; }
+  .item > .der { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
   .item:hover { background: rgba(255,255,255,.05); }
   .item.sel { background: rgba(227,201,140,.16); color: var(--gold); }
   .item small { color: var(--dim); }
   .item .marca { color: var(--ok); font-size: 11px; }
+  /* Entidades con ANIMACIONES (el personaje, el caballo, el perro…): resalte a la
+     izquierda y globo con cuántas tienen, para encontrarlas y editarlas de un golpe. */
+  .item.con-anim { box-shadow: inset 3px 0 0 var(--anim); }
+  .item .marca.anim { color: var(--anim); border: 1px solid var(--anim); border-radius: 999px; padding: 0 6px; }
+  .item .marca.anim.varias { background: rgba(120,190,255,.16); font-weight: 700; }
   #lienzo { background: #171a1e; border: 1px solid var(--line); border-radius: 8px; cursor: crosshair; image-rendering: pixelated; }
   .slots { display: grid; gap: 6px; }
   .slot { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
@@ -56,12 +64,28 @@
   #vistaPrevia .marco span { display: block; font-size: 10px; color: var(--dim); text-align: center; }
   .ayuda { color: var(--dim); font-size: 11px; line-height: 1.5; }
   .kbd { background: #0d0f12; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; font-family: ui-monospace, monospace; }
+  /* Tira de fotogramas (celdas de la rejilla y cuadros de una animación). */
+  .tira { display: flex; flex-wrap: wrap; gap: 5px; align-items: flex-start; }
+  .tira button { padding: 0; background: #171a1e; line-height: 0; border-radius: 5px; }
+  .tira canvas { image-rendering: pixelated; display: block; border-radius: 4px; }
+  .tira .celda { position: relative; }
+  .tira .celda.act { outline: 2px solid var(--gold); outline-offset: 1px; }
+  .tira .celda.quitar::after {
+    content: '×'; position: absolute; right: -3px; top: -7px; background: var(--bad); color: #1b1e23;
+    border-radius: 50%; width: 14px; height: 14px; font: 12px/14px system-ui; text-align: center;
+  }
+  .anim-lista { max-height: 20vh; overflow: auto; border: 1px solid var(--line); border-radius: 8px; margin-top: 8px; }
+  .anim-lista .item .rect { color: var(--dim); font-size: 11px; font-family: ui-monospace, monospace; }
+  .caja { border: 1px solid var(--line); border-radius: 8px; padding: 8px; margin-top: 8px; background: rgba(0,0,0,.18); }
+  .caja > h3:first-child { margin-top: 0; }
+  .rejilla-campos { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .rejilla-campos label { margin-top: 0; }
 </style>
 </head>
 <body>
 <header>
   <b>EDITOR DE ENTIDADES</b>
-  <small>elige sistema por entidad y recorta sus vistas directamente del PNG</small>
+  <small>separa la hoja en celdas, recorta las vistas y monta las animaciones de cada entidad</small>
   <span id="aviso" style="margin-left:auto"></span>
 </header>
 
@@ -89,14 +113,51 @@
 
   <h3>2 · Entidad</h3>
   <input id="buscar" type="text" placeholder="Buscar…" style="margin-bottom:6px">
+  <!-- Filtro para quedarse sólo con las que tienen animaciones (personaje,
+       caballo, perro… las de varios movimientos), que son las que se editan. -->
+  <label style="display:flex;align-items:center;gap:6px;text-transform:none;margin:0 0 6px">
+    <input id="soloAnim" type="checkbox"> sólo las que tienen animaciones
+  </label>
   <div class="lista" id="listaEntidades"></div>
+  <div id="listaInfo" class="ayuda" style="margin-top:4px"></div>
 </aside>
 
 <!-- ── Centro: la hoja ──────────────────────────────────────────────────── -->
 <section>
   <canvas id="lienzo" width="600" height="400"></canvas>
   <p class="ayuda">Arrastra sobre el PNG para recortar la imagen. con <span class="kbd">Mayús</span>
-  el recorte se queda cuadrado. El recorte debe incluir SÓLO ese sprite (sin fondo ni sombras).</p>
+  el recorte se queda cuadrado. El recorte debe incluir SÓLO ese sprite (sin fondo ni sombras).
+  Con la rejilla puesta, <b>un clic (sin arrastrar) elige una celda</b>.</p>
+
+  <!-- ── Separar la hoja automáticamente ───────────────────────────────────
+       Una hoja «clásica» es una cuadrícula de sprites (cada fila, una serie:
+       direcciones, fotogramas de una animación, variantes de color). Medir a ojo
+       los recortes uno a uno es lo que hacía este editor hasta ahora. Aquí se
+       analiza el PNG (los huecos de fondo entre sprites son las líneas de corte)
+       y sale la rejilla lista para repartirla en vistas y animaciones. -->
+  <div class="caja">
+    <h3>Separar la hoja automáticamente</h3>
+    <div class="fila">
+      <button id="btnDetectar">Detectar la rejilla</button>
+      <button id="btnAplicarRejilla">Aplicar rejilla</button>
+    </div>
+    <div class="rejilla-campos" style="margin-top:8px">
+      <div><label for="grCols">Columnas</label><input id="grCols" type="number" min="1" max="512" value="1"></div>
+      <div><label for="grRows">Filas</label><input id="grRows" type="number" min="1" max="512" value="1"></div>
+      <div><label for="grCw">Ancho celda</label><input id="grCw" type="number" min="1" value="32"></div>
+      <div><label for="grCh">Alto celda</label><input id="grCh" type="number" min="1" value="32"></div>
+      <div><label for="grX0">Origen X</label><input id="grX0" type="number" min="0" value="0"></div>
+      <div><label for="grY0">Origen Y</label><input id="grY0" type="number" min="0" value="0"></div>
+      <div><label for="grGx">Hueco X</label><input id="grGx" type="number" min="0" value="0"></div>
+      <div><label for="grGy">Hueco Y</label><input id="grGy" type="number" min="0" value="0"></div>
+    </div>
+    <div class="fila" style="margin-top:6px">
+      <button id="btnRepartirRejilla">Repartir filas en las vistas</button>
+    </div>
+    <div id="grInfo" class="ayuda" style="margin-top:6px">Sin rejilla: pulsa «Detectar la rejilla»
+    con el PNG cargado. Lo que se detecte se puede corregir a mano y volver a aplicar.</div>
+    <div id="grCeldas" class="tira" style="margin-top:8px"></div>
+  </div>
 </section>
 
 <!-- ── Panel derecho: sistema + vistas ──────────────────────────────────── -->
@@ -122,7 +183,46 @@
   </select>
   <hr style="border:0;border-top:1px solid var(--line);margin:12px 0">
 
-  <h3>5 · Guardar</h3>
+  <!-- ── Animaciones ───────────────────────────────────────────────────────
+       Igual que en un motor: una animación tiene NOMBRE («andar», «parado»,
+       «trabajar»…), FPS, si da vueltas y una LISTA ORDENADA de cuadros. Cada
+       cuadro es un recorte del PNG (una celda de la rejilla). El juego usa
+       «andar» cuando el personaje camina y «parado» cuando se queda quieto; en
+       edificios, la primera animación de la vista. -->
+  <h3>5 · Animaciones</h3>
+  <div class="fila">
+    <input id="animNombre" list="animNombres" type="text" placeholder="andar">
+    <input id="animFps" type="number" min="1" max="30" value="8" title="Fotogramas por segundo" style="max-width:74px">
+  </div>
+  <datalist id="animNombres">
+    <option value="parado"></option><option value="andar"></option><option value="correr"></option>
+    <option value="trabajar"></option><option value="recolectar"></option><option value="atacar"></option>
+    <option value="girar"></option><option value="arder"></option><option value="bucle"></option>
+  </datalist>
+  <div class="fila" style="margin-top:6px">
+    <select id="animVista" title="A qué vista pertenece la animación"></select>
+    <label style="display:flex;align-items:center;gap:6px;text-transform:none;margin:0">
+      <input id="animBucle" type="checkbox" checked> bucle
+    </label>
+  </div>
+  <div class="fila" style="margin-top:6px">
+    <button id="btnAnimGuardar">Crear / actualizar</button>
+    <button id="btnAnimQuitar">Quitar</button>
+  </div>
+  <div class="anim-lista" id="animLista"></div>
+  <div class="fila" style="margin-top:6px">
+    <input id="animFila" type="number" min="0" value="0" title="Fila de la rejilla" style="max-width:80px">
+    <button id="btnAnimFila">Fila → cuadros</button>
+  </div>
+  <div class="fila" style="margin-top:6px">
+    <button id="btnAnimCelda">+ celda elegida</button>
+    <button id="btnAnimUltimo">− última</button>
+  </div>
+  <div id="animTira" class="tira" style="margin-top:8px"></div>
+  <p class="ayuda" id="animAyuda"></p>
+  <hr style="border:0;border-top:1px solid var(--line);margin:12px 0">
+
+  <h3>6 · Guardar</h3>
   <div class="fila" style="margin-bottom:6px">
     <button id="btnAplicar">Guardar en el proyecto</button>
     <button id="btnBorrar">Borrar todo</button>
@@ -193,7 +293,17 @@ const est = {
   cargado: false,         // ¿se ha podido LEER data/entity-views.json? (sin esto no se guarda)
   sel: null,
   slot: 'iso',
-  rect: null              // recorte en curso (px del PNG)
+  rect: null,             // recorte en curso (px del PNG)
+  // ── Rejilla de la hoja (separar automáticamente) ──────────────────────────
+  // `est.rejilla` son los NÚMEROS (celda, columnas, filas…); `est.analisis` es el
+  // estudio del PNG (qué píxel es fondo y cuáles están ocupados) que se usa para
+  // ajustar cada celda al dibujo y para pintar la rejilla encima del lienzo. Se
+  // guarda por ruta de PNG: cambiar de entidad no reanaliza la misma hoja.
+  rejilla: null,          // { x0,y0,cw,ch,gx,gy,cols,rows }
+  analisis: null,         // { ruta, W, H, ocupado:Uint8Array }
+  celdas: [],             // [{ c, r, x,y,w,h }] ajustadas al dibujo
+  celda: null,            // { c, r } celda elegida con un clic
+  anim: null              // nombre de la animación que se está editando
 };
 
 const $ = (id) => document.getElementById(id);
@@ -314,6 +424,9 @@ function cargarHoja(ruta, opciones) {
     est.hoja = pedida;
     est.hojaPropia = propia;
     $('rutaPng').value = pedida;
+    // La rejilla guardada de ESTA entidad: al volver a abrirla sigue puesta y no
+    // hay que medirla otra vez (se guarda con la entidad, son sólo números).
+    restaurarRejillaDeEntidad();
     encuadrar();
     dibujar();
     // La vista previa de los recortes necesita el PNG ya cargado y la lista de
@@ -342,7 +455,20 @@ function cargarHoja(ruta, opciones) {
 function seleccionar(clave) {
   est.sel = clave;
   est.rect = null;
+  // La rejilla, las celdas y la animación son DE LA ENTIDAD: al cambiar de entidad
+  // no puede quedarse puesta la anterior (se recortaría sobre la hoja equivocada y
+  // los cuadros de la animación acabarían apuntando a sitios del PNG que no son).
+  est.celda = null;
+  est.celdas = [];
+  est.rejilla = null;
+  est.anim = null;
   pintarLista(); pintarSlots();
+  pintarVistaSelect();
+  // Si la entidad ya tiene animaciones (el personaje, el caballo, el perro…), se cae
+  // en la primera: al abrirla es justo lo que se viene a editar, sin buscarla.
+  const suyas = animacionesDeEntidad(clave);
+  if (suyas.length) elegirAnimacion(suyas[0]);
+  pintarAnimaciones(); pintarRejilla();
   const def = est.entidades[clave] || {};
   const tieneVistas = !!(def.vistas && Object.keys(def.vistas).length);
   const ruta = rutaHojaDe(clave);
@@ -361,10 +487,12 @@ function seleccionar(clave) {
   }
   const propia = !!def.hoja;
   if (ruta && (ruta !== est.hojaCargada || propia !== est.hojaPropia)) {
+    // `cargarHoja` devuelve el control en su onload, que restaura la rejilla guardada.
     cargarHoja(ruta, { asignarA: false });
   } else {
     est.hojaPropia = propia;
     $('rutaPng').value = ruta;
+    restaurarRejillaDeEntidad();
     encuadrar();
     dibujar();
   }
@@ -556,6 +684,30 @@ function dibujar() {
       g.fillText(k, r.x * z + 3, Math.max(12, r.y * z - 3));
     });
   }
+  // ── Rejilla detectada: líneas de cada celda y celda ELEGIDA ────────────────
+  // Es sólo una guía visual (el recorte de verdad sale de `est.celdas`, ya ajustado
+  // al dibujo de cada celda). Sin esto, con la rejilla puesta no se veía dónde cae
+  // cada celda y el clic para elegir una era a ciegas.
+  if (est.rejilla && est.celdas.length) {
+    const rj = est.rejilla;
+    g.save();
+    g.lineWidth = 1;
+    g.strokeStyle = 'rgba(120,190,255,.35)';
+    for (let r = 0; r < rj.rows; r++) {
+      for (let c = 0; c < rj.cols; c++) {
+        const n = celdaNominal(c, r);
+        g.strokeRect(n.x * z + 0.5, n.y * z + 0.5, n.w * z - 1, n.h * z - 1);
+      }
+    }
+    const cel = est.celda ? est.celdas.find((x) => x.c === est.celda.c && x.r === est.celda.r) : null;
+    if (cel && !cel.vacia) {
+      g.strokeStyle = '#78beff'; g.lineWidth = 2;
+      g.strokeRect(cel.x * z - 1, cel.y * z - 1, cel.w * z + 2, cel.h * z + 2);
+      g.fillStyle = 'rgba(120,190,255,.95)'; g.font = '11px ui-monospace, monospace';
+      g.fillText('c' + cel.c + ' f' + cel.r, cel.x * z + 2, Math.max(11, cel.y * z - 3));
+    }
+    g.restore();
+  }
   // recorte en curso
   if (est.rect) {
     const r = est.rect;
@@ -603,7 +755,9 @@ function posPng(ev) {
 let arrastrando = null;
 $('lienzo').addEventListener('pointerdown', (ev) => {
   if (!est.hojaImg) { aviso('Carga antes el PNG', true); return; }
-  arrastrando = Object.assign(posPng(ev), { shift: ev.shiftKey });
+  // `arrastrando` guarda el origen Y si el puntero se ha movido: un clic SIN
+  // arrastrar (con rejilla puesta) elige la celda en vez de hacer un recorte.
+  arrastrando = Object.assign(posPng(ev), { shift: ev.shiftKey, movido: false });
   est.rect = { x: arrastrando.x, y: arrastrando.y, w: 1, h: 1 };
   $('lienzo').setPointerCapture(ev.pointerId);
   dibujar();
@@ -612,11 +766,22 @@ $('lienzo').addEventListener('pointermove', (ev) => {
   if (!arrastrando) return;
   const p = posPng(ev);
   let w = Math.abs(p.x - arrastrando.x), h = Math.abs(p.y - arrastrando.y);
+  if (w || h) arrastrando.movido = true;
   if (arrastrando.shift) { const m = Math.max(w, h); w = m; h = m; }
   est.rect = { x: Math.min(p.x, arrastrando.x), y: Math.min(p.y, arrastrando.y), w: Math.max(1, w), h: Math.max(1, h) };
   dibujar();
 });
-$('lienzo').addEventListener('pointerup', () => { arrastrando = null; });
+$('lienzo').addEventListener('pointerup', (ev) => {
+  const clicSinArrastrar = !!(arrastrando && !arrastrando.movido);
+  arrastrando = null;
+  if (!clicSinArrastrar || !est.rejilla) return;
+  const p = posPng(ev);
+  const cel = celdaEn(p.x, p.y);
+  if (cel) { elegirCelda(cel.c, cel.r); return; }
+  // Fuera de la rejilla: el clic no ha recortado nada y se quita el recorte de 1 px.
+  est.rect = null;
+  dibujar();
+});
 
 // ── Entidades ───────────────────────────────────────────────────────────────
 async function cargarNombres() {
@@ -626,7 +791,12 @@ async function cargarNombres() {
   // salino), tierra (estepa, hierba, ribera, marisma, bosque), arcilla (colinas)
   // y agua. Van las primeras de la lista para tenerlas a mano.
   const suelos = ['suelo_arena', 'suelo_tierra', 'suelo_arcilla', 'suelo_agua'];
-  est.nombres = suelos.concat(fijos);
+  // OBSERVATORIO: no está en `entity-pixels.json` (su sprite provisional lo
+  // registra el motor en memoria, ver `registerObservatorySprite`), pero hay que
+  // poder recortarle el PNG como a cualquier otro edificio. Sus recortes son
+  // `observatory_sup` y `observatory_iso`.
+  const sinSpriteEnJson = ['observatory'];
+  est.nombres = suelos.concat(fijos).concat(sinSpriteEnJson);
   try {
     const r = await fetch(rutaProyecto('data/entity-pixels.json') + '?t=' + Date.now());
     const j = await r.json();
@@ -638,7 +808,7 @@ async function cargarNombres() {
     // OJO: los ÁRBOLES (tree0..tree6) y la vegetación SÍ tienen que salir.
     const basura = /^(icon|flag|makarov|ma_g|interior_)/i;
     const arte = claves.filter((k) => !basura.test(k));
-    est.nombres = suelos.concat(fijos).concat(arte);
+    est.nombres = suelos.concat(fijos).concat(sinSpriteEnJson).concat(arte);
     aviso(est.nombres.length + ' entidades (' + arte.length + ' con sprite en el JSON)');
   } catch (e) {
     aviso('No pude leer data/entity-pixels.json: abre este editor con el servidor de desarrollo (node scripts/dev-server.js)', true);
@@ -648,21 +818,66 @@ async function cargarNombres() {
 
 function esPersonaje(n) { return PERSONAJE_DIRECCIONES && /PERSONAJE|NPC|PERRO|CABALLO|LOBO|CONEJO|ZORRO/i.test(n); }
 
+// El buscador y el filtro de «sólo con animaciones» repintan la lista.
+$('buscar').addEventListener('input', pintarLista);
+$('soloAnim').addEventListener('change', pintarLista);
+
+// Animaciones que tiene registradas una entidad, SIN crearla (listar no debe
+// escribir nada: sólo se crea la entrada cuando de verdad se edita algo).
+function animacionesDeEntidad(n) {
+  const e = n && est.entidades[n];
+  return (e && e.animaciones && typeof e.animaciones === 'object') ? Object.keys(e.animaciones) : [];
+}
+
+// Texto de una animación para el globo (título) de la lista.
+function detalleDeAnimacion(clave, a) {
+  a = a || {};
+  return clave + ' (' + (a.vista || '—') + ', ' + (a.fps || 8) + ' fps, ' +
+    ((a.cuadros || []).length) + ' cuadros' + (a.bucle === false ? ', sin bucle' : '') + ')';
+}
+
 function pintarLista() {
   const q = ($('buscar').value || '').toLowerCase();
+  const soloAnim = !!($('soloAnim') && $('soloAnim').checked);
   const cont = $('listaEntidades');
   cont.innerHTML = '';
-  est.nombres.filter((n) => !q || n.toLowerCase().indexOf(q) >= 0).forEach((n) => {
+  let visibles = 0, conAnim = 0, conVarias = 0;
+  est.nombres.forEach((n) => {
     const e = est.entidades[n] || {};
+    const anims = animacionesDeEntidad(n);
+    if (anims.length) { conAnim++; if (anims.length > 1) conVarias++; }
+    if (q && n.toLowerCase().indexOf(q) < 0) return;
+    if (soloAnim && !anims.length) return;
+    visibles++;
     const div = document.createElement('div');
     div.className = 'item' + (n === est.sel ? ' sel' : '');
     const nv = e.sistema === 'nuevo' ? Object.keys(e.vistas || {}).length : 0;
     const marca = (e.hoja ? 'hoja propia' + (nv ? ' · ' : '') : '') +
       (e.sistema === 'nuevo' ? '<span class="marca">nuevo · ' + nv + '</span>' : (e.sistema ? 'antiguo' : ''));
-    div.innerHTML = '<span>' + n + '</span><small>' + marca + '</small>';
+    // ── MARCA DE ANIMACIÓN ────────────────────────────────────────────────
+    // Las que tienen animaciones (el personaje, el caballo, el perro… las de varios
+    // movimientos) se distinguen en la lista sin abrir nada: globo con cuántas son
+    // —y en azul si son varias—, franja a la izquierda y el detalle de cada una en
+    // el título, para ir directo a editarlas.
+    let globo = '';
+    if (anims.length) {
+      div.classList.add('con-anim');
+      div.title = (anims.length > 1 ? anims.length + ' animaciones: ' : 'Animación: ') +
+        anims.map((k) => detalleDeAnimacion(k, e.animaciones[k])).join(' · ') +
+        ' · clic para editar';
+      globo = '<span class="marca anim' + (anims.length > 1 ? ' varias' : '') + '">anim · ' + anims.length + '</span>';
+    }
+    div.innerHTML = '<span class="nom">' + n + '</span>' +
+      '<span class="der">' + marca + globo + '</span>';
     div.addEventListener('click', () => seleccionar(n));
     cont.appendChild(div);
   });
+  const info = $('listaInfo');
+  if (info) {
+    info.textContent = visibles + ' de ' + est.nombres.length + ' entidades' +
+      (soloAnim ? ' (sólo con animaciones)' : '') + ' · ' + conAnim + ' con animaciones' +
+      (conVarias ? ' (' + conVarias + ' con varios movimientos)' : '');
+  }
 }
 
 function def(n) {
@@ -743,6 +958,488 @@ function pintarPrevia() {
     cont.appendChild(marco);
   });
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SEPARAR LA HOJA AUTOMÁTICAMENTE
+//
+// Una hoja «clásica» es una cuadrícula: cada celda es un sprite, y las filas
+// suelen ser series (una fila por dirección, o los fotogramas de una animación,
+// o variantes de color). En vez de medir los recortes a ojo, aquí se estudia el
+// PNG: **el fondo liso entre sprites son las líneas de corte**. De ese estudio
+// salen la rejilla (celda, columnas, filas, huecos) y, celda a celda, el
+// rectángulo AJUSTADO al dibujo (sin el halo del fondo).
+//
+// Todo lo detectado se puede corregir a mano en los campos y volver a aplicar:
+// la detección es una ayuda, no una imposición.
+// ═══════════════════════════════════════════════════════════════════════════
+const TOL_FONDO = 12;    // distancia de color para dar un píxel por «fondo»
+const MIN_HUECO = 3;     // un hueco menor que esto NO separa dos sprites
+const PX_SUELTOS = 1;    // píxeles sueltos por columna/fila que no cuentan
+const MAX_MINIATURAS = 160;   // tope de recortes en la tira (no colgar el DOM)
+
+// Estudio del PNG: qué es fondo y qué está ocupado. El fondo es el color más
+// repetido en el marco exterior (las hojas clásicas vienen sobre blanco liso o
+// sobre transparente). Se guarda por ruta de PNG: cambiar de entidad no obliga a
+// releer la misma imagen.
+function analizarHoja() {
+  const img = est.hojaImg;
+  if (!img) return null;
+  if (est.analisis && est.analisis.ruta === est.hojaCargada &&
+      est.analisis.W === img.width && est.analisis.H === img.height) return est.analisis;
+  const cv = document.createElement('canvas');
+  cv.width = img.width; cv.height = img.height;
+  const g = cv.getContext('2d', { willReadFrequently: true });
+  g.drawImage(img, 0, 0);
+  let d;
+  try { d = g.getImageData(0, 0, cv.width, cv.height).data; }
+  catch (e) {
+    // PNG de otro origen (sin cabeceras CORS): no se pueden leer los píxeles.
+    est.analisis = null;
+    return null;
+  }
+  const W = cv.width, H = cv.height;
+  const color = (x, y) => { const i = (y * W + x) * 4; return (d[i + 3] < 12) ? -1 : ((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]); };
+  const cuenta = new Map();
+  for (let x = 0; x < W; x++) { for (const y of [0, H - 1]) { const k = color(x, y); cuenta.set(k, (cuenta.get(k) || 0) + 1); } }
+  for (let y = 0; y < H; y++) { for (const x of [0, W - 1]) { const k = color(x, y); cuenta.set(k, (cuenta.get(k) || 0) + 1); } }
+  let fondo = -1, mejor = -1;
+  cuenta.forEach((n, k) => { if (n > mejor) { mejor = n; fondo = k; } });
+  const fr = (fondo >> 16) & 255, fg = (fondo >> 8) & 255, fb = fondo & 255;
+  const ocupado = new Uint8Array(W * H);
+  const ocp = new Int32Array(W), ocr = new Int32Array(H);
+  const tope = TOL_FONDO * TOL_FONDO * 3;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = (y * W + x) * 4;
+      let esFondo = d[i + 3] < 12;
+      if (!esFondo && fondo >= 0) {
+        const dr = d[i] - fr, dg = d[i + 1] - fg, db = d[i + 2] - fb;
+        esFondo = (dr * dr + dg * dg + db * db) <= tope;
+      }
+      if (esFondo) continue;
+      ocupado[y * W + x] = 1; ocp[x]++; ocr[y]++;
+    }
+  }
+  est.analisis = { ruta: est.hojaCargada, W, H, ocupado, ocp, ocr, fondo };
+  return est.analisis;
+}
+
+// Tramos seguidos de columnas (o filas) CON dibujo, separados por huecos de fondo.
+function bandasDe(v) {
+  const crudas = [];
+  let i = 0;
+  while (i < v.length) {
+    if (v[i] <= PX_SUELTOS) { i++; continue; }
+    const ini = i;
+    while (i < v.length && v[i] > PX_SUELTOS) i++;
+    crudas.push([ini, i - 1]);
+  }
+  // Huecos internos de 1-2 px (entre las patas de un caballo, por ejemplo) NO son
+  // celdas nuevas: se unen. Sólo un hueco de MIN_HUECO o más separa sprites.
+  const unidas = [];
+  for (const b of crudas) {
+    const ult = unidas[unidas.length - 1];
+    if (ult && (b[0] - ult[1] - 1) < MIN_HUECO) ult[1] = b[1];
+    else unidas.push([b[0], b[1]]);
+  }
+  return unidas;
+}
+
+function mediana(nums) {
+  const a = nums.filter((n) => typeof n === 'number' && isFinite(n)).sort((x, y) => x - y);
+  if (!a.length) return 0;
+  const m = Math.floor(a.length / 2);
+  return a.length % 2 ? a[m] : Math.round((a[m - 1] + a[m]) / 2);
+}
+
+function celdaNominal(c, r) {
+  const rj = est.rejilla || { x0: 0, y0: 0, cw: 32, ch: 32, gx: 0, gy: 0 };
+  return {
+    x: rj.x0 + Math.round(c * (rj.cw + rj.gx)), y: rj.y0 + Math.round(r * (rj.ch + rj.gy)),
+    w: rj.cw, h: rj.ch
+  };
+}
+
+// Detecta la rejilla y la deja puesta (y en los campos, para poder corregirla).
+function detectarRejilla() {
+  if (!est.hojaImg) { aviso('Carga antes el PNG de la hoja', true); return; }
+  const a = analizarHoja();
+  if (!a) {
+    aviso('No puedo leer los píxeles de este PNG (es de otro origen). Cárgalo con ' +
+      '«Desde mi equipo…» y vuelve a intentarlo.', true);
+    return;
+  }
+  const cols = bandasDe(a.ocp), filas = bandasDe(a.ocr);
+  if (!cols.length || !filas.length) {
+    aviso('No encuentro sprites separados por fondo. Si la hoja no tiene huecos, ' +
+      'pon la celda y las columnas a mano y pulsa «Aplicar rejilla».', true);
+    return;
+  }
+  const huecos = (bs) => bs.slice(1).map((b, i) => b[0] - bs[i][1] - 1);
+  est.rejilla = {
+    x0: cols[0][0], y0: filas[0][0],
+    cw: mediana(cols.map((b) => b[1] - b[0] + 1)) || 32,
+    ch: mediana(filas.map((b) => b[1] - b[0] + 1)) || 32,
+    gx: Math.max(0, mediana(huecos(cols))), gy: Math.max(0, mediana(huecos(filas))),
+    cols: cols.length, rows: filas.length
+  };
+  est.celda = null;
+  // Lo detectado TIENE que ir a los campos ANTES de aplicarlo: `aplicarRejilla`
+  // empieza leyendo los campos, así que sin esto se aplicaba lo que hubiera puesto
+  // a mano (p. ej. 1×1 de 32×32) y la detección no servía de nada.
+  escribirRejillaEnInputs();
+  aplicarRejilla(true);
+  aviso('Rejilla detectada: ' + est.rejilla.cols + '×' + est.rejilla.rows + ' celdas de ' +
+    est.rejilla.cw + '×' + est.rejilla.ch + ' px (hueco ' + est.rejilla.gx + '×' + est.rejilla.gy + ').');
+}
+
+// Recalcula los recortes AJUSTADOS de cada celda (sin el halo de fondo) con los
+// números que haya ahora mismo en `est.rejilla`.
+function recalcularCeldas() {
+  const a = est.analisis, rj = est.rejilla;
+  est.celdas = [];
+  // La celda elegida es de la rejilla anterior: al recalcular, ya no vale.
+  est.celda = null;
+  if (!a || !rj) return est.celdas;
+  for (let r = 0; r < rj.rows; r++) {
+    for (let c = 0; c < rj.cols; c++) {
+      const n = celdaNominal(c, r);
+      let x0 = n.x + n.w, y0 = n.y + n.h, x1 = -1, y1 = -1;
+      for (let y = Math.max(0, n.y); y < Math.min(a.H, n.y + n.h); y++) {
+        for (let x = Math.max(0, n.x); x < Math.min(a.W, n.x + n.w); x++) {
+          if (!a.ocupado[y * a.W + x]) continue;
+          if (x < x0) x0 = x; if (x > x1) x1 = x;
+          if (y < y0) y0 = y; if (y > y1) y1 = y;
+        }
+      }
+      if (x1 < 0) est.celdas.push({ c, r, vacia: true, x: n.x, y: n.y, w: n.w, h: n.h });
+      else est.celdas.push({ c, r, x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 });
+    }
+  }
+  return est.celdas;
+}
+
+function leerRejillaDeInputs() {
+  const num = (id, def) => { const v = Number($(id).value); return isFinite(v) && v >= 0 ? Math.round(v) : def; };
+  est.rejilla = {
+    cols: Math.max(1, num('grCols', 1)), rows: Math.max(1, num('grRows', 1)),
+    cw: Math.max(1, num('grCw', 32)), ch: Math.max(1, num('grCh', 32)),
+    x0: num('grX0', 0), y0: num('grY0', 0),
+    gx: num('grGx', 0), gy: num('grGy', 0)
+  };
+  return est.rejilla;
+}
+
+function escribirRejillaEnInputs() {
+  const rj = est.rejilla;
+  if (!rj) return;
+  $('grCols').value = rj.cols; $('grRows').value = rj.rows;
+  $('grCw').value = rj.cw; $('grCh').value = rj.ch;
+  $('grX0').value = rj.x0; $('grY0').value = rj.y0;
+  $('grGx').value = rj.gx; $('grGy').value = rj.gy;
+}
+
+// Aplica lo que hay en los campos: recalcula celdas, las guarda en la entidad
+// (para no perderlas al cambiar de entidad) y repinta.
+function aplicarRejilla(silencio) {
+  leerRejillaDeInputs();
+  // `analizarHoja()` se cachea POR RUTA: llamarla siempre es lo correcto (si el
+  // análisis que hay es de OTRA hoja, lo rehace; no hay que fiarse del que haya).
+  analizarHoja();
+  recalcularCeldas();
+  if (est.sel) def(est.sel).rejilla = Object.assign({}, est.rejilla);
+  pintarRejilla();
+  dibujar();
+  if (!silencio) aviso('Rejilla aplicada: ' + est.rejilla.cols + '×' + est.rejilla.rows +
+    ' celdas de ' + est.rejilla.cw + '×' + est.rejilla.ch + ' px.');
+}
+
+function celdaEn(x, y) {
+  const rj = est.rejilla;
+  if (!rj) return null;
+  const c = Math.floor((x - rj.x0) / Math.max(1, rj.cw + rj.gx));
+  const r = Math.floor((y - rj.y0) / Math.max(1, rj.ch + rj.gy));
+  if (c < 0 || r < 0 || c >= rj.cols || r >= rj.rows) return null;
+  return { c, r };
+}
+
+function cuadrosDeFila(r) {
+  return est.celdas.filter((x) => x.r === r && !x.vacia).sort((a, b) => a.c - b.c)
+    .map((x) => ({ x: x.x, y: x.y, w: x.w, h: x.h }));
+}
+
+// Tira de celdas de la rejilla: sirve para ver de un golpe lo que ha detectado.
+function pintarRejilla() {
+  const cont = $('grCeldas');
+  cont.innerHTML = '';
+  const info = $('grInfo');
+  if (!est.rejilla) { info.textContent = 'Sin rejilla: pulsa «Detectar la rejilla» con el PNG cargado.'; return; }
+  const rj = est.rejilla;
+  const llenas = est.celdas.filter((c) => !c.vacia).length;
+  info.textContent = 'Rejilla: ' + rj.cols + ' columnas × ' + rj.rows + ' filas · celda ' +
+    rj.cw + '×' + rj.ch + ' px · hueco ' + rj.gx + '×' + rj.gy + ' · ' + llenas +
+    ' celdas con dibujo de ' + (rj.cols * rj.rows) + '. Clic en una celda del lienzo para elegirla.';
+  if (!est.analisis || !est.hojaImg) return;
+  const total = Math.min(est.celdas.length, MAX_MINIATURAS);
+  for (let i = 0; i < total; i++) {
+    const c = est.celdas[i];
+    const z = Math.max(1, Math.min(3, Math.floor(26 / Math.max(1, Math.max(c.w, c.h)))));
+    const cv = document.createElement('canvas');
+    cv.width = Math.max(2, c.w * z); cv.height = Math.max(2, c.h * z);
+    const g = cv.getContext('2d');
+    g.imageSmoothingEnabled = false;
+    if (!c.vacia) g.drawImage(est.hojaImg, c.x, c.y, c.w, c.h, 0, 0, cv.width, cv.height);
+    const b = document.createElement('button');
+    b.className = 'celda' + (est.celda && est.celda.c === c.c && est.celda.r === c.r ? ' act' : '');
+    b.title = (c.vacia ? '(vacía) ' : '') + 'columna ' + c.c + ', fila ' + c.r +
+      (c.vacia ? '' : ' · ' + c.w + '×' + c.h + ' en (' + c.x + ',' + c.y + ')');
+    b.appendChild(cv);
+    b.addEventListener('click', () => elegirCelda(c.c, c.r));
+    cont.appendChild(b);
+  }
+  if (est.celdas.length > total) {
+    const p = document.createElement('p');
+    p.className = 'ayuda';
+    p.style.width = '100%';
+    p.textContent = '(+' + (est.celdas.length - total) + ' celdas más sin miniatura)';
+    cont.appendChild(p);
+  }
+}
+
+function elegirCelda(c, r) {
+  est.celda = { c, r };
+  const cel = est.celdas.find((x) => x.c === c && x.r === r);
+  if (cel && !cel.vacia) est.rect = { x: cel.x, y: cel.y, w: cel.w, h: cel.h };
+  pintarRejilla();
+  dibujar();
+  aviso('Celda (columna ' + c + ', fila ' + r + ')' + (cel && !cel.vacia
+    ? ': ' + cel.w + '×' + cel.h + ' en (' + cel.x + ',' + cel.y + ') — «Capturar recorte aquí» o «+ celda elegida»'
+    : ': vacía'));
+}
+
+// La rejilla de una entidad se guarda con ella (sólo números): al volver a abrirla
+// sigue ahí y no hay que medirla otra vez. El motor ignora esta clave.
+function restaurarRejillaDeEntidad() {
+  const guardada = est.sel && est.entidades[est.sel] && est.entidades[est.sel].rejilla;
+  if (guardada && guardada.cols > 0) {
+    est.rejilla = Object.assign({}, guardada);
+    escribirRejillaEnInputs();
+    // `analizarHoja()` se cachea por ruta: si el análisis que hay es de otra hoja,
+    // lo rehace. Con el análisis de OTRA hoja, las celdas saldrían mal medidas.
+    if (est.hojaImg) { analizarHoja(); recalcularCeldas(); }
+  }
+  pintarRejilla();
+}
+
+// ── ANIMACIONES ─────────────────────────────────────────────────────────────
+// Igual que en un motor: nombre + fps + bucle + lista ordenada de cuadros, y cada
+// cuadro es un rectángulo del PNG. Se guardan en la entidad (`animaciones`) y el
+// juego las usa: «andar» al caminar y «parado» al quedarse quieto; en edificios,
+// la primera animación de esa vista.
+function animacionesDe(n) {
+  const d = def(n);
+  if (!d.animaciones || typeof d.animaciones !== 'object') d.animaciones = {};
+  return d.animaciones;
+}
+
+function animActual() {
+  if (!est.sel || !est.anim) return null;
+  return animacionesDe(est.sel)[est.anim] || null;
+}
+
+// Deja puesta en el formulario la animación `clave` de la entidad seleccionada
+// (nombre, fps, bucle y vista). La usan la lista de la entidad —para caer directo
+// en su primera animación al abrirla— y la lista de animaciones.
+function elegirAnimacion(clave) {
+  const a = (est.sel && animacionesDe(est.sel)[clave]) || null;
+  if (!a) return false;
+  est.anim = clave;
+  $('animNombre').value = nombreDeAnimacion(clave, a.vista);
+  $('animFps').value = a.fps || 8;
+  $('animBucle').checked = a.bucle !== false;
+  if (a.vista) $('animVista').value = a.vista;
+  return true;
+}
+
+// Clave de una animación EN EL FICHERO: NOMBRE + VISTA (`andar_sur`, `bucle_iso`).
+// Es lo que hace que la misma acción pueda existir en cada dirección: una hoja
+// clásica tiene una fila por dirección, y con una sola clave la última fila que
+// tocabas pisaba a las demás.
+function claveDeAnimacion(nombre, vista) {
+  const n = String(nombre || '').trim();
+  const v = String(vista || '').trim();
+  if (!v) return n;
+  return n.endsWith('_' + v) ? n : n + '_' + v;
+}
+
+// El nombre «de verdad» (sin el sufijo de vista), para enseñarlo en la interfaz.
+function nombreDeAnimacion(clave, vista) {
+  const s = '_' + (vista || '');
+  return (vista && clave.endsWith(s)) ? clave.slice(0, -s.length) : clave;
+}
+
+function pintarVistaSelect() {
+  const sel = $('animVista');
+  const antes = sel.value;
+  sel.innerHTML = '';
+  if (!est.sel) return;
+  const lista = esPersonaje(est.sel) ? PERSONAJE_DIRECCIONES : EDIFICIOS_DIRECCIONES;
+  lista.forEach((s) => {
+    const o = document.createElement('option');
+    o.value = s.id; o.textContent = s.nombre;
+    sel.appendChild(o);
+  });
+  sel.value = lista.some((s) => s.id === antes) ? antes : est.slot || lista[0].id;
+}
+
+function pintarAnimaciones() {
+  const cont = $('animLista');
+  cont.innerHTML = '';
+  const ayuda = $('animAyuda');
+  if (!est.sel) { ayuda.textContent = ''; return; }
+  const anims = animacionesDe(est.sel);
+  const nombres = Object.keys(anims);
+  $('animVista').value = (animActual() && animActual().vista) || $('animVista').value || est.slot;
+  if (!nombres.length) {
+    cont.innerHTML = '<div class="item"><span>Sin animaciones</span><small>celda de la rejilla → «+ celda elegida»</small></div>';
+  }
+  nombres.forEach((n) => {
+    const a = anims[n];
+    const etiqueta = nombreDeAnimacion(n, a.vista);
+    const div = document.createElement('div');
+    div.className = 'item' + (n === est.anim ? ' sel' : '');
+    div.innerHTML = '<span>' + etiqueta + '</span><span class="rect">' + (a.vista || '—') + ' · ' +
+      (a.cuadros ? a.cuadros.length : 0) + ' cuadros · ' + (a.fps || 8) + ' fps' +
+      (a.bucle === false ? ' · una vez' : '') + '</span>';
+    div.addEventListener('click', () => {
+      // La lista se indexa por la clave del fichero (`andar_sur`), pero en el
+      // formulario se enseña el nombre a secas y su vista en el desplegable.
+      elegirAnimacion(n);
+      pintarAnimaciones();
+    });
+    cont.appendChild(div);
+  });
+  // Tira de fotogramas de la animación elegida (se ve el ciclo entero).
+  const tira = $('animTira');
+  tira.innerHTML = '';
+  const a = animActual();
+  if (a && est.hojaImg) {
+    (a.cuadros || []).forEach((r, i) => {
+      const z = Math.max(1, Math.min(4, Math.floor(64 / Math.max(1, Math.max(r.w, r.h)))));
+      const cv = document.createElement('canvas');
+      cv.width = Math.max(2, r.w * z); cv.height = Math.max(2, r.h * z);
+      const g = cv.getContext('2d');
+      g.imageSmoothingEnabled = false;
+      try { g.drawImage(est.hojaImg, r.x, r.y, r.w, r.h, 0, 0, cv.width, cv.height); } catch (e) {}
+      const b = document.createElement('button');
+      b.className = 'celda quitar';
+      b.title = 'cuadro ' + (i + 1) + ' · ' + r.w + '×' + r.h + ' en (' + r.x + ',' + r.y + ') — clic para quitarlo';
+      b.appendChild(cv);
+      b.addEventListener('click', () => { a.cuadros.splice(i, 1); pintarAnimaciones(); });
+      tira.appendChild(b);
+    });
+  }
+  const campos = (a && a.cuadros) ? a.cuadros.length : 0;
+  ayuda.textContent = a
+    ? '«' + nombreDeAnimacion(est.anim, a.vista) + '» para ' + (a.vista || '—') + ': ' + campos + ' cuadros a ' + (a.fps || 8) +
+      ' fps' + (a.bucle === false ? ' (sin bucle)' : ' (en bucle)') +
+      '. El juego la reproduce: los personajes al andar y al hacer cada acción; en edificios, la de la vista.'
+    : 'Crea una animación (nombre + fps + vista) y añade cuadros desde la rejilla. Clic en una miniatura para quitarla.';
+}
+
+function guardarAnimacion() {
+  if (!est.sel) { aviso('Elige antes una entidad', true); return; }
+  const nombre = String($('animNombre').value || '').trim().toLowerCase().replace(/\s+/g, '_');
+  if (!nombre) { aviso('Pon un nombre a la animación (andar, parado, trabajar…)', true); return; }
+  const vista = $('animVista').value || est.slot;
+  // La animación se guarda por NOMBRE + VISTA (`andar_sur`): así el mismo verbo
+  // tiene una animación por dirección, que es como vienen las hojas clásicas.
+  const clave = claveDeAnimacion(nombre, vista);
+  const anims = animacionesDe(est.sel);
+  const ya = anims[clave] || { cuadros: [] };
+  const fps = Math.max(1, Math.min(60, Number($('animFps').value) || 8));
+  anims[clave] = {
+    vista,
+    fps,
+    bucle: $('animBucle').checked !== false,
+    cuadros: Array.isArray(ya.cuadros) ? ya.cuadros : []
+  };
+  est.anim = clave;
+  def(est.sel).sistema = 'nuevo';
+  pintarLista(); pintarSlots(); pintarVistaSelect(); pintarAnimaciones();
+  aviso('Animación «' + clave + '» (' + vista + ', ' + fps + ' fps, ' +
+    anims[clave].cuadros.length + ' cuadros)');
+}
+
+$('btnDetectar').addEventListener('click', detectarRejilla);
+$('btnAplicarRejilla').addEventListener('click', () => aplicarRejilla(false));
+// Reparte las filas de la rejilla en las vistas, en orden: para un personaje,
+// fila 0 → sur, fila 1 → norte, fila 2 → este, fila 3 → oeste (la primera celda
+// con dibujo de cada fila). Es el atajo para hojas con una fila por dirección.
+$('btnRepartirRejilla').addEventListener('click', () => {
+  if (!est.sel) { aviso('Elige antes una entidad', true); return; }
+  if (!est.rejilla) { aviso('Detecta o aplica antes una rejilla', true); return; }
+  const lista = esPersonaje(est.sel) ? PERSONAJE_DIRECCIONES : EDIFICIOS_DIRECCIONES;
+  const d = def(est.sel);
+  d.sistema = 'nuevo';
+  let puestas = 0;
+  lista.forEach((s, i) => {
+    const cuadros = cuadrosDeFila(i);
+    if (!cuadros.length) return;
+    d.vistas[s.id] = Object.assign({}, cuadros[0]);
+    puestas++;
+  });
+  pintarLista(); pintarSlots(); dibujar();
+  aviso(puestas
+    ? puestas + ' vistas puestas desde las filas ' + (puestas > 1 ? '0-' + (puestas - 1) : '0') +
+      ' de la rejilla (primera celda de cada fila)'
+    : 'No hay celdas con dibujo en esas filas', !puestas);
+});
+$('btnAnimGuardar').addEventListener('click', guardarAnimacion);
+$('btnAnimQuitar').addEventListener('click', () => {
+  if (!est.sel || !est.anim) return;
+  const anims = animacionesDe(est.sel);
+  if (!anims[est.anim]) return;
+  delete anims[est.anim];
+  if (!Object.keys(anims).length) delete def(est.sel).animaciones;
+  est.anim = null;
+  // La lista lleva el globo con cuántas animaciones tiene cada entidad: al quitar
+  // una hay que repintarla o el número se queda viejo.
+  pintarLista(); pintarAnimaciones();
+  aviso('Animación quitada');
+});
+// Toda una fila de la rejilla como cuadros de la animación elegida (el caso
+// clásico: cada fila de la hoja son los fotogramas de una acción).
+$('btnAnimFila').addEventListener('click', () => {
+  if (!est.sel || !est.anim) { aviso('Elige o crea antes una animación', true); return; }
+  if (!est.rejilla) { aviso('Detecta o aplica antes una rejilla', true); return; }
+  const r = Math.max(0, Math.min(est.rejilla.rows - 1, Number($('animFila').value) || 0));
+  const cuadros = cuadrosDeFila(r);
+  if (!cuadros.length) { aviso('La fila ' + r + ' no tiene celdas con dibujo', true); return; }
+  const a = animActual();
+  if (!a) return;
+  a.cuadros = (a.cuadros || []).concat(cuadros);
+  pintarAnimaciones();
+  aviso('Añadidos ' + cuadros.length + ' cuadros de la fila ' + r + ' a «' + est.anim + '»');
+});
+$('btnAnimCelda').addEventListener('click', () => {
+  if (!est.sel || !est.anim) { aviso('Elige o crea antes una animación', true); return; }
+  const a = animActual();
+  if (!a) return;
+  const r = est.celda ? (est.celdas.find((x) => x.c === est.celda.c && x.r === est.celda.r) || null) : null;
+  const rect = (r && !r.vacia) ? { x: r.x, y: r.y, w: r.w, h: r.h } : (est.rect ? Object.assign({}, est.rect) : null);
+  if (!rect) { aviso('Elige antes una celda (clic en el lienzo) o arrastra un recorte', true); return; }
+  a.cuadros = (a.cuadros || []).concat([rect]);
+  pintarAnimaciones();
+  aviso('Cuadro añadido: ' + rect.w + '×' + rect.h + ' en (' + rect.x + ',' + rect.y + ') · ' +
+    a.cuadros.length + ' cuadros');
+});
+$('btnAnimUltimo').addEventListener('click', () => {
+  const a = animActual();
+  if (!a || !a.cuadros || !a.cuadros.length) return;
+  a.cuadros.pop();
+  pintarAnimaciones();
+});
 
 // ── Acciones ────────────────────────────────────────────────────────────────
 $('btnCargar').addEventListener('click', () => cargarHoja($('rutaPng').value));

@@ -178,6 +178,17 @@
           </div>
         </button>
 
+        <!-- OBSERVATORIO: edificio sólo mesopotámico. `data-fijo` evita que el
+             remapeo por época (`remapBuildButtonsForEpoch`) lo convierta en otro
+             edificio: si la época no lo incluye, el botón se oculta. -->
+        <button class="build-btn" data-type="observatory" data-fijo="observatory" id="btn-observatory" title="Cúpula para mirar el cielo. Pulsa E junto a ella">
+          <canvas class="bicon" id="icon-observatory" width="22" height="22"></canvas>
+          <div>
+            <span class="bname">Observatorio</span>
+            <span class="bcost">&#x1F9F1; 26 &#x1F33E; 8</span>
+          </div>
+        </button>
+
         <button id="btn-demolish" data-type="demolish">
           <span style="font-size:1.1em;">&#x2716;</span>
           <div>
@@ -1860,6 +1871,18 @@
     // no se borran nunca: esto sólo decide cuáles se dibujan. La elección manda
     // sobre la del proyecto y se aplica en caliente si ya hay partida abierta.
     const ART_STYLE_KEY = 'meso.spriteStyle';
+    // MIGRACIÓN (una sola vez): hasta ahora, pulsar «Comenzar» guardaba el estilo
+    // del desplegable aunque el jugador no lo hubiera tocado nunca. Cualquier
+    // partida empezada dejó por tanto un `meso.spriteStyle` que NO es una elección
+    // de nadie y que tiene prioridad sobre el fichero del proyecto. Se borra una
+    // vez para que `data/entity-views.json` vuelva a mandar; si de verdad se había
+    // elegido un estilo, basta con volver a elegirlo en el desplegable.
+    try {
+      if (!localStorage.getItem('meso.spriteStyleMigrado')) {
+        localStorage.removeItem(ART_STYLE_KEY);
+        localStorage.setItem('meso.spriteStyleMigrado', '1');
+      }
+    } catch (e) {}
     function readArtStyle() {
       try {
         const v = localStorage.getItem(ART_STYLE_KEY);
@@ -1882,7 +1905,36 @@
       const inicial = readArtStyle();
       artStyleSelect.value = inicial;
       paintArtStyleNote(inicial);
+      // Al cambiar el desplegable, la elección del JUGADOR se guarda y manda.
       artStyleSelect.addEventListener('change', () => applyArtStyle(artStyleSelect.value, true));
+      // El desplegable arranca con lo que diga el PROYECTO (`estilo` de
+      // data/entity-views.json). OJO: esto no es cosmético. El estilo sólo se
+      // guarda cuando el jugador TOCA el desplegable; antes se guardaba también al
+      // pulsar «Comenzar», y como el valor guardado tiene prioridad sobre el del
+      // fichero, ese guardado automático dejaba al `estilo` del proyecto sin
+      // efecto PARA SIEMPRE: pedir «vuelve al arte clásico» en el JSON no servía
+      // de nada en cuanto el jugador empezaba una partida. En Electron esto se lee
+      // del preload (un fetch a file:// está bloqueado por CORS).
+      (function leerEstiloDelProyecto() {
+        const aplicar = (j) => {
+          const proyecto = (j && (j.estilo === 'clasico' || j.estilo === 'nuevo')) ? j.estilo : null;
+          if (!proyecto) return;
+          window._mesoEstiloProyecto = proyecto;
+          let elegido = null;
+          try { elegido = localStorage.getItem(ART_STYLE_KEY); } catch (e) {}
+          if (elegido !== 'clasico' && elegido !== 'nuevo') applyArtStyle(proyecto, false);
+        };
+        try {
+          const pre = window.__mesoPreload && window.__mesoPreload.entityViews;
+          if (pre) { aplicar(pre); return; }
+        } catch (e) { /* se prueba por HTTP */ }
+        try {
+          fetch('data/entity-views.json?v=' + Date.now())
+            .then((r) => (r.ok ? r.json() : null))
+            .then(aplicar)
+            .catch(() => {});
+        } catch (e) {}
+      })();
     }
 
     function applyMenuThemeForEpoch(epoch) {
@@ -2098,8 +2150,10 @@
         localStorage.setItem('meso.currentEpoch', epoch);
       } catch (e) {}
       try { localStorage.setItem('meso.menuDensities', JSON.stringify(densities)); } catch (e) {}
-      // Estilo de arte elegido en Opciones. El motor lo lee al cargar la librería.
-      try { localStorage.setItem(ART_STYLE_KEY, (artStyleSelect && artStyleSelect.value) === 'clasico' ? 'clasico' : 'nuevo'); } catch (e) {}
+      // El estilo de arte NO se guarda aquí: si el jugador no ha tocado el
+      // desplegable, manda el `estilo` del proyecto (ver `leerEstiloDelProyecto`).
+      // Guardarlo aquí convertía el valor por defecto del menú en una «elección del
+      // jugador» que pisaba el fichero para siempre.
       const selectedEpoch = (epochSelect && epochSelect.value) ? epochSelect.value : (localStorage.getItem('meso.currentEpoch') || 'mesopotamia');
       const name = (selectedEpoch === 'urss')
         ? ((window._menuChar && window._menuChar.name) || ((charNameInput || {}).value || ''))

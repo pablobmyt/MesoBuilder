@@ -2214,27 +2214,29 @@ body.theme-urw #notif {
   --hud-shadow: 0 14px 34px rgba(0, 0, 0, 0.45);
 }
 
-/* ── Barra superior (título + recursos + turno) ───────────────────────────── */
+/* ── Barra superior: widget COMPACTO arriba a la derecha ──────────────────── */
 #topbar {
-  /* FLOTANTE: antes era una franja pegada al borde superior que recortaba la
-     escena. Ahora va posicionada encima del lienzo (que gana el alto) con
-     esquinas redondeadas y sombra, y se puede retirar con una transición (por
-     eso el centrado se hace con margen automático y no con `transform`). */
+  /* Antes era una franja que cruzaba TODA la pantalla por el borde de arriba
+     (recursos a la izquierda y turno a la derecha) y comía escena. Ahora es una
+     pastilla pequeña pegada a la esquina: el ancho lo pone su contenido
+     (`max-content`), no la pantalla. Sigue retirándose sola cuando no hay nada
+     que mirar (`body.hud-idle`) y asomando al pasar el ratón por el borde
+     superior, así que no estorba. */
   position: fixed;
   top: 10px;
-  left: 12px;
-  right: 12px;
-  max-width: 1180px;
-  margin: 0 auto;
+  left: auto;
+  right: 10px;
+  width: max-content;
+  max-width: calc(100vw - 20px);
+  margin: 0;
   z-index: 1200;
-  border-radius: 14px;
+  border-radius: 12px;
   background: linear-gradient(180deg, rgba(18, 19, 23, 0.94), rgba(11, 12, 15, 0.82)) !important;
   -webkit-backdrop-filter: blur(18px) saturate(130%);
   backdrop-filter: blur(18px) saturate(130%);
   border: 1px solid var(--hud-line) !important;
-  border-top: none !important;
-  padding: 7px 14px !important;
-  gap: 12px !important;
+  padding: 6px 10px !important;
+  gap: 10px !important;
   font-family: var(--hud-font);
   box-shadow: var(--hud-shadow, 0 14px 34px rgba(0, 0, 0, 0.45));
 }
@@ -2703,7 +2705,10 @@ body.hud-idle #toolbar:focus-within {
 
 /* Botón flotante para abrir la lista sin recordar la tecla. */
 #btn-actions-open {
-  position: fixed; left: 12px; bottom: 58px; z-index: 1979;
+  /* ARRIBA, no pegado al suelo: abajo a la izquierda está el cartel de la GUÍA
+     RÁPIDA (lo pinta el motor en el lienzo, siempre en la misma esquina) y los
+     dos se pisaban. A 132 px queda justo encima, con aire. */
+  position: fixed; left: 12px; bottom: 132px; z-index: 1979;
   display: flex; align-items: center; gap: 7px;
   padding: 7px 12px; border-radius: 999px; cursor: pointer;
   font-family: var(--hud-font); font-size: 12px;
@@ -2716,6 +2721,30 @@ body.hud-idle #toolbar:focus-within {
 }
 #btn-actions-open:hover { transform: translateY(-1px); border-color: var(--hud-accent, #e3c98c); }
 body.hud-idle #btn-actions-open { opacity: 0 !important; pointer-events: none; }
+/* ── OBSERVATORIO ──────────────────────────────────────────────────────────
+   Mientras se mira el cielo, lo único que queda es el LIENZO: el cielo, el ocular
+   y la tablilla se pintan dentro del canvas (ver engine/observatory.js), así que
+   aquí se apaga todo lo demás.
+   Se hace con dos reglas y NO con una lista de identificadores porque media
+   interfaz del juego (misión, recursos, rendimiento, diario, registro…) se crea al
+   vuelo y se cuelga del body: cualquier lista se queda corta en cuanto se añade un
+   panel nuevo, y se veía el mundo por encima del cielo.
+   Al lienzo hay que devolverle el `pointer-events`: ahí se arrastra para apuntar. */
+body.observatorio-abierto #app *,
+body.observatorio-abierto > *:not(#app) {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+body.observatorio-abierto #app,
+body.observatorio-abierto #main,
+body.observatorio-abierto #gameCanvas,
+body.observatorio-abierto #notif {
+  opacity: 1 !important;
+}
+body.observatorio-abierto #gameCanvas {
+  pointer-events: auto !important;
+}
+
 body.hud-idle #action-list-panel { opacity: 1 !important; }
 
 /* ═══════════════════════════════════════════════════════════════════════════

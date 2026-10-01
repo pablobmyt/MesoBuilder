@@ -38,6 +38,9 @@ import {
 import { createMapEditorCore } from './game-engine-map-editor-core.js';
 import { createStandaloneEditorUtils } from './game-engine-standalone-editor-utils.js';
 import { createStructureSystem } from './game-engine-structures.js';
+// El observatorio: la vista del cielo y las constelaciones. Todo el sistema
+// (cielo, apuntado con la mira, tablilla que se escribe sola) vive en su módulo.
+import { createObservatory, registerObservatorySprite } from './observatory.js';
 import { createSettlementPlanner } from './game-engine-settlement-utils.js';
 import { createFx } from './game-engine-fx-utils.js';
 import { createTextures } from './game-engine-textures.js';
@@ -1551,6 +1554,11 @@ BUILDINGS.sheepfold = { name:'Redil', costBrick:2, costWheat:1, prodPop:0, prodW
 BUILDINGS.dock = { name:'Embarcadero', costBrick:8, costWheat:2, prodPop:1, prodWheat:1, prodBrick:1, color:'#8B7355', roofColor:'#6B5335', desc:'Muelle fluvial para comercio y transporte.', size:{ w:2, h:1 } };
 BUILDINGS.watchtower = { name:'Atalaya', costBrick:4, costWheat:0, prodPop:0, prodWheat:0, prodBrick:0, color:'#8A7A60', roofColor:'#6A5A40', desc:'Pequeña torre de vigilancia.', size:{ w:1, h:1 }, attackRange:4, attackDmg:2, attackCooldown:1200 };
 
+// Observatorio: no produce nada material. Es el sitio desde el que se mira el
+// cielo: con E se abre la bóveda celeste y se van registrando las constelaciones
+// de las tablillas MUL.APIN (ver engine/observatory.js).
+BUILDINGS.observatory = { name:'Observatorio', costBrick:26, costWheat:8, prodPop:2, prodWheat:0, prodBrick:0, color:'#5A6B8C', roofColor:'#2E3A54', desc:'Cúpula para mirar el cielo. Pulsa E junto a ella para observar las constelaciones.', size:{ w:3, h:3 }, esObservatorio: true };
+
 const EPOCH_BUILDING_MAP = {
   urss: {
     house: 'soviet_block',
@@ -1972,7 +1980,10 @@ function getEpochBuildPalette(epochId) {
   if (key === 'urss') {
     return ['soviet_block', 'party_hq', 'collective_farm', 'factory', 'state_warehouse', 'soviet_superblock', 'soviet_superblock_b', 'steel_foundry', 'well', 'lamp_post', 'soviet_streetlight', 'soviet_monument', 'sheepfold'];
   }
-  return ['house', 'mesopotamian_villa_detailed', 'farm', 'temple', 'market', 'granary', 'ziggurat', 'road', 'well', 'fountain', 'lamp_post', 'reed_hut', 'pottery', 'sheepfold', 'dock', 'watchtower'];
+  // El observatorio va al FINAL a propósito: los ocho primeros puestos están
+  // casados uno a uno con los botones de construir y con los atajos H/V/F/Y/K/G/Z.
+  // Su botón se marca con `data-fijo` (ver remapBuildButtonsForEpoch).
+  return ['house', 'mesopotamian_villa_detailed', 'farm', 'temple', 'market', 'granary', 'ziggurat', 'road', 'well', 'fountain', 'lamp_post', 'reed_hut', 'pottery', 'sheepfold', 'dock', 'watchtower', 'observatory'];
 }
 
 function remapBuildButtonsForEpoch() {
@@ -1981,6 +1992,20 @@ function remapBuildButtonsForEpoch() {
     const buttons = Array.from(document.querySelectorAll('.build-btn'));
     for (let i = 0; i < buttons.length; i++) {
       const btn = buttons[i];
+      // Los botones marcados con `data-fijo` NO se remapean por posición: no todos
+      // los edificios existen en todas las épocas. El observatorio es mesopotámico
+      // (en la URSS las tablillas están en un museo), así que se oculta cuando la
+      // paleta no lo incluye en vez de convertirse en otro edificio por el índice.
+      const fijo = btn.dataset ? btn.dataset.fijo : null;
+      if (fijo) {
+        const disponible = palette.indexOf(fijo) >= 0;
+        btn.style.display = disponible ? '' : 'none';
+        if (!disponible && selectedTool === fijo) {
+          selectedTool = null;
+          try { btn.classList.remove('selected'); } catch (e) {}
+        }
+        continue;
+      }
       const mappedType = palette[i] || btn.dataset.type;
       btn.dataset.type = mappedType;
     }
@@ -3155,6 +3180,27 @@ const textures = createTextures({
   getKind: () => ((window._currentEpoch || 'mesopotamia') === 'urss' ? 'concrete' : 'stone')
 });
 try { window.MESO_TEXTURES = textures; } catch (e) {}
+
+// ── OBSERVATORIO ───────────────────────────────────────────────────────────
+// La cúpula desde la que se mira el cielo. Se abre con E junto al edificio y
+// sustituye el mundo por la bóveda celeste (ver engine/observatory.js).
+// Los datos que necesita se pasan como funciones: así se leen en el momento de
+// usarlos (la hora del mundo, la época…) y no en el de construir el módulo.
+const observatory = createObservatory({
+  notificar: (msg) => { try { notify(msg); } catch (e) {} },
+  registrar: (msg) => { try { addLog(msg); } catch (e) {} },
+  guardar: () => { try { saveAppStateDebounced(); } catch (e) {} },
+  sfx: (nombre) => { try { sfx(nombre); } catch (e) {} },
+  getHora: () => dayHour,
+  getEpoch: () => window._currentEpoch || 'mesopotamia',
+  // Recompensa por registrar una constelación nueva: es observación, no batalla,
+  // así que da experiencia y una línea de diario; nada de recursos materiales.
+  recompensa: (c, info) => {
+    try { gainXP(8); } catch (e) {}
+    try { addLog('Observas ' + c.mul + ' («' + c.nombre + '»): +8 experiencia (' + info.total + '/' + info.constelaciones + ').'); } catch (e) {}
+  }
+});
+try { window.MESO_OBSERVATORIO = observatory; } catch (e) {}
 
 // Tipos de edificio que son suelo de camino, no estructura (canal_road sólo
 // existe como bioma, nunca como edificio).
@@ -4924,6 +4970,44 @@ const debugTools = createDebugTools({
       } catch (e) { return String(e); }
     }
   },
+  // ── OBSERVATORIO ──────────────────────────────────────────────────────────
+  // Todo lo necesario para probarlo sin jugar: abrir la cúpula, apuntar a una
+  // constelación por id, forzar la revelación (sin esperar los 8 s) y vaciar el
+  // registro estelar para volver a ver el estado «sin registrar».
+  //   MESO_DEBUG.observatorio.construirAlLado()   → levanta la cúpula al lado
+  //   MESO_DEBUG.observatorio.abrir()
+  //   MESO_DEBUG.observatorio.apuntarA('urgula')  → El León
+  //   MESO_DEBUG.observatorio.fijarAhora() · revelarAhora()
+  observatorio: {
+    abrir: () => observatory.abrir(),
+    cerrar: () => observatory.cerrar(),
+    estado: () => observatory.estado(),
+    lista: () => observatory.constelaciones(),
+    descubiertas: () => observatory.descubiertas(),
+    apuntarA: (id) => observatory.apuntarA(id),
+    fijarAhora: () => observatory.fijarAhora(),
+    revelarAhora: () => observatory.revelarAhora(),
+    olvidarTodo: () => observatory.olvidarTodo(),
+    // Levanta un observatorio junto al jugador (2 celdas a la derecha por defecto)
+    // y lo deja listo para entrar con E.
+    construirAlLado: (dc, dr) => {
+      try {
+        const sz = getBuildingSize('observatory');
+        const c = Math.max(1, Math.min(COLS - sz.w - 1, Math.round((player.col || 0) + (Number.isFinite(dc) ? dc : 2))));
+        const r = Math.max(1, Math.min(ROWS - sz.h - 1, Math.round((player.row || 0) + (Number.isFinite(dr) ? dr : 0))));
+        for (let rr = r; rr < r + sz.h; rr++) {
+          for (let cc = c; cc < c + sz.w; cc++) {
+            const ocupada = grid[rr] && grid[rr][cc];
+            if (ocupada) { try { clearBuildingCells(cc, rr, (typeof ocupada === 'string') ? ocupada : ocupada.type); } catch (e) {} }
+          }
+        }
+        setBuildingCells(c, r, 'observatory');
+        mapCacheDirty = true;
+        rebuildMapCacheDebounced(10);
+        return { col: c, row: r, w: sz.w, h: sz.h };
+      } catch (e) { return String(e); }
+    }
+  },
   getEntityDefs: () => (window._ENTITY_DEFS || null),
   getBuildingSizes: () => {
     const out = {};
@@ -5638,7 +5722,7 @@ function swayPhaseOf(ent) {
 
 function characterAnimState(ent, now, opts = {}) {
   const t = now || Date.now();
-  const out = { frame: 0, bob: 0, lean: 0, swing: 0, squash: 0 };
+  const out = { frame: 0, bob: 0, lean: 0, swing: 0, squash: 0, action: 'parado' };
   try {
     if (!ent) return out;
     const stride = ent._walkTime || 0;
@@ -5648,6 +5732,9 @@ function characterAnimState(ent, now, opts = {}) {
     const moving = (prevStride !== undefined) && (stride !== prevStride);
     ent._animStrideSeen = stride;
     const sprint = !!ent._isSprinting;
+    // NOMBRE DE LA ACCIÓN: es lo que el editor de entidades usa para elegir la
+    // animación del PNG («andar», «correr», «parado», y las de los verbos).
+    out.action = moving ? (sprint ? 'correr' : 'andar') : 'parado';
     const rate = sprint ? 8.5 : 6;
     out.frame = moving ? (Math.floor(stride * rate) % 4 + 4) % 4 : 0;
     if (moving) {
@@ -5669,6 +5756,7 @@ function characterAnimState(ent, now, opts = {}) {
       else {
         out.swing = Math.sin(Math.min(1, Math.max(0, p)) * Math.PI) * (sw.power || 2);
         out.lean += Math.round(out.swing * 0.4);
+        out.action = 'atacar';
       }
     }
     // Recibir un golpe: se aplasta un píxel mientras dura la sacudida
@@ -5682,6 +5770,12 @@ function characterAnimState(ent, now, opts = {}) {
       if (left <= 0) { try { delete ent._pose; } catch (e) {} }
       else {
         out.pose = act.name;
+        // El nombre del verbo del juego se traduce al nombre de animación del
+        // editor (el que se escribe en «5 · Animaciones» del editor de entidades).
+        out.action = ({
+          wave: 'saludar', dance: 'bailar', sit: 'sentarse',
+          pick: 'coger', pet: 'acariciar', eat: 'comer', cheer: 'celebrar'
+        })[act.name] || act.name;
         const faceRight = (ent.dir === 'left') ? -1 : 1;
         if (act.name === 'wave') {
           out.bob = 0;
@@ -5767,21 +5861,41 @@ function drawCharacterPixels(ctx, palette, x, y, scale, opts) {
     const lib = window.ENTITY_PIXEL_LIBRARY;
     const dir = opts.dir || null;
     if (lib && dir && !opts.headOnly) {
-      const propia = lib['character_' + dir];
-      const espejo = (dir === 'left' || dir === 'right') ? lib['character_' + (dir === 'left' ? 'right' : 'left')] : null;
-      const def = (propia && propia.pixels && propia.pixels.length) ? propia : espejo;
+      // 1º la ANIMACIÓN del PNG (si la entidad trae alguna para esa acción): manda
+      // sobre el recorte fijo de la dirección, igual que el recorte manda sobre el
+      // muñeco procedural.
+      const animador = window._mesoAnimEntidades;
+      const accion = opts.action || (opts.anim && opts.anim.action) || 'andar';
+      let cuadro = (animador && animador.artePersonaje) ? animador.artePersonaje(dir, accion, Date.now()) : null;
+      let espejo = false;
+      // Si no hay clip para esta dirección pero sí para la contraria, se usa
+      // espejado (es lo que ya se hacía con el recorte fijo).
+      if (!cuadro && (dir === 'left' || dir === 'right')) {
+        cuadro = animador.artePersonaje(dir === 'left' ? 'right' : 'left', accion, Date.now()) || null;
+        espejo = !!cuadro;
+      }
+      let claveArte = cuadro ? cuadro.clave : ('character_' + dir);
+      let def = cuadro ? cuadro.def : null;
+      if (!def) {
+        const propia = lib['character_' + dir];
+        const otra = (dir === 'left' || dir === 'right') ? lib['character_' + (dir === 'left' ? 'right' : 'left')] : null;
+        def = (propia && propia.pixels && propia.pixels.length) ? propia : otra;
+        espejo = !!(def && def !== propia);
+      }
       if (def && def.pixels && def.pixels.length) {
         const gw = def.gridW || def.grid || 24, gh = def.gridH || def.grid || 24;
         const caja = 24 * scale;                       // hueco del muñeco original
         const w = gw * scale, h = gh * scale;
-        const bmp = getSpriteBitmap('character_' + dir, gw, gh, w, h, def.pixels);
+        // La clave de la caché lleva el fotograma (`cuadro.clave`): con el nombre
+        // fijo de la dirección se reutilizaría el bitmap del fotograma anterior.
+        const bmp = getSpriteBitmap(claveArte, gw, gh, w, h, def.pixels);
         if (bmp) {
           const dx = Math.round(x + caja * 0.5 - w * 0.5);
           const dy = Math.round(y + caja - h);
           ctx.save();
           ctx.imageSmoothingEnabled = false;
           // Si sólo hay arte para un lado, se espeja (el original también lo hace).
-          if (def !== propia) {
+          if (espejo) {
             ctx.translate(dx + w, dy);
             ctx.scale(-1, 1);
             ctx.drawImage(bmp, 0, 0, Math.round(w), Math.round(h));
@@ -7450,8 +7564,156 @@ function pickSovietBlockVariant(col, row) {
 //   · En caliente: `MesoEntityViews.estilo('clasico')` / `'nuevo'`.
 const _vistasRegistradas = [];
 
+// ── ANIMACIONES DE ENTIDAD (editor: «5 · Animaciones») ──────────────────────
+// Igual que en un motor: cada animación tiene NOMBRE («andar», «parado»,
+// «trabajar»…), FPS, si da vueltas y una lista ORDENADA de cuadros, y cada cuadro
+// es un recorte del PNG del editor. Aquí se indexan y se materializa SÓLO el
+// CUADRO QUE SE DIBUJA: una animación de 8 cuadros de un edificio grande
+// (recortes de 70.000 píxeles) no carga los 8 si sólo se ve uno; se pide el que
+// toca y se recuerda. Al cambiar de estilo o recargar el fichero se sueltan.
+//
+// Nombres de acción que pide el personaje: «andar» al caminar, «correr» al
+// esprintar, «parado» quieto, «saludar»/«bailar»/«sentarse»/«coger»/«celebrar»/
+// «acariciar»/«comer» en las poses de acción y «atacar» durante el golpe. Si una
+// no existe, se cae a «andar» y, sin nada, al recorte fijo de la vista de siempre.
+const _hojasCache = new Map();     // ruta → { img, cv, ctx } (la comparten vistas y animaciones)
+const _hojasMalas = new Set();     // rutas que no cargan: se avisa una vez, no por entidad
+const _animEntidades = {
+  personaje: null,      // { hoja, animaciones } del arte de personajes
+  porClave: {},         // clave de edificio → { hoja, animaciones }
+  materializadas: new Map(),   // clave de cuadro → rect (para soltarlas al recargar)
+  limpiar() {
+    this.personaje = null;
+    this.porClave = {};
+    this.materializadas.clear();
+  },
+  // Clip de una acción para una vista. Se prueban, en orden: `accion_vista` (lo
+  // que escribe el editor: `andar_sur`, `bucle_iso`), `accion` a secas, y los
+  // respaldos. Cada animación lleva su vista, así que una de OTRA vista no vale
+  // salvo que se permita cruzar (`soloVista: false`).
+  clip(animaciones, vista, accion, opciones) {
+    if (!animaciones) return null;
+    const v = vista || '';
+    const op = opciones || {};
+    const candidatos = [];
+    const empuja = (n) => { if (n && candidatos.indexOf(n) < 0) candidatos.push(n); };
+    if (accion) { empuja(accion + '_' + v); empuja(accion); }
+    (op.alternativas || []).forEach((a) => { empuja(a + '_' + v); empuja(a); });
+    if (op.incluirTodas) {
+      // Las de «bucle» mandan sobre el resto: en un edificio, la animación de
+      // fondo es la que se reproduce; las demás (arder, abrir…) son puntuales.
+      (op.preferir || []).forEach((n) => { empuja(n + '_' + v); empuja(n); });
+      Object.keys(animaciones).forEach(empuja);
+    }
+    const vale = (a) => !!(a && Array.isArray(a.cuadros) && a.cuadros.length);
+    const deLaVista = (n, a) => (!!v && n.slice(-(v.length + 1)) === '_' + v) || a.vista === vista;
+    for (const n of candidatos) {
+      const a = animaciones[n];
+      if (vale(a) && deLaVista(n, a)) return { nombre: n, anim: a };
+    }
+    // Para PERSONAJES no se cruza de vista: un sprite mirando al lado contrario
+    // es peor que dejar el recorte fijo de la dirección.
+    if (op.soloVista) return null;
+    for (const n of candidatos) {
+      const a = animaciones[n];
+      if (vale(a)) return { nombre: n, anim: a };
+    }
+    return null;
+  },
+  // Cuadro que toca AHORA. Fuera de bucle, se queda en el último (no da vueltas).
+  indice(anim, t) {
+    const n = anim.cuadros.length;
+    if (!n) return 0;
+    const fps = Math.max(1, Math.min(60, Number(anim.fps) || 8));
+    const bruto = Math.floor((t / 1000) * fps);
+    if (anim.bucle === false) return Math.min(bruto, n - 1);
+    return ((bruto % n) + n) % n;
+  },
+  // Se llama al terminar de registrar: deja apuntado de dónde sale la animación de
+  // cada entidad (una hoja por entidad) y suelta lo materializado de la pasada.
+  indexar(clave, entrada) {
+    if (!entrada || !entrada.animaciones) return;
+    const propios = Object.keys(entrada.animaciones).length;
+    if (!propios) return;
+    if (/^character$/i.test(clave) || /^(PERSONAJE|NPC|PERRO|CABALLO|LOBO|CONEJO|ZORRO)$/i.test(clave)) {
+      this.personaje = { hoja: entrada.hoja, animaciones: entrada.animaciones };
+    } else {
+      this.porClave[clave] = { hoja: entrada.hoja, animaciones: entrada.animaciones };
+    }
+  }
+};
+
+// Materializa el recorte de UN cuadro y lo registra como variante de sprite.
+// SÍNCRONO a propósito: cuando se dibuja, la hoja de esa entidad ya está cargada
+// (la pidió `cargarVistasDeEntidades`), así que rebanar un rectángulo no espera a
+// nadie. Si la hoja no estuviera cacheada devuelve null y ese fotograma usa el
+// arte fijo de siempre; al siguiente ya está.
+_animEntidades.recorteDeCuadro = function (ruta, rect, clave) {
+  const lib = window.ENTITY_PIXEL_LIBRARY;
+  if (!lib) return null;
+  if (lib[clave]) return lib[clave];
+  const hoja = _hojasCache.get(ruta);
+  if (!hoja) return null;
+  const w = Math.max(1, Math.round(rect.w)), h = Math.max(1, Math.round(rect.h));
+  let datos;
+  try { datos = hoja.ctx.getImageData(rect.x, rect.y, w, h).data; } catch (e) { return null; }
+  const pixels = [];
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      if (datos[i + 3] < 24) continue;                 // casi transparente = fuera
+      const hex = '#' + [datos[i], datos[i + 1], datos[i + 2]]
+        .map((v) => v.toString(16).padStart(2, '0')).join('');
+      pixels.push([x, y, hex]);
+    }
+  }
+  if (!pixels.length) return null;
+  lib[clave] = { grid: Math.max(w, h), gridW: w, gridH: h, pixels };
+  _vistasRegistradas.push(clave);   // se suelta al recargar / cambiar de estilo
+  this.materializadas.set(clave, rect);
+  return lib[clave];
+};
+
+// Arte ANIMADO del personaje para una dirección y una acción. Devuelve
+// { clave, def } o null (null = se usa el recorte fijo de la vista, o el muñeco).
+_animEntidades.artePersonaje = function (dir, accion, t) {
+  const p = this.personaje;
+  if (!p || !p.hoja) return null;
+  const vista = { down: 'sur', up: 'norte', right: 'este', left: 'oeste' }[dir] || dir;
+  // SÓLO la acción pedida (y, al correr, el andar de respaldo): si no hay clip,
+  // se dibuja el recorte fijo de esa dirección. Así un personaje con sólo «andar»
+  // se anima al caminar y se queda con su sprite quieto al pararse, que es lo que
+  // uno espera, en vez de andar en el sitio.
+  const c = this.clip(p.animaciones, vista, accion, {
+    alternativas: accion === 'correr' ? ['andar'] : [], soloVista: true
+  });
+  if (!c) return null;
+  const i = this.indice(c.anim, t);
+  const r = c.anim.cuadros[i];
+  if (!r) return null;
+  const clave = 'anim|p|' + vista + '|' + c.nombre + '|' + i + '|' + r.x + ',' + r.y + ',' + r.w + ',' + r.h;
+  const def = this.recorteDeCuadro(p.hoja, r, clave);
+  return def ? { clave, def } : null;
+};
+
+// Clave de la variante ANIMADA de un edificio para una vista, o null si esa
+// entidad no tiene animaciones (entonces manda el sprite fijo de siempre).
+_animEntidades.arteEdificio = function (claveBase, vista, t) {
+  const e = this.porClave[claveBase];
+  if (!e || !e.hoja) return null;
+  const c = this.clip(e.animaciones, vista, null, { incluirTodas: true, preferir: ['bucle', 'idle', 'parado'], soloVista: true });
+  if (!c) return null;
+  const i = this.indice(c.anim, t);
+  const r = c.anim.cuadros[i];
+  if (!r) return null;
+  const clave = 'anim|e|' + claveBase + '|' + vista + '|' + c.nombre + '|' + i + '|' + r.x + ',' + r.y + ',' + r.w + ',' + r.h;
+  return this.recorteDeCuadro(e.hoja, r, clave) ? clave : null;
+};
+window._mesoAnimEntidades = _animEntidades;
+
 async function cargarVistasDeEntidades() {
   const lib = window.ENTITY_PIXEL_LIBRARY;
+  _animEntidades.limpiar();
   // Se retiran las variantes de la pasada anterior (por si se cambia de estilo o
   // se recarga el fichero en caliente): así "clasico" devuelve el juego al arte
   // original sin reiniciar.
@@ -7487,9 +7749,46 @@ async function cargarVistasDeEntidades() {
       if (j.hoja && !mapa[k].hoja) mapa[k].hoja = j.hoja;
     }
   };
+  // -- DE DONDE SALE EL FICHERO -----------------------------------------------
+  // OJO: `fetch('data/entity-views.json')` NO funciona en Electron. La ventana se
+  // carga con `win.loadFile()`, así que la página vive en un origen `file://` y
+  // Chromium BLOQUEA cualquier fetch a file:// (CORS: «only supported for protocol
+  // schemes: http, https…»). El error se tragaba en silencio y el fichero entero
+  // se ignoraba: en Electron no se registraba NI UNA vista y el juego seguía
+  // dibujando los sprites clásicos, con los PNG de `data/sheets/` perfectamente
+  // presentes en el proyecto. En el navegador (dev-server, http://) sí funcionaba,
+  // y por eso el arte se veía al abrir el juego de una forma y no de otra.
+  // Se usa el mismo camino que `data/entity-pixels.json`:
+  //   1. Electron -> `meso-local://` (esquema propio con cabeceras CORS; además
+  //      permite recargar en caliente si el editor vuelve a guardar el JSON).
+  //   2. Datos inyectados por el preload (respaldo si el protocolo no responde).
+  //   3. Navegador / servidor HTTP -> fetch normal.
+  const leerEntityViews = async () => {
+    const esElectron = !!(window.__mesoPreload && window.__mesoPreload.isElectron);
+    if (esElectron) {
+      try {
+        const res = await fetch('meso-local://data/entity-views.json');
+        if (res && res.ok) return await res.json();
+      } catch (e) { /* se prueba con lo que traiga el preload */ }
+      try {
+        if (window.__mesoPreload.entityViews) {
+          console.log('[vistas] entity-views.json desde el preload (respaldo de meso-local://)');
+          // El objeto del preload viene CONGELADO desde contextBridge: se clona
+          // antes de fusionarlo, como se hace con la librería de píxeles.
+          return JSON.parse(JSON.stringify(window.__mesoPreload.entityViews));
+        }
+      } catch (e) { /* sigue con el fetch normal */ }
+      console.warn('[vistas] en Electron no se pudo leer data/entity-views.json: se dibujan los sprites clásicos');
+    }
+    try {
+      const res = await fetch('data/entity-views.json?v=' + Date.now());
+      if (res.ok) return await res.json();
+    } catch (e) { /* el fichero es opcional */ }
+    return null;
+  };
   try {
-    const res = await fetch('data/entity-views.json?v=' + Date.now());
-    if (res.ok) fusionar(await res.json());
+    const j = await leerEntityViews();
+    if (j) fusionar(j);
   } catch (e) { /* el fichero es opcional */ }
   estilo = forzado || estiloMenu || estilo || window._mesoEstiloArte || 'nuevo';
   window._mesoEstiloArte = estilo;
@@ -7500,8 +7799,9 @@ async function cargarVistasDeEntidades() {
   }
   if (!mapa) return 0;
   if (!lib) return 0;
-  const hojasCache = new Map();     // ruta → { img, cv, ctx }
-  const hojasMalas = new Set();     // rutas que no cargan: se avisa una vez, no por entidad
+  // La caché de hojas la comparten las vistas y las animaciones (`_hojasCache`).
+  const hojasCache = _hojasCache;
+  const hojasMalas = _hojasMalas;
   const abrirHoja = async (ruta) => {
     if (hojasCache.has(ruta)) return hojasCache.get(ruta);
     let rec = null;
@@ -7538,10 +7838,6 @@ async function cargarVistasDeEntidades() {
     return rec;
   };
 
-  // Recorta un rectángulo de la hoja y lo devuelve como píxeles [x,y,color].
-  // `margen` = fracción del tamaño que se añade transparente alrededor: sirve para
-  // que la vista de arriba caiga en la huella exacta del edificio (el motor dibuja
-  // todos los edificios un 25 % más grandes que su solar).
   const recortar = (hoja, r, margen) => {
     const w = Math.max(1, Math.round(r.w)), h = Math.max(1, Math.round(r.h));
     let datos = null;
@@ -7576,6 +7872,8 @@ async function cargarVistasDeEntidades() {
       console.warn('[vistas] «' + clave + '» no dice de qué PNG salen sus recortes (falta "hoja")');
       continue;
     }
+    // De dónde salen las animaciones de esta entidad (misma hoja que sus vistas).
+    _animEntidades.indexar(clave, { hoja: e.hoja || hojas[0], animaciones: e.animaciones });
     for (const ruta of hojas) {
       const hoja = await abrirHoja(ruta);
       if (!hoja) continue;
@@ -7686,6 +7984,11 @@ function drawWheatIcon(ctx, w, h) {
           }
         } catch (e) {}
         augmentSovietBlockVariants(window.ENTITY_PIXEL_LIBRARY);
+        // Sprite provisional del observatorio: el edificio se dibuja con la misma
+        // librería que el resto, así que necesita su entrada. En cuanto se recorte
+        // el PNG en el editor de entidades (`observatory_sup` / `observatory_iso`),
+        // el motor prefiere esas variantes y este marcador de posición no se usa.
+        registerObservatorySprite(window.ENTITY_PIXEL_LIBRARY);
         const keys = Object.keys(window.ENTITY_PIXEL_LIBRARY);
         for (const k of keys) {
           try { window.createCanvasFromPixelDef(window.ENTITY_PIXEL_LIBRARY[k], k); } catch (e) { console.warn('icon create failed', k, e); }
@@ -12089,6 +12392,9 @@ function drawBuilding(col, row, type, alpha) {
       const districtVariant = pickSovietBlockVariant(col, row);
       if (hasRegisteredSprite(districtVariant)) useKey = districtVariant;
     }
+    // La clave BASE (la del edificio, sin sufijo de vista): es la que indexa las
+    // animaciones del editor.
+    const claveBase = useKey;
     // ── VARIANTE POR VISTA (hoja de arte: TECHO / ISOMÉTRICA) ────────────────
     // Si el sprite trae dibujada su vista, manda ella: `<clave>_sup` para la vista
     // de arriba y `<clave>_iso` para la isométrica. Así se puede ir sustituyendo la
@@ -12097,6 +12403,17 @@ function drawBuilding(col, row, type, alpha) {
     {
       const variante = viewMode === 'iso' ? (useKey + '_iso') : (useKey + '_sup');
       if (hasRegisteredSprite(variante)) useKey = variante;
+    }
+    // ── ANIMACIÓN DEL EDIFICIO ──────────────────────────────────────────────
+    // Si el editor le puso animaciones (agua, fuego, una bandera…), el fotograma
+    // que toca MANDA sobre el sprite fijo: es lo que dibuja el usuario. La
+    // animación se busca por la clave BASE (la del edificio), no por la variante.
+    {
+      const animador = window._mesoAnimEntidades;
+      const animada = (animador && animador.arteEdificio)
+        ? animador.arteEdificio(claveBase, viewMode === 'iso' ? 'iso' : 'sup', Date.now())
+        : null;
+      if (animada) useKey = animada;
     }
     if (useKey) {
       // ── VISTA DE ARRIBA: PLANTA DEL EDIFICIO ──────────────────────────────
@@ -13576,6 +13893,80 @@ try {
   document.addEventListener('pointerdown', hudInputWake, { passive: true });
   document.addEventListener('wheel', hudInputWake, { passive: true });
 } catch (e) {}
+
+// ── AVISO DE ACCIÓN («Recoger weed  ·  E») ──────────────────────────────────
+// El cartel que dice qué se puede hacer cerca y con qué tecla. Tres cosas que
+// antes no hacía:
+//   · primero la ACCIÓN y después la TECLA, en una tecla de mando redondeada a la
+//     derecha (antes era un círculo dorado con «E» a la IZQUIERDA y el texto
+//     después, y el conjunto parecía la etiqueta de un botón, no una tecla);
+//   · se FUNDE al aparecer y al desaparecer, subiendo 6 px mientras entra. Antes
+//     aparecía y se iba de golpe, que con dos celdas de diferencia parpadeaba;
+//   · el texto anterior NO se queda: cuando cambia el objetivo se cambia en el
+//     mismo cartel, y cuando no hay nada que hacer se borra solo (fundido a 0).
+let _avisoAlpha = 0;
+let _avisoTexto = '';
+let _avisoTecla = 'E';
+function pintarAvisoDeAccion(dt) {
+  try {
+    const seg = Math.max(0.001, Math.min(0.1, Number(dt) || 0.016));
+    const objetivo = window._interactionTarget;
+    const quiere = !!(objetivo && objetivo.showPrompt !== false && objetivo.showTip !== false &&
+      window._gameStarted && !editMode && !worldMapOverlayVisible &&
+      !window.currentInterior && !isCinematicActive());
+    if (quiere) {
+      const texto = String(objetivo.actionText || objetivo.prompt || objetivo.name || '').trim();
+      if (texto) _avisoTexto = texto;
+      _avisoTecla = String(objetivo.key || objetivo.tecla || 'E').toUpperCase();
+    }
+    // Fundido: entra deprisa (≈0,15 s) y sale algo más despacio (≈0,22 s).
+    _avisoAlpha += ((quiere ? 1 : 0) - _avisoAlpha) * Math.min(1, seg * (quiere ? 7 : 4.5));
+    if (_avisoAlpha < 0.02 || !_avisoTexto) return;
+
+    const tileSize = getTileSize();
+    const screen = worldToScreen((player.x || 0) + 0.5, (player.y || 0));
+    const fuente = 13;
+    const padX = 12, gap = 10, alto = 31;
+    ctx.save();
+    ctx.font = `600 ${fuente}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
+    const textoW = ctx.measureText(_avisoTexto).width;
+    ctx.font = '700 11px ui-monospace, SFMono-Regular, Menlo, monospace';
+    const teclaW = Math.max(20, ctx.measureText(_avisoTecla).width + 14);
+    const ancho = Math.ceil(padX * 2 + textoW + gap + teclaW);
+    const x = Math.round(screen.x - ancho / 2);
+    const y = Math.round(screen.y - tileSize * 0.95 - alto);
+    ctx.globalAlpha = Math.max(0, Math.min(1, _avisoAlpha));
+    ctx.translate(0, Math.round((1 - _avisoAlpha) * 6));   // entra subiendo
+    // Cuerpo: vidrio oscuro con sombra y hairline, el mismo lenguaje que el
+    // cartel de la guía y los paneles del HUD.
+    ctx.shadowColor = 'rgba(0,0,0,0.45)';
+    ctx.shadowBlur = 14;
+    ctx.shadowOffsetY = 4;
+    ctx.fillStyle = 'rgba(13,14,17,0.88)';
+    ctx.beginPath(); ctx.roundRect(x, y, ancho, alto, 9); ctx.fill();
+    ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+    ctx.strokeStyle = 'rgba(255,255,255,0.10)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(x + 0.5, y + 0.5, ancho - 1, alto - 1, 9); ctx.stroke();
+    // Acción (izquierda)
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.font = `600 ${fuente}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
+    ctx.fillStyle = 'rgba(242,239,228,0.96)';
+    ctx.fillText(_avisoTexto, x + padX, y + alto / 2 + 1);
+    // Tecla (derecha), como una tecla de mando
+    const kx = x + padX + Math.ceil(textoW) + gap;
+    const ky = y + Math.round((alto - 20) / 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+    ctx.beginPath(); ctx.roundRect(kx, ky, teclaW, 20, 5); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.24)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(kx + 0.5, ky + 0.5, teclaW - 1, 19, 5); ctx.stroke();
+    ctx.fillStyle = '#FFD27A';
+    ctx.font = '700 11px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(_avisoTecla, kx + teclaW / 2, y + alto / 2 + 1);
+    ctx.restore();
+  } catch (e) {}
+}
 function render() {
   const W = canvas.width, H = canvas.height;
   const _ptStart = window._perfSections ? performance.now() : 0;
@@ -13752,7 +14143,7 @@ function render() {
     try { drawMountainsBackground(ctx, W, H); } catch (e) {}
 
   // Update player movement in free mode (continuous)
-  if (!editMode && !worldMapOverlayVisible && !isPlayerDowned(now) && !isPrologueMovementLocked()) {
+  if (!editMode && !worldMapOverlayVisible && !observatory.estaAbierto() && !isPlayerDowned(now) && !isPrologueMovementLocked()) {
     // move player by tiles in small steps to avoid skipping collisions when sprinting
     function applyPlayerMoveTiles(dxTiles, dyTiles) {
       try {
@@ -16944,7 +17335,35 @@ function render() {
             if (dist < bestGraveDist && dist <= 1.2) { bestGrave = grave; bestGraveDist = dist; }
           }
         } catch (e) {}
+        // Observatorio: es un EDIFICIO (está en la rejilla), no una entidad, así
+        // que se busca en las celdas de alrededor y se mide la distancia hasta el
+        // borde de su solar (no hasta su centro: la cúpula es 3×3 y hay que poder
+        // interactuar desde fuera, pegado a cualquiera de sus lados).
+        let bestObs = null, bestObsDist = 9e9;
+        try {
+          const px3 = player.x || 0, py3 = player.y || 0;
+          const RAD = 3;
+          const obsSize = getBuildingSize('observatory');
+          const pc3 = Math.floor(px3), pr3 = Math.floor(py3);
+          for (let rr = pr3 - RAD; rr <= pr3 + RAD; rr++) {
+            if (rr < 0 || rr >= ROWS) continue;
+            for (let cc = pc3 - RAD; cc <= pc3 + RAD; cc++) {
+              if (cc < 0 || cc >= COLS) continue;
+              const info = getCellInfo(cc, rr);
+              // El tipo se reconoce por la MARCA del edificio (`esObservatorio`) y
+              // no por su nombre: cualquier edificio futuro que marque la casilla
+              // entra aquí sin tocar esta búsqueda.
+              const def = info ? BUILDINGS[info.type] : null;
+              if (!def || !def.esObservatorio) continue;
+              const cCerca = Math.max(info.baseCol, Math.min(info.baseCol + obsSize.w - 1, px3));
+              const rCerca = Math.max(info.baseRow, Math.min(info.baseRow + obsSize.h - 1, py3));
+              const dist = Math.hypot(cCerca - px3, rCerca - py3);
+              if (dist <= 1.9 && dist < bestObsDist) { bestObsDist = dist; bestObs = info; }
+            }
+          }
+        } catch (e) {}
         if (bestDoor) _interactionScanCache = { kind: 'door', ref: bestDoor, actionText: 'Entrar', showPrompt: true };
+        else if (bestObs) _interactionScanCache = { kind: 'observatorio', ref: bestObs, actionText: 'Observar el cielo', showPrompt: true };
         else if (bestNpc && bestNpc.isStoryNPC) _interactionScanCache = { kind: 'player', ref: bestNpc, actionText: `Hablar con ${bestNpc.name || 'NPC'}`, showPrompt: true };
         else if (bestGrave) _interactionScanCache = { kind: 'grave', ref: bestGrave, actionText: `Leer: ${bestGrave.name}`, showPrompt: true };
         else if (bestScene) _interactionScanCache = { kind: 'map-scene', ref: bestScene, actionText: bestScene.prompt || 'Examinar', showPrompt: true };
@@ -16955,58 +17374,12 @@ function render() {
       }
       chosen = _interactionScanCache;
 
-      if (chosen) {
-        window._interactionTarget = chosen;
-        if (chosen.showPrompt !== false && !cinematicActive) {
-          try {
-            const tileSize = getTileSize();
-            const screen = worldToScreen((player.x || 0) + 0.5, (player.y || 0));
-            const label = chosen.actionText || '';
-            ctx.save();
-            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-            const fontSize = Math.max(11, Math.floor(12 * (tileSize / 32)));
-            ctx.font = `bold ${fontSize}px sans-serif`;
-            const textW = ctx.measureText(label).width;
-            const padH = 5, padV = 4;
-            const bw = textW + padH * 2 + 24; // + room for [E] key badge
-            const bh = fontSize + padV * 2;
-            const bx = screen.x - bw / 2;
-            const by = screen.y - tileSize * 0.9 - bh;
-            const r = bh / 2;
-            // pill background
-            ctx.fillStyle = 'rgba(12,8,2,0.82)';
-            ctx.beginPath();
-            ctx.moveTo(bx + r, by); ctx.lineTo(bx + bw - r, by);
-            ctx.arcTo(bx + bw, by, bx + bw, by + bh, r);
-            ctx.lineTo(bx + bw, by + bh - r);
-            ctx.arcTo(bx + bw, by + bh, bx + bw - r, by + bh, r);
-            ctx.lineTo(bx + r, by + bh);
-            ctx.arcTo(bx, by + bh, bx, by + bh - r, r);
-            ctx.lineTo(bx, by + r);
-            ctx.arcTo(bx, by, bx + r, by, r);
-            ctx.closePath(); ctx.fill();
-            // gold border
-            ctx.strokeStyle = '#C8A840'; ctx.lineWidth = 1;
-            ctx.stroke();
-            // [E] key badge on left side
-            const badgeR = bh * 0.38;
-            const badgeCx = bx + r + 2;
-            const badgeCy = by + bh / 2;
-            ctx.fillStyle = '#C8A840';
-            ctx.beginPath(); ctx.arc(badgeCx, badgeCy, badgeR, 0, Math.PI*2); ctx.fill();
-            ctx.fillStyle = '#1a1000';
-            ctx.font = `bold ${Math.round(fontSize * 0.82)}px sans-serif`;
-            ctx.fillText('E', badgeCx, badgeCy);
-            // action text
-            ctx.fillStyle = '#FFFFFF';
-            ctx.font = `bold ${fontSize}px sans-serif`;
-            ctx.fillText(label, bx + bw / 2 + badgeR + 1, by + bh / 2);
-            ctx.restore();
-          } catch (e) {}
-        }
-      }
+      if (chosen) window._interactionTarget = chosen;
     }
   } catch (e) {}
+
+  // Aviso de acción: lo pinta `pintarAvisoDeAccion` (acción + tecla, con fundido).
+  try { pintarAvisoDeAccion(dt); } catch (e) {}
 
   // HOVER PREVIEW (a partir de aquí: interfaz y avisos)
   _mark('deferred');
@@ -17475,6 +17848,13 @@ function render() {
       }
     }
   } catch (e) {}
+  // ── OBSERVATORIO ──────────────────────────────────────────────────────────
+  // Se pinta el ÚLTIMO, después de todos los demás overlays del canvas: así tapa
+  // el minimapa, el reloj de supervivencia, la guía rápida y los avisos sin tener
+  // que añadir una guarda a cada uno de ellos. Mientras está abierto, el cielo es
+  // lo único que hay en pantalla.
+  try { observatory.actualizar(); } catch (e) {}
+  try { if (observatory.estaAbierto()) observatory.dibujar(ctx, W, H); } catch (e) {}
   try {
     const nowAlert = Date.now();
     if (window._wantedLevel > 0 && window._wantedDecayAt && nowAlert >= window._wantedDecayAt) {
@@ -25478,6 +25858,12 @@ function drawPetRadialMenu(ctx, W, H) {
 
 canvas.addEventListener('mousemove', e => {
   if (startLocked && !window._standaloneEditorMode) return;
+  // Con el observatorio abierto, el ratón APUNTA el telescopio: no arrastra la
+  // cámara del mundo ni actualiza el resaltado de celdas.
+  if (observatory.estaAbierto()) {
+    try { observatory.manejarPunteroMueve(getCanvasPointerPosition(e)); } catch (err) {}
+    return;
+  }
   const ptr = getCanvasPointerPosition(e);
   const mx = ptr.x;
   const my = ptr.y;
@@ -25590,6 +25976,11 @@ canvas.addEventListener('mousemove', e => {
 
 canvas.addEventListener('mousedown', e => {
   if (startLocked && !window._standaloneEditorMode) return;
+  if (observatory.estaAbierto()) {
+    try { observatory.manejarPunteroAbajo(getCanvasPointerPosition(e)); } catch (err) {}
+    e.preventDefault();
+    return;
+  }
   if (e.button === 0 && petRadialMenuActive) {
     if (petRadialMenuMode === 'play') {
       const shouldClose = executePetRadialSelection();
@@ -25724,6 +26115,7 @@ canvas.addEventListener('mousedown', e => {
 
 // ensure mouseup clears panning/zooming even if released outside canvas
 document.addEventListener('mouseup', (e) => {
+  try { observatory.manejarPunteroArriba(); } catch (err) {}
   if (mapEditorPainting) {
     mapEditorPainting = false;
     mapEditorLastPaintKey = null;
@@ -25810,6 +26202,7 @@ try {
   canvas.tabIndex = 0;
   canvas.addEventListener('click', e => {
   try {
+    if (observatory.estaAbierto()) return;
     if (player && player.equipped === 'makarov_pm' && window._gameStarted && !startLocked) {
       const ptr = getCanvasPointerPosition(e);
       fireMakarov(ptr.x, ptr.y);
@@ -25822,7 +26215,7 @@ canvas.addEventListener('pointerdown', () => { try { canvas.focus({ preventScrol
 // Es una forma natural de pedir "que puede hacer este tio" sin recordar teclas.
 canvas.addEventListener('click', e => {
   try {
-    if (!window._gameStarted || startLocked || editMode) return;
+    if (!window._gameStarted || startLocked || editMode || observatory.estaAbierto()) return;
     const ptr = getCanvasPointerPosition(e);
     const w = screenToWorldFloat(ptr.x, ptr.y);
     const d = Math.hypot((w.x || 0) - (player.x || 0), (w.y || 0) - (player.y || 0));
@@ -25836,6 +26229,12 @@ canvas.addEventListener('click', e => {
 
 canvas.addEventListener('wheel', (ev) => {
   if (startLocked && !window._standaloneEditorMode) return;
+  // La rueda cambia el AUMENTO del telescopio mientras se observa el cielo.
+  if (observatory.estaAbierto()) {
+    try { observatory.manejarRueda(ev.deltaY); } catch (err) {}
+    ev.preventDefault();
+    return;
+  }
   ev.preventDefault();
   const ptr = getCanvasPointerPosition(ev);
   const mx = ptr.x;
@@ -25863,6 +26262,7 @@ canvas.addEventListener('wheel', (ev) => {
 canvas.addEventListener('contextmenu', e => {
   e.preventDefault();
   if (startLocked && !window._standaloneEditorMode) return;
+  if (observatory.estaAbierto()) return;
   // if user is zooming or panning, don't set move target
   if (isZooming || isPanning) return;
   const ptr = getCanvasPointerPosition(e);
@@ -26196,6 +26596,11 @@ if (floatBtn) floatBtn.addEventListener('click', () => setFloatingPanels(!docume
 
 // Keyboard shortcuts
 document.addEventListener('keydown', e => {
+  // Mientras se observa el cielo, el observatorio se queda con TODAS las teclas:
+  // en la cúpula no se construye, no se tala y no se abre el mapa.
+  if (observatory.estaAbierto()) {
+    try { if (observatory.manejarTecla(e)) { e.preventDefault(); return; } } catch (err) {}
+  }
   // Handle pet interaction menu options (1, 2, 3)
   if (window._activeDialogue && window._activeDialogue.options && window._activeDialogue.options.length > 0) {
     const keyNum = parseInt(e.key);
@@ -26430,6 +26835,7 @@ document.addEventListener('keydown', e => {
   }
 });
 document.addEventListener('keyup', e => {
+  try { observatory.manejarTeclaSoltada(e); } catch (err) {}
   if (e.key && e.key.toLowerCase() === 'k') {
     if (petRadialMenuActive) {
       if (petRadialMenuMode === 'play') {
@@ -26654,6 +27060,13 @@ document.addEventListener('keydown', e => {
       }
       if (it.kind === 'door' && it.ref && it.ref.interiorId) {
         try { if (window.enterInterior) window.enterInterior(it.ref.interiorId, it.ref); } catch (ee) {}
+        e.preventDefault();
+        return;
+      }
+      // Observatorio: abre la bóveda celeste. Va junto a las puertas (antes del
+      // corte de modo edición) porque también es una forma de «entrar» en un sitio.
+      if (it.kind === 'observatorio') {
+        try { observatory.abrir(); } catch (ee) {}
         e.preventDefault();
         return;
       }

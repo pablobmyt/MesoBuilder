@@ -129,3 +129,10 @@ variantes `<clave>_sup` y `<clave>_iso` que ya busca `drawBuilding`: en cuanto
 existen, **tienen prioridad** sobre todo lo demás. También sirve para los personajes
 (`character_<dirección>`). La asignación se guarda en `data/entity-views.json`, en el
 proyecto. Ver `docs/EDITOR-DE-ENTIDADES.md`.
+
+Y si la hoja es una cuadrícula clásica (una fila por dirección, los fotogramas de
+una acción en una fila…), el editor la **parte solo**: «Detectar la rejilla» mide
+las líneas de corte con el fondo entre sprites, «Repartir filas en las vistas»
+coloca cada vista en su fila y, desde ahí, se montan **animaciones** (`andar_sur`,
+`bucle_sup`…) con fps y bucle, que el motor reproduce al dibujar. Está explicado en
+`docs/EDITOR-DE-ENTIDADES.md` (§ «Separar la hoja automáticamente» y § «Animaciones»).
