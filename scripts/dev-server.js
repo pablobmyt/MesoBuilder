@@ -6,12 +6,19 @@
 // Permite además activar el modo editor y el modo debug por query string:
 //   http://localhost:4321/?debug=1
 //   http://localhost:4321/?editor=1
+//
+// Y trae la MISMA API de guardado que el servidor del editor (`entity-views-api.js`),
+// para que «Guardar en el proyecto» del editor de entidades escriba el fichero aunque
+// la página la esté sirviendo este servidor:
+//   GET/POST /api/vistas · POST /api/hoja · GET /api/estado
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const { crearApiVistas } = require('./entity-views-api');
 
 const PORT = Number(process.argv[2]) || 4321;
 const ROOT = path.join(__dirname, '..');
+const api = crearApiVistas(ROOT, { etiqueta: 'dev-server' });
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -50,6 +57,9 @@ const server = http.createServer((req, res) => {
   }
   if (urlPath === '/' || urlPath === '') urlPath = '/index.html';
 
+  // API de guardado del editor de entidades (ver scripts/entity-views-api.js)
+  if (api.manejar(req, res, urlPath)) return;
+
   const filePath = safeJoin(ROOT, urlPath);
   if (!filePath) { res.writeHead(403); res.end('Forbidden'); return; }
 
@@ -73,5 +83,7 @@ server.listen(PORT, () => {
   console.log('[dev-server] MesoBuilder disponible en http://localhost:' + PORT + '/');
   console.log('[dev-server]   nueva partida      -> http://localhost:' + PORT + '/?debug=1');
   console.log('[dev-server]   editor de mapas   -> http://localhost:' + PORT + '/?editor=1&debug=1');
+  console.log('[dev-server]   editor de entidades-> http://localhost:' + PORT + '/tools/Support/entity-sheet-editor.html');
+  console.log('[dev-server] guardar del editor   -> POST /api/vistas (escribe data/entity-views.json)');
   console.log('[dev-server] raíz: ' + ROOT);
 });

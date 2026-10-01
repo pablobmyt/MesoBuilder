@@ -122,74 +122,127 @@ const SPECS = {
     }
   },
 
-  // CABALLO (rediseñado): ahora con proporciones de caballo de verdad — cuerpo
-  // alargado, cuello inclinado, cabeza con hocico largo mirando adelante-abajo,
-  // crin a lo largo del cuello, cola colgando y cuatro patas finas con casco.
+  // CABALLO: el bicho al que más se le mira la cara (se monta, tiene acciones y
+  // sale en la intro del carro), así que va con proporciones de caballo de verdad:
+  //
+  //   · El cuerpo (barriga → cruz) es el 45 % del alto y las patas el 55 %.
+  //   · El cuello sube en diagonal desde el pecho y la cabeza lleva hocico largo,
+  //     ollar, orejas y un mechón de crin.
+  //   · La CRUZ y el LOMO llevan luz (`body` se sombrea por filas), la barriga es
+  //     clara, las cañas van en tono oscuro y el casco casi negro.
+  //
+  // Va en coordenadas relativas al SUELO (`F` es donde apoyan los cascos) y con
+  // `g.setOffset()` desplazado: así las poses que suben (encabritarse, relincho)
+  // tienen su propia rejilla más alta (`hFor`) sin tocar las demás. OJO: el lienzo
+  // del fotograma tiene que medir también esa altura (ver `bitmapFor`), o la
+  // cabeza de las poses altas se recorta.
   horse: {
-    w: 36, h: 25,
-    pal: { outline: '#241A12', light: '#AA6E36', mid: '#8E5A28', dark: '#5E3A18', eye: '#141008', nose: '#3A2416', tail: '#2E1E10', paw: '#4A2E16', mane: '#2A1B0E' },
+    w: 40, h: 26,
+    hFor(state) {
+      if (state === 'rear') return 36;      // encabritado: medio cuerpo en el aire
+      if (state === 'neigh') return 31;     // relincho: cuello y crin arriba
+      if (state === 'gallop') return 27;    // galope: el cuerpo se estira
+      return 26;
+    },
+    pal: {
+      outline: '#221509', light: '#C08040', mid: '#8E5A28', dark: '#5A3618',
+      eye: '#100C06', nose: '#2A1A0E', tail: '#2A1B0E', mane: '#241608',
+      paw: '#6B4420', hoof: '#1E1208'
+    },
     build(g, a) {
-      const dy = a.bodyDy;
-      const hy = dy + a.headDy;
-      // DE ESPALDAS (`a.back`): el caballo se ve por detras, asi que la cara no
-      // asoma y la cola va en el CENTRO de la grupa, no en un costado.
+      // Alto extra de la rejilla (rear/neigh): el caballo baja para seguir
+      // apoyando los cascos en el mismo píxel del suelo.
+      const S = Math.max(0, g.h - 26);
+      const dy = a.bodyDy || 0;
+      g.setOffset(a.bodyDx || 0, S + dy);
       const back = !!a.back;
-      // ── Patas (finas, con casco) ──
+      const rear = a.rearDy || 0;             // el tercio delantero se levanta
+      const headDy = a.headDy || 0;
+      const headDx = a.headDx || 0;
+      const cuello = a.neckStretch || 0;      // el cuello se estira hacia delante
+      const mouth = a.mouth ? 1 : 0;
+      const mono = a.maneFly || 0;
+      const tailDx = a.tailDx || 0, tailDy = a.tailDy || 0;
+      const lf = a.legFrontLift || 0, lf2 = a.legFrontLift2 || 0;
+      const lb = a.legBackLift || 0, lb2 = a.legBackLift2 || 0;
+      const fSwing = a.legFrontSwing || 0, bSwing = a.legBackSwing || 0;
+      const earDy = a.earDy || 0;
+      // 40×26 de rejilla: suelo en y=24, barriga y=16, cruz y=9, orejas y=2.
+      const F = 24;
+      const legTop = 13.6;                    // de dónde nace la caña
+      const yCas = F - dy - (a.legShort || 0);
+      // ── PATAS: caña fina y casco ancho. El casco NO sube con el balanceo del
+      //    cuerpo (de ahí el `-dy` en la nacencia), así el caballo no flota.
       const patas = back
-        ? [{ x: 12.0, lift: a.legBackLift }, { x: 14.4, lift: a.legBackLift2 },
-           { x: 20.2, lift: a.legFrontLift }, { x: 22.6, lift: a.legFrontLift2 }]
-        : [{ x: 8.4, lift: a.legBackLift }, { x: 11.0, lift: a.legBackLift2 },
-           { x: 22.0, lift: a.legFrontLift }, { x: 24.6, lift: a.legFrontLift2 }];
+        ? [{ x: 15.0, lift: lb, dx: 0 }, { x: 17.4, lift: lb2, dx: 0 },
+           { x: 22.6, lift: lf, dx: 0 }, { x: 25.0, lift: lf2, dx: 0 }]
+        : [{ x: 8.4, lift: lb, dx: bSwing }, { x: 11.0, lift: lb2, dx: bSwing * 0.7 },
+           { x: 26.6, lift: lf, dx: fSwing }, { x: 29.2, lift: lf2, dx: fSwing * 0.8 }];
       patas.forEach(p => {
-        g.rect(p.x, 13.5 + dy - p.lift, p.x + 1.6, 21.5 + dy - p.lift, 'paw');
-        // casco
-        g.rect(p.x - 0.2, 20.6 + dy - p.lift, p.x + 1.9, 21.9 + dy - p.lift, 'mane');
+        const x0 = p.x + p.dx;
+        const y0 = legTop - p.lift - dy;
+        const y1 = yCas;
+        if (y1 - y0 < 1.4) return;
+        // 3 px de ancho: con 2 px el contorno se come el color de la caña y la pata
+        // sale como una raya negra.
+        g.rect(x0, y0, x0 + 2.4, y1 - 1.1, 'paw');           // caña
+        g.rect(x0 - 0.3, y1 - 1.1, x0 + 2.7, y1, 'hoof');    // casco
       });
-      // ── Cuerpo ──
-      g.ellipse(16.0, 10.8 + dy, 8.6, 4.1, 'body');
-      g.ellipse(16.0, 12.6 + dy, 6.6, 1.7, 'belly');
-      g.ellipse(23.0, 10.6 + dy, 2.8, 3.2, 'body');          // pecho
-      g.ellipse(9.0, 10.6 + dy, 3.0, 3.4, 'body');           // grupa
-      // ── Cola (colgando; de espaldas, en el centro) ──
-      const colaX = back ? 17.4 : 6.6;
-      for (let i = 0; i < 10; i++) {
-        const t = i / 9;
-        g.ellipse(colaX - t * 1.1, 9.0 + dy + t * 8.4 + a.tailDy * (0.6 + t), 1.25 - t * 0.35, 1.35 - t * 0.3, 'tail');
+      // ── COLA (de la grupa hacia abajo; de espaldas va por el centro) ──
+      const colaX = back ? 20.2 : 4.4;
+      for (let i = 0; i < 12; i++) {
+        const t = i / 11;
+        g.ellipse(colaX - t * 1.6 + tailDx * (0.3 + t), 10.0 + t * 9.4 + tailDy * (0.5 + t),
+          1.9 - t * 0.5, 1.9 - t * 0.45, 'mane');
       }
+      // ── CUERPO: barriga clara, tronco, pecho y grupa. Se sombrea aparte del
+      //    cuello: si comparten etiqueta, las filas del lomo salen oscuras porque
+      //    el degradado se calcula sobre toda la silueta.
+      g.ellipse(17.0, 12.2 - rear * 0.35, 13.0, 4.3, 'body');
+      g.ellipse(17.0, 14.8 - rear * 0.2, 11.4, 1.5, 'belly');
+      g.ellipse(28.2, 11.8 - rear * 0.55, 3.1, 3.6, 'body');   // pecho
+      g.ellipse(7.2, 11.6 - rear * 0.15, 3.5, 3.9, 'body');    // grupa
       if (back) {
-        // Grupa de frente: el cuerpo mas corto y la cabeza asomando por detras.
-        g.ellipse(17.2, 9.4 + dy, 5.4, 4.4, 'body');
-        g.ellipse(17.2, 12.4 + dy, 4.0, 1.6, 'belly');
-        for (let i = 0; i <= 5; i++) {
-          const t = i / 5;
-          g.ellipse(17.4 + t * 1.4, 6.4 + dy - t * 3.0 + hy * 0.3, 1.9 - t * 0.4, 2.0 - t * 0.4, 'body');
+        // ── DE ESPALDAS: grupa de frente, cola por el centro y la cabeza asomando.
+        g.ellipse(18.0, 11.4, 8.2, 4.4, 'body');
+        g.ellipse(18.0, 14.6, 6.4, 1.4, 'belly');
+        for (let i = 0; i <= 7; i++) {
+          const t = i / 7;
+          g.ellipse(20.4 + t * 1.6 + headDx * t, 8.4 - t * 4.2 + headDy * 0.4, 2.5 - t * 0.7, 2.7 - t * 0.6, 'neck');
         }
-        g.ellipse(18.6, 2.6 + hy, 2.3, 1.9, 'body');
-        g.tri(17.4, 1.6 + hy + a.earDy, 17.8, -0.6 + hy + a.earDy, 18.8, 1.4 + hy + a.earDy, 'body');
-        g.tri(19.4, 1.4 + hy + a.earDy, 20.0, -0.7 + hy + a.earDy, 20.9, 1.4 + hy + a.earDy, 'body');
-        g.ellipse(18.4, 0.6 + hy, 1.1, 1.0, 'mane');
+        g.ellipse(22.0 + headDx, 3.4 + headDy, 2.7, 2.3, 'neck');
+        g.tri(20.4 + headDx, 2.4 + headDy + earDy, 20.8 + headDx, -0.4 + headDy + earDy, 21.9 + headDx, 2.2 + headDy + earDy, 'neck');
+        g.tri(22.4 + headDx, 2.2 + headDy + earDy, 23.1 + headDx, -0.5 + headDy + earDy, 24.1 + headDx, 2.2 + headDy + earDy, 'neck');
+        g.ellipse(22.0 + headDx, 1.0 + headDy + mono * 0.6, 1.3, 1.1, 'mane');
+        g.eye(21.6 + headDx, 3.4 + headDy);
         return;
       }
-      // ── Cuello inclinado (del pecho a la cabeza) ──
-      for (let i = 0; i <= 7; i++) {
-        const t = i / 7;
-        g.ellipse(22.6 + t * 5.6, 8.6 + dy - t * 4.6 + hy * 0.35, 1.9 - t * 0.5, 2.2 - t * 0.5, 'body');
+      // ── CUELLO: tubo que se estrecha del pecho a la nuca ──
+      const nbX = 28.4, nbY = 9.8 - rear * 0.5;
+      for (let i = 0; i <= 8; i++) {
+        const t = i / 8;
+        g.ellipse(nbX + t * (6.2 + cuello) + headDx * t,
+          nbY - t * (4.6 + headDy * 0.6) + headDy * 0.4,
+          2.5 - t * 0.9, 2.9 - t * 0.85, 'neck');
       }
-      // ── Cabeza: craneo + hocico largo mirando adelante y abajo ──
-      g.ellipse(28.6, 4.4 + hy, 2.5, 2.1, 'body');
-      g.rect(29.4, 4.6 + hy, 33.2, 6.6 + hy, 'body');
-      g.rect(30.0, 6.4 + hy, 33.2, 7.2 + hy, 'dark');
-      g.nose(33.6, 5.6 + hy, 'nose');
-      // orejas (dos triangulitos)
-      g.tri(27.4, 3.4 + hy + a.earDy, 27.7, 0.8 + hy + a.earDy, 28.8, 3.2 + hy + a.earDy, 'body');
-      g.tri(29.3, 3.2 + hy + a.earDy, 29.9, 0.9 + hy + a.earDy, 30.8, 3.2 + hy + a.earDy, 'body');
-      // ── Crin: a lo largo del cuello y un mechon en la frente ──
-      for (let i = 0; i <= 9; i++) {
-        const t = i / 9;
-        g.ellipse(21.6 + t * 6.8, 7.2 + dy - t * 5.0 + (a.maneDy || 0), 1.0, 1.5, 'mane');
+      // ── CABEZA: cráneo, hocico largo, belfo y ollar ──
+      const hx = 35.4 + cuello * 0.9 + headDx, hy = 4.8 - rear * 0.7 + headDy;
+      g.ellipse(hx, hy, 2.8, 2.3, 'neck');
+      g.rect(hx + 0.6, hy + 0.4, hx + 5.0, hy + 2.4, 'neck');            // caña del hocico
+      g.rect(hx + 1.2, hy + 2.2, hx + 5.2, hy + 3.0 + mouth, 'belly');    // belfo (se abre)
+      g.nose(hx + 5.3, hy + 1.3, 'nose');                                 // ollar
+      g.tri(hx - 1.7, hy - 0.4 + earDy, hx - 1.3, hy - 3.6 + earDy, hx + 0.1, hy - 0.8 + earDy, 'neck');
+      g.tri(hx + 0.7, hy - 0.8 + earDy, hx + 1.3, hy - 3.4 + earDy, hx + 2.3, hy - 0.8 + earDy, 'neck');
+      // ── CRIN: a lo largo de la nuca (sin llegar a tapar la cabeza) + mechón ──
+      for (let i = 0; i <= 11; i++) {
+        const t = i / 11;
+        if (t > 0.8) continue;
+        g.ellipse(nbX - 0.8 + t * (7.4 + cuello), nbY - 2.5 - t * (5.0 + headDy * 0.5) + (a.maneDy || 0)
+          - rear * 0.45 * (1 - t) + headDy * 0.2,
+          1.4 + mono * t * 0.5, 1.9 + mono * t * 0.6, 'mane');
       }
-      g.ellipse(28.4, 2.4 + hy, 1.2, 1.1, 'mane');
-      g.eye(29.2, 3.9 + hy);
+      g.ellipse(hx - 1.2, hy - 2.6 + mono * 0.5, 1.5, 1.4 + mono * 0.4, 'mane');
+      g.eye(hx + 1.0, hy - 0.3);
     }
   }
 };
@@ -200,8 +253,12 @@ const SPECS = {
 // franjas verticales y colores fijos para ojos/nariz.
 function makeGrid(w, h) {
   const cells = new Map();
+  // Desplazamiento global de la rejilla: las poses que crecen hacia arriba
+  // (el caballo encabritado) usan una rejilla más alta y se bajan con esto para
+  // seguir apoyando en el mismo suelo.
+  let offX = 0, offY = 0;
   const put = (x, y, tag) => {
-    const xi = Math.round(x), yi = Math.round(y);
+    const xi = Math.round(x + offX), yi = Math.round(y + offY);
     if (xi < 0 || yi < 0 || xi >= w || yi >= h) return;
     if (tag === 'eye' || tag === 'nose') { cells.set(xi + ',' + yi, tag); return; }
     const prev = cells.get(xi + ',' + yi);
@@ -210,6 +267,7 @@ function makeGrid(w, h) {
   };
   return {
     w, h, cells,
+    setOffset: (dx, dy) => { offX = dx || 0; offY = dy || 0; },
     rect: (x0, y0, x1, y1, tag) => { for (let y = Math.ceil(y0); y <= Math.floor(y1); y++) for (let x = Math.ceil(x0); x <= Math.floor(x1); x++) put(x, y, tag); },
     ellipse: (cx, cy, rx, ry, tag) => {
       for (let y = Math.floor(cy - ry); y <= Math.ceil(cy + ry); y++) {
@@ -260,6 +318,10 @@ function finishGrid(g, pal) {
     // Contorno: cualquier celda del cuerpo que toca el aire (4 direcciones).
     if (!has(x - 1, y) || !has(x + 1, y) || !has(x, y - 1) || !has(x, y + 1)) { out.push([x, y, pal.outline]); return; }
     if (tag === 'tail' || tag === 'tailTip') { out.push([x, y, tag === 'tailTip' ? pal.tail : pal.dark]); return; }
+    // Crin y casco van con su propio color (en el caballo son casi negros): si se
+    // dejaran al sombreado por filas saldrían marrones.
+    if (tag === 'mane') { out.push([x, y, pal.mane || pal.dark]); return; }
+    if (tag === 'hoof') { out.push([x, y, pal.hoof || pal.outline]); return; }
     if (tag === 'paw') { out.push([x, y, pal.paw]); return; }
     if (tag === 'belly') { out.push([x, y, pal.light]); return; }
     const b = bounds.get(tag) || { y0: y, y1: y };
@@ -270,14 +332,138 @@ function finishGrid(g, pal) {
   return out;
 }
 
+// Alto de rejilla de un estado (el caballo encabritado necesita más alto).
+function gridHFor(spec, state) {
+  let h = spec.h;
+  try { if (typeof spec.hFor === 'function') h = spec.hFor(state || 'idle'); } catch (e) {}
+  return Math.max(4, Math.round(h || 8));
+}
+
 // ── Animación ───────────────────────────────────────────────────────────────
 // Devuelve los desplazamientos de cada parte para una fase 0..1.
 function animFor(kind, state, p) {
   const a = {
-    bodyDy: 0, headDy: 0, earDy: 0, tailDy: 0,
-    legFrontLift: 0, legFrontLift2: 0, legBackLift: 0, legBackLift2: 0
+    bodyDy: 0, bodyDx: 0, headDy: 0, headDx: 0, earDy: 0, tailDy: 0, tailDx: 0,
+    legFrontLift: 0, legFrontLift2: 0, legBackLift: 0, legBackLift2: 0,
+    legFrontSwing: 0, legBackSwing: 0, legShort: 0,
+    maneDy: 0, maneFly: 0, neckStretch: 0, rearDy: 0, mouth: 0
   };
   const s = state || 'idle';
+  const caballo = (kind === 'horse');
+  // ── Caballo: aires y acciones propias ──
+  if (caballo && (s === 'walk' || s === 'trot' || s === 'gallop')) {
+    const galope = s === 'gallop';
+    const trote = s === 'trot';
+    const swing = Math.sin(p * TAU), swing2 = Math.sin(p * TAU + Math.PI);
+    if (galope) {
+      // Galope: las manos se estiran adelante y los remos recogen para empujar,
+      // con una fase de suspensión (los cuatro en el aire a la vez).
+      const salto = Math.max(0, Math.sin(p * TAU * 2));
+      a.legFrontLift = Math.round(1 + swing * 2 + salto * 2);
+      a.legFrontLift2 = Math.round(1 + swing2 * 2 + salto * 1.4);
+      a.legBackLift = Math.round(1 + swing2 * 2 + salto * 1.8);
+      a.legBackLift2 = Math.round(1 + swing * 2 + salto * 1.2);
+      a.legFrontSwing = Math.round(swing * 2.6);
+      a.legBackSwing = Math.round(-swing2 * 2.0);
+      a.bodyDy = -Math.abs(Math.round(Math.sin(p * TAU * 2) * 1.6));
+      a.headDy = -1;
+      a.neckStretch = 1.6;
+      a.maneFly = 1;
+      a.maneDy = Math.round(Math.sin(p * TAU * 3) * 0.6);
+      a.tailDy = Math.round(Math.sin(p * TAU * 3) * 1.4);
+      a.tailDx = -1.6;
+      a.earDy = -1;
+    } else {
+      // Paso (4 tiempos) y trote (2 tiempos, en diagonal).
+      const lift = trote ? 2 : 1;
+      a.legFrontLift = swing > 0 ? Math.round(swing * lift) : 0;
+      a.legFrontLift2 = swing2 > 0 ? Math.round(swing2 * lift) : 0;
+      a.legBackLift = swing2 > 0 ? Math.round(swing2 * lift) : 0;
+      a.legBackLift2 = swing > 0 ? Math.round(swing * lift) : 0;
+      a.legFrontSwing = Math.round(swing * (trote ? 1.4 : 0.8));
+      a.legBackSwing = Math.round(-swing * (trote ? 1.2 : 0.7));
+      a.bodyDy = -Math.abs(Math.round(Math.sin(p * TAU * 2) * (trote ? 1.2 : 0.6)));
+      a.headDy = trote ? -1 + Math.round(Math.sin(p * TAU * 2) * 1) : 0;
+      a.maneDy = Math.round(Math.sin(p * TAU * 2) * 0.6);
+      a.tailDy = Math.round(Math.sin(p * TAU * 2) * (trote ? 1.1 : 0.6));
+    }
+    return a;
+  }
+  if (caballo && s === 'neigh') {
+    // Relincho: sube la cabeza, abre el belfo y la crin se levanta. Envolvente:
+    // sube, se mantiene y baja (además un par de cabeceos).
+    const env = Math.sin(Math.min(1, p) * Math.PI);
+    a.headDy = -Math.round(3 * env + Math.abs(Math.sin(p * TAU * 3)) * 0.8);
+    a.neckStretch = 0.6 + env * 0.8;
+    a.mouth = env > 0.35 ? 1 : 0;
+    a.maneFly = Math.round(env * 1.4);
+    a.maneDy = -Math.round(env * 0.8);
+    a.bodyDy = -Math.round(env * 0.6);
+    a.earDy = -Math.round(env);
+    a.tailDy = Math.round(Math.sin(p * TAU * 2) * 1.6);
+    return a;
+  }
+  if (caballo && s === 'rear') {
+    // Encabritarse: el tercio delantero sube, las manos se recogen y el cuerpo
+    // se apoya en los remos.
+    const env = Math.sin(Math.min(1, p) * Math.PI);
+    a.rearDy = Math.round(8 * env);
+    a.legFrontLift = Math.round(6 * env + env * 2);
+    a.legFrontLift2 = Math.round(6 * env + env * 1.4);
+    a.legFrontSwing = Math.round(env * 1.6);
+    a.headDy = -Math.round(env * 1.2);
+    a.mouth = env > 0.5 ? 1 : 0;
+    a.maneFly = Math.round(env * 1.6);
+    a.maneDy = -Math.round(env * 1.2);
+    a.tailDy = Math.round(Math.sin(p * TAU * 1.5) * 1.4);
+    a.earDy = -Math.round(env);
+    return a;
+  }
+  if (caballo && s === 'paw') {
+    // Piafar: una mano escarba el suelo mientras la cabeza baja un poco.
+    const golpe = Math.abs(Math.sin(p * TAU * 2));
+    a.legFrontLift = Math.round(2 + golpe * 2);
+    a.legFrontSwing = Math.round(Math.sin(p * TAU * 2) * 1.6);
+    a.headDy = 2 + Math.round(Math.sin(p * TAU * 2) * 0.6);
+    a.neckStretch = 0.4;
+    a.tailDy = Math.round(Math.sin(p * TAU) * 1.2);
+    a.bodyDy = -Math.round(golpe * 0.4);
+    return a;
+  }
+  if (caballo && (s === 'graze' || s === 'drink')) {
+    // Pastar / beber: la cabeza baja al suelo (y al beber da sorbos).
+    const sorbo = (s === 'drink') ? Math.abs(Math.sin(p * TAU * 2)) : 0;
+    a.headDy = Math.round((s === 'drink' ? 6 : 7) + sorbo * 1.2 + Math.sin(p * TAU * 0.5) * 0.6);
+    a.neckStretch = 0.8;
+    a.maneDy = 2 + Math.round(sorbo);
+    a.tailDy = Math.round(Math.sin(p * TAU) * 0.8);
+    a.earDy = Math.round(Math.sin(p * TAU * 1.5) * 0.8);
+    return a;
+  }
+  if (caballo && s === 'shake') {
+    // Sacudirse: el cuerpo se menea a los lados, la crin y la cola vuelan.
+    const vib = Math.sin(p * TAU * 3);
+    a.bodyDx = Math.round(vib * 1.6);
+    a.headDx = Math.round(-vib * 1.2);
+    a.headDy = Math.round(Math.abs(vib) * 0.8);
+    a.maneFly = Math.round(Math.abs(vib) * 1.6);
+    a.maneDy = Math.round(-Math.abs(vib) * 1.2);
+    a.tailDx = Math.round(vib * 2);
+    a.earDy = -1;
+    a.legFrontSwing = Math.round(vib * 0.8);
+    return a;
+  }
+  if (caballo && s === 'lie') {
+    // Echado: el cuerpo baja al suelo y las patas se recogen.
+    const env = Math.sin(Math.min(1, p) * Math.PI * 0.5);
+    a.bodyDy = Math.round(5 + env * 1.5);
+    a.legShort = 6;
+    a.headDy = 3;
+    a.neckStretch = 0.4;
+    a.tailDy = Math.round(Math.sin(p * TAU) * 0.8);
+    a.earDy = -1;
+    return a;
+  }
   if (s === 'run' || s === 'walk') {
     const fast = s === 'run';
     const swing = Math.sin(p * TAU);
@@ -322,14 +508,19 @@ function bitmapFor(kind, state, bucket, back) {
   let bmp = BITMAPS.get(key);
   if (bmp) return bmp;
   const spec = SPECS[kind] || SPECS.rabbit;
-  const g = makeGrid(spec.w, spec.h);
+  // OJO: el lienzo mide la rejilla REAL del estado, no `spec.h`. Las poses altas
+  // (el caballo encabritado o relinchando) usan una rejilla más alta: si el lienzo
+  // se quedaba en `spec.h`, todo lo que sobresalía se recortaba y el caballo
+  // encabritado perdía la cabeza y el cuello.
+  const alto = gridHFor(spec, state);
+  const g = makeGrid(spec.w, alto);
   spec.build(g, Object.assign(animFor(kind, state, bucket / FRAMES), { back: !!back }));
   const pixels = finishGrid(g, spec.pal);
   const cv = document.createElement('canvas');
-  cv.width = spec.w; cv.height = spec.h;
+  cv.width = spec.w; cv.height = alto;
   const c = cv.getContext('2d');
   for (const p of pixels) { c.fillStyle = p[2]; c.fillRect(p[0], p[1], 1, 1); }
-  bmp = { canvas: cv, w: spec.w, h: spec.h };
+  bmp = { canvas: cv, w: spec.w, h: alto };
   BITMAPS.set(key, bmp);
   return bmp;
 }
@@ -351,8 +542,8 @@ export function drawAnimal(ctx, kind, x, yBase, ancho, opts = {}) {
   // el reloj (respiración, coleteo, orejas).
   let phase = opts.phase01;
   if (phase == null) {
-    const moving = state === 'run' || state === 'walk';
-    phase = moving ? ((now * (state === 'run' ? 0.0055 : 0.0034)) % 1) : ((now * 0.0009) % 1);
+    const moving = state === 'run' || state === 'walk' || state === 'trot' || state === 'gallop';
+    phase = moving ? ((now * (state === 'run' || state === 'gallop' ? 0.0055 : 0.0034)) % 1) : ((now * 0.0009) % 1);
   }
   const bucket = Math.floor(phase * FRAMES) % FRAMES;
   const back = !!opts.back;
@@ -394,9 +585,9 @@ export function hasAnimal(kind) {
  */
 export function animalPixelsFor(kind, state, phase01) {
   const spec = SPECS[kind] || SPECS.rabbit;
-  const g = makeGrid(spec.w, spec.h);
+  const g = makeGrid(spec.w, gridHFor(spec, state));
   spec.build(g, animFor(kind, state || 'idle', phase01 == null ? 0 : phase01));
-  return { w: spec.w, h: spec.h, pixels: finishGrid(g, spec.pal), pal: spec.pal };
+  return { w: spec.w, h: g.h, pixels: finishGrid(g, spec.pal), pal: spec.pal };
 }
 
 export const ANIMAL_KINDS = Object.keys(SPECS);

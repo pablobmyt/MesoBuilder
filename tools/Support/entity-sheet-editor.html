@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Editor de entidades · MesoBuilder</title>
+<style>
+  :root {
+    --bg: #121417; --panel: rgba(24,26,30,.96); --line: rgba(255,255,255,.10);
+    --gold: #e3c98c; --txt: #e8e8e8; --dim: #9aa0a6; --ok: #8ee08a; --bad: #ff8a6a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--txt); font: 13px/1.45 system-ui, sans-serif;
+    display: grid; grid-template-columns: 300px 1fr 300px; grid-template-rows: 44px 1fr;
+    height: 100vh; overflow: hidden;
+  }
+  header {
+    grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; padding: 0 12px;
+    background: var(--panel); border-bottom: 1px solid var(--line);
+  }
+  header b { color: var(--gold); font-weight: 600; letter-spacing: .3px; }
+  header small { color: var(--dim); }
+  aside, section { overflow: auto; padding: 10px; }
+  aside { background: var(--panel); border-right: 1px solid var(--line); }
+  aside.derecha { border-right: 0; border-left: 1px solid var(--line); }
+  h3 { margin: 4px 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .8px; color: var(--gold); }
+  label { display: block; margin: 8px 0 3px; color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
+  input[type=text], input[type=number], select {
+    width: 100%; padding: 6px 8px; background: #0d0f12; color: var(--txt);
+    border: 1px solid var(--line); border-radius: 7px; font: inherit;
+  }
+  input[type=range] { width: 100%; }
+  button {
+    padding: 6px 10px; background: #1b1e23; color: var(--txt); border: 1px solid var(--line);
+    border-radius: 7px; cursor: pointer; font: inherit;
+  }
+  button:hover { border-color: var(--gold); }
+  button.act { background: rgba(227,201,140,.18); border-color: var(--gold); color: var(--gold); }
+  .fila { display: flex; gap: 6px; }
+  .fila > * { flex: 1; }
+  .lista { max-height: 44vh; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+  .item { padding: 5px 8px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,.05); display: flex; justify-content: space-between; gap: 6px; }
+  .item:hover { background: rgba(255,255,255,.05); }
+  .item.sel { background: rgba(227,201,140,.16); color: var(--gold); }
+  .item small { color: var(--dim); }
+  .item .marca { color: var(--ok); font-size: 11px; }
+  #lienzo { background: #171a1e; border: 1px solid var(--line); border-radius: 8px; cursor: crosshair; image-rendering: pixelated; }
+  .slots { display: grid; gap: 6px; }
+  .slot { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+  .slot.act { border-color: var(--gold); background: rgba(227,201,140,.10); }
+  .slot header2 { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+  .slot .rect { color: var(--dim); font-size: 11px; font-family: ui-monospace, monospace; }
+  #aviso { font-size: 12px; color: var(--gold); min-height: 18px; }
+  #vistaPrevia { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; }
+  #vistaPrevia .marco { background: #171a1e; border: 1px solid var(--line); border-radius: 6px; padding: 4px; }
+  #vistaPrevia .marco span { display: block; font-size: 10px; color: var(--dim); text-align: center; }
+  .ayuda { color: var(--dim); font-size: 11px; line-height: 1.5; }
+  .kbd { background: #0d0f12; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; font-family: ui-monospace, monospace; }
+</style>
+</head>
+<body>
+<header>
+  <b>EDITOR DE ENTIDADES</b>
+  <small>elige sistema por entidad y recorta sus vistas directamente del PNG</small>
+  <span id="aviso" style="margin-left:auto"></span>
+</header>
+
+<!-- ── Panel izquierdo: hoja + entidades ────────────────────────────────── -->
+<aside>
+  <h3>1 · Hoja de sprites (PNG)</h3>
+  <label for="rutaPng">Ruta dentro del proyecto <span id="deQuien"></span></label>
+  <input id="rutaPng" type="text" value="data/sheets/casa.png">
+  <div class="fila" style="margin-top:6px">
+    <button id="btnCargar">Cargar PNG</button>
+    <button id="btnPngLocal">Desde mi equipo…</button>
+  </div>
+  <div class="fila" style="margin-top:6px">
+    <button id="btnCompartida">Usar la compartida</button>
+  </div>
+  <input id="pngLocal" type="file" accept="image/png" style="display:none">
+  <label for="zoom">Zoom <span id="zoomTxt">3×</span></label>
+  <input id="zoom" type="range" min="1" max="10" step="1" value="3">
+  <p class="ayuda"><b>Cada entidad tiene su hoja.</b> Lo que cargues aquí se le asigna a la entidad
+  seleccionada, y al cambiar de entidad el lienzo cambia a la suya. Si una entidad no tiene hoja
+  propia hereda la <b>compartida</b>. Al abrir una entidad SIN asignar el lienzo se vacía y
+  enseña el sprite que hay ahora en el juego; pulsa «Usar la compartida» para empezar a recortar
+  sobre ella.</p>
+  <hr style="border:0;border-top:1px solid var(--line);margin:12px 0">
+
+  <h3>2 · Entidad</h3>
+  <input id="buscar" type="text" placeholder="Buscar…" style="margin-bottom:6px">
+  <div class="lista" id="listaEntidades"></div>
+</aside>
+
+<!-- ── Centro: la hoja ──────────────────────────────────────────────────── -->
+<section>
+  <canvas id="lienzo" width="600" height="400"></canvas>
+  <p class="ayuda">Arrastra sobre el PNG para recortar la imagen. con <span class="kbd">Mayús</span>
+  el recorte se queda cuadrado. El recorte debe incluir SÓLO ese sprite (sin fondo ni sombras).</p>
+</section>
+
+<!-- ── Panel derecho: sistema + vistas ──────────────────────────────────── -->
+<aside class="derecha">
+  <h3>3 · Sistema de dibujado</h3>
+  <div class="fila">
+    <button id="sysAntiguo">Antiguo</button>
+    <button id="sysNuevo">Nuevo (por vistas)</button>
+  </div>
+  <p class="ayuda" id="ayudaSistema"></p>
+  <hr style="border:0;border-top:1px solid var(--line);margin:12px 0">
+
+  <h3>4 · Vistas</h3>
+  <div id="slots" class="slots"></div>
+  <div class="fila" style="margin-top:8px">
+    <button id="btnCapturar">Capturar recorte aquí</button>
+    <button id="btnLimpiarSlot">Quitar</button>
+  </div>
+  <label style="margin-top:10px">Ajuste a la huella (vistas de arriba)</label>
+  <select id="ajusteHuella">
+    <option value="1">Sí: deja margen para caer en la huella (recomendado)</option>
+    <option value="0">No: el sprite llena toda la caja (25 % más grande)</option>
+  </select>
+  <hr style="border:0;border-top:1px solid var(--line);margin:12px 0">
+
+  <h3>5 · Guardar</h3>
+  <div class="fila" style="margin-bottom:6px">
+    <button id="btnAplicar">Guardar en el proyecto</button>
+    <button id="btnBorrar">Borrar todo</button>
+  </div>
+  <div class="fila">
+    <button id="btnExportar">Exportar JSON</button>
+    <button id="btnImportar">Importar…</button>
+  </div>
+  <input id="inputImport" type="file" accept="application/json" style="display:none">
+  <div id="apiEstado" class="ayuda" style="margin-top:6px">Buscando el servidor de guardado…</div>
+  <div id="apiAviso" class="ayuda" style="margin-top:4px"></div>
+  <p class="ayuda">«Guardar en el proyecto» escribe
+  <span class="kbd">data/entity-views.json</span> directamente (nada de descargar el JSON a mano).
+  Si el PNG del lienzo aún no está en el proyecto, <b>se copia solo a
+  <span class="kbd">data/sheets/</span> al guardar</b>: el juego no puede recortar de un fichero
+  que no tiene. Recarga el juego (F5) y ya se ve. «Exportar JSON» descarga una copia, sólo si la
+  quieres a mano.</p>
+  <h3 style="margin-top:12px">Vista previa</h3>
+  <div id="vistaPrevia"></div>
+</aside>
+
+<script>
+'use strict';
+// ─────────────────────────────────────────────────────────────────────────────
+// Editor de entidades: asigna trozos del PNG a las vistas de cada entidad.
+//
+//  · SISTEMA ANTIGUO: un solo sprite (alzado) para las dos vistas, como hasta ahora.
+//  · SISTEMA NUEVO: un sprite por vista. En edificios: «arriba» (planta/TECHO) e
+//    «isométrico». En personajes: las cuatro direcciones.
+//
+// Lo que se guarda es MÍNIMO: la ruta del PNG y el rectángulo de cada vista. El
+// juego saca los píxeles al arrancar (ver `cargarVistasDeEntidades` en el motor).
+// ─────────────────────────────────────────────────────────────────────────────
+
+const CLAVE = 'meso.entityViews';   // sólo para el historial viejo (ya no se usa)
+// GET lee y POST escribe data/entity-views.json. `API_BASE` se rellena en el arranque
+// con `descubrirApi()`: '' = el mismo servidor que sirve esta página; si aquí no hay
+// API (p. ej. la página la sirve otro servidor), se busca en los puertos habituales.
+const API_VISTAS = '/api/vistas';
+const API_HOJA = '/api/hoja';
+const API_ESTADO = '/api/estado';
+const PUERTOS_API = [4321, 4322, 4323, 4324, 4325, 4326, 4327, 4328, 4329, 4330, 4400];
+let API_BASE = '';
+let apiInfo = null;                 // { servidor, fichero } del que ha contestado
+const EDIFICIOS_DIRECCIONES = [
+  { id: 'sup', nombre: 'Vista de ARRIBA (planta / TECHO)' },
+  { id: 'iso', nombre: 'Vista ISOMÉTRICA (3/4)' }
+];
+const PERSONAJE_DIRECCIONES = [
+  { id: 'sur', nombre: 'Mirando al SUR (abajo)' },
+  { id: 'norte', nombre: 'Mirando al NORTE (arriba)' },
+  { id: 'este', nombre: 'Mirando al ESTE (derecha)' },
+  { id: 'oeste', nombre: 'Mirando al OESTE (izquierda)' }
+];
+
+const est = {
+  hoja: 'data/sheets/casa.png',   // ruta que hay AHORA en el lienzo
+  hojaImg: null,
+  hojaPorDefecto: '',     // la hoja compartida (raíz del JSON): la usan las entidades sin hoja propia
+  hojaCargada: null,      // ruta del PNG cargado (null = no hay imagen)
+  hojaPropia: false,      // ¿el PNG del lienzo es la hoja PROPIA de la entidad seleccionada?
+  hojas: {},              // ruta en el proyecto -> PNG en data URL (bytes que tenemos en memoria)
+  zoom: 3,
+  entidades: {},          // { clave: { sistema, hoja?, vistas:{ sup:{x,y,w,h}, ... }, ajusteHuella } }
+  nombres: [],            // nombres de `data/entity-pixels.json`
+  pixeles: {},            // los sprites del JSON: el "como está en el juego ahora"
+  extras: {},             // claves del JSON que no son hoja/entidades (se conservan)
+  cargado: false,         // ¿se ha podido LEER data/entity-views.json? (sin esto no se guarda)
+  sel: null,
+  slot: 'iso',
+  rect: null              // recorte en curso (px del PNG)
+};
+
+const $ = (id) => document.getElementById(id);
+const aviso = (t, malo) => { const a = $('aviso'); a.textContent = t || ''; a.style.color = malo ? 'var(--bad)' : 'var(--gold)'; };
+
+// ── ¿Dónde está la API de guardado? ────────────────────────────────────────
+// «Guardar en el proyecto» escribe `data/entity-views.json` por HTTP. La API la
+// exponen los DOS servidores del proyecto (`npm run editor` y el dev-server), pero
+// esta página puede venir de otro sitio (file://, otro puerto, Electron): aquí se
+// busca y se apunta la base buena. Así no hace falta descargar el JSON a mano.
+async function sondearApi(base, ms) {
+  // Con tope de tiempo: un puerto que no contesta no puede colgar la búsqueda.
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), ms || 1500);
+  try {
+    const r = await fetch(base + API_ESTADO + '?t=' + Date.now(), { cache: 'no-store', signal: ctl.signal });
+    if (!r.ok) return null;
+    const j = await r.json();
+    return (j && j.ok) ? j : null;
+  } catch (e) { return null; } finally { clearTimeout(t); }
+}
+
+function pintarEstadoApi() {
+  const el = $('apiEstado');
+  const extra = $('apiAviso');
+  if (!el) return;
+  if (extra) { extra.textContent = ''; }
+  if (apiInfo) {
+    el.textContent = '✔ Guardado directo activo en ' + (API_BASE || 'este mismo servidor') +
+      ' → ' + (apiInfo.fichero || 'data/entity-views.json');
+    el.style.color = 'var(--gold)';
+    // Al abrir se avisa de las hojas que el fichero pide y NO están en el proyecto:
+    // el motor no las encuentra y sigue dibujando el sprite viejo. Se dice QUÉ
+    // ENTIDAD las usa, porque mirando otra entidad el aviso no se entiende.
+    const faltan = apiInfo.hojasQueFaltan || [];
+    if (extra && faltan.length) {
+      extra.textContent = '⚠ El fichero del proyecto apunta a hojas que NO están en data/sheets/: ' +
+        (apiInfo.faltantesDetalle || faltan.join(', ')) + '. Selecciona esa entidad en la lista y ' +
+        'carga el PNG con «Desde mi equipo…»: al guardar se copia solo.';
+      extra.style.color = 'var(--bad)';
+    }
+  } else {
+    el.textContent = '✖ No encuentro la API de guardado. Abre el editor con «npm run editor» ' +
+      'o arranca «node scripts/dev-server.js 4321» y recarga esta página; mientras, «Exportar JSON».';
+    el.style.color = 'var(--bad)';
+  }
+}
+
+async function descubrirApi() {
+  const propio = await sondearApi('');
+  if (propio) { API_BASE = ''; apiInfo = propio; pintarEstadoApi(); return apiInfo; }
+  // Los puertos habituales se sondean EN PARALELO: en serie, con puertos cerrados,
+  // la búsqueda tardaba más de 20 s y el editor parecía colgado.
+  const sondeos = await Promise.all(PUERTOS_API.map(async (p) => {
+    const base = 'http://localhost:' + p;
+    return { base, info: await sondearApi(base) };
+  }));
+  const buena = sondeos.find((s) => s.info);
+  if (buena) { API_BASE = buena.base; apiInfo = buena.info; pintarEstadoApi(); return apiInfo; }
+  API_BASE = ''; apiInfo = null; pintarEstadoApi(); return null;
+}
+
+// Una sola búsqueda a la vez (el arranque y el botón de guardar la piden a la vez).
+let descubriendo = null;
+function asegurarApi() {
+  if (apiInfo) return Promise.resolve(apiInfo);
+  if (!descubriendo) descubriendo = descubrirApi().then((r) => { descubriendo = null; return r; });
+  return descubriendo;
+}
+
+async function enviarVistas(datos) {
+  const r = await fetch(API_BASE + API_VISTAS, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(datos)
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.ok === false) throw new Error(j.error || ('HTTP ' + r.status));
+  return j;
+}
+
+// El editor vive en `tools/Support/`, así que una ruta relativa como
+// `data/sheets/casa.png` se resolvería contra ESA carpeta y daría 404. Las rutas
+// del proyecto se resuelven contra la raíz (dos niveles arriba), valga http o file.
+const RAIZ_PROYECTO = (() => {
+  const u = location.href.split('?')[0].split('#')[0];
+  return /tools\/Support\/[^/]*$/i.test(u) ? u.replace(/tools\/Support\/[^/]*$/i, '') : u.replace(/[^/]*$/, '');
+})();
+const rutaProyecto = (p) => (/^([a-z]+:|\/|data:)/i.test(p) ? p : RAIZ_PROYECTO + p);
+
+// ── Cargar el PNG ───────────────────────────────────────────────────────────
+// Cada entidad puede tener SU hoja (campo `hoja` de su entrada). El lienzo enseña
+// la de la entidad seleccionada; si no tiene, hereda la compartida (la de la raíz
+// del JSON) y se avisa de que es compartida.
+function rutaHojaDe(clave) {
+  const e = clave && est.entidades[clave];
+  return (e && e.hoja) || est.hojaPorDefecto || '';
+}
+
+function cargarHoja(ruta, opciones) {
+  const op = opciones || {};
+  const pedida = String(ruta || $('rutaPng').value || '').trim();
+  if (!pedida) {
+    est.hojaImg = null; est.hojaCargada = null; est.hojaPropia = false;
+    dibujar();
+    return;
+  }
+  if (op.asignarA !== false) {
+    if (est.sel) def(est.sel).hoja = pedida;      // la hoja es de ESTA entidad
+    else est.hojaPorDefecto = pedida;             // sin entidad: es la compartida
+  }
+  const propia = !!(est.sel && est.entidades[est.sel] && est.entidades[est.sel].hoja);
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = () => {
+    est.hojaImg = img;
+    est.hojaCargada = pedida;
+    est.hoja = pedida;
+    est.hojaPropia = propia;
+    $('rutaPng').value = pedida;
+    encuadrar();
+    dibujar();
+    // La vista previa de los recortes necesita el PNG ya cargado y la lista de
+    // slots se pinta ANTES del onload, así que hay que repintarla aquí o se queda
+    // sólo con el sprite original.
+    pintarPrevia();
+    aviso('PNG' + (propia && est.sel ? ' de ' + est.sel : '') + ': ' + pedida + ' · ' + img.width + '×' + img.height + ' px');
+  };
+  img.onerror = () => {
+    // Si el PNG no está en el proyecto pero lo tenemos EN MEMORIA (se cargó del disco
+    // en esta sesión), se enseña igual: al guardar se copiará. `img.src !== datos`
+    // evita el bucle si el propio data URL también falla.
+    const datos = datosDeHoja(pedida);
+    if (datos && img.src !== datos) { img.src = datos; return; }
+    est.hojaImg = null; est.hojaCargada = null; est.hojaPropia = propia;
+    dibujar();
+    aviso('No se pudo cargar «' + pedida + '». ¿Está guardado ahí? (busco en ' + rutaProyecto(pedida) +
+      '). Si lo tienes en tu equipo, usa «Desde mi equipo…»: se copia al proyecto y se guarda con los recortes.', true);
+  };
+  const url = rutaProyecto(pedida);
+  img.src = url + (url.indexOf('?') < 0 ? '?t=' + Date.now() : '');
+}
+
+// Al cambiar de entidad, el lienzo cambia: se carga SU hoja (o la compartida) y, si
+// ya tiene recortes, se encuadra el zoom sobre ellos para verlos de un golpe.
+function seleccionar(clave) {
+  est.sel = clave;
+  est.rect = null;
+  pintarLista(); pintarSlots();
+  const def = est.entidades[clave] || {};
+  const tieneVistas = !!(def.vistas && Object.keys(def.vistas).length);
+  const ruta = rutaHojaDe(clave);
+  // ── ENTIDAD SIN ASIGNAR: el PNG desaparece ───────────────────────────────
+  // Al abrir una entidad nueva el lienzo NO puede seguir enseñando la hoja (ni
+  // los recortes) de la anterior: se vacía y se enseña el sprite que hay ahora
+  // en el juego, que es lo que se va a sustituir. Para empezar a recortar se
+  // pulsa «Usar la compartida» (o se carga un PNG para esa entidad).
+  if (!tieneVistas && !def.hoja) {
+    est.hojaImg = null;
+    est.hojaCargada = null;
+    est.hojaPropia = false;
+    $('rutaPng').value = ruta;
+    dibujar();
+    return;
+  }
+  const propia = !!def.hoja;
+  if (ruta && (ruta !== est.hojaCargada || propia !== est.hojaPropia)) {
+    cargarHoja(ruta, { asignarA: false });
+  } else {
+    est.hojaPropia = propia;
+    $('rutaPng').value = ruta;
+    encuadrar();
+    dibujar();
+  }
+}
+
+// ── EL SPRITE QUE HAY AHORA EN EL JUEGO ───────────────────────────────────
+// Se pinta con los píxeles de `data/entity-pixels.json`, tal cual los dibuja el
+// motor, para poder comparar lo que hay contra lo que se va a poner.
+function spriteOriginal(caja, maximo) {
+  const def = est.sel ? est.pixeles[est.sel] : null;
+  if (!def || !Array.isArray(def.pixels) || !def.pixels.length) return null;
+  let mx = 0, my = 0;
+  for (const p of def.pixels) { if (p[0] > mx) mx = p[0]; if (p[1] > my) my = p[1]; }
+  const gw = mx + 1, gh = my + 1;
+  // La escala se calcula para que SIEMPRE quepa entero en la caja: hay sprites de
+  // 128×128 (templo) y con un factor fijo se salían del lienzo y lo tapaban todo.
+  const escala = Math.max(1, Math.min(maximo || 6, Math.floor(Math.min(caja.w / gw, caja.h / gh))));
+  const w = gw * escala, h = gh * escala;
+  return { def, gw, gh, w, h, x: Math.round(caja.x + (caja.w - w) / 2), y: Math.round(caja.y + (caja.h - h) / 2), escala };
+}
+
+function pintarSpriteOriginal(g, spr) {
+  if (!spr) return;
+  for (const p of spr.def.pixels) {
+    if (!p || !p[2]) continue;
+    g.fillStyle = p[2];
+    g.fillRect(spr.x + p[0] * spr.escala, spr.y + p[1] * spr.escala, spr.escala, spr.escala);
+  }
+}
+
+function hojaLocal(file) {
+  const fr = new FileReader();
+  fr.onload = async () => {
+    const url = String(fr.result);
+    const img = new Image();
+    img.onload = async () => {
+      est.hojaImg = img;
+      const rutaProyectoPng = 'data/sheets/' + String(file.name || 'hoja.png').replace(/[^\w.\-]+/g, '_');
+      est.hoja = rutaProyectoPng;
+      // El PNG se queda EN MEMORIA con su ruta de proyecto: si la copia falla ahora
+      // (o aún no hay API), se copia al guardar. Así nunca "falta en el proyecto".
+      est.hojas[rutaProyectoPng] = url;
+      $('rutaPng').value = est.hoja;
+      dibujar();
+      // La hoja tiene que ESTAR en el proyecto: si no, el juego no la encuentra
+      // (aunque aquí se vea). Con la API del proyecto la copiamos.
+      try {
+        const r = await fetch(API_BASE + API_HOJA, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nombre: file.name, datos: url })
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || j.ok === false) throw new Error(j.error || ('HTTP ' + r.status));
+        renombrarHoja(rutaProyectoPng, j.ruta);
+        est.hojaCargada = j.ruta;
+        est.hojaPropia = true;
+        if (est.sel) def(est.sel).hoja = j.ruta;      // la hoja copiada es de ESTA entidad
+        $('rutaPng').value = j.ruta;
+        pintarLista();
+        dibujar();
+        aviso('PNG copiado al proyecto: ' + j.ruta + ' · ' + img.width + '×' + img.height + ' px' +
+          (est.sel ? ' (hoja de ' + est.sel + ')' : ''));
+      } catch (e) {
+        est.hojaCargada = rutaProyectoPng;
+        est.hojaPropia = true;
+        if (est.sel) def(est.sel).hoja = rutaProyectoPng;
+        pintarLista();
+        dibujar();
+        aviso('PNG cargado (' + file.name + ') para ' + rutaProyectoPng + '. No he podido ' +
+          'copiarlo al proyecto ahora (' + e.message + '): se copiará al pulsar ' +
+          '«Guardar en el proyecto».', true);
+      }
+    };
+    img.src = url;
+  };
+  fr.readAsDataURL(file);
+}
+
+// Mueve las referencias de una ruta de hoja a otra (el servidor puede guardarla con
+// otro nombre: se limpia el nombre y se le quitan puntos iniciales).
+function renombrarHoja(antes, despues) {
+  if (!antes || !despues || antes === despues) { if (est.hojas[antes] && antes !== despues) est.hojas[despues] = est.hojas[antes]; return; }
+  if (est.hojas[antes]) { est.hojas[despues] = est.hojas[antes]; delete est.hojas[antes]; }
+  if (est.hojaPorDefecto === antes) est.hojaPorDefecto = despues;
+  if (est.hoja === antes) est.hoja = despues;
+  if (est.hojaCargada === antes) est.hojaCargada = despues;
+  Object.keys(est.entidades).forEach((k) => {
+    if (est.entidades[k] && est.entidades[k].hoja === antes) est.entidades[k].hoja = despues;
+  });
+}
+
+// Los bytes (data URL) del PNG de esa hoja, si los tenemos: cargada del disco en esta
+// sesión, o el PNG que hay ahora mismo en el lienzo (se re-codifica desde la imagen).
+function datosDeHoja(ruta) {
+  if (!ruta) return null;
+  if (est.hojas[ruta]) return est.hojas[ruta];
+  const base = String(ruta).split('/').pop().toLowerCase();
+  for (const k of Object.keys(est.hojas)) {
+    if (k.split('/').pop().toLowerCase() === base) return est.hojas[k];
+  }
+  if (est.hojaImg && est.hojaCargada && String(est.hojaCargada).split('/').pop().toLowerCase() === base) {
+    try {
+      const cv = document.createElement('canvas');
+      cv.width = est.hojaImg.width; cv.height = est.hojaImg.height;
+      cv.getContext('2d').drawImage(est.hojaImg, 0, 0);
+      return cv.toDataURL('image/png');
+    } catch (e) { /* PNG de otro origen: no se puede leer */ }
+  }
+  return null;
+}
+
+// Copia al proyecto las hojas que el servidor ha dicho que faltan, si tenemos sus
+// bytes. Devuelve la lista de rutas copiadas. Petición del usuario: «tiene que guardar
+// la imagen que está en el lienzo», no avisar de que falta.
+async function copiarHojasFaltantes(lista) {
+  const copiadas = [];
+  for (const ruta of (lista || [])) {
+    const datos = datosDeHoja(ruta);
+    if (!datos) continue;
+    try {
+      const r = await fetch(API_BASE + API_HOJA, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nombre: String(ruta).split('/').pop(), datos })
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || j.ok === false) throw new Error(j.error || ('HTTP ' + r.status));
+      renombrarHoja(ruta, j.ruta);
+      copiadas.push(j.ruta);
+    } catch (e) { /* se avisa al final, con el resto */ }
+  }
+  return copiadas;
+}
+
+// ── Lienzo ──────────────────────────────────────────────────────────────────
+// Si la entidad ya tiene recortes, se elige el zoom que los encuadra: al cambiar de
+// entidad el lienzo cambia de verdad (no se queda mirando la misma esquina del PNG).
+function encuadrar() {
+  const cv = $('lienzo');
+  const img = est.hojaImg;
+  if (!img || !est.sel) return;
+  const vs = (est.entidades[est.sel] && est.entidades[est.sel].vistas) || {};
+  const rs = Object.keys(vs).map((k) => vs[k]).filter(Boolean);
+  if (!rs.length) return;
+  const x0 = Math.min.apply(null, rs.map((r) => r.x)), y0 = Math.min.apply(null, rs.map((r) => r.y));
+  const x1 = Math.max.apply(null, rs.map((r) => r.x + r.w)), y1 = Math.max.apply(null, rs.map((r) => r.y + r.h));
+  const anchoVista = Math.max(240, cv.parentElement ? cv.parentElement.clientWidth - 24 : 600);
+  const altoVista = 420;
+  const z = Math.max(1, Math.min(6, Math.floor(Math.min(anchoVista / Math.max(1, x1 - x0), altoVista / Math.max(1, y1 - y0)))));
+  est.zoom = z;
+  $('zoom').value = String(z);
+  $('zoomTxt').textContent = z + '×';
+  // y se lleva el scroll al recorte (el centro está dentro de una sección con scroll)
+  setTimeout(() => {
+    const sec = cv.parentElement;
+    if (!sec) return;
+    sec.scrollLeft = Math.max(0, x0 * z - 12);
+    sec.scrollTop = Math.max(0, y0 * z - 40);
+  }, 0);
+}
+
+function dibujar() {
+  const cv = $('lienzo'), g = cv.getContext('2d');
+  const z = est.zoom;
+  const img = est.hojaImg;
+  const W = img ? img.width * z : 600, H = img ? img.height * z : 400;
+  cv.width = Math.max(300, Math.min(W, 4000));
+  cv.height = Math.max(200, Math.min(H, 4000));
+  g.imageSmoothingEnabled = false;
+  g.fillStyle = '#171a1e'; g.fillRect(0, 0, cv.width, cv.height);
+  if (img) g.drawImage(img, 0, 0, W, H);
+  // rejilla de píxeles del PNG (cada 8 px de origen) para guiarse
+  g.strokeStyle = 'rgba(255,255,255,.07)';
+  if (z >= 2) {
+    for (let x = 0; x <= cv.width; x += 8 * z) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, cv.height); g.stroke(); }
+    for (let y = 0; y <= cv.height; y += 8 * z) { g.beginPath(); g.moveTo(0, y); g.lineTo(cv.width, y); g.stroke(); }
+  }
+  // recortes ya asignados de esta entidad
+  if (est.sel && est.entidades[est.sel]) {
+    const vs = est.entidades[est.sel].vistas || {};
+    Object.keys(vs).forEach((k) => {
+      const r = vs[k];
+      g.strokeStyle = k === est.slot ? '#e3c98c' : 'rgba(142,224,138,.85)';
+      g.lineWidth = 2;
+      g.strokeRect(r.x * z + 1, r.y * z + 1, r.w * z - 2, r.h * z - 2);
+      g.fillStyle = g.strokeStyle;
+      g.font = '12px system-ui';
+      g.fillText(k, r.x * z + 3, Math.max(12, r.y * z - 3));
+    });
+  }
+  // recorte en curso
+  if (est.rect) {
+    const r = est.rect;
+    g.strokeStyle = '#ff8a6a'; g.lineWidth = 2;
+    g.strokeRect(r.x * z, r.y * z, r.w * z, r.h * z);
+    g.fillStyle = 'rgba(255,138,106,.9)'; g.font = '12px ui-monospace, monospace';
+    g.fillText(r.w + '×' + r.h + '  (' + r.x + ',' + r.y + ')', r.x * z + 3, r.y * z - 4);
+  }
+  // ── Rótulo: de quién es este lienzo ────────────────────────────────────────
+  // Sin esto no se sabe si lo que se ve es la hoja compartida o la de esta entidad.
+  const texto = est.sel
+    ? est.sel + '   ' + (est.hojaPropia ? 'hoja PROPIA: ' : 'hoja COMPARTIDA: ') + (est.hojaCargada || '—')
+    : 'Elige una entidad a la izquierda (el lienzo cambiará al suyo)';
+  g.font = '12px system-ui';
+  const ancho = Math.min(cv.width - 8, g.measureText(texto).width + 14);
+  g.fillStyle = 'rgba(13,15,18,.86)';
+  g.fillRect(6, 6, ancho, 20);
+  g.fillStyle = est.sel === null ? '#9aa0a6' : (est.hojaPropia ? '#8ee08a' : '#e3c98c');
+  g.fillText(texto.slice(0, 200), 13, 20);
+  if (!img) {
+    // Sin PNG: se enseña el sprite que hay AHORA en el juego (el que se va a
+    // sustituir), que es de lo que se trata al abrir una entidad nueva.
+    const spr = spriteOriginal({ x: 8, y: 40, w: cv.width - 20, h: cv.height - 100 }, 8);
+    if (spr) {
+      pintarSpriteOriginal(g, spr);
+      g.font = '12px system-ui';
+      g.fillStyle = 'rgba(255,255,255,0.6)';
+      g.fillText('así se ve en el juego ahora', 13, cv.height - 12);
+    } else {
+      g.font = '14px system-ui';
+      g.fillStyle = '#9aa0a6';
+      g.fillText(est.sel ? '«' + est.sel + '» no tiene sprite en el JSON' : '', 13, 56);
+    }
+  }
+}
+
+function posPng(ev) {
+  const cv = $('lienzo'), b = cv.getBoundingClientRect();
+  return {
+    x: Math.max(0, Math.floor((ev.clientX - b.left) / est.zoom)),
+    y: Math.max(0, Math.floor((ev.clientY - b.top) / est.zoom))
+  };
+}
+
+let arrastrando = null;
+$('lienzo').addEventListener('pointerdown', (ev) => {
+  if (!est.hojaImg) { aviso('Carga antes el PNG', true); return; }
+  arrastrando = Object.assign(posPng(ev), { shift: ev.shiftKey });
+  est.rect = { x: arrastrando.x, y: arrastrando.y, w: 1, h: 1 };
+  $('lienzo').setPointerCapture(ev.pointerId);
+  dibujar();
+});
+$('lienzo').addEventListener('pointermove', (ev) => {
+  if (!arrastrando) return;
+  const p = posPng(ev);
+  let w = Math.abs(p.x - arrastrando.x), h = Math.abs(p.y - arrastrando.y);
+  if (arrastrando.shift) { const m = Math.max(w, h); w = m; h = m; }
+  est.rect = { x: Math.min(p.x, arrastrando.x), y: Math.min(p.y, arrastrando.y), w: Math.max(1, w), h: Math.max(1, h) };
+  dibujar();
+});
+$('lienzo').addEventListener('pointerup', () => { arrastrando = null; });
+
+// ── Entidades ───────────────────────────────────────────────────────────────
+async function cargarNombres() {
+  const fijos = ['PERSONAJE', 'NPC', 'PERRO', 'CABALLO', 'LOBO', 'CONEJO', 'ZORRO'];
+  // SUELOS: baldosas del terreno. El motor las busca por estos nombres exactos
+  // (ver `SUELO_POR_BIOMA` en `engine/game-engine.js`): arena (desierto, aluvial,
+  // salino), tierra (estepa, hierba, ribera, marisma, bosque), arcilla (colinas)
+  // y agua. Van las primeras de la lista para tenerlas a mano.
+  const suelos = ['suelo_arena', 'suelo_tierra', 'suelo_arcilla', 'suelo_agua'];
+  est.nombres = suelos.concat(fijos);
+  try {
+    const r = await fetch(rutaProyecto('data/entity-pixels.json') + '?t=' + Date.now());
+    const j = await r.json();
+    // Los píxeles del JSON se guardan para poder enseñar, en el lienzo y en la
+    // vista previa, **el sprite que hay ahora en el juego**.
+    est.pixeles = j.icons || j || {};
+    const claves = Object.keys(est.pixeles).sort();
+    // fuera los que no son arte del mundo (iconos de inventario, banderas…).
+    // OJO: los ÁRBOLES (tree0..tree6) y la vegetación SÍ tienen que salir.
+    const basura = /^(icon|flag|makarov|ma_g|interior_)/i;
+    const arte = claves.filter((k) => !basura.test(k));
+    est.nombres = suelos.concat(fijos).concat(arte);
+    aviso(est.nombres.length + ' entidades (' + arte.length + ' con sprite en el JSON)');
+  } catch (e) {
+    aviso('No pude leer data/entity-pixels.json: abre este editor con el servidor de desarrollo (node scripts/dev-server.js)', true);
+  }
+  pintarLista();
+}
+
+function esPersonaje(n) { return PERSONAJE_DIRECCIONES && /PERSONAJE|NPC|PERRO|CABALLO|LOBO|CONEJO|ZORRO/i.test(n); }
+
+function pintarLista() {
+  const q = ($('buscar').value || '').toLowerCase();
+  const cont = $('listaEntidades');
+  cont.innerHTML = '';
+  est.nombres.filter((n) => !q || n.toLowerCase().indexOf(q) >= 0).forEach((n) => {
+    const e = est.entidades[n] || {};
+    const div = document.createElement('div');
+    div.className = 'item' + (n === est.sel ? ' sel' : '');
+    const nv = e.sistema === 'nuevo' ? Object.keys(e.vistas || {}).length : 0;
+    const marca = (e.hoja ? 'hoja propia' + (nv ? ' · ' : '') : '') +
+      (e.sistema === 'nuevo' ? '<span class="marca">nuevo · ' + nv + '</span>' : (e.sistema ? 'antiguo' : ''));
+    div.innerHTML = '<span>' + n + '</span><small>' + marca + '</small>';
+    div.addEventListener('click', () => seleccionar(n));
+    cont.appendChild(div);
+  });
+}
+
+function def(n) {
+  if (!est.entidades[n]) est.entidades[n] = { sistema: 'antiguo', vistas: {}, ajusteHuella: true };
+  if (!est.entidades[n].vistas) est.entidades[n].vistas = {};
+  return est.entidades[n];
+}
+
+function pintarSlots() {
+  const cont = $('slots');
+  cont.innerHTML = '';
+  $('deQuien').textContent = est.sel ? '· de ' + est.sel : '· compartida';
+  if (!est.sel) { cont.innerHTML = '<p class="ayuda">Elige una entidad a la izquierda.</p>'; return; }
+  const d = def(est.sel);
+  const lista = esPersonaje(est.sel) ? PERSONAJE_DIRECCIONES : EDIFICIOS_DIRECCIONES;
+  if (!lista.some((s) => s.id === est.slot)) est.slot = lista[0].id;
+  $('sysAntiguo').classList.toggle('act', d.sistema !== 'nuevo');
+  $('sysNuevo').classList.toggle('act', d.sistema === 'nuevo');
+  $('ayudaSistema').textContent = (d.sistema === 'nuevo'
+    ? 'Nuevo: cada vista usa su sprite (el que recortes abajo). Si falta una vista, el juego genera la suya.'
+    : 'Antiguo: un solo sprite (alzado) para todas las vistas, como hasta ahora.') +
+    (d.hoja ? ' · hoja propia: ' + d.hoja : ' · usa la hoja compartida: ' + (est.hojaPorDefecto || '—'));
+  lista.forEach((s) => {
+    const r = d.vistas[s.id];
+    const div = document.createElement('div');
+    div.className = 'slot' + (s.id === est.slot ? ' act' : '');
+    div.innerHTML = '<div style="display:flex;justify-content:space-between;gap:6px;align-items:center">' +
+      '<b>' + s.nombre + '</b></div>' +
+      '<div class="rect">' + (r ? r.w + '×' + r.h + ' en (' + r.x + ',' + r.y + ')' : 'sin asignar') + '</div>';
+    div.addEventListener('click', () => { est.slot = s.id; pintarSlots(); dibujar(); });
+    cont.appendChild(div);
+  });
+  $('ajusteHuella').value = d.ajusteHuella === false ? '0' : '1';
+  pintarPrevia();
+}
+
+function pintarPrevia() {
+  const cont = $('vistaPrevia');
+  cont.innerHTML = '';
+  if (!est.sel) return;
+  // ── 1º: el sprite que hay en el juego (siempre, para comparar) ──
+  try {
+    const spr = spriteOriginal({ x: 6, y: 6, w: 104, h: 104 }, 6);
+    const def = est.pixeles[est.sel];
+    if (def && Array.isArray(def.pixels) && def.pixels.length) {
+      const cv = document.createElement('canvas');
+      cv.width = 116; cv.height = 116;
+      const g = cv.getContext('2d');
+      g.fillStyle = '#171a1e'; g.fillRect(0, 0, cv.width, cv.height);
+      g.imageSmoothingEnabled = false;
+      pintarSpriteOriginal(g, spr);
+      const marco = document.createElement('div');
+      marco.className = 'marco';
+      marco.appendChild(cv);
+      const sp = document.createElement('span');
+      sp.textContent = 'en el juego · ' + (def.gridW || def.grid) + '×' + (def.gridH || def.grid);
+      marco.appendChild(sp);
+      cont.appendChild(marco);
+    }
+  } catch (e) {}
+  // ── 2º: los recortes asignados (necesitan la hoja cargada) ──
+  if (!est.hojaImg) return;
+  const d = def(est.sel);
+  Object.keys(d.vistas || {}).forEach((k) => {
+    const r = d.vistas[k];
+    const z = Math.max(1, Math.min(4, Math.floor(120 / Math.max(1, r.w))));
+    const cv = document.createElement('canvas');
+    cv.width = r.w * z; cv.height = r.h * z;
+    const g = cv.getContext('2d');
+    g.imageSmoothingEnabled = false;
+    g.drawImage(est.hojaImg, r.x, r.y, r.w, r.h, 0, 0, cv.width, cv.height);
+    const marco = document.createElement('div');
+    marco.className = 'marco';
+    marco.appendChild(cv);
+    const sp = document.createElement('span');
+    sp.textContent = k + ' · ' + r.w + '×' + r.h + ' @' + z + '×';
+    marco.appendChild(sp);
+    cont.appendChild(marco);
+  });
+}
+
+// ── Acciones ────────────────────────────────────────────────────────────────
+$('btnCargar').addEventListener('click', () => cargarHoja($('rutaPng').value));
+$('btnCompartida').addEventListener('click', () => {
+  if (!est.sel) { aviso('Elige antes una entidad', true); return; }
+  delete def(est.sel).hoja;
+  const ruta = rutaHojaDe(est.sel);
+  est.hojaPropia = false;
+  pintarLista(); pintarSlots();
+  if (ruta) cargarHoja(ruta, { asignarA: false }); else { est.hojaImg = null; est.hojaCargada = null; dibujar(); }
+  aviso('«' + est.sel + '» vuelve a la hoja compartida: ' + (ruta || '(ninguna)'));
+});
+$('btnPngLocal').addEventListener('click', () => $('pngLocal').click());
+$('pngLocal').addEventListener('change', (e) => { if (e.target.files[0]) hojaLocal(e.target.files[0]); });
+$('zoom').addEventListener('input', (e) => { est.zoom = Number(e.target.value); $('zoomTxt').textContent = est.zoom + '×'; dibujar(); });
+$('buscar').addEventListener('input', pintarLista);
+$('sysAntiguo').addEventListener('click', () => { if (!est.sel) return; def(est.sel).sistema = 'antiguo'; pintarLista(); pintarSlots(); });
+$('sysNuevo').addEventListener('click', () => { if (!est.sel) return; def(est.sel).sistema = 'nuevo'; pintarLista(); pintarSlots(); });
+$('ajusteHuella').addEventListener('change', (e) => { if (est.sel) def(est.sel).ajusteHuella = e.target.value === '1'; });
+$('btnCapturar').addEventListener('click', () => {
+  if (!est.sel) { aviso('Elige una entidad', true); return; }
+  if (!est.rect) { aviso('Arrastra antes sobre el PNG para recortar', true); return; }
+  const d = def(est.sel);
+  d.sistema = 'nuevo';
+  d.vistas[est.slot] = Object.assign({}, est.rect);
+  pintarLista(); pintarSlots(); dibujar();
+  aviso('«' + est.slot + '» de ' + est.sel + ': ' + est.rect.w + '×' + est.rect.h);
+});
+$('btnLimpiarSlot').addEventListener('click', () => {
+  if (!est.sel) return;
+  const d = def(est.sel);
+  delete d.vistas[est.slot];
+  pintarSlots(); pintarLista(); dibujar();
+});
+$('btnAplicar').addEventListener('click', async () => {
+  // Red de seguridad contra el peor caso: si no se ha podido LEER el fichero del
+  // proyecto, escribir ahora lo dejaría VACÍO (perderías las asignaciones). Se avisa
+  // y se exige confirmación explícita.
+  if (!est.cargado) {
+    const cuantos = Object.keys(est.entidades).length;
+    if (!confirm('No he podido leer data/entity-views.json.\n\n' +
+      'Si guardo ahora, el fichero del proyecto quedará como está en pantalla (' + cuantos +
+      ' entidades).\n\n¿Seguro que quieres sobrescribirlo?')) {
+      aviso('No he guardado nada: recarga la página con el servidor del proyecto ' +
+        '(`npm run editor`) y vuelve a intentarlo.', true);
+      return;
+    }
+  }
+  // La hoja COMPARTIDA es la de la raíz; cada entidad guarda la suya sólo si tiene una
+  // distinta, para no repetir la misma ruta en las 90 entradas. Se construye en una
+  // función porque puede haber que reenviar el JSON (al copiar hojas que faltaban).
+  const construirDatos = () => {
+    const entidades = {};
+    Object.keys(est.entidades).forEach((k) => {
+      const e = Object.assign({}, est.entidades[k]);
+      if (!e.hoja || e.hoja === est.hojaPorDefecto) delete e.hoja;
+      entidades[k] = e;
+    });
+    return Object.assign({}, est.extras, { hoja: est.hojaPorDefecto || est.hoja, entidades });
+  };
+  try {
+    // Se guarda EN EL PROYECTO (data/entity-views.json), no en el navegador.
+    await asegurarApi();
+    let j;
+    try {
+      j = await enviarVistas(construirDatos());
+    } catch (e1) {
+      // Puede que la API esté en otro puerto (esta página la sirve un servidor que
+      // sólo lee ficheros): se vuelve a buscar y se reintenta UNA vez.
+      const antes = API_BASE;
+      await descubrirApi();
+      if (!apiInfo || API_BASE === antes) throw e1;
+      j = await enviarVistas(construirDatos());
+    }
+    // Si al proyecto le FALTAN hojas, se copian AHORA desde el PNG que tenemos en el
+    // editor (el del lienzo o el cargado del disco) y se vuelve a guardar. Es lo que
+    // toca: guardar debe dejar el juego funcionando, no avisar de que falta un PNG.
+    let copiadas = [];
+    if (Array.isArray(j.hojasQueFaltan) && j.hojasQueFaltan.length) {
+      copiadas = await copiarHojasFaltantes(j.hojasQueFaltan);
+      if (copiadas.length) j = await enviarVistas(construirDatos());
+      aviso('Copiando al proyecto las hojas que faltaban: ' + copiadas.join(', ') + '…');
+    }
+    if (j.aviso) {
+      aviso('Guardado en ' + j.fichero + ', pero ' + j.aviso + '. Carga ese PNG con ' +
+        '«Desde mi equipo…» y vuelve a pulsar Guardar: se copiará al proyecto.', true);
+    } else if (copiadas.length) {
+      aviso('Guardado en ' + j.fichero + ' (' + j.entidades + ' entidades, ' + j.vistas +
+        ' vistas) y copiadas al proyecto: ' + copiadas.join(', ') + '. Recarga el juego (F5).');
+    } else {
+      aviso('Guardado en ' + j.fichero + ' (' + j.entidades + ' entidades, ' + j.vistas +
+        ' vistas). Recarga el juego (F5) y ya se ve.');
+    }
+    // Se refresca el aviso de hojas que faltan (ya pueden no faltar).
+    descubrirApi();
+  } catch (e) {
+    // Sin API no se puede escribir en el proyecto. NO se descarga nada por sorpresa:
+    // se explica qué falta y se ofrece «Exportar JSON» para no perder el trabajo.
+    aviso('NO he podido escribir data/entity-views.json (' + e.message + '). Arranca el ' +
+      'servidor de guardado con `npm run editor` (o `node scripts/dev-server.js 4321`) y ' +
+      'vuelve a pulsar «Guardar en el proyecto». Si lo necesitas ya, «Exportar JSON».', true);
+  }
+});
+$('btnBorrar').addEventListener('click', () => {
+  if (!confirm('¿Borrar TODAS las asignaciones? (se guardará el fichero vacío)')) return;
+  est.entidades = {};
+  pintarLista(); pintarSlots(); dibujar();
+  aviso('Borradas en pantalla. Pulsa «Guardar en el proyecto» para vaciar el fichero.');
+});
+$('btnExportar').addEventListener('click', () => {
+  const datos = Object.assign({}, est.extras, { hoja: est.hojaPorDefecto || est.hoja, entidades: est.entidades });
+  const blob = new Blob([JSON.stringify(datos, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'entity-views.json';
+  document.body.appendChild(a); a.click(); a.remove();
+  aviso('Descargado: guárdalo como data/entity-views.json');
+});
+$('btnImportar').addEventListener('click', () => $('inputImport').click());
+$('inputImport').addEventListener('change', (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  const fr = new FileReader();
+  fr.onload = () => {
+    try {
+      const j = JSON.parse(String(fr.result));
+      est.entidades = j.entidades || j;
+      est.hojaPorDefecto = j.hoja || est.hojaPorDefecto;
+      $('rutaPng').value = est.hojaPorDefecto;
+      est.sel = null; est.hojaPropia = false;
+      pintarLista(); pintarSlots();
+      cargarHoja(est.hojaPorDefecto, { asignarA: false });
+      aviso('Importado.');
+    } catch (err) { aviso('JSON inválido', true); }
+  };
+  fr.readAsText(f);
+});
+
+// ── Arranque ────────────────────────────────────────────────────────────────
+// Lo guardado vive en `data/entity-views.json` (el servidor de `npm run editor`
+// expone la API). El navegador sólo se usa para leer; no hay copia escondida.
+async function cargarVistasGuardadas() {
+  const intentos = [API_BASE + API_VISTAS, rutaProyecto('data/entity-views.json')];
+  for (const url of intentos) {
+    try {
+      const r = await fetch(url + '?t=' + Date.now());
+      if (!r.ok) continue;
+      const j = await r.json();
+      const ent = j.entidades || j || {};
+      // Lo que no sea `hoja`/`entidades` (p. ej. la `plantilla` de ejemplo, o un
+      // `estilo` puesto a mano) se guarda tal cual al volver a escribir el fichero:
+      // no nos lo cargamos. El estilo del juego se elige EN EL JUEGO, no aquí.
+      est.extras = {};
+      Object.keys(j).forEach((k) => { if (k !== 'hoja' && k !== 'entidades') est.extras[k] = j[k]; });
+      est.entidades = (ent && typeof ent === 'object') ? ent : {};
+      est.cargado = true;      // ya se puede guardar sin riesgo de vaciar el fichero
+      est.hojaPorDefecto = j.hoja || 'data/sheets/casa.png';
+      $('rutaPng').value = est.hojaPorDefecto;
+      const n = Object.keys(est.entidades).length;
+      const v = Object.keys(est.entidades).reduce((a, k) => a + Object.keys(est.entidades[k].vistas || {}).length, 0);
+      aviso('Cargado data/entity-views.json: ' + n + ' entidades, ' + v + ' vistas.');
+      pintarLista(); pintarSlots();
+      cargarHoja(est.hojaPorDefecto, { asignarA: false });
+      return;
+    } catch (e) { /* probamos la siguiente */ }
+  }
+  aviso('No he podido leer data/entity-views.json. Puedes seguir trabajando, pero se ' +
+    'pedirá confirmación antes de escribir (para no dejar el fichero vacío). Abre el ' +
+    'editor con `npm run editor` y recarga.', true);
+  cargarHoja($('rutaPng').value, { asignarA: false });
+}
+cargarNombres();
+// El fichero se lee YA (con cualquier servidor se puede leer) y la API de guardado se
+// busca en paralelo: así la búsqueda no retrasa la carga del editor.
+cargarVistasGuardadas();
+asegurarApi();
+dibujar();
+</script>
+</body>
+</html>

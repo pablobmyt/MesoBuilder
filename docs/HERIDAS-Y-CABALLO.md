@@ -60,6 +60,10 @@ Panel flotante (`#player-info-panel`) con:
 * Caballos: uno junto a la puerta de casa y varios por los postes (máx. 8), todos
   separados entre sí. Al arrancar avisa de cuántos hay.
 
+> **Ampliado (2026-10-01)**: el arte del caballo y sus **acciones** (8 acciones
+> como las del jugador, panel + teclas X/Z/B/N, galope con arreón y 5 sonidos
+> nuevos) están en `docs/CABALLO-ACCIONES-Y-ANIMACIONES.md`.
+
 ## 4. Gráficos: espaldas y círculo de transparencia
 
 * **De espaldas**: cuando el personaje camina hacia arriba (`dir === 'up'`), en el

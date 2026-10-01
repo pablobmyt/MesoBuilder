@@ -1,8 +1,16 @@
-# Interfaz superior (tarjeta del título, barra de menú y botón de edición)
+# Interfaz superior (barra superior, barra de menú y botón de edición)
 
 Notas de la corrección «arriba no deja hacer clic». Todo esto vive en
 `engine/game-engine.js` (`createMenuBar`, `createEditModeButton`,
 `positionEditModeButton`).
+
+> El cartel **★ MESOBUILDER ★** (`#topbar h1`) se eliminó: en partida sólo
+> ocupaba el centro de la barra y el nombre ya aparece en el menú. `#topbar` se
+> queda con «Turno N», «Siguiente Turno ▶» y el ✕ de cerrar. Los contadores de
+> recursos no están ahí: `ensureResourceFloatPanel()` los mueve a la ventanita
+> `#res-float` en cuanto empieza la partida (ver `docs/HUD-DINAMICO.md`). El
+> *easter egg* de los 10 clics sigue funcionando porque engancha también al `h1`
+> del menú.
 
 ## Problema que había
 

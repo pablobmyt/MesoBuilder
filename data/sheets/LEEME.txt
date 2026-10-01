@@ -1,0 +1,18 @@
+HOJAS DE SPRITES (PNG)
+======================
+
+Guarda aquí el PNG con las vistas dibujadas a mano, por ejemplo:
+
+    data/sheets/casa.png
+
+Luego abre el editor de entidades y escribe esa misma ruta en «Ruta del PNG»:
+
+    npm run editor
+    -> http://localhost:4321/tools/Support/entity-sheet-editor.html
+
+El editor no copia la imagen: sólo guarda la ruta y el rectángulo de cada vista,
+y el juego extrae los píxeles al arrancar (ver `cargarVistasDeEntidades` en
+`engine/game-engine.js`). Si sólo quieres probar rápido, el editor también acepta
+un PNG del disco sin guardarlo en el proyecto (dura lo que dure la pestaña).
+
+Formatos: PNG con fondo transparente (lo transparente se ignora al recortar).

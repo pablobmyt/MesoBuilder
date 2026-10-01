@@ -236,3 +236,142 @@ P.sections();                 // media por sección
 window._perfSections = false;
 P.sections(true);             // o window._perfSectionsAcc = {frames:0,sum:{}} para reiniciar
 ```
+
+## 7. Tercera campaña (2026-10-01): los árboles del PNG se pintaban píxel a píxel
+
+Queja del usuario: «el rendimiento es espantoso», justo después de empezar a usar
+el arte recortado del PNG en los árboles.
+
+### 7.1 La medición
+
+Mismo sitio, mismo zoom, mundo 180×120 con ~1.500 entidades, caché de terreno LISTA
+(`cacheTerrenoLista: true`), `perf.frame(6)`:
+
+| Sección | Antes | Después |
+| --- | --- | --- |
+| **fotograma completo** | **192,5 ms** | **19,4 ms** |
+| `cola` (cola diferida) | **164,4 ms** | 1,7 ms |
+| `arboles` (bosque) | 34,4 ms | 9,9 ms |
+| `entidades` | 1,4 ms | 2,6 ms |
+| resto (tiles, terreno, edificios, fx, hud…) | < 2 ms | < 1,5 ms |
+
+Para ver esto hacen falta las marcas `cola` y `noche` que se añadieron al desglose:
+antes todo eso caía dentro de `deferred` y no se distinguía la cola diferida de la
+viñeta nocturna ni del escaneo de interacción.
+
+### 7.2 La causa
+
+`drawEntitySpriteAt` tiene tres caminos: bitmap ya rasterizado (1 `drawImage`),
+bitmap con balanceo cacheado, y **bucle de `fillRect` píxel a píxel** como último
+recurso. Los dos caminos rápidos tenían condiciones que el arte nuevo NO cumple:
+
+* el de balanceo sólo se usaba si `cellPx === scale` (escala entera) **y**
+  `gw * gh <= 2500` (arte pequeño). Un árbol recortado de un PNG son ~161×243 =
+  **39.000 píxeles de arte** y una escala fraccionaria, así que caía siempre al
+  bucle de píxeles: **~11.000 `fillRect` por árbol y fotograma**.
+* los árboles del bosque que quedan delante del jugador van a la cola diferida:
+  con ~300 árboles son **3,3 millones de `fillRect` por fotograma**. De ahí los
+  164 ms.
+
+### 7.3 El arreglo
+
+Nueva caché `getSwayBitmapFinal(name, def, gw, gh, ancho, alto, bendPx)` en
+`engine/game-engine.js`:
+
+* pre-renderiza el sprite **a su tamaño final en pantalla** con el doblez del viento
+  ya aplicado, componiendo **una fila de arte por `drawImage`** desde el lienzo de
+  origen (`getSpriteSourceBitmap`) en vez de píxel a píxel;
+* el tamaño se cuantiza con `snapSpriteSize` (así el jitter de tamaño por celda no
+  crea una entrada por árbol) y el doblez se bucketea a ±4 px de pantalla;
+* el camino de píxeles se queda como último recurso.
+
+Resultado: cada árbol es **un `drawImage`**. Verificado que el dibujo no cambia
+(IoU 0,82 entre el render viejo píxel a píxel y el nuevo por filas; la diferencia es
+el redondeo del doblez por fila, que rellena algún hueco de más).
+
+### 7.4 Cómo volver a medirlo
+
+```js
+const P = window.MESO_DEBUG.testDraw.perf;
+P.info().cacheTerrenoLista;   // false ⇒ cualquier medida es ruido: espera a que esté lista
+window._perfSections = true;
+P.sections(true);
+P.frame(6);                   // mediana del fotograma + desglose por secciones
+P.sections();
+window._perfSections = false;
+```
+
+Ojo: con la pestaña en segundo plano el navegador congela `requestAnimationFrame`
+(`frames: 0`, `ms/frame: 50.000` en el HUD). Para medir de verdad, `P.frame(n)`
+(llama a `render()` a mano) o trae la pestaña al frente.
+
+## 8. Cuarta campaña (2026-10-01): personajes, árboles y el caso isométrico
+
+Con la tercera campaña el fotograma bajó a ~19 ms, pero el usuario seguía notándolo
+«terrible» en isométrico. Medido otra vez, el reparto era otro:
+
+| Sección (isométrico, mundo de 1.935 entidades) | antes | después |
+| --- | --- | --- |
+| **fotograma** | **31,6 ms** | **5,4 ms** |
+| `entidades` (personajes) | 8,2 ms | 1,7 ms |
+| `arboles` (bosque) | 8,8-14 ms | 0,35 ms |
+| `cola` | 3,2 ms | 0,9 ms |
+| `edificios` | 3,0 ms | 0,6 ms |
+| `terreno` · `hud` | 2,7 · 2,2 ms | 0,8 · 0,8 ms |
+
+En ortogonal: **19,1 → 6,7 ms**.
+
+### 8.1 Los personajes se pintaban píxel a píxel
+
+`drawCharacterPixels` pinta el muñeco detallado con un `fillRect` por píxel y una
+búsqueda de color por píxel: ~400 por personaje. Con 400+ entidades dibujadas eran
+**~170.000 fillRect por fotograma** (5-8 ms sólo en `entidades`).
+
+Arreglo: caché `_cuerpoCache` en `firmaCuerpoDetallado()` + `clearCuerpoCache()`.
+La firma lleva **todo** lo que cambia el dibujo (dir, frame, pose, paleta, escala,
+`headOnly` y la animación cuantizada a píxel entero). En vez de duplicar el bucle de
+dibujado, la función se llama a sí misma sobre un lienzo (`_pintandoCuerpoEnCache`
+evita repetirse) y luego cada personaje es UN `drawImage`.
+
+### 8.2 El bosque: dibujado directo y balanceo en una sola pasada
+
+Dos cosas:
+
+1. `drawEntitySpriteAt` recalcula por árbol el def, la rejilla, la escala de huella,
+   el tope de altura, los ajustes de depuración, el save/restore y los contadores.
+   Con ~600 árboles visibles en isométrico eso son milisegundos tirados: ahora hay
+   `dibujarArbolArteDirecto()` (caché + un `drawImage`) para el pase del bosque y la
+   cola diferida, con `drawEntitySpriteAt` como respaldo.
+2. `getSwayBitmapFinal` pre-renderizaba el doblez **fila a fila** (~200 `drawImage`
+   por entrada). El doblez es un **cizallado lineal** (base clavada, copa inclinada),
+   así que ahora se dibuja el recorte entero en UNA pasada con `setTransform`.
+   Llenar una entrada pasa de ~10 ms a ~0,05 ms: antes, cada movimiento de cámara o
+   cambio de zoom invalidaba decenas de entradas y se notaban tirones (medido: el
+   primer fotograma en isométrico costaba 13 ms; ahora 6 ms).
+
+### 8.3 Lo que se midió y NO se tocó
+
+* **`terreno`** (0,8 ms): un `drawImage` recortado a la ventana. Ya estaba optimizado.
+* **Un fotograma suelto de ~50 ms al saltar la cámara a una zona nueva**: es el
+  repintado a demanda de las celdas de terreno que aún no estaban en la caché
+  (`_terrainRematarZonaVisible`), no el dibujado normal. Es un tirón de un fotograma,
+  no un coste sostenido.
+* **El tamaño de los árboles en isométrico**: se dejó igual al clásico (es lo que el
+  usuario quería). Si algún día molesta el relleno de píxeles, `window._mesoEscalaArboles`
+  lo baja en caliente.
+
+### 8.4 Cómo medir esto
+
+```js
+const P = window.MESO_DEBUG.testDraw.perf;
+P.info();          // cacheTerrenoLista, cuerposEnCache, arbolesEnCache, mbSprites
+window._perfSections = true; P.sections(true);
+P.frame(15);       // { min, mediana, max }
+P.sections();      // { pre, tiles, terreno, arboles, edificios, entidades, animales, fx, cola, noche, deferred, hud }
+window._perfSections = false;
+// Cambio de vista (reconstruye la caché de terreno de la otra vista):
+window.MESO_DEBUG.testDraw.world.view('iso');   // o 'ortho'
+```
+
+`cuerposEnCache` y `arbolesEnCache` son los tamaños de las dos cachés nuevas: si
+crecen sin parar, hay demasiadas combinaciones (firma demasiado fina).

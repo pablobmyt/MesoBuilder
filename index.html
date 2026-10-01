@@ -58,9 +58,9 @@
     <div class="quest-hud-desc" id="quest-hud-desc"></div>
   </div>
 
-  <!-- TOP BAR -->
+  <!-- TOP BAR (recursos + turno). El cartel del título se quitó: ocupaba sitio
+       en mitad de la escena y no aportaba nada (el nombre ya está en el menú). -->
   <div id="topbar">
-    <h1>&#x2605; MesoBuilder &#x2605;</h1>
     <div class="res-group">
       <div class="res-item">
         <canvas class="res-icon" id="icon-wheat" width="18" height="18"></canvas>
@@ -530,6 +530,18 @@
         <div style="grid-column:1 / span 2">
           <label style="font-size:13px">Densidad vegetación: <span id="label-veg">1.0</span></label>
           <input id="menu-density-vegetation" type="range" min="0.2" max="3.0" step="0.1" value="1.0" style="width:100%">
+        </div>
+        <div style="grid-column:1 / span 2;padding:10px 12px;border:1px solid rgba(255,255,255,0.08);border-radius:8px;background:rgba(0,0,0,0.18)">
+          <div style="font-size:13px;font-weight:700;color:#f0d790">Estilo de arte</div>
+          <div style="font-size:12px;color:#c8b87a;margin-top:4px">«Clásico» dibuja los sprites originales del juego; «Nuevo» usa las vistas recortadas de los PNG
+          (<span style="font-family:ui-monospace,monospace">data/entity-views.json</span>). Los sprites clásicos <b>no se borran</b>: puedes cambiar de estilo cuando quieras.</div>
+          <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+            <select id="menu-art-style" style="flex:1;padding:8px;border-radius:6px;background:#111;border:1px solid rgba(255,255,255,0.04);color:#fff">
+              <option value="nuevo">Nuevo · arte recortado del PNG</option>
+              <option value="clasico">Clásico · sprites originales</option>
+            </select>
+            <span id="menu-art-style-note" style="font-size:12px;color:#c8b87a"></span>
+          </div>
         </div>
         <div id="menu-map-design-box" style="grid-column:1 / span 2;padding:10px 12px;border:1px solid rgba(255,255,255,0.08);border-radius:8px;background:rgba(0,0,0,0.18)">
           <div style="font-size:13px;font-weight:700;color:#f0d790">Diseño manual del mapa</div>
@@ -1839,6 +1851,39 @@
     const mapDesignLoadBtn = document.getElementById('menu-map-design-load');
     const mapDesignOpenBtn = document.getElementById('menu-map-design-open-editor');
     const mapDesignClearBtn = document.getElementById('menu-map-design-clear');
+    const artStyleSelect = document.getElementById('menu-art-style');
+    const artStyleNote = document.getElementById('menu-art-style-note');
+
+    // ── ESTILO DE ARTE (clásico / nuevo) ──────────────────────────────────
+    // «Clásico» = los sprites de siempre (data/entity-pixels.json). «Nuevo» = las
+    // vistas recortadas de los PNG (data/entity-views.json). Los sprites clásicos
+    // no se borran nunca: esto sólo decide cuáles se dibujan. La elección manda
+    // sobre la del proyecto y se aplica en caliente si ya hay partida abierta.
+    const ART_STYLE_KEY = 'meso.spriteStyle';
+    function readArtStyle() {
+      try {
+        const v = localStorage.getItem(ART_STYLE_KEY);
+        return (v === 'clasico' || v === 'nuevo') ? v : (window._mesoEstiloArte === 'clasico' ? 'clasico' : 'nuevo');
+      } catch (e) { return 'nuevo'; }
+    }
+    function paintArtStyleNote(v) {
+      if (!artStyleNote) return;
+      artStyleNote.textContent = (v === 'clasico') ? 'sprites de siempre' : 'arte del PNG';
+    }
+    function applyArtStyle(v, persist) {
+      const val = (v === 'clasico') ? 'clasico' : 'nuevo';
+      if (persist) { try { localStorage.setItem(ART_STYLE_KEY, val); } catch (e) {} }
+      if (artStyleSelect) artStyleSelect.value = val;
+      paintArtStyleNote(val);
+      // Si la partida ya está en marcha, se cambia EN CALIENTE (sin recargar).
+      try { if (window.MesoEntityViews && window.MesoEntityViews.estilo) window.MesoEntityViews.estilo(val); } catch (e) {}
+    }
+    if (artStyleSelect) {
+      const inicial = readArtStyle();
+      artStyleSelect.value = inicial;
+      paintArtStyleNote(inicial);
+      artStyleSelect.addEventListener('change', () => applyArtStyle(artStyleSelect.value, true));
+    }
 
     function applyMenuThemeForEpoch(epoch) {
       try {
@@ -2053,6 +2098,8 @@
         localStorage.setItem('meso.currentEpoch', epoch);
       } catch (e) {}
       try { localStorage.setItem('meso.menuDensities', JSON.stringify(densities)); } catch (e) {}
+      // Estilo de arte elegido en Opciones. El motor lo lee al cargar la librería.
+      try { localStorage.setItem(ART_STYLE_KEY, (artStyleSelect && artStyleSelect.value) === 'clasico' ? 'clasico' : 'nuevo'); } catch (e) {}
       const selectedEpoch = (epochSelect && epochSelect.value) ? epochSelect.value : (localStorage.getItem('meso.currentEpoch') || 'mesopotamia');
       const name = (selectedEpoch === 'urss')
         ? ((window._menuChar && window._menuChar.name) || ((charNameInput || {}).value || ''))

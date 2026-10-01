@@ -22,6 +22,11 @@
 //   node tools/build-mesopotamia-sprites.js --dry      sólo valida e informa
 //   node tools/build-mesopotamia-sprites.js --align    alinea TODOS los sprites
 //   node tools/build-mesopotamia-sprites.js --dump house temple
+//
+// DOS VISTAS, DOS SPRITES: el juego tiene vista de arriba (ortogonal) y vista
+// isométrica, y un alzado no sirve para las dos. El JSON guarda el ALZADO (que en
+// la vista de arriba se sustituye por la vista TECHO) y el motor genera las otras
+// dos formas al vuelo: ver `engine/building-volume.js`.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const fs = require('fs');
@@ -1068,21 +1073,43 @@ function normalize(spec) {
 }
 
 // Versión oscurecida del arte (para mesopotamian_house_shaded).
+function shadeHex(hex, factor) {
+  if (typeof hex !== 'string' || hex[0] !== '#') return hex;
+  const n = parseInt(hex.slice(1), 16);
+  const r = Math.round(((n >> 16) & 255) * factor);
+  const g = Math.round(((n >> 8) & 255) * factor);
+  const b = Math.round((n & 255) * factor);
+  return '#' + [r, g, b].map(v => Math.max(0, Math.min(255, v)).toString(16).padStart(2, '0')).join('').toUpperCase();
+}
+
 function shadePixels(pixels, factor) {
   const cache = new Map();
   const shade = (hex) => {
     if (cache.has(hex)) return cache.get(hex);
-    const n = parseInt(hex.slice(1), 16);
-    const r = Math.round(((n >> 16) & 255) * factor);
-    const g = Math.round(((n >> 8) & 255) * factor);
-    const b = Math.round((n & 255) * factor);
-    const out = '#' + [r, g, b].map(v => Math.max(0, Math.min(255, v)).toString(16).padStart(2, '0')).join('').toUpperCase();
+    const out = shadeHex(hex, factor);
     cache.set(hex, out);
     return out;
   };
   return pixels.map(p => [p[0], p[1], shade(p[2])]);
 }
 
+// ── Volumen isométrico (2.5D): YA NO SE GRABA EN EL JSON ────────────────────
+// El volumen (bajar el alzado, levantar el pretil hacia las esquinas y pintar el
+// tejado encima) es una DEFORMACIÓN pensada para la vista isométrica, y en la
+// vista de arriba —la que viene por defecto— estropeaba el edificio (con el
+// tejado en pico parece una tienda de campaña). Como el JSON es uno solo para las
+// dos vistas, el volumen se aplica **al vuelo en el motor y sólo en isométrico**:
+//
+//   engine/building-volume.js   →  addIsometricVolume() + VOLUMEN (ajustes)
+//   engine/game-engine.js       →  getSpriteSourceBitmap() lo aplica si viewMode === 'iso'
+//
+// Así el JSON guarda el ALZADO original (lo que se ve en la vista de arriba, que
+// es la que el juego usa de serie) y en isométrico se le añade el cuerpo. De paso
+// el fichero vuelve a ser un 30 % más pequeño (el volumen era ~3.000 px por
+// edificio).
+//
+// Para ajustarlo sin tocar código:  MESO_DEBUG.testDraw.volumen({ pendiente: 0.45 })
+// o, en la consola, `MESO_DEBUG.testDraw.volumen({ activo: false })` para apagarlo.
 // Alinea un icono existente: quita el hueco vacío de abajo subiendo el arte.
 function alignIcon(def) {
   const pixels = def.pixels || [];
@@ -1142,7 +1169,7 @@ function serialize(icons) {
 function main() {
   const args = process.argv.slice(2);
   const dry = args.includes('--dry');
-  const doAlign = args.includes('--align') || !dry;
+  const doAlign = args.includes('--align');
   const dumpIdx = args.indexOf('--dump');
   const library = JSON.parse(fs.readFileSync(PIXEL_FILE, 'utf8'));
   const icons = library.icons || {};
@@ -1178,9 +1205,11 @@ function main() {
   let written = 0;
   for (const [name, spec] of Object.entries(ART)) {
     const rows = normalize(spec);
-    const { gw, gh } = gridOf(spec);
+    const { gw, gh, footprintH } = gridOf(spec);
     if (rows.length !== gh) { console.log('AVISO: ' + name + ' tiene ' + rows.length + ' filas tras normalizar (se esperaban ' + gh + ')'); continue; }
     const pixels = toPixels({ ...spec, art: rows }, PALETTE);
+    // El volumen 2.5D NO se graba: lo añade el motor y sólo en vista isométrica
+    // (ver la nota de arriba y `engine/building-volume.js`).
     icons[name] = { grid: Math.max(gw, gh), gridW: gw, gridH: gh, pixels };
     written++;
   }
@@ -1212,6 +1241,7 @@ function main() {
 
   console.log('Sprites generados: ' + written + ' (' + Object.keys(ART).length + ' de arte propio' +
     (icons.mesopotamian_house_shaded ? ' + variante sombreada' : '') + ')');
+  console.log('El JSON guarda el ALZADO original: el volumen 2.5D lo aplica el motor en la vista isométrica.');
   console.log('Iconos alineados a la línea de suelo: ' + aligned.length);
   if (aligned.length) console.log('  ' + aligned.join(', '));
 

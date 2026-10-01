@@ -30,7 +30,32 @@ hudOn('salud');                   // ¿toca pintarlo ahora?
 | --- | --- |
 | Guía rápida (`#game-guide`), ficha de objetivo, reloj/barras, minimapa, barra de habilidades, panel de construcción, panel de debug | se van (fundido) |
 | Barra superior y barra de herramientas | se quedan, atenuadas al 42 % |
+| Ventanita de recursos (`#res-float`) | se va; sólo vuelve **cuando cambia** un contador |
 | Avisos (`#notif`) y caja de instrucciones | siguen su propio temporizador |
+
+> El cartel **★ MESOBUILDER ★** que ocupaba el centro de la barra superior se
+> quitó (`index.html`): el nombre ya está en el menú, y en partida sólo servía
+> para tapar escena. La barra se queda con «Turno N», «Siguiente Turno ▶» y el ✕.
+
+### La ventanita de recursos sólo se enseña cuando cambia algo
+
+Pedido: «el flotante de recursos se muestre cuando algún valor incremente, no veo
+práctico que esté siempre visible».
+
+* `updateUI()` guarda la huella `trigo|ladrillos|población`; si cambia, llama a
+  `despertarHud('recursos', 5000)` **y** a `mostrarPanelRecursos(5000)`. La
+  primera lectura (carga de la partida) no cuenta: no es un cambio.
+* `mostrarPanelRecursos(ms)` pone la clase `res-visible` en el panel `#res-float`
+  (o en `.res-group` si todavía vive en la barra superior, antes de empezar) y la
+  retira sola al cabo de `ms`.
+* `styles.css` deja `#res-float` en `opacity: 0` y lo recupera con `:hover` (para
+  consultar los contadores a mano cuando se quiera). El motor lo enseña 9 s al
+  empezar la partida, para que el jugador sepa que existe.
+
+> **Trampa**: la regla de reposo tenía que ir sobre `#res-float` y no sobre
+> `#topbar .res-group`. `ensureResourceFloatPanel()` **mueve** el grupo de
+> contadores fuera de la barra a su propia ventanita, así que un selector que
+> empiece por `#topbar` no llega nunca y la tarjeta se quedaba siempre a la vista.
 
 El estado tranquilo se aplica con **una sola clase** en `<body>` (`hud-idle`) que
 pone el director desde el fotograma (con freno de 500 ms). El CSS hace los
@@ -70,6 +95,18 @@ atravesaban y sprites que parpadeaban (cambiaban de capa) al andar.
    fijo (edificio antes que árbol, luego por posición). Antes eran dos listas
    seguidas y el criterio comparaba **decimales** de la posición del jugador: un
    árbol junto a él cambiaba de capa cada pocos fotogramas → parpadeo.
+4. **Un árbol de la MISMA fila que el jugador también va al pase diferido**
+   (el corte es `r >= filaJugador`, no `>`). Un árbol se ancla por la base, pero
+   su copa sube 3-4 celdas: el de la fila del jugador le tapa la cabeza, así que
+   tiene que pintarse después. Con `>` el personaje salía siempre dibujado encima
+   de las copas. Vale para el bosque (`drawTreesVisible`) y para los árboles que
+   son entidad (`kind === 'tree'`).
+5. **Los árboles no disparan el «círculo de rescate»** del jugador tapado. Ese
+   círculo (redibujar al personaje translúcido encima del obstáculo) sigue
+   existiendo para **murallas y casas** —sin él, ponerse detrás de un muro era
+   quedarse invisible—, pero los rectángulos de los árboles van a `_tapadoArbol`,
+   que no se le pasa: parecían árboles transparentes con el personaje flotando
+   encima. Lo único que se enseña es el puntero dorado de `_occlusionMarkers`.
 
 ## 3. Cómo comprobarlo
 

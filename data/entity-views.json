@@ -1,0 +1,480 @@
+{
+  "plantilla": {
+    "house": {
+      "sistema": "nuevo",
+      "ajusteHuella": true,
+      "vistas": {
+        "sup": {
+          "x": 4,
+          "y": 4,
+          "w": 24,
+          "h": 24
+        },
+        "iso": {
+          "x": 36,
+          "y": 4,
+          "w": 24,
+          "h": 24
+        }
+      }
+    },
+    "PERSONAJE": {
+      "sistema": "nuevo",
+      "vistas": {
+        "sur": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 24
+        },
+        "norte": {
+          "x": 16,
+          "y": 0,
+          "w": 16,
+          "h": 24
+        },
+        "este": {
+          "x": 32,
+          "y": 0,
+          "w": 16,
+          "h": 24
+        },
+        "oeste": {
+          "x": 48,
+          "y": 0,
+          "w": 16,
+          "h": 24
+        }
+      }
+    }
+  },
+  "hoja": "data/sheets/Choza.png",
+  "entidades": {
+    "house_isolated": {
+      "sistema": "nuevo",
+      "vistas": {
+        "sup": {
+          "x": 38,
+          "y": 120,
+          "w": 254,
+          "h": 203
+        },
+        "iso": {
+          "x": 736,
+          "y": 533,
+          "w": 362,
+          "h": 330
+        }
+      },
+      "ajusteHuella": true,
+      "hoja": "data/sheets/Designer.png"
+    },
+    "hut": {
+      "sistema": "nuevo",
+      "vistas": {
+        "sup": {
+          "x": 31,
+          "y": 143,
+          "w": 287,
+          "h": 235
+        },
+        "iso": {
+          "x": 755,
+          "y": 139,
+          "w": 361,
+          "h": 323
+        }
+      },
+      "ajusteHuella": true
+    },
+    "well": {
+      "sistema": "nuevo",
+      "vistas": {
+        "iso": {
+          "x": 1164,
+          "y": 728,
+          "w": 69,
+          "h": 71
+        },
+        "sup": {
+          "x": 1164,
+          "y": 728,
+          "w": 69,
+          "h": 71
+        }
+      },
+      "ajusteHuella": true,
+      "hoja": "data/sheets/Villa_objetos.png"
+    },
+    "tree0": {
+      "sistema": "nuevo",
+      "vistas": {
+        "sup": {
+          "x": 153,
+          "y": 161,
+          "w": 128,
+          "h": 175
+        },
+        "iso": {
+          "x": 153,
+          "y": 161,
+          "w": 128,
+          "h": 175
+        }
+      },
+      "ajusteHuella": true,
+      "hoja": "data/sheets/SpriteGeneral.png"
+    },
+    "tree1": {
+      "sistema": "nuevo",
+      "vistas": {
+        "sup": {
+          "x": 22,
+          "y": 147,
+          "w": 129,
+          "h": 195
+        },
+        "iso": {
+          "x": 22,
+          "y": 147,
+          "w": 129,
+          "h": 195
+        }
+      },
+      "ajusteHuella": true,
+      "hoja": "data/sheets/SpriteGeneral.png"
+    },
+    "tree2": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true
+    },
+    "tree3": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true
+    },
+    "tree4": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true
+    },
+    "tree5": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true
+    },
+    "tree6": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true
+    },
+    "typha": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true
+    },
+    "tower": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true
+    },
+    "raider": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true
+    },
+    "reed_cluster": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true
+    },
+    "reed_hut": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true
+    },
+    "sheepfold": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true
+    },
+    "soviet_block": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true
+    },
+    "soviet_fighter_jet": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true
+    },
+    "euphrates_poplar": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true
+    },
+    "dock": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true
+    },
+    "wall_segment_v": {
+      "sistema": "nuevo",
+      "vistas": {
+        "sup": {
+          "x": 155,
+          "y": 1266,
+          "w": 58,
+          "h": 95
+        },
+        "iso": {
+          "x": 145,
+          "y": 131,
+          "w": 100,
+          "h": 133
+        }
+      },
+      "ajusteHuella": true,
+      "hoja": "data/sheets/Murallas.png"
+    },
+    "wall_segment_h": {
+      "sistema": "nuevo",
+      "vistas": {
+        "sup": {
+          "x": 153,
+          "y": 1262,
+          "w": 63,
+          "h": 97
+        },
+        "iso": {
+          "x": 145,
+          "y": 128,
+          "w": 102,
+          "h": 140
+        }
+      },
+      "ajusteHuella": true,
+      "hoja": "data/sheets/Murallas.png"
+    },
+    "wall_tower": {
+      "sistema": "nuevo",
+      "vistas": {
+        "iso": {
+          "x": 737,
+          "y": 366,
+          "w": 110,
+          "h": 161
+        },
+        "sup": {
+          "x": 726,
+          "y": 1486,
+          "w": 91,
+          "h": 137
+        }
+      },
+      "ajusteHuella": true,
+      "hoja": "data/sheets/Murallas.png"
+    },
+    "stone": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true
+    },
+    "mesopotamian_arch": {
+      "sistema": "nuevo",
+      "vistas": {
+        "sup": {
+          "x": 375,
+          "y": 1466,
+          "w": 195,
+          "h": 160
+        },
+        "iso": {
+          "x": 405,
+          "y": 328,
+          "w": 191,
+          "h": 199
+        }
+      },
+      "ajusteHuella": true,
+      "hoja": "data/sheets/Murallas.png"
+    },
+    "cueva": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true
+    },
+    "crate_stack": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true
+    },
+    "concrete_road": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true
+    },
+    "commissar": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true
+    },
+    "collective_farm": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true
+    },
+    "checkpoint_gate": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true
+    },
+    "beast": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true
+    },
+    "wood": {
+      "sistema": "nuevo",
+      "vistas": {
+        "sup": {
+          "x": 218,
+          "y": 470,
+          "w": 122,
+          "h": 97
+        },
+        "iso": {
+          "x": 218,
+          "y": 470,
+          "w": 122,
+          "h": 97
+        }
+      },
+      "ajusteHuella": true,
+      "hoja": "data/sheets/SpriteGeneral.png"
+    },
+    "house_small": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true
+    },
+    "mesopotamian_baths": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true
+    },
+    "lamp_post": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true
+    },
+    "fountain": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true
+    },
+    "longhouse": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true
+    },
+    "farm_plot": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true
+    },
+    "farm": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true
+    },
+    "factory": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true
+    },
+    "detailed_rabbit": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true
+    },
+    "detailed_fox": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true
+    },
+    "date_palm": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true
+    },
+    "barley": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true
+    },
+    "wheat": {
+      "sistema": "nuevo",
+      "vistas": {
+        "iso": {
+          "x": 648,
+          "y": 231,
+          "w": 90,
+          "h": 106
+        },
+        "sup": {
+          "x": 648,
+          "y": 231,
+          "w": 90,
+          "h": 106
+        }
+      },
+      "ajusteHuella": true,
+      "hoja": "data/sheets/SpriteGeneral.png"
+    },
+    "temple": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true
+    },
+    "mesopotamian_villa_detailed": {
+      "sistema": "nuevo",
+      "vistas": {
+        "sup": {
+          "x": 22,
+          "y": 109,
+          "w": 382,
+          "h": 144
+        },
+        "iso": {
+          "x": 846,
+          "y": 390,
+          "w": 406,
+          "h": 274
+        }
+      },
+      "ajusteHuella": true,
+      "hoja": "data/sheets/Villa_objetos.png"
+    },
+    "granary": {
+      "sistema": "nuevo",
+      "vistas": {
+        "sup": {
+          "x": 17,
+          "y": 187,
+          "w": 394,
+          "h": 277
+        },
+        "iso": {
+          "x": 863,
+          "y": 736,
+          "w": 371,
+          "h": 277
+        }
+      },
+      "ajusteHuella": true,
+      "hoja": "data/sheets/Granero.png"
+    }
+  }
+}

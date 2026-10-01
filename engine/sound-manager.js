@@ -172,6 +172,14 @@ let SoundManager = (() => {
     mount:       { r: [['t', 300, 120, 'triangle', 0.18, 460], ['n', 160, 0.14, 800, 1, 60]], min: 200 },
     dismount:    { r: [['n', 150, 0.16, 700, 1], ['t', 460, 120, 'triangle', 0.14, 300, 80]], min: 200 },
     whinny:      { r: [['t', 620, 260, 'sawtooth', 0.16, 340], ['t', 480, 300, 'sawtooth', 0.12, 260, 120]], min: 600 },
+    // Caballo: los aires y sus acciones (relincho largo, piafar, masticar y
+    // resoplido). El relincho de `whinny` es corto (montar); `horseNeigh` es el
+    // relincho largo de la acción.
+    horseNeigh:  { r: [['t', 700, 300, 'sawtooth', 0.18, 300], ['t', 520, 340, 'sawtooth', 0.15, 240, 180], ['t', 420, 260, 'sawtooth', 0.10, 180, 380]], min: 900 },
+    horseSnort:  { r: [['n', 220, 0.20, 700, 1.2], ['n', 180, 0.16, 500, 1.0, 120]], min: 400 },
+    horsePaw:    { r: [['n', 120, 0.16, 500, 1.4], ['n', 90, 0.12, 420, 1.2, 180], ['n', 90, 0.10, 380, 1.2, 340]], min: 300 },
+    horseChew:   { r: [['n', 110, 0.10, 1600, 0.8], ['n', 90, 0.08, 1400, 0.8, 150], ['n', 100, 0.07, 1200, 0.8, 290]], min: 400 },
+    gallop:      { r: [['n', 90, 0.14, 380, 1.0], ['n', 80, 0.12, 340, 1.0, 150], ['n', 80, 0.11, 320, 1.0, 300], ['n', 80, 0.10, 300, 1.0, 450]], min: 300 },
     dogBark:     { r: [['t', 420, 90, 'square', 0.22, 260], ['t', 380, 70, 'square', 0.18, 240, 130]], min: 300 },
     // Ladrido grave (perro grande): más cuerpo y cola de espectro.
     dogBark2:    { r: [['t', 300, 130, 'sawtooth', 0.24, 170], ['n', 90, 0.16, 900, 1], ['t', 240, 90, 'square', 0.14, 150, 150]], min: 350 },

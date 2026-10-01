@@ -176,6 +176,36 @@ entidades deben haber ganado +24 columnas; tras `expand('south')` **nada** se
 desplaza y sólo crecen las filas; `perf.info().cacheTerrenoLista` debe volver a
 `true` (la caché de terreno se reconstruye al tamaño nuevo).
 
+## 6.b Coste de pintar el suelo (medido, 2026-10-01)
+
+El suelo **no** se pinta por fotograma: se pinta una vez en la caché y luego se
+vuelca con un solo `drawImage` recortado a la pantalla. Medido en una partida real
+(2.000 entidades, mundo 204×144):
+
+| Dato | Valor |
+| --- | --- |
+| Repintados completos de la caché | 3-4 por sesión |
+| Coste de un repintado | ~1 s (en trozos de 12 ms, sin bloquear) |
+| Repintados por fotograma | 0 |
+| `drawImage` del suelo por fotograma | 1 |
+| Sección `terreno` (`perf.sections()`) | ~1,2 ms |
+
+Se consulta con `perf.info().terreno` → `{ repintados, msUltimo, edadMs,
+repintadosZonaVisible, cacheBusy }`. Si `repintados` sube sin parar mientras se
+juega, ahí sí hay un problema (el vigilante del terreno reconstruyendo de más).
+
+Los **repintados** ocurren al arrancar, al **crecer el mundo** (banda nueva), al
+cambiar de vista y con el editor de mapas. Los contadores se añadieron justo para
+poder descartar esta sospecha con datos en vez de a ojo.
+
+### Suelo con ARTE (baldosas del editor de entidades)
+
+El relleno plano procedural se puede sustituir por baldosas recortadas de la hoja
+(`suelo_arena`, `suelo_tierra`, `suelo_arcilla`, `suelo_agua`): ver
+`docs/EDITOR-DE-ENTIDADES.md` § «El SUELO también». Se pintan en la misma caché, así
+que **no** cuestan nada por fotograma (`perf.info().suelo` dice qué baldosa usa cada
+bioma).
+
 ## 7. Trampas aprendidas
 
 - Ampliar **al oeste/norte** sin desplazar las rejillas deja el mundo "descolgado"

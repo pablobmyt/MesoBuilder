@@ -46,7 +46,7 @@ function resolveProjectRoot() {
 
 function registerLocalProtocol() {
   try {
-    protocol.handle('meso-local', (request) => {
+    protocol.handle('meso-local', async (request) => {
       try {
         const url = new URL(request.url);
         // Con esquemas "standard" el primer segmento se interpreta como host:
@@ -55,12 +55,34 @@ function registerLocalProtocol() {
         // Esta construcción funciona en ambos casos.
         let filePath = decodeURIComponent((url.host || '') + url.pathname).replace(/^\/+/, '');
         if (!filePath) filePath = 'index.html';
-        const fullPath = path.join(resolveProjectRoot(), filePath);
+        const raiz = resolveProjectRoot();
+        const fullPath = path.join(raiz, filePath);
+        // Sin esta comprobación, un fichero que no existe (p. ej. una hoja de sprites
+        // que falta) hacía que `net.fetch` reventara con ERR_FILE_NOT_FOUND y ensuciara
+        // la consola con un error en vez de un 404 normal. Es un 404 y ya está.
+        if (!fullPath.startsWith(raiz) || !fs.existsSync(fullPath)) {
+          console.warn('[meso-local] no existe en el proyecto:', filePath);
+          return new Response('Not found', {
+            status: 404,
+            headers: { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' }
+          });
+        }
         console.log('[meso-local] serving:', filePath, '→', fullPath);
-        return net.fetch('file:///' + fullPath.replace(/\\/g, '/'));
+        const res = await net.fetch('file:///' + fullPath.replace(/\\/g, '/'));
+        // CABECERAS CORS, imprescindibles: el motor carga las hojas de sprites con
+        // `img.crossOrigin = 'anonymous'` (para poder leer los píxeles con
+        // getImageData y recortar las vistas del editor de entidades). Sin
+        // `Access-Control-Allow-Origin` la imagen no carga (o el lienzo queda
+        // «tainted» y getImageData lanza), así que en Electron NO se veía nada del
+        // arte nuevo: ni los árboles del PNG, ni las vistas recortadas. En el
+        // navegador no pasaba porque allí las hojas se sirven por http normal.
+        const cabeceras = new Headers(res.headers);
+        cabeceras.set('Access-Control-Allow-Origin', '*');
+        cabeceras.set('Cross-Origin-Resource-Policy', 'cross-origin');
+        return new Response(res.body, { status: res.status, statusText: res.statusText, headers: cabeceras });
       } catch (e) {
         console.warn('[meso-local] error:', e.message);
-        return new Response('Not found', { status: 404 });
+        return new Response('Not found', { status: 404, headers: { 'Access-Control-Allow-Origin': '*' } });
       }
     });
     console.log('[meso-local] Custom protocol registered: meso-local://');

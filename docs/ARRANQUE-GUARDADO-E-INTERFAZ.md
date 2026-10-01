@@ -72,8 +72,52 @@ justo antes de `function render()`.
   último recurso, activa `window._noTerrainCacheBlit`. `MESO_DEBUG.testDraw.world.diag()`
   dice en un vistazo qué está pasando (semilla, biomas, entidades, cachés, vigilante).
 
-## 3. Guardado
+## 2.b «Se queda así para siempre» en el cartel de carga (2026-10-01)
 
+Síntoma: la partida se quedaba **para siempre** en el cartel «Generando mundo… /
+Preparando terreno…», con `FPS: 0.0`, `ms/frame: 8000`, `frames: 0` y el contador
+de `drawImg` subiendo (o sea: el hilo trabajando y la pantalla congelada).
+
+Eran **tres fallos encadenados**, todos del arranque de la caché de terreno:
+
+1. **El vigilante del terreno reiniciaba la construcción una y otra vez.** Mientras
+   la caché se pinta por partes, `mapCacheDirty` sigue a `true`; `vigilanteTerreno()`
+   lo interpretaba como «la caché está rota» y lanzaba **otra reconstrucción entera
+   cada 5 s** (con `rebuildMapCache()` SÍNCRONO, que bloquea el hilo varios segundos
+   en un mundo grande). La primera construcción se reiniciaba siempre y el mundo no
+   terminaba de pintarse **nunca**. Ahora el vigilante **no toca nada** si hay una
+   construcción en marcha o si la zona visible ya está pintada, y sólo usa la vía
+   asíncrona.
+2. **La cesión del hilo dependía de `setTimeout`.** En ventanas ocultas o sin foco
+   el navegador estrangula los temporizadores (1 s o más por turno) y la caché
+   tardaba minutos. Ahora la cesión va por **`MessageChannel`** (`cederHilo()`), que
+   entrega la tarea en cuanto el hilo queda libre.
+3. **El bucle de dibujado podía morir.** Una excepción dentro de `render()` saltaba
+   el `requestAnimationFrame` final y la pantalla se quedaba con el último fotograma
+   (justo el cartel). Ahora, además de **rearmarse tras un error**, hay un
+   **vigilante del bucle** (cada 1,5 s) que lo vuelve a armar si detecta que no hay
+   fotogramas ni una petición de `requestAnimationFrame` pendiente.
+
+Y para que nunca vuelva a «quedarse así»:
+
+- El cartel **ya no es lo último** que se pinta: el terreno se pinta **primero en la
+  zona visible** (con el mismo presupuesto de ~12 ms por turno) y en cuanto está,
+  el volcado recortado a la ventana ya es correcto y **el cartel se retira**,
+  aunque el resto del mundo siga pintándose por detrás (de la zona visible hacia
+  fuera). El jugador puede jugar mientras se completa.
+- El cartel muestra el **avance real** («Pintando el terreno… 43 %», celdas
+  pintadas / total) y tiene un **plazo fijo de 15 s** contado desde que el mundo
+  está listo (antes el plazo se medía desde el último intento y una reconstrucción
+  reiniciada lo dejaba pegado para siempre).
+- Si el jugador camina hacia terreno aún sin pintar, `_terrainRematarZonaVisible()`
+  pinta esas celdas antes del volcado (una vez por celda: hay un registro), así que
+  el recorte **nunca deja un agujero**.
+
+Diagnóstico: `MESO_DEBUG.testDraw.world.diag()` (`cache.dirty`, vigilante) y las
+banderas `window._terrainPaintPct`, `window._terrainCachePartial`,
+`window._terrainVisPaintMs`, `window._renderLoopReanudado`, `window._renderLoopErrors`.
+
+## 3. Guardado
 - **Los cultivos ahora viajan**: `state.crops = [[clave, fase, seg, familia, mojado], …]`
   y `loadAppState()` los restaura con su fase, su familia y su reloj. Verificado
   ida y vuelta: dos cultivos (`bush` fase 3, `vine` fase 1 con `sec` 13,1) vuelven

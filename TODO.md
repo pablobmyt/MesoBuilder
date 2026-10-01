@@ -20,6 +20,12 @@ o `fx.*`, más volumen en Ajustes y `data/Sounds/CREDITOS.md` con la procedencia
 
 ## Otros pendientes
 
+* **Crecer por trozos y cargar mundos grandes sin esperar.** Una banda de
+  crecimiento cuesta ~52 ms en un mundo 252×216 (generar + redimensionar rejillas
+  + desplazar todo) y, al **cargar** una partida de un mundo crecido, la caché de
+  terreno se reconstruye entera (74 Mpx = varios segundos). Toca: banda por
+  trozos (como `rebuildMapCachesAsync`) y caché pintada primero en la zona visible
+  y por regiones el resto. Doc: `docs/EDIFICIOS-VOLUMEN-Y-CRECIMIENTO.md` §4.
 * **Arranque: el último segundo del terreno.** Ya sólo se pinta la caché de la
   vista activa (~1,0–1,5 s) y mientras se pinta se enseña «Generando mundo…» en
   vez de medio mundo. Lo que queda: pintar primero SÓLO la zona visible y el

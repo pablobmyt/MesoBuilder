@@ -46,6 +46,17 @@ import { createTextures } from './game-engine-textures.js';
 import { createTerrainGenerator, TERRAIN_PROFILES } from './terrain-generator.js';
 import { buildTreeTemplates, drawTreePixels, treeSwayPhase, treeSwayBitmap, TREE_SWAY_BUCKETS } from './tree-art.js';
 import { drawAnimal } from './animal-art.js';
+// Volumen 2.5D de los edificios: SÓLO en la vista isométrica (ver el módulo).
+import { addIsometricVolume, VOLUMEN } from './building-volume.js';
+import { VISTAS, materialesDeEdificio, limpiarMateriales, drawPlantaTecho } from './building-volume.js';
+// Tipos que NO se dibujan como planta de tejado en la vista de arriba: son piezas
+// que van PEGADAS unas a otras (murallas, arcos, caminos) o mobiliario (farol),
+// y una planta por celda las convertiría en una fila de tapas.
+const PLANTA_SKIP = new Set([
+  'wall_segment', 'wall_tower', 'mesopotamian_arch', 'mesopotamian_gate_v',
+  'road', 'concrete_road', 'farm_plot', 'steel_foundry', 'soviet_streetlight',
+  'lamp_post', 'dock', 'cueva'
+]);
 import { buildWheatStages, wheatSpriteKey, registerPlantSprites, WHEAT_STAGE_NAMES, CROP_TYPES, CROP_TYPE_NAMES, cropSpriteKey } from './plant-art.js';
 import { createDebugTools } from './game-engine-debug-utils.js';
 // Arte del personaje COMPARTIDO con el menú (vista previa del editor): una sola
@@ -697,6 +708,117 @@ function isWaterPaintCell(c, r) {
   } catch (e) { return false; }
 }
 
+// ── SUELO CON ARTE (recortes de la hoja del editor de entidades) ────────────
+// El terreno se pintaba con colores planos + una capa de detalle procedural: las
+// «texturas antiguas del suelo». Si en el editor de entidades se han recortado
+// VISTAS para los suelos, la caché de terreno usa esa baldosa en lugar del
+// relleno clásico:
+//   · ortogonal → la baldosa tal cual, en el cuadro de la celda,
+//   · isométrico → la misma baldosa deformada al rombo de la celda y enmascarada,
+// con CUATRO VOLTEOS fijos por celda (elegidos con el ruido de la posición) para
+// que el suelo no se vea como el mismo dibujo repetido.
+// La búsqueda de la clave es la MISMA que la de los árboles
+// (`claveDeArteDeArbol`): prefiere `_sup`/`_iso` según la vista y, si no hay la
+// otra, la usa igual. Sin arte recortado NO cambia nada: se sigue pintando como
+// antes.
+const SUELO_POR_BIOMA = {
+  alluvial: 'suelo_arena',
+  sand: 'suelo_arena',
+  desert: 'suelo_arena',
+  saline: 'suelo_arena',
+  steppe: 'suelo_tierra',
+  grass: 'suelo_tierra',
+  riparian: 'suelo_tierra',
+  marsh: 'suelo_tierra',
+  forest: 'suelo_tierra',
+  hills: 'suelo_arcilla',
+  canal_road: 'suelo_tierra',
+  water: 'suelo_agua',
+  deep_water: 'suelo_agua'
+};
+
+let _cacSueloArte = { clave: null, mapa: {} };
+function claveDeSueloPara(bioma) {
+  try {
+    const base = SUELO_POR_BIOMA[bioma];
+    if (!base) return null;
+    const clave = ((viewMode === 'iso') ? '_iso' : '_sup') + '|' + _versionArteEntidades;
+    if (_cacSueloArte.clave !== clave) _cacSueloArte = { clave, mapa: {} };
+    // Sólo se guardan los ACIERTOS: cachear el «no hay arte» dejaba el suelo
+    // procedural para siempre si los recortes se registraban después (sin subir
+    // `_versionArteEntidades`). Un fallo son dos búsquedas de propiedad.
+    const cacheado = _cacSueloArte.mapa[base];
+    if (cacheado) return cacheado;
+    const encontrada = claveDeArteDeArbol(base);
+    if (encontrada) _cacSueloArte.mapa[base] = encontrada;
+    return encontrada;
+  } catch (e) { return null; }
+}
+
+// Variantes de una baldosa de suelo ya rasterizada al tamaño de la celda
+// (`clave|ancho x alto|vista` → 4 lienzos: normal, espejo X, espejo Y y ambos).
+const _sueloVariantes = new Map();
+function sueloVariantes(clave, w, h, iso) {
+  const k = clave + '|' + Math.round(w) + 'x' + Math.round(h) + (iso ? '|iso' : '|orto');
+  const hit = _sueloVariantes.get(k);
+  if (hit !== undefined) return hit;
+  let out = null;
+  try {
+    const def = window.ENTITY_PIXEL_LIBRARY && window.ENTITY_PIXEL_LIBRARY[clave];
+    const gw = (def && (def.gridW || def.grid)) || 9;
+    const gh = (def && (def.gridH || def.grid)) || 9;
+    const src = (def && Array.isArray(def.pixels)) ? getSpriteSourceBitmap(clave, def.pixels, gw, gh) : null;
+    if (src && src.cv && src.w > 0 && src.h > 0) {
+      const ancho = Math.max(1, Math.round(w));
+      const alto = Math.max(1, Math.round(h));
+      out = [];
+      for (let i = 0; i < 4; i++) {
+        const cv = document.createElement('canvas');
+        cv.width = ancho; cv.height = alto;
+        const g2 = cv.getContext('2d');
+        g2.imageSmoothingEnabled = false;   // pixel-art ampliado: nítido y barato
+        if (iso) {
+          // Recorte al rombo de la celda (si no, las esquinas del cuadro se
+          // saldrían del suelo y taparían al vecino).
+          g2.beginPath();
+          g2.moveTo(ancho / 2, 0);
+          g2.lineTo(ancho, alto / 2);
+          g2.lineTo(ancho / 2, alto);
+          g2.lineTo(0, alto / 2);
+          g2.closePath();
+          g2.clip();
+        }
+        g2.translate((i & 1) ? ancho : 0, (i & 2) ? alto : 0);
+        g2.scale((i & 1) ? -1 : 1, (i & 2) ? -1 : 1);
+        g2.drawImage(src.cv, 0, 0, src.w, src.h, 0, 0, ancho, alto);
+        out.push(cv);
+      }
+    }
+  } catch (e) { out = null; }
+  // Desalojo del más antiguo (Map conserva el orden de inserción).
+  while (_sueloVariantes.size > 60) {
+    const primero = _sueloVariantes.keys().next();
+    if (primero.done) break;
+    _sueloVariantes.delete(primero.value);
+  }
+  _sueloVariantes.set(k, out);
+  return out;
+}
+
+// Pinta la baldosa de suelo en la caché. `px`,`py` son el cuadro de la celda
+// (ortogonal) o el VÉRTICE SUPERIOR del rombo (isométrico).
+function pintarSueloConArte(g, clave, px, py, w, h, iso, seed) {
+  const vars = sueloVariantes(clave, w, h, iso);
+  if (!vars) return false;
+  const cv = vars[(seed >>> 3) & 3] || vars[0];
+  const previo = g.imageSmoothingEnabled;
+  g.imageSmoothingEnabled = false;
+  if (iso) g.drawImage(cv, Math.round(px - w / 2), Math.round(py));
+  else g.drawImage(cv, Math.round(px), Math.round(py));
+  g.imageSmoothingEnabled = previo;
+  return true;
+}
+
 function paintTerrainCellInCache(g, c, r, opts = {}) {
   const iso = !!opts.iso;
   const w1 = TILE, h1 = TILE * ISO_RATIO;
@@ -710,6 +832,21 @@ function paintTerrainCellInCache(g, c, r, opts = {}) {
   const isUrss = (window._currentEpoch || 'mesopotamia') === 'urss';
   const noise = ((c * 7 + r * 13) % 11) * 0.8;
   const seed = (((c + 4096) * 73856093) ^ ((r + 4096) * 19349663)) >>> 0;
+  // ¿Hay arte recortado para el suelo de este bioma? Entonces la baldosa SUSTITUYE
+  // al relleno plano, a las transiciones entre biomas y al detalle procedural: si
+  // se pintaran encima, el arte no se vería y seguiríamos mezclando los dos estilos.
+  // Los CAMINOS (`road` y `concrete_road`) se dejan como están a propósito:
+  // llevan empedrado por piezas, bordillos automáticos y puentes de madera, y un
+  // cambio de baldosa ahí se los comería (para eso está `suelo_pavimento`, que se
+  // puede recortar y conectar cuando se decida cómo combinar los bordillos).
+  if (biome !== 'road' && biome !== 'concrete_road') {
+    const claveSuelo = claveDeSueloPara(biome);
+    if (claveSuelo && pintarSueloConArte(g, claveSuelo, px, py, tw, th, iso, seed)) {
+      // El agua conserva la animación: las ondas se pintan por fotograma ENCIMA
+      // de la caché (`drawWaterAnimCell`), así que la baldosa se sigue viendo.
+      return;
+    }
+  }
   if (iso) {
     if (biome === 'road') {
       g.fillStyle = isUrss ? `rgb(${130+noise|0},${134+noise|0},${140+noise|0})` : `rgb(${210+noise|0},${180+noise|0},${130+noise|0})`;
@@ -947,19 +1084,128 @@ function terrainCacheFingerprint() {
   } catch (e) { return ''; }
 }
 
+// ── Celdas ya pintadas de la caché que se está construyendo ───────────────────
+// Pintar las 21.600 celdas de un mundo cuesta ~1 s en el navegador y MUCHO más en
+// equipos con rasterizado por software (Electron): con el bucle «todo de golpe,
+// cediendo el hilo cada 20 filas» cada turno bloqueaba el fotograma segundos y,
+// mientras, el juego se quedaba en el cartel de carga. Con este registro se pinta
+// PRIMERO la zona visible (el mundo aparece enseguida) y el resto por turnos de
+// ~12 ms, sin repintar ninguna celda dos veces.
+let _terrainPaintedMask = null;
+let _terrainPaintedView = null;
+let _terrainPaintedCount = 0;
+
+function terrainPaintedStart(view) {
+  try { _terrainPaintedMask = new Uint8Array(COLS * ROWS); } catch (e) { _terrainPaintedMask = null; }
+  _terrainPaintedView = view;
+  _terrainPaintedCount = 0;
+  window._terrainPaintedMask = null;
+  window._terrainPaintPct = 0;
+}
+function terrainPaintedEnd() {
+  _terrainPaintedMask = null;
+  _terrainPaintedView = null;
+  _terrainPaintedCount = 0;
+  window._terrainPaintedMask = null;
+  window._terrainCachePartial = false;
+}
+function terrainCellPainted(c, r) {
+  if (!_terrainPaintedMask) return false;
+  if (c < 0 || r < 0 || c >= COLS || r >= ROWS) return true;
+  return _terrainPaintedMask[r * COLS + c] === 1;
+}
+function terrainMarkPainted(c, r) {
+  if (!_terrainPaintedMask || c < 0 || r < 0 || c >= COLS || r >= ROWS) return;
+  const i = r * COLS + c;
+  if (_terrainPaintedMask[i] === 1) return;
+  _terrainPaintedMask[i] = 1;
+  _terrainPaintedCount++;
+}
+// Progreso del pintado (celdas pintadas / total), para el cartel de carga.
+function terrainUpdatePaintPct() {
+  try { window._terrainPaintPct = Math.round((_terrainPaintedCount / Math.max(1, COLS * ROWS)) * 100); } catch (e) {}
+}
+
+// Rectángulo de celdas que se ve ahora mismo (con margen), válido en las dos
+// vistas: se invierten las cuatro esquinas de la ventana.
+function visibleTerrainCellRect(pad) {
+  const p = Math.max(0, pad || 0);
+  try {
+    const w = canvas.width, h = canvas.height;
+    const esquinas = [screenToWorld(0, 0), screenToWorld(w, 0), screenToWorld(0, h), screenToWorld(w, h)];
+    let c0 = Infinity, r0 = Infinity, c1 = -Infinity, r1 = -Infinity;
+    for (const q of esquinas) {
+      if (!q || !Number.isFinite(q.col) || !Number.isFinite(q.row)) continue;
+      c0 = Math.min(c0, q.col); c1 = Math.max(c1, q.col);
+      r0 = Math.min(r0, q.row); r1 = Math.max(r1, q.row);
+    }
+    if (!Number.isFinite(c0)) return { c0: 0, r0: 0, c1: COLS - 1, r1: ROWS - 1 };
+    return {
+      c0: Math.max(0, Math.floor(c0) - p), c1: Math.min(COLS - 1, Math.ceil(c1) + p),
+      r0: Math.max(0, Math.floor(r0) - p), r1: Math.min(ROWS - 1, Math.ceil(r1) + p)
+    };
+  } catch (e) { return { c0: 0, r0: 0, c1: COLS - 1, r1: ROWS - 1 }; }
+}
+
+// Pinta las celdas que falten de un rectángulo (con el registro de pintadas).
+function paintTerrainRectInCache(g, c0, r0, c1, r1, opts) {
+  let n = 0;
+  for (let r = r0; r <= r1; r++) {
+    for (let c = c0; c <= c1; c++) {
+      if (terrainCellPainted(c, r)) continue;
+      paintTerrainCellInCache(g, c, r, opts);
+      terrainMarkPainted(c, r);
+      n++;
+    }
+  }
+  return n;
+}
+
+// ¿Se puede usar la caché aunque todavía se esté pintando el resto del mundo?
+// Sí: la pasada 1 pinta la ZONA VISIBLE y el volcado va recortado a la ventana,
+// así que lo que se enseña está pintado. Si la vista cambió a mitad de la
+// construcción (la máscara es de la otra vista) no se usa.
+function _terrainParcialUsable() {
+  try {
+    return !!window._terrainCachePartial && _terrainPaintedView === viewMode && !!_terrainPaintedMask;
+  } catch (e) { return false; }
+}
+
+// Remata (pinta) la zona visible si la caché se está construyendo por partes.
+function _terrainRematarZonaVisible(_mc) {
+  if (!window._terrainCachePartial || !_terrainPaintedMask || _terrainPaintedView !== viewMode) return;
+  const vis = visibleTerrainCellRect(3);
+  let faltan = false;
+  for (let r = vis.r0; r <= vis.r1 && !faltan; r++) {
+    for (let c = vis.c0; c <= vis.c1; c++) {
+      if (!_terrainPaintedMask[r * COLS + c]) { faltan = true; break; }
+    }
+  }
+  if (!faltan) return;
+  const g = (viewMode === 'iso') ? (mapCacheIso && mapCacheIso.getContext('2d')) : (mapCacheOrtho && mapCacheOrtho.getContext('2d'));
+  if (!g) return;
+  const opts = (viewMode === 'iso' && _mc && _mc._isoOffset)
+    ? { iso: true, minX: _mc._isoOffset.minX, minY: _mc._isoOffset.minY }
+    : { iso: false };
+  paintTerrainRectInCache(g, vis.c0, vis.r0, vis.c1, vis.r1, opts);
+  try { window._terrainVisRepaints = (window._terrainVisRepaints || 0) + 1; } catch (e) {}
+}
+
 async function rebuildMapCachesAsync() {
   if (_rebuildMapAsyncRunning) return;
   _rebuildMapAsyncRunning = true;
+  const _tRepintado = performance.now();
   window._terrCacheBusy = true;
   window._terrCacheBusyFrom = window._terrCacheBusyFrom || Date.now();
-  const BATCH = 20; // filas por punto de cesión
+  const PRESUPUESTO_MS = 12;   // trabajo por turno antes de ceder el hilo
   const tileSize = TILE;
-  // SOLO se construye la caché de la vista ACTIVA: la otra (13,8 Mpx en iso,
-  // 22 Mpx en ortogonal) se dejaba hecha «por si acaso» y era la mitad del tiempo
-  // de carga del terreno. Al cambiar de vista se marca sucia y se construye.
+  // SOLO se construye la caché de la vista ACTIVA: la otra se deja pendiente y se
+  // construye al cambiar de vista (`setViewMode`).
   const quiereIso = (viewMode === 'iso');
   window._cachePendiente = quiereIso ? 'ortho' : 'iso';
+  terrainPaintedStart(quiereIso ? 'iso' : 'ortho');
   try {
+    let g, opts;
     if (!quiereIso) {
       // ── Pasada ortogonal ──
       const oW = COLS * tileSize, oH = ROWS * tileSize;
@@ -967,19 +1213,15 @@ async function rebuildMapCachesAsync() {
         mapCacheOrtho = document.createElement('canvas');
         mapCacheOrtho.width = Math.max(1, oW); mapCacheOrtho.height = Math.max(1, oH);
       }
-      const oc = mapCacheOrtho.getContext('2d');
-      oc.clearRect(0, 0, oW, oH);
-      for (let r = 0; r < ROWS; r++) {
-        for (let c = 0; c < COLS; c++) paintTerrainCellInCache(oc, c, r, { iso: false });
-        if (r % BATCH === BATCH - 1) await new Promise(res => setTimeout(res, 0));
-      }
+      g = mapCacheOrtho.getContext('2d');
+      g.clearRect(0, 0, oW, oH);
+      opts = { iso: false };
       delete mapCacheOrtho._isoOffset;
       mapCacheOrtho._cacheZoom = 1;
       mapCacheOrtho._vista = 'ortho';
     } else {
       // ── Pasada isométrica ──
       const geoIso = isoTerrainCacheGeometry(COLS, ROWS);
-      const w1 = TILE, h1 = TILE * ISO_RATIO;
       const minX1 = geoIso.minX;
       const minY1 = geoIso.minY;
       const iW = geoIso.w, iH = geoIso.h;
@@ -987,16 +1229,65 @@ async function rebuildMapCachesAsync() {
         mapCacheIso = document.createElement('canvas');
         mapCacheIso.width = Math.max(1, iW); mapCacheIso.height = Math.max(1, iH);
       }
-      const ic = mapCacheIso.getContext('2d');
-      ic.clearRect(0, 0, iW, iH);
-      for (let r = 0; r < ROWS; r++) {
-        for (let c = 0; c < COLS; c++) paintTerrainCellInCache(ic, c, r, { iso: true, minX: minX1, minY: minY1 });
-        if (r % BATCH === BATCH - 1) await new Promise(res => setTimeout(res, 0));
-      }
+      g = mapCacheIso.getContext('2d');
+      g.clearRect(0, 0, iW, iH);
+      opts = { iso: true, minX: minX1, minY: minY1 };
       mapCacheIso._isoOffset = { minX: minX1, minY: minY1 };
       mapCacheIso._cacheZoom = 1;
       mapCacheIso._vista = 'iso';
     }
+
+    // 1) PRIMERO lo que se ve, también por turnos de ~12 ms: en cuanto termina
+    //    esta pasada el volcado (recortado a la ventana) ya es correcto y el
+    //    cartel de carga se retira, aunque el resto del mundo siga pintándose
+    //    por detrás.
+    let vis = null;
+    try {
+      vis = visibleTerrainCellRect(3);
+      const t0 = performance.now();
+      let tVis = performance.now();
+      for (let rr = vis.r0; rr <= vis.r1; rr++) {
+        for (let c = vis.c0; c <= vis.c1; c++) {
+          if (terrainCellPainted(c, rr)) continue;
+          paintTerrainCellInCache(g, c, rr, opts);
+          terrainMarkPainted(c, rr);
+        }
+        terrainUpdatePaintPct();
+        if ((performance.now() - tVis) >= PRESUPUESTO_MS) { await cederHilo(); tVis = performance.now(); }
+      }
+      window._terrainVisPaintedAt = Date.now();
+      window._terrainVisPaintMs = Math.round(performance.now() - t0);
+    } catch (e) { console.warn('caché: pasada visible', e); }
+    if (!vis) vis = { c0: 0, r0: 0, c1: COLS - 1, r1: ROWS - 1 };
+    window._terrainCachePartial = true;
+    window._terrainPaintedMask = _terrainPaintedMask;
+
+    // 2) El resto del mundo, por turnos de ~12 ms (cediendo el hilo entre turnos)
+    //    y empezando por las filas MÁS CERCANAS a lo que se ve: si el jugador
+    //    camina hacia terreno aún sin pintar, lo que tiene al lado ya está hecho.
+    const centroFila = Math.max(0, Math.min(ROWS - 1, Math.round((vis.r0 + vis.r1) / 2)));
+    const ordenFilas = [centroFila];
+    for (let d = 1; d < ROWS && ordenFilas.length < ROWS; d++) {
+      const a = centroFila - d, b = centroFila + d;
+      if (a >= 0) ordenFilas.push(a);
+      if (b < ROWS) ordenFilas.push(b);
+    }
+    let tTurno = performance.now();
+    let hechas = 0;
+    for (const rr of ordenFilas) {
+      for (let c = 0; c < COLS; c++) {
+        if (terrainCellPainted(c, rr)) continue;
+        paintTerrainCellInCache(g, c, rr, opts);
+        terrainMarkPainted(c, rr);
+      }
+      hechas++;
+      terrainUpdatePaintPct();
+      if ((performance.now() - tTurno) >= PRESUPUESTO_MS && hechas < ROWS) {
+        await cederHilo();
+        tTurno = performance.now();
+      }
+    }
+    window._terrainPaintPct = 100;
 
     mapCacheDirty = false;
     // Huella del terreno que acaba de pintarse: si mas tarde cambia (crecimiento,
@@ -1005,9 +1296,16 @@ async function rebuildMapCachesAsync() {
     try { mapCacheFingerprint = terrainCacheFingerprint(); } catch (e) {}
     try { window._terrainCacheBuiltAt = Date.now(); } catch (e) {}
   } catch (e) { console.warn('rebuildMapCachesAsync err', e); }
+  terrainPaintedEnd();
   _rebuildMapAsyncRunning = false;
   window._terrCacheBusy = false;
   window._terrCacheBusyFrom = 0;
+  // Contadores para poder MEDIR si la caché del suelo se repinta más de la cuenta
+  // (cada repintado pinta ~21.600 celdas: si sube sin parar, ahí está el tirón).
+  try {
+    window._terrainRebuilds = (window._terrainRebuilds || 0) + 1;
+    window._terrainRebuildMs = Math.round(performance.now() - _tRepintado);
+  } catch (e) {}
 }
 
 function rebuildMapCacheDebounced(delay = GRAPHICS_CONFIG.cacheRebuildDelay) {
@@ -3551,7 +3849,10 @@ const WORLD_BAND = 24;           // celdas que se añaden de golpe
 // está de verdad pegado al borde (10 celdas), con un enfriamiento largo para que
 // no enlace dos bandas seguidas.
 const WORLD_EDGE_MARGIN = 10;
-const WORLD_GROW_COOLDOWN_MS = 20000;
+// Enfriamiento entre bandas. Con 20 s el jugador llegaba al borde, veía crecer el
+// mundo una vez y luego caminaba 80 celdas sin que pasara nada. Una banda son 24
+// celdas y a ~4,3 celdas/s se cruzan en ~6 s: 8 s deja crecer de forma continua.
+const WORLD_GROW_COOLDOWN_MS = 8000;
 const WORLD_MAX = 1024;          // tope de seguridad (cachés de terreno)
 let _worldGrowBusy = false;
 let _worldGrowCooldown = 0;
@@ -4003,6 +4304,16 @@ function expandWorld(dir, band) {
     // el crecimiento antiguo (cada 1,5 s) se repetía una y otra vez en plena
     // caminata. Con un margen de 20 s el autoguardado periódico ya lo cubre.
     try { saveAppStateDebounced(12000); } catch (e) {}
+    // Aviso discreto: el crecimiento era COMPLETAMENTE silencioso y el jugador no
+    // sabía si había pasado algo (ni hacia dónde). Uno cada 45 s como mucho.
+    try {
+      const ahoraAviso = Date.now();
+      if (!window._growNoticeAt || (ahoraAviso - window._growNoticeAt) > 45000) {
+        window._growNoticeAt = ahoraAviso;
+        const hacia = { west: 'el oeste', east: 'el este', north: 'el norte', south: 'el sur' }[d] || 'los bordes';
+        notify('Terreno nuevo hacia ' + hacia + ' (' + COLS + 'x' + ROWS + ' celdas).');
+      }
+    } catch (e) {}
     return { dir: d, amount, cols: COLS, rows: ROWS };
   } catch (e) {
     console.warn('expandWorld failed', e);
@@ -4112,23 +4423,12 @@ function maybeGrowWorld(now) {
     // jugador ya ha caminado y ha pasado el margen de gracia tras generar.
     if (!player || !(player._walkTime > 0)) { window._growBlockReason = 'jugador parado o cargando'; return null; }
     if (!window._worldReadyAt || (Date.now() - window._worldReadyAt) < 3000) { window._growBlockReason = 'mundo recien generado'; return null; }
-    // Ni durante el prólogo: el jugador empieza en una casa aislada cerca del
-    // borde norte y no tiene sentido que el mundo se amplíe mientras hace
-    // encargos en su huerto. Se abre el mundo cuando el guion arranca de verdad
-    // (o si el jugador ya lleva un buen rato andando y no piensa dormir).
-    try {
-      const hp = window._homePrologue;
-      if (hp && hp.active && !hp.slept && !(player._walkTime > 120)) {
-        // Escape por tiempo: si llevas mas de 3 minutos jugando y sigues pegado al
-        // borde, el mundo crece igual aunque el prologo siga marcado como activo
-        // (antes se podia llegar al borde del mapa y no pasaba absolutamente nada).
-        const jugando = window._gameStartedAt || 0;
-        if (!(jugando && (Date.now() - jugando) > 180000)) {
-          window._growBlockReason = 'prologo activo';
-          return null;
-        }
-      }
-    } catch (e) {}
+    // El PRÓLOGO ya NO bloquea el crecimiento. Antes se esperaba a que el guion
+    // avanzara (o a 3 minutos de partida) y el jugador podía llegar al borde del
+    // mapa y no pasaba absolutamente nada: «no se genera nuevo terreno cuando
+    // llegamos a los bordes». Las guardas que quedan bastan para no crecer en
+    // falso: el jugador tiene que haberse movido (walkTime) y haber pasado el
+    // margen de gracia desde que se generó el mundo.
     if (now && _worldGrowCooldown && now < _worldGrowCooldown) { window._growBlockReason = 'espera entre crecimientos'; return null; }
     if (_worldGrowCooldown && Date.now() < _worldGrowCooldown) { window._growBlockReason = 'espera entre crecimientos'; return null; }
     if (window.currentInterior) { window._growBlockReason = 'dentro de una casa'; return null; }
@@ -4192,6 +4492,15 @@ const debugTools = createDebugTools({
     // Rendimiento: HUD en pantalla y contadores de cachés.
     perf: {
       toggle: (v) => togglePerfHud(v),
+      // Parar el bucle de dibujado: sirve para INSPECCIONAR (o fotografiar) lo que
+      // se acaba de pintar a mano (`drawSprite`) sin que el siguiente fotograma lo
+      // borre. `pausar(false)` lo reanuda.
+      pausar: (v) => {
+        const on = (v === undefined) ? true : !!v;
+        window._renderLoopPausado = on;
+        try { if (on) stopRenderLoop(); else startRenderLoop(); } catch (e) {}
+        return on;
+      },
       // Respaldo del terreno: desactiva el volcado de la caché y pinta por celdas
       // (para equipos donde el drawImage grande falla en silencio).
       noCacheBlit: (v) => { window._noTerrainCacheBlit = (v === undefined) ? !window._noTerrainCacheBlit : !!v; return !!window._noTerrainCacheBlit; },
@@ -4203,9 +4512,30 @@ const debugTools = createDebugTools({
         mapCacheDirty: !!mapCacheDirty,
         drawCalls: window._drawCalls || 0,
         spritesEnCache: _spriteBitmaps.size,
+        arbolesEnCache: (() => { try { return _arbolSwayCache.size; } catch (e) { return 0; } })(),
+        cuerposEnCache: (() => { try { return _cuerpoCache.size; } catch (e) { return 0; } })(),
         mbSprites: +(_spriteBitmapBytes / 1048576).toFixed(2),
         entidades: (window.entities || []).length,
-        ultimoRepintadoTerreno: _lastTerrainMark
+        ultimoRepintadoTerreno: _lastTerrainMark,
+        // Suelo: si `repintados` sube y sube mientras se juega, la caché se está
+        // reconstruyendo de más (y con ella las texturas viejas del terreno).
+        terreno: {
+          repintados: window._terrainRebuilds || 0,
+          msUltimo: window._terrainRebuildMs || 0,
+          edadMs: window._terrainCacheBuiltAt ? (Date.now() - window._terrainCacheBuiltAt) : 0,
+          repintadosZonaVisible: window._terrainVisRepaints || 0,
+          cacheBusy: !!window._terrCacheBusy
+        },
+        // Suelo con arte: qué baldosa está usando cada bioma AHORA (null = relleno
+        // procedural de siempre). Sirve para comprobar de un vistazo si los
+        // recortes de suelo del editor están entrando en el mundo.
+        suelo: (() => {
+          try {
+            const o = {};
+            for (const b in SUELO_POR_BIOMA) o[b] = claveDeSueloPara(b) || null;
+            return o;
+          } catch (e) { return {}; }
+        })()
       }),
       // Coste de un fotograma completo, medido de forma directa: con la pestaña
       // oculta el navegador no sirve fotogramas (rAF se congela), así que la
@@ -4376,7 +4706,12 @@ const debugTools = createDebugTools({
       },
       mounted: () => estaMontado(),
       mount: () => { const h = nearestHorse(6); return h ? mountHorse(h) : false; },
-      dismount: (tether) => dismountHorse(!!tether)
+      dismount: (tether) => dismountHorse(!!tether),
+      // Acciones del caballo (las mismas que el panel/teclas).
+      actions: () => horseActionList().map(a => ({ id: a.id, label: a.label, key: a.key || null, state: a.state, ms: a.ms })),
+      act: (id) => runHorseAction(id),
+      state: () => horseStateFor(estaMontado() ? player._mount : nearestHorse(6), Date.now()),
+      actNow: () => { const h = estaMontado() ? player._mount : nearestHorse(6); return (h && h._act) ? { id: h._act.id, state: h._act.state, msLeft: Math.max(0, h._act.until - Date.now()) } : null; }
     },
     // Consultas de terreno para pruebas de movimiento (puentes, agua…).
     canWalk: (c, r) => canWalkTo(c, r, { allowWater: true }),
@@ -4433,6 +4768,29 @@ const debugTools = createDebugTools({
       },
       expand: (dir, band) => expandWorld(dir, band),
       grow: () => { _worldGrowCooldown = 0; return maybeGrowWorld(Date.now()); },
+      // Cambiar de vista desde las pruebas: con menú externo no había ninguna
+      // forma de pasar a la isométrica y el rombo del terreno no se veía nunca.
+      view: (mode) => { try { setViewMode(mode === 'iso' ? 'iso' : 'ortho'); } catch (e) {} return viewMode; },
+      // Volumen 2.5D de los edificios (sólo se ve en isométrico) y PLANTA de
+      // tejado (sólo en la vista de arriba):
+      //   T.vistas({ superior:false })            → arriba vuelve al alzado
+      //   T.vistas({ volumetrico:false })         → iso sin volumen
+      //   T.vistas({ pendiente:0.5, tejado:0.5 }) → más volumen en iso
+      //   T.vistas({ arista:true })               → tejado con pico (comparar)
+      vistas: (opts) => {
+        try {
+          if (opts && typeof opts === 'object') {
+            if ('superior' in opts) VISTAS.superior = !!opts.superior;
+            if ('volumetrico' in opts) VISTAS.volumetrico = !!opts.volumetrico;
+            const { superior, volumetrico, ...resto } = opts;
+            if (Object.keys(resto).length) Object.assign(VOLUMEN, resto);
+          }
+          limpiarMateriales();
+          clearSpriteBitmaps();
+        } catch (e) {}
+        return Object.assign({}, VISTAS, VOLUMEN);
+      },
+      volumen: (opts) => { try { return window.MESO_DEBUG.testDraw.vistas(opts); } catch (e) { return null; } },
       // Diagnostico del crecimiento del mundo: que le impide crecer ahora mismo.
       growDiag: () => ({
         motivo: window._growBlockReason || 'ok',
@@ -4528,12 +4886,23 @@ const debugTools = createDebugTools({
     // Centra la cámara en una celda (pruebas: el modo edición no sigue al jugador).
     focusOn: (col, row) => {
       try {
-        const ts = getTileSize();
-        const cx = canvas.width / 2 - (col + 0.5) * ts;
-        const cy = canvas.height / 2 - (row + 0.5) * ts;
+        // OJO: en isométrico la celda NO cae en `col*ts`: hay que usar la
+        // proyección del rombo (antes esta ayuda sólo valía para la vista
+        // ortogonal y centraba en otro sitio).
+        let px, py;
+        if (viewMode === 'iso') {
+          const p = projectIso(col, row);
+          const { w, h } = getIsoTileSize();
+          px = p.x + w / 2; py = p.y + h / 2;
+        } else {
+          const ts = getTileSize();
+          px = (col + 0.5) * ts; py = (row + 0.5) * ts;
+        }
+        const cx = canvas.width / 2 - px;
+        const cy = canvas.height / 2 - py;
         camX = cx; camY = cy;
         try { targetCam.x = cx; targetCam.y = cy; } catch (e) {}
-        return { camX: Math.round(camX), camY: Math.round(camY), tileSize: ts };
+        return { camX: Math.round(camX), camY: Math.round(camY), tileSize: getTileSize() };
       } catch (e) { return String(e); }
     },
     // Se resetea la transformación de cámara para que el sprite caiga en
@@ -5054,11 +5423,49 @@ function markCameraInput() {
 function startRenderLoop() {
   if (_renderLoopActive) return;
   _renderLoopActive = true;
+  try { window._rafPendiente = true; } catch (e) {}
   requestAnimationFrame(render);
 }
 
 function stopRenderLoop() {
   _renderLoopActive = false;
+  try { window._rafPendiente = false; } catch (e) {}
+}
+
+// ── VIGILANTE DEL BUCLE DE DIBUJADO ─────────────────────────────────────────
+// Si el bucle se queda sin armar (una excepción dentro de render() que salta el
+// `requestAnimationFrame` final, o el navegador estrangulando rAF), la pantalla se
+// queda CONGELADA con el último fotograma para siempre: «se queda así para
+// siempre». Los temporizadores siguen corriendo aunque rAF esté parado, así que
+// desde aquí se vuelve a armar el bucle. Si lo que pasa es sólo que la ventana
+// está oculta, hay un rAF pendiente y no se toca nada (se reanuda solo al volver).
+setInterval(() => {
+  try {
+    if (!window._gameStarted || !_renderLoopActive) return;
+    if (window._renderLoopPausado) return;   // parado a propósito (inspección)
+    if (window._rafPendiente) return;
+    if ((Date.now() - (window._lastRenderAt || 0)) < 2000) return;
+    window._renderLoopReanudado = (window._renderLoopReanudado || 0) + 1;
+    try { console.warn('render: bucle reanudado por el vigilante (' + window._renderLoopReanudado + ')'); } catch (e) {}
+    window._rafPendiente = true;
+    requestAnimationFrame(render);
+  } catch (e) {}
+}, 1500);
+
+// ── Cesión del hilo sin temporizadores ──────────────────────────────────────
+// Pintar la caché de terreno va por turnos que ceden el hilo. Con `setTimeout(0)`
+// el navegador ESTRANGULA la cesión (1 s o más) cuando la ventana está oculta o
+// sin foco, y la caché tardaba minutos en terminar (el juego se quedaba en
+// «Generando mundo…»). Un `MessageChannel` entrega la tarea en cuanto el hilo
+// queda libre, sin pasar por el temporizador.
+function cederHilo() {
+  return new Promise(res => {
+    try {
+      const ch = new MessageChannel();
+      ch.port1.onmessage = () => { try { ch.port1.close(); } catch (e) {} res(); };
+      ch.port2.postMessage(0);
+    } catch (e) { setTimeout(res, 0); }
+  });
 }
 // Right-button drag/zoom state
 let rightDown = false, rightDownX = 0, rightDownY = 0, rightMoved = false;
@@ -5313,8 +5720,125 @@ function triggerCharacterSwing(ent, power) {
   } catch (e) {}
 }
 
+// ── CACHÉ DEL MUÑECO DETALLADO (ver `drawCharacterPixels`) ──────────────────
+// Cada personaje se pintaba píxel a píxel, ~400 `fillRect` por entidad y
+// fotograma (con 400+ entidades en pantalla: 7-8 ms sólo en `entidades`).
+const _cuerpoCache = new Map();
+const _CUERPO_CACHE_MAX = 220;
+let _pintandoCuerpoEnCache = false;   // evita repetirse al renderizar a lienzo
+let _cuerpoCacheSprite = null;        // el arte cambia con la época: se vacía
+
+// Firma de todo lo que cambia el dibujo del muñeco. La animación se cuantiza a
+// 0,5 px (es pixel-art: media décima de píxel no se ve) porque con los valores
+// continuos de la animación la firma nunca coincidiría y no habría caché.
+function firmaCuerpoDetallado(palette, scale, opts) {
+  const o = opts || {};
+  const a = o.anim || null;
+  const p = palette || DEFAULT_PALETTE || {};
+  try {
+    const sprite = getActiveDetailedHumanoidSprite();
+    if (sprite !== _cuerpoCacheSprite) { _cuerpoCache.clear(); _cuerpoCacheSprite = sprite; }
+  } catch (e) {}
+  // La animación se cuantiza a PÍXEL ENTERO: es pixel-art y el muñeco se pinta en
+  // píxeles, así que media décima de píxel no se ve; en cambio con pasos finos la
+  // firma casi nunca coincidía y se rehacía el dibujo (79 entradas y ~6 ms por
+  // fotograma en isométrico). Con pasos enteros, los NPC que van igual comparten.
+  const q = (v) => String(Math.round(Number(v) || 0));
+  return [
+    (p.skin || '') + (p.hair || '') + (p.cloth || '') + (p.trim || ''),
+    Number(scale || 1).toFixed(2),
+    o.dir || 'down',
+    (((o.frame || 0) % 4) + 4) % 4,
+    (a && a.pose) || o.pose || '',
+    o.headOnly ? 'h' : '',
+    q(a && a.bob), q(a && a.lean), q(a && a.swing),
+    q(a && a.armRaise), q(a && a.armWave), (a && a.armRaiseSide) || 0,
+    (a && a.squash) ? '1' : '0', (a && a.noStep) ? '1' : '0'
+  ].join('|');
+}
+
+function clearCuerpoCache() { try { _cuerpoCache.clear(); } catch (e) {} }
+
 function drawCharacterPixels(ctx, palette, x, y, scale, opts) {
   opts = opts || {};
+  // ¿Este personaje tiene vistas recortadas de un PNG? (editor de entidades). Si
+  // las hay, mandan sobre el muñeco procedural: es lo que dibuja el usuario.
+  try {
+    const lib = window.ENTITY_PIXEL_LIBRARY;
+    const dir = opts.dir || null;
+    if (lib && dir && !opts.headOnly) {
+      const propia = lib['character_' + dir];
+      const espejo = (dir === 'left' || dir === 'right') ? lib['character_' + (dir === 'left' ? 'right' : 'left')] : null;
+      const def = (propia && propia.pixels && propia.pixels.length) ? propia : espejo;
+      if (def && def.pixels && def.pixels.length) {
+        const gw = def.gridW || def.grid || 24, gh = def.gridH || def.grid || 24;
+        const caja = 24 * scale;                       // hueco del muñeco original
+        const w = gw * scale, h = gh * scale;
+        const bmp = getSpriteBitmap('character_' + dir, gw, gh, w, h, def.pixels);
+        if (bmp) {
+          const dx = Math.round(x + caja * 0.5 - w * 0.5);
+          const dy = Math.round(y + caja - h);
+          ctx.save();
+          ctx.imageSmoothingEnabled = false;
+          // Si sólo hay arte para un lado, se espeja (el original también lo hace).
+          if (def !== propia) {
+            ctx.translate(dx + w, dy);
+            ctx.scale(-1, 1);
+            ctx.drawImage(bmp, 0, 0, Math.round(w), Math.round(h));
+          } else {
+            ctx.drawImage(bmp, dx, dy, Math.round(w), Math.round(h));
+          }
+          ctx.restore();
+          return;
+        }
+      }
+    }
+  } catch (e) { /* si algo falla, se sigue con el muñeco procedural */ }
+  if (USE_DETAILED_HUMANOID_SPRITE && !_pintandoCuerpoEnCache) {
+    // ── MUÑECO DETALLADO CON CACHÉ ──────────────────────────────────────────
+    // El muñeco se pintaba PÍXEL A PÍXEL (~400 `fillRect` + una búsqueda de color
+    // por píxel). Con 400+ entidades en pantalla eran ~170.000 fillRect por
+    // fotograma: medido con `perf.sections()`, 5,3 ms en ortogonal y 8,2 ms en
+    // isométrico sólo en la sección `entidades`. Aquí se pre-renderiza la POSE a
+    // tamaño final (llamándose a sí misma sobre un lienzo, con
+    // `_pintandoCuerpoEnCache` para no repetirse) y cada personaje pasa a ser UN
+    // `drawImage`. La firma lleva dir/frame/pose/animación/paleta/escala: si algo
+    // de eso cambia, se rehace; si no, se reutiliza.
+    try {
+      const firma = firmaCuerpoDetallado(palette, scale, opts);
+      const hit = _cuerpoCache.get(firma);
+      if (hit) {
+        ctx.save();
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(hit.canvas, Math.round(x) - hit.pad, Math.round(y) - hit.pad);
+        ctx.restore();
+        return;
+      }
+      const pad = 4 + Math.ceil(4 * scale);
+      const lado = Math.ceil(24 * scale) + pad * 2;
+      if (lado > 0 && lado <= 1024) {
+        const cv = document.createElement('canvas');
+        cv.width = lado; cv.height = lado;
+        const g = cv.getContext('2d');
+        g.imageSmoothingEnabled = false;
+        _pintandoCuerpoEnCache = true;
+        try { drawCharacterPixels(g, palette, pad, pad, scale, Object.assign({}, opts)); }
+        finally { _pintandoCuerpoEnCache = false; }
+        // Desalojo del más antiguo (Map conserva el orden de inserción).
+        while (_cuerpoCache.size > _CUERPO_CACHE_MAX) {
+          const k = _cuerpoCache.keys().next();
+          if (k.done) break;
+          _cuerpoCache.delete(k.value);
+        }
+        _cuerpoCache.set(firma, { canvas: cv, pad });
+        ctx.save();
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(cv, Math.round(x) - pad, Math.round(y) - pad);
+        ctx.restore();
+        return;
+      }
+    } catch (e) { /* si la caché falla, se pinta directo */ }
+  }
   const anim = opts.anim || null;
   const animBob = anim ? (anim.bob || 0) : 0;
   const animLean = anim ? (anim.lean || 0) : 0;
@@ -6146,6 +6670,9 @@ function clearSpriteBitmaps() {
     _spriteBitmapBytes = 0;
   } catch (e) {}
   try { clearSwayBitmaps(); } catch (e) {}
+  try { _arbolSwayCache.clear(); } catch (e) {}
+  try { _sueloVariantes.clear(); } catch (e) {}
+  try { clearCuerpoCache(); } catch (e) {}
 }
 
 try { window.clearSpriteBitmaps = clearSpriteBitmaps; } catch (e) {}
@@ -6213,16 +6740,34 @@ function drawPerfHud(dt) {
 // motor lo REDUCE al tamaño de su huella en pantalla: sin esta fuente limpia habría
 // que pintar cientos de miles de fillRect por fotograma.
 function getSpriteSourceBitmap(name, pixels, gw, gh) {
-  const hit = _spriteSourceBitmaps.get(name);
+  // El volumen depende de la vista (el alzado original se dibuja tal cual en la
+  // vista de arriba): la clave de la caché lleva la vista y el tamaño del arte.
+  // Los personajes NO se extruyen: son figuras de pie, no volúmenes de edificio.
+  // TAMPOCO se extruye el arte que YA viene dibujado en isométrico (las variantes
+  // `_iso` del editor de entidades): el volumen 2.5D se inventa las caras laterales
+  // a partir del alzado, y sobre un sprite que ya trae su perspectiva lo único que
+  // hacía era deformarlo (en isométrico «las cosas se veían mal»).
+  const conVolumen = viewMode === 'iso' && VOLUMEN.activo &&
+    name.indexOf('character_') !== 0 && !/_iso$/.test(name);
+  const clave = name + '|' + (conVolumen ? 'iso' : 'plano');
+  const hit = _spriteSourceBitmaps.get(clave);
   if (hit !== undefined) return hit;
   let out = null;
   try {
     if (Array.isArray(pixels) && pixels.length) {
+      let usados = pixels;
+      let gH = gh;
+      if (conVolumen) {
+        try {
+          const vol = addIsometricVolume(pixels, gw, gh);
+          usados = vol.pixels; gH = vol.gridH;
+        } catch (e) { usados = pixels; }
+      }
       // Algunos iconos heredados tienen el último píxel justo fuera de la rejilla
       // (p. ej. `typha`): el lienzo se ajusta a la extensión REAL para no recortarlo.
-      let mx = gw - 1, my = gh - 1;
-      for (let i = 0; i < pixels.length; i++) {
-        const p = pixels[i];
+      let mx = gw - 1, my = gH - 1;
+      for (let i = 0; i < usados.length; i++) {
+        const p = usados[i];
         if (!p) continue;
         if ((p[0] | 0) > mx) mx = p[0] | 0;
         if ((p[1] | 0) > my) my = p[1] | 0;
@@ -6231,8 +6776,8 @@ function getSpriteSourceBitmap(name, pixels, gw, gh) {
       const cv = document.createElement('canvas');
       cv.width = sw; cv.height = sh;
       const g = cv.getContext('2d');
-      for (let i = 0; i < pixels.length; i++) {
-        const p = pixels[i];
+      for (let i = 0; i < usados.length; i++) {
+        const p = usados[i];
         if (!p || !p[2]) continue;
         g.fillStyle = p[2];
         g.fillRect(p[0] | 0, p[1] | 0, 1, 1);
@@ -6240,7 +6785,7 @@ function getSpriteSourceBitmap(name, pixels, gw, gh) {
       out = { cv, w: sw, h: sh };
     }
   } catch (e) { out = null; }
-  _spriteSourceBitmaps.set(name, out);
+  _spriteSourceBitmaps.set(clave, out);
   return out;
 }
 
@@ -6265,22 +6810,29 @@ function getSpriteBitmap(name, gw, gh, tw, th, pixels) {
     // OJO: Math.max(1, NaN) es NaN, y un tamaño NaN envenenaría el contador de
     // bytes de la caché (se queda en NaN y el tope de memoria deja de funcionar).
     if (!Number.isFinite(w) || !Number.isFinite(h)) return null;
-    if (w > 2048 || h > 2048) return null;
-    const key = name + '|' + w + 'x' + h;
+    const src = getSpriteSourceBitmap(name, pixels, gw, gh);
+    if (!src) { _spriteBitmaps.set(name + '|' + w + 'x' + h, null); evictSpriteBitmaps(); return null; }
+    // La CAJA DEL ARTE puede ser mayor que la huella: los edificios llevan cara
+    // lateral y zócalo fuera de la rejilla (para el volumen 2.5D). El píxel de
+    // arte mide lo mismo (`w/gw`) y el lienzo crece en la misma proporción; el
+    // anclaje lo sigue marcando la huella, así que el edificio no se encoge ni se
+    // desplaza: lo que sobresale se dibuja fuera de su casilla.
+    const bw = Math.max(1, Math.round(w * src.w / Math.max(1, gw)));
+    const bh = Math.max(1, Math.round(h * src.h / Math.max(1, gh)));
+    if (bw > 4096 || bh > 4096) return null;
+    const key = name + '|' + bw + 'x' + bh;
     const hit = _spriteBitmaps.get(key);
     if (hit !== undefined) return hit;
-    const src = getSpriteSourceBitmap(name, pixels, gw, gh);
-    if (!src) { _spriteBitmaps.set(key, null); evictSpriteBitmaps(); return null; }
-    const bytes = w * h * 4;
+    const bytes = bw * bh * 4;
     if (bytes > SPRITE_BITMAP_MAX_BYTES / 2) { _spriteBitmaps.set(key, null); evictSpriteBitmaps(); return null; }
     const cv = document.createElement('canvas');
-    cv.width = w; cv.height = h;
+    cv.width = bw; cv.height = bh;
     const g = cv.getContext('2d');
     // Reducir → suavizar (conserva el grano fino). Ampliar → píxel nítido, que es
     // lo que se espera del pixel art.
-    g.imageSmoothingEnabled = (w < gw || h < gh);
+    g.imageSmoothingEnabled = (bw < src.w || bh < src.h);
     if (g.imageSmoothingEnabled) { try { g.imageSmoothingQuality = 'high'; } catch (e) {} }
-    g.drawImage(src.cv, 0, 0, src.w, src.h, 0, 0, w, h);
+    g.drawImage(src.cv, 0, 0, src.w, src.h, 0, 0, bw, bh);
     _spriteBitmapBytes += bytes;
     _spriteBitmaps.set(key, cv);
     evictSpriteBitmaps();
@@ -6342,7 +6894,14 @@ function drawEntitySpriteAt(name, x, y, w, h, options) {
           // Se admite escala FRACCIONARIA: el arte de alta densidad se reduce al
           // solar (y se remuestrea suave), de modo que el edificio siempre ocupa
           // su huella sea cual sea el zoom.
-          const maxH = Math.max(drawH * 2.5, drawH + 8);
+          // El tope de alto (×2,5 la caja del solar) es una RED DE SEGURIDAD para
+          // arte heredado con proporciones absurdas: si se pasa, el motor ENCOGE el
+          // sprite entero y el edificio deja de llenar su solar. Los sprites con
+          // volumen isométrico (`freeHeight`) llevan tejado encima a propósito y en
+          // un edificio alto lo correcto es que sobresalga hacia arriba, así que
+          // para ellos el tope es mucho más holgado.
+          const capMul = def.freeHeight ? 5.5 : 2.5;
+          const maxH = Math.max(drawH * capMul, drawH + 8);
           const raw = Math.min(drawW / gw, maxH / gh);
           scale = Math.max(0.2, raw);
         } else {
@@ -6374,7 +6933,10 @@ function drawEntitySpriteAt(name, x, y, w, h, options) {
         if (!(options && options.sway)) {
           const bmp = getSpriteBitmap(name, gw, gh, spriteW, spriteH, def.pixels);
           if (bmp) {
-            ctx.drawImage(bmp, Math.round(x - bmp.width / 2), Math.round(y - bmp.height + drawH * 0.08));
+            // El anclaje lo marca la HUELLA (spriteW × spriteH), no el lienzo: si el
+            // arte sobresale (cara lateral o zócalo), ese sobrante se dibuja igual
+            // y el edificio sigue centrado en su casilla.
+            ctx.drawImage(bmp, Math.round(x - spriteW / 2), Math.round(y - spriteH + drawH * 0.08));
             try { window._entitiesDrawn = (window._entitiesDrawn || 0) + 1; } catch (e) {}
             if (dbgEnt && window._mesoDebugActive) {
               try { dbgEnt._dbgRect = { x: offX, y: offY, w: spriteW, h: spriteH }; dbgEnt._dbgRectAt = Date.now(); } catch (e) {}
@@ -6382,10 +6944,24 @@ function drawEntitySpriteAt(name, x, y, w, h, options) {
             ctx.restore();
             return;
           }
-        } else if (cellPx === scale && gw * gh <= 2500) {
-          // Balanceo con caché: la mata/hierba pre-renderizada con el doblez ya
-          // aplicado → UN drawImage por planta. Antes se pintaba píxel a píxel
-          // (cientos de fillRect por mata y fotograma).
+        } else {
+          // Balanceo con caché A TAMAÑO FINAL: un solo drawImage por planta. Es el
+          // camino que usan los árboles con arte del PNG (recortes grandes) y las
+          // matas cuando la escala no es entera.
+          const recPre = getSwayBitmapFinal(name, def, gw, gh, spriteW, spriteH, swayPx);
+          if (recPre) {
+            ctx.drawImage(recPre.canvas, Math.round(offX) - recPre.pad, Math.round(offY) - recPre.pad);
+            try { window._entitiesDrawn = (window._entitiesDrawn || 0) + 1; } catch (e) {}
+            if (dbgEnt && window._mesoDebugActive) {
+              try { dbgEnt._dbgRect = { x: offX, y: offY, w: spriteW, h: spriteH }; dbgEnt._dbgRectAt = Date.now(); } catch (e) {}
+            }
+            ctx.restore();
+            return;
+          }
+        }
+        if (options && options.sway && cellPx === scale && gw * gh <= 2500) {
+          // Balanceo con caché (arte pequeño, escala entera): una sola imagen por
+          // mata/hierba. Antes se pintaba píxel a píxel (cientos de fillRect).
           const bendArt = Math.max(-3, Math.min(3, Math.round(swayPx / Math.max(1, scale))));
           const rec = getSwayBitmap(name, def, gw, gh, scale, bendArt);
           if (rec) {
@@ -6446,6 +7022,99 @@ function hasRegisteredSprite(name) {
   }
 }
 
+// Clave de arte NUEVA (editor de entidades) para una clave base, según la vista:
+// el editor registra `<clave>_sup` y `<clave>_iso`, nunca `<clave>`. Devuelve null
+// si esa clave no tiene recortes del PNG (entonces se usa el arte de siempre).
+function claveDeArteDeArbol(clave) {
+  try {
+    if (!clave) return null;
+    const sufijo = (viewMode === 'iso') ? '_iso' : '_sup';
+    const otra = (sufijo === '_iso') ? '_sup' : '_iso';
+    if (hasRegisteredSprite(clave + sufijo)) return clave + sufijo;
+    if (hasRegisteredSprite(clave + otra)) return clave + otra;
+  } catch (e) {}
+  return null;
+}
+
+// Sube cada vez que `cargarVistasDeEntidades()` (des)registra variantes: invalida
+// la lista de claves de árbol con arte nuevo.
+let _versionArteEntidades = 0;
+
+// Claves tree0..tree4 que TIENEN arte nuevo, para la vista actual (cacheado: esto
+// se pregunta por cada árbol y por fotograma).
+let _cacArteArboles = { clave: null, lista: [] };
+function clavesDeArteDeArbol() {
+  const clave = ((viewMode === 'iso') ? '_iso' : '_sup') + '|' + _versionArteEntidades;
+  if (_cacArteArboles.clave === clave) return _cacArteArboles.lista;
+  const lista = [];
+  for (const k of ['tree0', 'tree1', 'tree2', 'tree3', 'tree4']) {
+    const v = claveDeArteDeArbol(k);
+    if (v && lista.indexOf(v) < 0) lista.push(v);
+  }
+  _cacArteArboles = { clave, lista };
+  return lista;
+}
+
+// Arte nuevo para un árbol: el SUYO si lo tiene; si no, cualquiera de los que tengan
+// recortes (si recortas un árbol, quieres verlo en el bosque, no sólo en el suyo).
+function arteDeArbolPara(clave, c, r) {
+  const propia = claveDeArteDeArbol(clave);
+  if (propia) return propia;
+  const lista = clavesDeArteDeArbol();
+  if (!lista.length) return null;
+  const seed = tileNoise(c || 0, r || 0, 33, 34);
+  return lista[Math.max(0, Math.min(lista.length - 1, Math.floor(seed * lista.length)))];
+}
+
+// Altura (en píxeles de pantalla) del ARTE NUEVO de un árbol.
+// Se calcula como el árbol CLÁSICO de esa celda: altura de la plantilla × su escala.
+// Antes el recorte del PNG se dibujaba a `tileSize * 1.28 * 0.85` (unas 26 px con
+// celdas de 24), tres veces más pequeño que los árboles de siempre: se veían como
+// matas. Con esto miden igual, y `window._mesoEscalaArboles` (por defecto 1) permite
+// hacerlos más grandes EN CALIENTE sin tocar código: `window._mesoEscalaArboles = 1.4`.
+function alturaArteArbol(tpl, base, lodFactor, sizeHint) {
+  let altoTpl = 16;
+  try {
+    if (tpl && tpl.length) {
+      let m = 0;
+      for (const p of tpl) { if (p && p[1] > m) m = p[1]; }
+      altoTpl = m + 1;
+    }
+  } catch (e) {}
+  const escala = Math.max(1, Math.floor((base / 4.8) * (Number(lodFactor) || 1) * (Number(sizeHint) || 1)));
+  return Math.max(10, Math.round(altoTpl * escala * escalaArteArboles()));
+}
+
+// Multiplicador del tamaño de los árboles con arte nuevo. Por defecto 1.15: un pelín
+// más grandes que el árbol clásico de esa celda (que ya es ~3,5× lo que se dibujaba
+// antes del arreglo). Se lee con caché de 2 s porque esto se pregunta por cada árbol y
+// por fotograma.
+//   · `window._mesoEscalaArboles = 1.4`            (en caliente, consola)
+//   · `localStorage.setItem('meso.treeScale','1.4')` + recargar (queda guardado)
+const ESCALA_ARBOLES_POR_DEFECTO = 1.15;
+let _cacEscalaArboles = { t: 0, v: ESCALA_ARBOLES_POR_DEFECTO };
+function escalaArteArboles() {
+  const ahora = Date.now();
+  if (ahora - _cacEscalaArboles.t < 2000) return _cacEscalaArboles.v;
+  let v = ESCALA_ARBOLES_POR_DEFECTO;
+  try {
+    const enCaliente = Number(window._mesoEscalaArboles);
+    const guardada = Number(localStorage.getItem('meso.treeScale'));
+    if (enCaliente > 0) v = enCaliente;
+    else if (guardada > 0) v = guardada;
+  } catch (e) {}
+  _cacEscalaArboles = { t: ahora, v };
+  return v;
+}
+
+// Plantilla que le tocaría a un árbol (para heredar su tamaño).
+function plantillaArbolPara(variant, c, r) {
+  try {
+    const idx = Math.max(0, Math.min(GLOBAL_TREE_TEMPLATES.length - 1, pickForestTreeTemplateIndex(variant, c || 0, r || 0)));
+    return GLOBAL_TREE_TEMPLATES[idx];
+  } catch (e) { return null; }
+}
+
 function getRegisteredSpriteAspect(name) {
   try {
     const img = (window._SPRITE_IMAGES && window._SPRITE_IMAGES[name]) || (window._ICON_BITMAPS && window._ICON_BITMAPS[name]) || (window._ENTITY_BITMAPS && window._ENTITY_BITMAPS[name]);
@@ -6474,13 +7143,32 @@ function getRegisteredSpriteAspect(name) {
 function resolveTreeSpriteVariant(variant, col, row) {
   try {
     const raw = String(variant || '').toLowerCase();
-    const isTreeTemplate = /^tree\d+$/.test(raw);
-    if (!isTreeTemplate) return variant;
+    const c = col || 0, r = row || 0;
+
+    // ── ARTE NUEVO (editor de entidades: recortes del PNG) ──────────────────
+    // El editor registra `treeN_sup` y `treeN_iso`, NUNCA `treeN`. Como aquí se
+    // preguntaba por `treeN`, el juego encontraba el arte de siempre
+    // (`entity-pixels.json`) y las ediciones de los árboles no se veían. Ahora el
+    // arte recortado manda.
+    if (/^tree\d+$/.test(raw)) {
+      const propio = arteDeArbolPara(raw, c, r);   // si editas `tree1`, se ve `tree1`
+      if (propio) return propio;
+    } else {
+      // Variante con nombre (oak, birch, pine…): la clave es la que le tocaría por
+      // el índice de plantilla del bosque, que es lo que dibuja el juego.
+      const idx = pickForestTreeTemplateIndex(raw, c, r);
+      if (idx >= 0 && idx <= 4) {
+        const arte = arteDeArbolPara('tree' + idx, c, r);
+        if (arte) return arte;
+      }
+    }
+
+    // ── Arte de siempre: los sprites tree0..tree4 de `entity-pixels.json` ────
     const isUrss = (window._currentEpoch || 'mesopotamia') === 'urss';
     const preferred = isUrss ? ['tree0', 'tree1', 'tree2', 'tree3'] : ['tree0', 'tree1', 'tree2', 'tree3', 'tree4'];
     const available = preferred.filter(k => hasRegisteredSprite(k));
     if (!available.length) return variant;
-    const seed = tileNoise(col || 0, row || 0, 33, 34);
+    const seed = tileNoise(c, r, 33, 34);
     const idx = Math.max(0, Math.min(available.length - 1, Math.floor(seed * available.length)));
     return available[idx] || variant;
   } catch (e) {
@@ -6562,6 +7250,63 @@ function getSwayBitmap(name, def, gw, gh, scale, bendArt) {
 }
 function clearSwayBitmaps() { try { _swayBitmaps.clear(); } catch (e) {} }
 
+// ── SPRITE CON BALANCEO, PRE-RENDERIZADO A SU TAMAÑO FINAL ──────────────────
+// `drawEntitySpriteAt` con `sway` no puede usar el bitmap normal (el doblez se
+// aplica por filas), y el camino de reserva pinta PÍXEL A PÍXEL: un árbol
+// recortado de un PNG son ~25.000 píxeles → 25.000 fillRect por árbol y fotograma.
+// Medido con 300 árboles en la cola diferida: 164 ms de los 192 ms del fotograma.
+// Aquí se compone UNA vez por (clave, tamaño final, doblez) desde el lienzo de
+// origen (una fila de arte = un drawImage) y luego cada árbol es UN drawImage.
+// El tamaño se cuantiza con `snapSpriteSize` para que el jitter de tamaño no cree
+// una entrada por árbol, y el doblez va en píxeles de PANTALLA (-4..4).
+const _arbolSwayCache = new Map();
+function getSwayBitmapFinal(name, def, gw, gh, ancho, alto, bendPx) {
+  try {
+    if (!def || !Array.isArray(def.pixels) || !def.pixels.length) return null;
+    // Cuantización GRUESA a propósito: con el jitter de tamaño por celda y 9 valores
+    // de doblez, una clave fina llenaba la caché y se vaciaba cada pocos fotogramas
+    // (recomponer 90 lienzos cuesta más que dibujar los árboles). Pasos de 8 px.
+    const w = Math.max(1, Math.round(ancho / 8) * 8);
+    const h = Math.max(1, Math.round(alto / 8) * 8);
+    if (w > 2048 || h > 2048) return null;
+    const bend = Math.max(-4, Math.min(4, Math.round(bendPx)));
+    const key = name + '|' + w + 'x' + h + '|' + bend;
+    const hit = _arbolSwayCache.get(key);
+    if (hit !== undefined) return hit;
+    const src = getSpriteSourceBitmap(name, def.pixels, gw, gh);
+    if (!src || !src.cv || !(src.w > 0) || !(src.h > 0)) { _arbolSwayCache.set(key, null); return null; }
+    const pad = 4;
+    const cv = document.createElement('canvas');
+    cv.width = Math.min(4096, w + pad * 2);
+    cv.height = Math.min(4096, h + pad * 2);
+    const g = cv.getContext('2d');
+    g.imageSmoothingEnabled = false;      // pixel-art ampliado: nítido y barato
+    // El doblez del viento es un CIZALLADO LINEAL (la base queda clavada y la copa
+    // se inclina), así que se dibuja el recorte entero EN UNA PASADA con una
+    // transformación, en vez de fila por fila (~200 drawImage por entrada). Llenar
+    // una entrada pasa de ~10 ms a ~0,05 ms: antes, cada movimiento de cámara o
+    // cambio de zoom invalidaba decenas de entradas y se notaban tirones.
+    if (bend) {
+      const shear = bend / Math.max(1, h);
+      g.setTransform(1, 0, shear, 1, -shear * h, 0);   // x' = x + shear·(y - h)
+      g.drawImage(src.cv, 0, 0, src.w, src.h, pad, 0, w, h);
+      g.setTransform(1, 0, 0, 1, 0, 0);
+    } else {
+      g.drawImage(src.cv, 0, 0, src.w, src.h, pad, 0, w, h);
+    }
+    const rec = { canvas: cv, pad };
+    // Desalojo del más antiguo (Map conserva el orden de inserción), no vaciado en
+    // bloque: vaciar en cada pasada arruinaba la ventaja de la caché.
+    while (_arbolSwayCache.size > 240) {
+      const primero = _arbolSwayCache.keys().next();
+      if (primero.done) break;
+      _arbolSwayCache.delete(primero.value);
+    }
+    _arbolSwayCache.set(key, rec);
+    return rec;
+  } catch (e) { return null; }
+}
+
 function resolveBuildingSpriteKey(type) {
   const aliases = {
     house_small: 'house',
@@ -6614,6 +7359,9 @@ function clonePixelLibrary(src) {
         // con la proporción equivocada.
         gridW: def.gridW,
         gridH: def.gridH,
+        // Los sprites con volumen isométrico llevan tejado encima y son más altos
+        // que su solar a propósito (ver `freeHeight` en drawEntitySpriteAt).
+        freeHeight: def.freeHeight,
         pixels: Array.isArray(def.pixels) ? def.pixels.map(p => (Array.isArray(p) ? p.slice() : p)) : []
       };
     }
@@ -6681,6 +7429,200 @@ function pickSovietBlockVariant(col, row) {
   const seed = ((((col || 0) * 73856093) ^ ((row || 0) * 19349663)) >>> 0);
   return variants[seed % variants.length];
 }
+
+// ── VISTAS DE ENTIDAD RECORTADAS DE UN PNG ──────────────────────────────────
+// `tools/Support/entity-sheet-editor.html` permite recortar, sobre una hoja de
+// sprites, qué trozo corresponde a cada vista de cada entidad. Lo que se guarda es
+// pequeño y vive EN EL PROYECTO: la ruta del PNG y el rectángulo de cada vista, en
+// `data/entity-views.json` (el editor lo escribe con `npm run editor`).
+// Aquí se extraen los píxeles de esos rectángulos y se registran como variantes,
+// que es lo que el motor ya sabe usar:
+//   <clave>_sup   →  vista de ARRIBA (planta / TECHO)
+//   <clave>_iso   →  vista ISOMÉTRICA (3/4)
+//   character_<direccion>  →  personajes (sur / norte / este / oeste)
+// ── ESTILO DE ARTE: CLÁSICO o NUEVO ───────────────────────────────────────
+// Nada se pisa: `data/entity-pixels.json` (los sprites de siempre) NO se toca
+// nunca; el editor sólo AÑADE variantes (`<clave>_sup`, `<clave>_iso`,
+// `character_<dir>`) a la librería en memoria. Aquí se puede volver al arte de
+// siempre sin borrar nada:
+//   · `"estilo": "clasico"` en data/entity-views.json  → no se registra ninguna
+//     variante y el juego dibuja los sprites originales.
+//   · En caliente: `MesoEntityViews.estilo('clasico')` / `'nuevo'`.
+const _vistasRegistradas = [];
+
+async function cargarVistasDeEntidades() {
+  const lib = window.ENTITY_PIXEL_LIBRARY;
+  // Se retiran las variantes de la pasada anterior (por si se cambia de estilo o
+  // se recarga el fichero en caliente): así "clasico" devuelve el juego al arte
+  // original sin reiniciar.
+  if (lib) {
+    for (const k of _vistasRegistradas) { try { delete lib[k]; } catch (e) {} }
+  }
+  _vistasRegistradas.length = 0;
+  // Las claves de arte nuevo cambian: se invalida la lista cacheada de árboles.
+  _versionArteEntidades++;
+
+  let mapa = null;
+  // `_mesoEstiloForzado` (cambio en caliente desde la consola) MANDA sobre lo que
+  // diga el fichero: si no, elegir 'nuevo' a mano se deshacía al releer el JSON.
+  const forzado = window._mesoEstiloForzado || null;
+  // Elección del jugador en el menú (Crear partida → Opciones → Estilo de arte).
+  // MANDA sobre el `estilo` del fichero: el jugador puede volver al arte clásico
+  // sin que nadie toque data/entity-views.json. Nada se borra, sólo se dibuja.
+  let estiloMenu = null;
+  try {
+    const guardado = localStorage.getItem('meso.spriteStyle');
+    if (guardado === 'clasico' || guardado === 'nuevo') estiloMenu = guardado;
+  } catch (e) { /* sin localStorage: se usa el del fichero */ }
+  let estilo = null;
+  const fusionar = (j) => {
+    if (!j) return;
+    if (!forzado && !estiloMenu && (j.estilo === 'clasico' || j.estilo === 'nuevo')) estilo = j.estilo;
+    const ent = j.entidades || j;
+    if (!ent || typeof ent !== 'object') return;
+    mapa = mapa || {};
+    for (const k of Object.keys(ent)) {
+      mapa[k] = Object.assign({}, mapa[k], ent[k]);
+      // `hoja` puede venir en la raíz del export
+      if (j.hoja && !mapa[k].hoja) mapa[k].hoja = j.hoja;
+    }
+  };
+  try {
+    const res = await fetch('data/entity-views.json?v=' + Date.now());
+    if (res.ok) fusionar(await res.json());
+  } catch (e) { /* el fichero es opcional */ }
+  estilo = forzado || estiloMenu || estilo || window._mesoEstiloArte || 'nuevo';
+  window._mesoEstiloArte = estilo;
+  if (estilo === 'clasico') {
+    console.log('[vistas] estilo CLÁSICO' + (estiloMenu && !forzado ? ' (elegido en el menú)' : '') + ': se dibujan los sprites originales de entity-pixels.json');
+    try { clearSpriteBitmaps(); mapCacheDirty = true; } catch (e) {}
+    return 0;
+  }
+  if (!mapa) return 0;
+  if (!lib) return 0;
+  const hojasCache = new Map();     // ruta → { img, cv, ctx }
+  const hojasMalas = new Set();     // rutas que no cargan: se avisa una vez, no por entidad
+  const abrirHoja = async (ruta) => {
+    if (hojasCache.has(ruta)) return hojasCache.get(ruta);
+    let rec = null;
+    try {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      await new Promise((res, rej) => {
+        img.onload = res; img.onerror = () => rej(new Error('no carga'));
+        // En Electron, `meso-local://` salta el CORS de file://
+        const url = (window.__mesoPreload && window.__mesoPreload.isElectron) ? 'meso-local://' + ruta : ruta;
+        img.src = url + (url.indexOf('?') < 0 ? '?v=' + Date.now() : '');
+      });
+      const cv = document.createElement('canvas');
+      cv.width = img.width; cv.height = img.height;
+      const ctx = cv.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(img, 0, 0);
+      rec = { img, cv, ctx };
+    } catch (e) {
+      rec = null;
+      if (!hojasMalas.has(ruta)) {
+        hojasMalas.add(ruta);
+        console.warn('[vistas] no encuentro la hoja «' + ruta + '»: las vistas recortadas de ese PNG no se usan ' +
+          '(guárdala en el proyecto; el editor con `npm run editor` la copia a data/sheets/)');
+        if (window.__mesoPreload && window.__mesoPreload.isElectron) {
+          // En Electron las hojas se piden por `meso-local://`. Si el protocolo no
+          // manda cabeceras CORS, la imagen con crossOrigin='anonymous' no carga y
+          // aquí no se registra NADA del arte nuevo (en el navegador sí se ve).
+          console.warn('[vistas] en Electron la hoja se pide por meso-local://: si el fichero existe, ' +
+            'el problema son las cabeceras CORS del protocolo (ver electron/main.js, registerLocalProtocol)');
+        }
+      }
+    }
+    hojasCache.set(ruta, rec);
+    return rec;
+  };
+
+  // Recorta un rectángulo de la hoja y lo devuelve como píxeles [x,y,color].
+  // `margen` = fracción del tamaño que se añade transparente alrededor: sirve para
+  // que la vista de arriba caiga en la huella exacta del edificio (el motor dibuja
+  // todos los edificios un 25 % más grandes que su solar).
+  const recortar = (hoja, r, margen) => {
+    const w = Math.max(1, Math.round(r.w)), h = Math.max(1, Math.round(r.h));
+    let datos = null;
+    try { datos = hoja.ctx.getImageData(r.x, r.y, w, h).data; } catch (e) { return null; }
+    const mx = Math.round(w * margen), my = Math.round(h * margen);
+    const pixels = [];
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = (y * w + x) * 4;
+        if (datos[i + 3] < 24) continue;                 // casi transparente: fuera
+        const hex = '#' + [datos[i], datos[i + 1], datos[i + 2]]
+          .map((v) => v.toString(16).padStart(2, '0')).join('');
+        pixels.push([x + mx, y + my, hex]);
+      }
+    }
+    if (!pixels.length) return null;
+    return { pixels, gridW: w + mx * 2, gridH: h + my * 2 };
+  };
+
+  let registradas = 0;
+  const claves = Object.keys(mapa);
+  for (const clave of claves) {
+    const e = mapa[clave] || {};
+    if (e.sistema !== 'nuevo' || !e.vistas) continue;
+    const esPersonaje = /^character$/i.test(clave) || /^(PERSONAJE|NPC|PERRO|CABALLO|LOBO|CONEJO|ZORRO)$/.test(clave);
+    const hojas = e.hoja ? [e.hoja] : [];
+    if (!hojas.length) {
+      // sin hoja propia: probar con la primera vista que traiga una
+      for (const k of Object.keys(e.vistas)) if (e.vistas[k] && e.vistas[k].hoja) { hojas.push(e.vistas[k].hoja); break; }
+    }
+    if (!hojas.length) {
+      console.warn('[vistas] «' + clave + '» no dice de qué PNG salen sus recortes (falta "hoja")');
+      continue;
+    }
+    for (const ruta of hojas) {
+      const hoja = await abrirHoja(ruta);
+      if (!hoja) continue;
+      for (const vista of Object.keys(e.vistas)) {
+        const r = e.vistas[vista];
+        if (!r || !(r.w > 0) || !(r.h > 0)) continue;
+        const margen = (e.ajusteHuella !== false && vista === 'sup') ? 0.125 : 0;
+        const def = recortar(hoja, r, margen);
+        if (!def) continue;
+        if (esPersonaje) {
+          const dir = { sur: 'down', norte: 'up', este: 'right', oeste: 'left' }[vista] || vista;
+          lib['character_' + vista] = { grid: Math.max(def.gridW, def.gridH), gridW: def.gridW, gridH: def.gridH, pixels: def.pixels };
+          lib['character_' + dir] = lib['character_' + vista];
+          _vistasRegistradas.push('character_' + vista, 'character_' + dir);
+        } else {
+          const sufijo = vista === 'sup' ? '_sup' : '_iso';
+          lib[clave + sufijo] = { grid: Math.max(def.gridW, def.gridH), gridW: def.gridW, gridH: def.gridH, pixels: def.pixels };
+          _vistasRegistradas.push(clave + sufijo);
+        }
+        registradas++;
+      }
+      break;   // una hoja por entidad basta
+    }
+  }
+  if (registradas) {
+    try { clearSpriteBitmaps(); } catch (e) {}
+    try { mapCacheDirty = true; } catch (e) {}
+    console.log('[vistas] ' + registradas + ' vistas de entidad registradas desde PNG');
+  }
+  return registradas;
+}
+try {
+  window.MesoEntityViews = {
+    recargar: cargarVistasDeEntidades,
+    fichero: 'data/entity-views.json',
+    // Cambiar de estilo EN CALIENTE (sin tocar ficheros ni reiniciar):
+    //   MesoEntityViews.estilo('clasico')  → sprites originales
+    //   MesoEntityViews.estilo('nuevo')    → los recortes del PNG
+    estilo: (v) => {
+      if (v === 'clasico' || v === 'nuevo') window._mesoEstiloForzado = v;
+      else if (v === null || v === undefined) window._mesoEstiloForzado = null;   // volver al del fichero
+      return Promise.resolve(cargarVistasDeEntidades()).then(() => window._mesoEstiloArte);
+    },
+    actual: () => window._mesoEstiloArte || 'nuevo'
+  };
+} catch (e) {}
+
 
 function drawWheatIcon(ctx, w, h) {
   ctx.clearRect(0,0,w,h);
@@ -6777,6 +7719,9 @@ function drawWheatIcon(ctx, w, h) {
         // El arte del trigo (fases de crecimiento) se registra aqui, con la
         // libreria de sprites ya cargada.
         try { registerCropSprites(); } catch (e) { console.warn('crop sprites err', e); }
+        // Vistas recortadas de un PNG (editor de entidades): se registran AHORA,
+        // antes de reconstruir las cachés, para que el mundo salga ya con ellas.
+        try { await cargarVistasDeEntidades(); } catch (e) { console.warn('vistas de entidad err', e); }
         // Rebuild map caches now that sprite library is ready (avoids stale pre-library renders)
         try {
           mapCacheDirty = true;
@@ -7222,6 +8167,9 @@ function updatePlayerSpeed() {
     if ((char.hunger || 0) < lowThresh || (char.thirst || 0) < lowThresh) f *= 0.7;
     f *= woundSpeedFactor();
     if (typeof estaMontado === 'function' && estaMontado()) f *= 1.75;
+    // Arreón de galope (acción del caballo): un extra temporal de velocidad.
+    const boost = window._horseBoost;
+    if (boost && boost.until > Date.now()) f *= (boost.factor || 1.3);
     player.speed = Math.max(1 / TILE, base * f);
     return player.speed;
   } catch (e) { return player.speed; }
@@ -7408,6 +8356,101 @@ function interactWithHorse() {
     return h ? mountHorse(h) : false;
   } catch (e) { return false; }
 }
+// ── ACCIONES DEL CABALLO ────────────────────────────────────────────────────
+// El caballo no era más que un sprite que se deslizaba. Ahora tiene sus propias
+// acciones (como los gestos del jugador): cada una es un estado de animación del
+// módulo de arte (`engine/animal-art.js`) con su sonido, y algunas tienen efecto
+// real (el galope mete un arreón de velocidad; beber exige estar junto al agua).
+// Se lanzan desde el panel de Acciones (sección «Caballo»), con las teclas que se
+// indican abajo cuando vas montado, o desde la API de pruebas.
+const HORSE_ACTIONS = [
+  { id: 'encabritar', icon: '\uD83D\uDC0E', label: 'Encabritarse', key: 'x', state: 'rear',   ms: 1500, sfx: 'whinny',     hint: 'Se levanta sobre las patas traseras.' },
+  { id: 'relinchar',  icon: '\uD83D\uDCE3', label: 'Relinchar',    key: 'z', state: 'neigh',  ms: 1800, sfx: 'horseNeigh', hint: 'Cabeza alta, belfo abierto y crin al viento.' },
+  { id: 'piafar',     icon: '\uD83E\uDDB6', label: 'Piafar',       key: 'b', state: 'paw',    ms: 1800, sfx: 'horsePaw',   hint: 'Escarba el suelo con una mano.' },
+  { id: 'galopar',    icon: '\uD83D\uDCA8', label: 'Galopar',      key: 'n', state: 'gallop', ms: 2600, sfx: 'gallop',     hint: 'Arreón: un rato a galope tendido.' },
+  { id: 'pastar',     icon: '\uD83C\uDF3F', label: 'Pastar',                 state: 'graze',  ms: 5000, sfx: 'horseChew',  hint: 'Baja la cabeza a la hierba.' },
+  { id: 'beber',      icon: '\uD83D\uDCA7', label: 'Beber',                  state: 'drink',  ms: 3500, sfx: 'drink',      hint: 'Bebe del río (hay que estar junto al agua).' },
+  { id: 'sacudirse',  icon: '\uD83D\uDCA5', label: 'Sacudirse',              state: 'shake',  ms: 1300, sfx: 'horseSnort', hint: 'Se sacude las moscas a los lados.' },
+  { id: 'tumbarse',   icon: '\uD83D\uDECF', label: 'Echarse',                state: 'lie',    ms: 6000, sfx: 'sleep',      hint: 'Se echa a descansar (sólo si no vas montado).' }
+];
+
+const HORSE_ACTION_MS = 120;   // duración mínima para que se vea la pose
+
+function horseActionList() { return HORSE_ACTIONS.slice(); }
+function horseActionDef(id) { return HORSE_ACTIONS.find(a => a.id === id) || null; }
+
+// ¿Qué estado de animación le toca al caballo? Primero la acción en curso, luego
+// el aire según cómo se mueva (paso, trote o galope).
+function horseStateFor(ent, now) {
+  try {
+    if (ent && ent._act && ent._act.until > now) return ent._act.state;
+    if (ent && ent.moveTarget) {
+      const sp = Number(ent._speedNow) || 0;
+      return sp > 2.2 ? 'gallop' : (sp > 1.2 ? 'trot' : 'walk');
+    }
+    return 'idle';
+  } catch (e) { return 'idle'; }
+}
+
+// Progreso (0..1) de la acción en curso, para que el arte la anime del derecho.
+function horseActPhase(ent, now) {
+  try {
+    const a = ent && ent._act;
+    if (!a) return null;
+    const t = (now - a.from) / Math.max(1, a.until - a.from);
+    return Math.max(0, Math.min(1, t));
+  } catch (e) { return null; }
+}
+
+// Aire del caballo cuando lo lleva el jugador: lo marca el jinete (si se ha
+// movido este fotograma y si va esprintando), más la acción en curso.
+function mountedHorseState(now) {
+  try {
+    const h = player._mount;
+    if (h && h._act && h._act.until > now) return h._act.state;
+    const wt = player._walkTime || 0;
+    const movio = (wt !== (window._mountStrideSeen || 0));
+    window._mountStrideSeen = wt;
+    if (!movio) return 'idle';
+    return player._isSprinting ? 'gallop' : 'trot';
+  } catch (e) { return 'idle'; }
+}
+
+function runHorseAction(id) {
+  try {
+    const def = horseActionDef(id);
+    if (!def) return false;
+    const montado = estaMontado();
+    const h = montado ? player._mount : nearestHorse(3.2);
+    if (!h) { notify('No tienes un caballo cerca.'); return false; }
+    if (id === 'beber') {
+      const cerca = (typeof isNearRiver === 'function') ? isNearRiver(Math.floor(h.x), Math.floor(h.y)) : false;
+      if (!cerca) { notify('El caballo necesita estar junto al agua para beber.'); return false; }
+    }
+    if (id === 'tumbarse' && montado) { notify('Bájate del caballo para que se eche.'); return false; }
+    const now = Date.now();
+    h._act = { id: def.id, state: def.state, from: now, until: now + Math.max(HORSE_ACTION_MS, def.ms || 1200) };
+    // Efectos reales de algunas acciones.
+    if (id === 'galopar') {
+      window._horseBoost = { until: now + 4000, factor: 1.35 };
+      try { updatePlayerSpeed(); } catch (e) {}
+      try { setTimeout(() => { window._horseBoost = null; try { updatePlayerSpeed(); } catch (e) {} }, 4100); } catch (e) {}
+    }
+    try { sfx(def.sfx || 'whinny', { volume: 0.75 }); } catch (e) {}
+    if (!montado) {
+      try { spawnFloatingText(h.x, (h.y || 0) - 0.6, def.label + '!', { color: '#E8D98A', force: true }); } catch (e) {}
+    }
+    return true;
+  } catch (e) { return false; }
+}
+
+// Tecla → acción del caballo (sólo se usan cuando vas montado, para no chocar con
+// los atajos del juego).
+function horseActionForKey(key) {
+  const k = String(key || '').toLowerCase();
+  return HORSE_ACTIONS.find(a => a.key === k) || null;
+}
+
 try {
   window.horses = {
     list: () => horseList(),
@@ -7415,7 +8458,10 @@ try {
     interact: () => interactWithHorse(),
     mountNearest: () => { const h = nearestHorse(3); return h ? mountHorse(h) : false; },
     dismount: (tether) => dismountHorse(!!tether),
-    posts: () => (window._hitchingPosts || []).slice()
+    posts: () => (window._hitchingPosts || []).slice(),
+    actions: () => horseActionList(),
+    act: (id) => runHorseAction(id),
+    state: () => horseStateFor(estaMontado() ? player._mount : nearestHorse(6), Date.now())
   };
 } catch (e) {}
 
@@ -7579,6 +8625,18 @@ function createPlayerActionsPanel() {
   } catch (e) { return null; }
 }
 
+// Sección «Caballo» del panel de acciones: se genera al pintar el panel (no al
+// cargar el módulo, que entonces no hay caballo todavía ni el jugador está
+// montado).
+function filasCaballoHtml() {
+  try {
+    const montado = estaMontado();
+    if (!montado && !nearestHorse(4.5)) return '';
+    const filas = HORSE_ACTIONS.map(a => `<div class="pa-row"><button class="pa-btn" data-horse="${a.id}" title="${a.hint || ''}"><span class="pa-ico">${a.icon}</span>${a.label}${(montado && a.key) ? `<span class="pa-cost">${a.key.toUpperCase()}</span>` : ''}</button></div>`).join('');
+    return `<div class="pa-sec">Caballo${montado ? ' <span class="pa-tip">(montado: teclas X · Z · B · N)</span>' : ''}</div>${filas}`;
+  } catch (e) { return ''; }
+}
+
 function renderPlayerActionsPanel() {
   const p = document.getElementById('action-list-panel');
   if (!p) return;
@@ -7602,10 +8660,12 @@ function renderPlayerActionsPanel() {
     <div class="pa-scroll">
       <div class="pa-sec">Gestos${custom ? ' <span class="pa-tip">(marca los que quieras y ordenalos)</span>' : ''}</div>
       ${filasGestos}
+      ${filasCaballoHtml()}
       <div class="pa-sec">Acciones de turno</div>
       ${filasTurno}
     </div>`;
   p.querySelectorAll('[data-run]').forEach(b => b.addEventListener('click', () => { try { runPlayerGesture(b.getAttribute('data-run')); } catch (e) {} }));
+  p.querySelectorAll('[data-horse]').forEach(b => b.addEventListener('click', () => { try { runHorseAction(b.getAttribute('data-horse')); } catch (e) {} }));
   p.querySelectorAll('[data-turn]').forEach(b => b.addEventListener('click', () => { try { if (typeof performAction === 'function') performAction(b.getAttribute('data-turn')); } catch (e) {} }));
   const closeBtn = p.querySelector('#pa-close');
   if (closeBtn) closeBtn.addEventListener('click', () => togglePlayerActions(false));
@@ -11029,7 +12089,34 @@ function drawBuilding(col, row, type, alpha) {
       const districtVariant = pickSovietBlockVariant(col, row);
       if (hasRegisteredSprite(districtVariant)) useKey = districtVariant;
     }
+    // ── VARIANTE POR VISTA (hoja de arte: TECHO / ISOMÉTRICA) ────────────────
+    // Si el sprite trae dibujada su vista, manda ella: `<clave>_sup` para la vista
+    // de arriba y `<clave>_iso` para la isométrica. Así se puede ir sustituyendo la
+    // planta procedimental (y el volumen) por arte dibujado, sprite a sprite, sin
+    // tocar código. Si no existe la variante, se generan (ver building-volume.js).
+    {
+      const variante = viewMode === 'iso' ? (useKey + '_iso') : (useKey + '_sup');
+      if (hasRegisteredSprite(variante)) useKey = variante;
+    }
     if (useKey) {
+      // ── VISTA DE ARRIBA: PLANTA DEL EDIFICIO ──────────────────────────────
+      // En la vista ortogonal el mundo se mira desde arriba, así que el edificio
+      // se pinta con su TECHO ajustado a su huella (como la viñeta «TECHO» de la
+      // hoja de arte). Dibujar aquí el alzado de frente es lo que hacía que los
+      // edificios pareciesen recortes planos y, al ganarle volumen, tiendas de
+      // campaña. Se puede apagar: `MESO_DEBUG.testDraw.vistas({ superior:false })`.
+      if (viewMode === 'ortho' && VISTAS.superior && !PLANTA_SKIP.has(type)) {
+        const def = window.ENTITY_PIXEL_LIBRARY[useKey];
+        if (def && Array.isArray(def.pixels) && def.pixels.length) {
+          try {
+            const mat = materialesDeEdificio(useKey, def.pixels, def.gridW || def.grid, def.gridH || def.grid);
+            const ts = getTileSize();
+            drawPlantaTecho(ctx, x, y, ts * size.w, ts * size.h, mat);
+            ctx.restore();
+            return;
+          } catch (e) { /* si algo falla, sigue con el sprite de siempre */ }
+        }
+      }
       let spriteW = W;
       let spriteH = H;
       let spriteAnchorY = y + H;
@@ -11143,9 +12230,18 @@ function drawBuilding(col, row, type, alpha) {
   if (type === 'wall_segment') {
     // Read stored orientation: 'h' = horizontal (N/S row), 'v' = vertical (E/W column)
     const _wallOrient = (grid[row] && grid[row][col] && grid[row][col].orient) ? grid[row][col].orient : 'h';
-    // Sprite de verdad si existe (arte dibujado a mano); si no, dibujo
-    // procedural de respaldo, que se ve borroso por usar fracciones de celda.
+    // El muro no tiene sprite propio (`wall_segment` no existe como arte): el arte
+    // se dibuja POR ORIENTACIÓN (`wall_segment_h` / `wall_segment_v`), que es lo que
+    // se recorta a mano en el editor de entidades. Y manda la VARIANTE DE LA VISTA
+    // (`_sup` / `_iso`): sin mirarla, el muro seguía con el sprite antiguo aunque
+    // tuvieras arte nuevo y se veía una mezcla de arte viejo y nuevo en la partida.
     const _wallKey = _wallOrient === 'v' ? 'wall_segment_v' : 'wall_segment_h';
+    const _wallVariante = _wallKey + (viewMode === 'iso' ? '_iso' : '_sup');
+    if (hasRegisteredSprite(_wallVariante)) {
+      drawEntitySpriteAt(_wallVariante, x + W * 0.5, y + H, W, H, { ignoreEntityScale: true });
+      ctx.restore();
+      return;
+    }
     if (hasRegisteredSprite(_wallKey)) {
       drawEntitySpriteAt(_wallKey, x + W * 0.5, y + H, W, H, { ignoreEntityScale: true });
       ctx.restore();
@@ -11204,13 +12300,19 @@ function drawBuilding(col, row, type, alpha) {
 
   // ── WALL TOWER ────────────────────────────────────────────────
   if (type === 'wall_tower') {
+    // Igual que el muro: si hay arte recortado para la vista actual, manda él.
+    const _towerVariante = 'wall_tower' + (viewMode === 'iso' ? '_iso' : '_sup');
+    if (hasRegisteredSprite(_towerVariante)) {
+      drawEntitySpriteAt(_towerVariante, x + W * 0.5, y + H, W, H, { ignoreEntityScale: true });
+      ctx.restore();
+      return;
+    }
     if (hasRegisteredSprite('wall_tower')) {
       drawEntitySpriteAt('wall_tower', x + W * 0.5, y + H, W, H, { ignoreEntityScale: true });
       ctx.restore();
       return;
     }
-    const tc1 = '#B8A860', tc2 = '#9A8A48', tcd = '#6A5A28';
-    // Tower body — taller than wall, slight inset
+    const tc1 = '#B8A860', tc2 = '#9A8A48', tcd = '#6A5A28';    // Tower body — taller than wall, slight inset
     ctx.fillStyle = tc1;
     ctx.fillRect(x + pad, y + H * 0.05, W - pad*2, H * 0.88);
     // Darker face (front plane)
@@ -11726,7 +12828,7 @@ function drawPlayer() {
       ctx.fill();
       ctx.restore();
       drawAnimal(ctx, 'horse', cxM, cyM, spriteW * 1.5, {
-        state: ((player._walkTime || 0) !== (player._mountStrideSeenIso || 0)) ? 'run' : 'idle',
+        state: mountedHorseState(now),
         flip: (dir === 'left'), back: (dir === 'up'), now
       });
       player._mountStrideSeenIso = player._walkTime || 0;
@@ -11824,7 +12926,7 @@ function drawPlayer() {
       ctx.fill();
       ctx.restore();
       drawAnimal(ctx, 'horse', cxM, cyM, spriteW * 1.5, {
-        state: ((player._walkTime || 0) !== (player._mountStrideSeen || 0)) ? 'run' : 'idle',
+        state: mountedHorseState(now),
         flip: (dir === 'left'), back: (dir === 'up'), now
       });
       player._mountStrideSeen = player._walkTime || 0;
@@ -12357,6 +13459,17 @@ function vigilanteTerreno() {
     _terrainWatchdogAt = ahora;
     const _mc = (viewMode === 'iso') ? mapCacheIso : mapCacheOrtho;
     const cacheLista = !!_mc && _mc.width > 1 && _mc.height > 1;
+    // (1) SI HAY UNA CONSTRUCCIÓN EN MARCHA NO SE TOCA. `mapCacheDirty` sigue a
+    // true mientras el mundo se pinta por partes, así que este vigilante creía que
+    // la caché estaba rota y lanzaba OTRA reconstrucción entera cada 5 segundos:
+    // la primera se reiniciaba, el mundo no terminaba de pintarse NUNCA y cada
+    // intento bloqueaba el hilo varios segundos (fotogramas de 8 s y el cartel de
+    // carga pegado para siempre). Basta con esperar: el avance se enseña en el
+    // propio cartel.
+    if (window._terrCacheBusy || _terrainParcialUsable()) {
+      window._terrainWatchdogOk = true;
+      return;
+    }
     if (cacheLista && !mapCacheDirty) {
       window._terrainWatchdogOk = true;
       // Sólo queda la comprobación de color, UNA vez, pasados unos segundos.
@@ -12379,7 +13492,6 @@ function vigilanteTerreno() {
                 window._terrainColorRetried = true;
                 window._terrainColorCheckDone = false;   // volver a probar tras reconstruir
                 mapCacheDirty = true;
-                try { rebuildMapCache(); } catch (e) {}
                 try { rebuildMapCachesAsync(); } catch (e) {}
               }
             } else {
@@ -12394,8 +13506,9 @@ function vigilanteTerreno() {
     if (window._terrainWatchdogTries >= 3) return;
     window._terrainWatchdogTries = (window._terrainWatchdogTries || 0) + 1;
     console.warn('[terreno] caché no lista tras ' + Math.round((ahora - (window._worldReadyAt || ahora)) / 1000) + 's: reconstruyendo (intento ' + window._terrainWatchdogTries + ')');
+    // Sólo la vía asíncrona: `rebuildMapCache()` reconstruye TODO de golpe y en un
+    // mundo grande bloquea el hilo varios segundos (era otro congelado).
     mapCacheDirty = true;
-    try { rebuildMapCache(); } catch (e) {}
     try { rebuildMapCachesAsync(); } catch (e) {}
   } catch (e) {}
 }
@@ -12467,6 +13580,7 @@ function render() {
   const W = canvas.width, H = canvas.height;
   const _ptStart = window._perfSections ? performance.now() : 0;
   const now = Date.now();
+  try { window._lastRenderAt = now; window._rafPendiente = false; } catch (e) {}
   const dt = Math.min(0.05, (now - lastFrameTime) / 1000);
   lastFrameTime = now;
   cleanupExpiredCorpses(now);
@@ -12486,8 +13600,17 @@ function render() {
   // dibujaba celda a celda (una versión «antigua» del terreno, sin texturas de
   // detalle) y en cuanto la caché terminaba «aparecía» el terreno bueno: ese era
   // el parpadeo/versión antigua que se veía al arrancar.
-  const _esperandoTerreno = !window._terrainCacheShownOnce && window._terrCacheBusy &&
-    (Date.now() - (window._terrCacheBusyFrom || 0)) < 25000;
+  // PLAZO FIJO (no renovable) contado desde que el mundo está listo: si la caché
+  // tarda más de la cuenta en un equipo lento, el cartel se retira igualmente y se
+  // dibuja lo que haya. Antes el plazo se medía desde el último intento de
+  // reconstrucción, así que una reconstrucción que se reiniciase lo dejaba pegado
+  // para siempre («se queda así para siempre»).
+  // Y en cuanto la ZONA VISIBLE está pintada (_terrainCachePartial) el mundo se
+  // puede volcar, así que el cartel se retira aunque el resto del mundo siga
+  // pintándose por detrás: en un mundo grande la pasada completa tarda decenas de
+  // segundos y no tiene sentido esperar a que acabe para dejar jugar.
+  const _esperandoTerreno = !window._terrainCacheShownOnce && !window._terrainCachePartial &&
+    window._terrCacheBusy && (Date.now() - (window._worldReadyAt || Date.now())) < 15000;
   if (!window._worldReadyAt || _esperandoTerreno) {
     try {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -12500,7 +13623,10 @@ function render() {
       ctx.fillText('Generando mundo…', W / 2, H / 2 - 12);
       ctx.font = '13px sans-serif';
       ctx.fillStyle = 'rgba(255,240,190,0.75)';
-      ctx.fillText('Preparando terreno, vegetación y aldeas', W / 2, H / 2 + 14);
+      // Si el terreno ya se está pintando, se enseña el avance: así se ve que
+      // avanza aunque el equipo sea lento (antes parecía colgado para siempre).
+      const pct = window._terrCacheBusy && Number.isFinite(window._terrainPaintPct) ? window._terrainPaintPct : null;
+      ctx.fillText(pct === null ? 'Preparando terreno, vegetación y aldeas' : ('Pintando el terreno… ' + pct + ' %'), W / 2, H / 2 + 14);
     } catch (e) {}
     return;
   }
@@ -12540,7 +13666,7 @@ function render() {
   // `MESO_DEBUG.perf.sections()` devuelve la media por fotograma. Sirve para no
   // adivinar dónde se va el tiempo cuando el juego va lento.
   const _ptOn = !!window._perfSections;
-  const _pt = { pre: 0, tiles: 0, terreno: 0, arboles: 0, edificios: 0, entidades: 0, animales: 0, fx: 0, deferred: 0, hud: 0 };
+  const _pt = { pre: 0, tiles: 0, terreno: 0, arboles: 0, edificios: 0, entidades: 0, animales: 0, fx: 0, cola: 0, noche: 0, deferred: 0, hud: 0 };
   let _ptLast = _ptOn ? performance.now() : 0;
   const _mark = _ptOn ? (k) => { const n = performance.now(); _pt[k] += n - _ptLast; _ptLast = n; } : () => {};
   if (_ptOn) _pt.pre += _ptLast - _ptStart;
@@ -13461,7 +14587,7 @@ function render() {
       ? (!!_mc._isoOffset && _mc.width === isoTerrainCacheGeometry(COLS, ROWS).w && _mc.height === isoTerrainCacheGeometry(COLS, ROWS).h)
       : (_mc.width === COLS * TILE && _mc.height === ROWS * TILE)
   );
-  const _terrainCached = !mapCacheDirty && _mcAlDia && !window._noTerrainCacheBlit;
+  const _terrainCached = (!mapCacheDirty || _terrainParcialUsable()) && _mcAlDia && !window._noTerrainCacheBlit;
   // DENTRO DE UNA CASA no se vuelca el terreno del mundo. La habitación ya se ha
   // pintado en la sección TILES y este volcado (que no respeta minC/maxC, dibuja
   // la caché entera) la tapaba por completo: sólo se veía una esquina de la sala
@@ -13470,12 +14596,36 @@ function render() {
     const scale = zoom; // la caché está siempre a cacheZoom = 1
     const prevSmoothing = ctx.imageSmoothingEnabled;
     ctx.imageSmoothingEnabled = false;   // pixel-art: sin suavizado (más nítido y rápido)
-    if (viewMode === 'iso' && _mc._isoOffset) {
-      const destX = Math.round(_mc._isoOffset.minX * scale + camX);
-      const destY = Math.round(_mc._isoOffset.minY * scale + camY);
-      ctx.drawImage(_mc, 0, 0, _mc.width, _mc.height, destX, destY, Math.round(_mc.width * scale), Math.round(_mc.height * scale));
-    } else if (viewMode !== 'iso') {
-      ctx.drawImage(_mc, 0, 0, _mc.width, _mc.height, Math.round(camX), Math.round(camY), Math.round(_mc.width * scale), Math.round(_mc.height * scale));
+    // Si la caché se está construyendo por partes, antes de volcar se remata la
+    // zona visible: si el jugador ha caminado hacia terreno aún sin pintar, se
+    // pinta aquí mismo (una vez por celda: el registro de pintadas lo anota) y
+    // el volcado recortado nunca deja un agujero.
+    try { _terrainRematarZonaVisible(_mc); } catch (e) {}
+    // SÓLO se vuelca el trozo de caché que cae en pantalla. En mundos grandes la
+    // caché mide decenas de millones de píxeles (un mundo crecido de 252×216 ya
+    // son 8064×7680) y `drawImage` con el lienzo ENTERO obligaba al navegador a
+    // recorrerlo cada fotograma: recortando el origen al rectángulo visible el
+    // coste pasa a depender de la pantalla, no del tamaño del mundo.
+    const destX0 = (viewMode === 'iso' && _mc._isoOffset) ? _mc._isoOffset.minX * scale + camX : camX;
+    const destY0 = (viewMode === 'iso' && _mc._isoOffset) ? _mc._isoOffset.minY * scale + camY : camY;
+    if (viewMode !== 'iso' || _mc._isoOffset) {
+      const visW = canvas.width, visH = canvas.height;
+      // Intersección del rectángulo destino con la ventana.
+      const ix0 = Math.max(0, destX0), iy0 = Math.max(0, destY0);
+      const ix1 = Math.min(visW, destX0 + _mc.width * scale);
+      const iy1 = Math.min(visH, destY0 + _mc.height * scale);
+      if (ix1 > ix0 && iy1 > iy0) {
+        // Se pasa la zona visible a coordenadas de la caché (1 px = 1 px de caché)
+        // con un margen de 1 px para que el redondeo no deje costura.
+        const sx = Math.max(0, Math.floor((ix0 - destX0) / scale) - 1);
+        const sy = Math.max(0, Math.floor((iy0 - destY0) / scale) - 1);
+        const sw = Math.min(_mc.width - sx, Math.ceil((ix1 - ix0) / scale) + 3);
+        const sh = Math.min(_mc.height - sy, Math.ceil((iy1 - iy0) / scale) + 3);
+        const dx = Math.round(destX0 + sx * scale);
+        const dy = Math.round(destY0 + sy * scale);
+        ctx.drawImage(_mc, sx, sy, sw, sh, dx, dy, Math.round(sw * scale), Math.round(sh * scale));
+        try { window._terrainBlitRect = { sx, sy, sw, sh }; } catch (e) {}
+      }
     }
     ctx.imageSmoothingEnabled = prevSmoothing;
     try { window._terrainCachedFrames = (window._terrainCachedFrames || 0) + 1; } catch (e) {}
@@ -14420,7 +15570,18 @@ function render() {
       ctx.ellipse(cxH, cyH - Math.max(2, tileSizeH * 0.06), anchoH * 0.4, Math.max(3, tileSizeH * 0.11), 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
-      drawAnimal(ctx, 'horse', cxH, cyH, anchoH, { state: ent.moveTarget ? 'run' : 'idle', flip: miraIzq, back: haciaArriba, now });
+      // Velocidad real (celdas/s) para elegir el aire: paso, trote o galope.
+      try {
+        const dxH = ent.x - (ent._pxForGait !== undefined ? ent._pxForGait : ent.x);
+        const dyH = ent.y - (ent._pyForGait !== undefined ? ent._pyForGait : ent.y);
+        const inst = Math.hypot(dxH, dyH) * 60;
+        ent._speedNow = (ent._speedNow || 0) * 0.7 + inst * 0.3;
+        ent._pxForGait = ent.x; ent._pyForGait = ent.y;
+      } catch (e) {}
+      drawAnimal(ctx, 'horse', cxH, cyH, anchoH, {
+        state: horseStateFor(ent, now), phase01: horseActPhase(ent, now),
+        flip: miraIzq, back: haciaArriba, now
+      });
       // Cuerda al poste si esta amarrado
       if (ent.tethered) {
         const post = (window._hitchingPosts || []).reduce((best, p) => {
@@ -14584,10 +15745,12 @@ function render() {
       if (isOffscreen) return;
       // Y-depth sort: los árboles que estén a la altura del jugador o por debajo
       // se dibujan DESPUÉS (delante). La comparación es con filas ENTERAS: con
-      // decimales el árbol cambiaba de capa al andar y parpadeaba.
+      // decimales el árbol cambiaba de capa al andar y parpadeaba. El corte es
+      // `>=`: un árbol de la misma fila tiene la copa varias celdas más arriba y
+      // también debe tapar al personaje (antes el jugador salía por encima).
       {
         const _entRow = Math.floor(typeof ent.y === 'number' ? ent.y : (ent.row || 0));
-        if (_entRow > Math.floor(player.y || 0)) {
+        if (_entRow >= Math.floor(player.y || 0)) {
           window._deferredTrees.push({ ent, depth: _entRow + 1 });
           return;
         }
@@ -14647,7 +15810,10 @@ function render() {
         const renderVariant = resolveTreeSpriteVariant(variant, ent.col || 0, ent.row || 0);
         if (hasRegisteredSprite(renderVariant)) {
           const lodFactor = zoom >= GRAPHICS_CONFIG.smoothingThreshold ? 1 : 0.8;
-          const spriteH = Math.max(tileSize * 0.72, Math.round(tileSize * (ent.size || 1) * 1.28 * lodFactor * TREE_SIZE_SCALE));
+          // Tamaño del árbol clásico de esa celda (plantilla × escala), no un valor fijo:
+          // el recorte del PNG no puede salir tres veces más pequeño que los de siempre.
+          const baseEscala = (viewMode === 'iso') ? getIsoTileSize().w : tileSize;
+          const spriteH = alturaArteArbol(plantillaArbolPara(variant, ent.col || 0, ent.row || 0), baseEscala, lodFactor, ent.size || 1);
           const aspect = Math.max(0.45, Math.min(1.9, getRegisteredSpriteAspect(renderVariant)));
           const spriteW = Math.max(tileSize * 0.46, Math.round(spriteH * aspect));
           const jitterX = Math.floor((tileNoise(ent.col||0, ent.row||0, 7, 8) - 0.5) * tileSize * 0.18);
@@ -15584,15 +16750,31 @@ function render() {
     if (cola.length) {
       cola.sort((A, B) => (A.d - B.d) || (A.p - B.p) || (A.s - B.s));
       window._occlusionMarkers = [];
-      const _tapado = [];      // rectangulos en pantalla de lo que tapa al jugador
+      const _tapado = [];      // rectangulos en pantalla de OBRAS que tapan al jugador
+      // Los árboles NO entran en `_tapado`: si entrasen, el "circulo de rescate"
+      // redibujaba al personaje translucido ENCIMA de la copa y parecia que los
+      // arboles eran transparentes. Un árbol tapa al jugador y punto (queda el
+      // puntero dorado de `_occlusionMarkers` para no perderlo de vista).
+      const _tapadoArbol = [];  // se calculan pero no disparan el rescate
       const _ts = getTileSize();
       for (const it of cola) {
         if (it.f) {
           // Arbol del bosque diferido: mismo dibujado que en el pase normal.
+          if (it.f.arte) {
+            // Arte nuevo (editor de entidades): el sprite del PNG, directo de su caché.
+            if (dibujarArbolArteDirecto(it.f.arte, it.f.cx, it.f.cy, it.f.w, it.f.h, it.f.fase || treeSwayPhase(it.f.col || 0, it.f.row || 0))) {
+              _tapadoArbol.push({ x: it.f.cx - it.f.w / 2, y: it.f.cy - it.f.h, w: it.f.w, h: it.f.h });
+              continue;
+            }
+            drawEntitySpriteAt(it.f.arte, it.f.cx, it.f.cy, it.f.w, it.f.h,
+              { noShadow: true, sway: 0.8, phase: treeSwayPhase(it.f.col || 0, it.f.row || 0) });
+            _tapadoArbol.push({ x: it.f.cx - it.f.w / 2, y: it.f.cy - it.f.h, w: it.f.w, h: it.f.h });
+            continue;
+          }
           drawTreeTemplateSway(it.f.tpl, it.f.scale, it.f.cx, it.f.cy, it.f.bend);
           const anchoF = (it.f.tpl.reduce((m, p) => Math.max(m, p[0]), 0) + 1) * it.f.scale;
           const altoF = (it.f.tpl.reduce((m, p) => Math.max(m, p[1]), 0) + 1) * it.f.scale;
-          _tapado.push({ x: it.f.cx - anchoF / 2, y: it.f.cy - altoF, w: anchoF, h: altoF });
+          _tapadoArbol.push({ x: it.f.cx - anchoF / 2, y: it.f.cy - altoF, w: anchoF, h: altoF });
           continue;
         }
         if (it.b) {
@@ -15608,11 +16790,24 @@ function render() {
         if (_m) window._occlusionMarkers.push(_m);
       }
       // CIRCULO DE TRANSICIÓN: si un personaje ha quedado tapado por lo que se
-      // acaba de pintar (murallas, casas, copas), se aclara un circulo suyo para
-      // que se le vea. Antes, estar detras de una muralla era quedarse invisible.
+      // acaba de pintar (murallas, casas), se aclara un circulo suyo para que se le
+      // vea. Antes, estar detras de una muralla era quedarse invisible. Los árboles
+      // no entran aquí: tapan de verdad (ver `_tapadoArbol`) y lo único que se
+      // enseña es el puntero dorado de arriba.
+      try {
+        const box = _playerScreenBox;
+        if (box && _tapadoArbol.length) {
+          const tapa = _tapadoArbol.find(r => box.x < r.x + r.w && box.x + box.w > r.x && box.y < r.y + r.h && box.y + box.h > r.y);
+          if (tapa) {
+            const cxT = tapa.x + tapa.w / 2;
+            window._occlusionMarkers.push({ x: cxT, y: tapa.y, dist: Math.hypot(cxT - (box.x + box.w / 2), tapa.y - (box.y + box.h / 2)) });
+          }
+        }
+      } catch (e) {}
       try { drawOccludedReveals(_tapado); } catch (e) {}
     }
   } catch (e) {}
+  _mark('cola');
 
   // ── NIGHT TORCH VIGNETTE ─────────────────────────────────
   // Radial gradient: transparent at player centre → dark at edges.
@@ -15642,6 +16837,7 @@ function render() {
   try { drawPlayerOcclusionIndicators(); } catch (e) {}
   try { drawMissionMarker(); } catch (e) {}
   try { drawMissionStatus(); } catch (e) {}
+  _mark('noche');
 
   try {
     window._interactionTarget = null;
@@ -16346,7 +17542,7 @@ function render() {
       window._perfSectionsTotal = _pt;
     } catch (e) {}
   }
-  if (window._gameStarted && _renderLoopActive) requestAnimationFrame(render);
+  if (window._gameStarted && _renderLoopActive) { try { window._rafPendiente = true; } catch (e) {} requestAnimationFrame(render); }
   else stopRenderLoop();
   } catch (err) {
     // draw error message to canvas for debugging
@@ -16361,6 +17557,19 @@ function render() {
       ctx.fillText('ERROR: ' + msg, 10, 30);
     } catch (inner) {
       console.error('Error rendering error overlay', inner);
+    }
+    // El bucle NO puede morir aquí: antes, una excepción dentro de render() dejaba
+    // el último fotograma congelado en pantalla (con el cartel «Generando mundo…»
+    // si era el que estaba pintado) para siempre. Se vuelve a armar con un poco de
+    // margen, avisando sólo las primeras veces.
+    try {
+      window._renderLoopErrors = (window._renderLoopErrors || 0) + 1;
+      if (window._renderLoopErrors <= 3) {
+        try { console.warn('render(): se reanuda el bucle tras el error #' + window._renderLoopErrors, err && err.message); } catch (e) {}
+      }
+    } catch (e) {}
+    if (window._gameStarted && _renderLoopActive) {
+      setTimeout(() => { try { window._rafPendiente = true; requestAnimationFrame(render); } catch (e) {} }, 250);
     }
     return;
   }
@@ -16772,10 +17981,28 @@ function gainXP(amount) {
 }
 
 // ── UI UPDATES ───────────────────────────────────────────────-
+// Huella de los contadores: la tarjeta de recursos de la barra superior sólo se
+// enseña cuando alguno cambia de verdad (el motor despierta el HUD y el CSS lo
+// vuelve a retirar unos segundos después; ver `body.hud-idle` en styles.css).
+let _resHuella = '';
 function updateUI() {
   document.getElementById('res-wheat').textContent = res.wheat;
   document.getElementById('res-brick').textContent = res.brick;
   document.getElementById('res-pop').textContent   = res.pop;
+  try {
+    const huella = res.wheat + '|' + res.brick + '|' + res.pop;
+    if (huella !== _resHuella) {
+      const primeraVez = !_resHuella;
+      _resHuella = huella;
+      // La ventanita de recursos se enseña con el cambio (y se retira sola): así
+      // no está siempre ocupando pantalla. La primera vuelta no cuenta (es la
+      // carga inicial, no un cambio).
+      if (!primeraVez) {
+        try { despertarHud('recursos', 5000); } catch (e) {}
+        try { mostrarPanelRecursos(5000); } catch (e) {}
+      }
+    }
+  } catch (e) {}
   updateStaticEpochUI();
   // show current day count
   const tn = document.getElementById('turn-num'); if (tn) tn.textContent = dayCount;
@@ -18843,6 +20070,24 @@ function createMenuBar() {
   const floatToggle = document.createElement('label'); floatToggle.style.cursor='pointer'; floatToggle.innerHTML = `<input type='checkbox' ${document.body.classList.contains('floating-panels') ? 'checked' : ''}> Paneles flotantes`;
   floatToggle.querySelector('input').addEventListener('change', (e) => { setFloatingPanels(e.target.checked); });
   viewMenu.appendChild(floatToggle);
+
+  // ── VISTA DEL MUNDO (ortogonal / isométrica) ──
+  // En el juego con menú externo los botones internos de vista no existen, así
+  // que la vista isométrica era INALCANZABLE: todo el volumen 2.5D de los
+  // edificios y el rombo del terreno no se veían nunca. Aquí van los dos botones.
+  const viewRow = document.createElement('div');
+  viewRow.style.cssText = 'margin-top:8px;border-top:1px solid #333;padding-top:8px;display:flex;gap:6px;';
+  const mkViewBtn = (label, mode, id) => {
+    const b = document.createElement('button');
+    b.id = id; b.textContent = label; b.className = 'tool-btn meso-view-btn';
+    b.style.cssText = 'flex:1;padding:6px 8px;cursor:pointer;';
+    b.addEventListener('click', () => { try { setViewMode(mode); } catch (e) {} });
+    viewRow.appendChild(b);
+    return b;
+  };
+  mkViewBtn('Ortogonal', 'ortho', 'btn-menu-view-ortho');
+  mkViewBtn('Isométrica', 'iso', 'btn-menu-view-iso');
+  viewMenu.appendChild(viewRow);
   viewBtn.addEventListener('click', (ev) => { ev.stopPropagation(); toggleMenu(viewMenu); });
   left.appendChild(viewBtn); left.appendChild(viewMenu);
 
@@ -20213,6 +21458,31 @@ function drawTreeTemplateSway(tpl, scale, cx, cy, bendPx) {
   } catch (e) { return null; }
 }
 
+// Dibuja un árbol con arte del PNG DIRECTAMENTE desde su caché de balanceo.
+// La ruta normal (`drawEntitySpriteAt`) recalcula por árbol el def, la rejilla, la
+// escala de huella, el tope de altura, los ajustes de depuración, el save/restore
+// y los contadores: con ~600 árboles visibles en isométrico eso son milisegundos
+// tirados (medido: 14 ms sólo en la sección `arboles`). Aquí es: caché + drawImage.
+function dibujarArbolArteDirecto(clave, cx, cyBase, ancho, alto, fase) {
+  try {
+    const def = window.ENTITY_PIXEL_LIBRARY && window.ENTITY_PIXEL_LIBRARY[clave];
+    if (!def || !Array.isArray(def.pixels) || !def.pixels.length) return false;
+    const gw = def.gridW || def.grid || 9;
+    const gh = def.gridH || def.grid || 9;
+    const swayPx = Math.sin(Date.now() * 0.0016 + (Number(fase) || 0)) * 0.8 * windStrength();
+    const rec = getSwayBitmapFinal(clave, def, gw, gh, ancho, alto, swayPx);
+    if (!rec) return false;
+    const offX = cx - ancho / 2;
+    const offY = cyBase - alto + alto * 0.08;
+    const prev = ctx.imageSmoothingEnabled;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(rec.canvas, Math.round(offX) - rec.pad, Math.round(offY) - rec.pad);
+    ctx.imageSmoothingEnabled = prev;
+    try { window._entitiesDrawn = (window._entitiesDrawn || 0) + 1; } catch (e) {}
+    return true;
+  } catch (e) { return false; }
+}
+
 function drawTreesVisible() {
   const tileSize = getTileSize();
   // Use shared pixel templates declared globally
@@ -20257,7 +21527,8 @@ function drawTreesVisible() {
       }
       const { x, y } = worldToScreen(c, r);
       // choose a template and draw scaled pixel-art tree
-      const tpl = TREE_TEMPLATES[pickForestTreeTemplateIndex('birch', c, r) % TREE_TEMPLATES.length];
+      const idxForest = pickForestTreeTemplateIndex('birch', c, r);
+      const tpl = TREE_TEMPLATES[Math.max(0, Math.min(TREE_TEMPLATES.length - 1, idxForest))];
       // scale for iso/ortho with balanced proportions · cada árbol un poco
       // distinto de tamaño (0,88-1,18) para que el bosque no parezca calcado
       const iso = getIsoTileSize();
@@ -20273,12 +21544,36 @@ function drawTreesVisible() {
       const jitterX = Math.floor((tileNoise(c, r, 5, 6) - 0.5) * (viewMode === 'iso' ? iso.w : tileSize) * 0.18);
       const cx = Math.floor(x + (viewMode === 'iso' ? 0 : tileSize * 0.5) + jitterX);
       const cy = Math.floor(y + (viewMode === 'iso' ? iso.h : tileSize) - 2);
+      // ── ARTE NUEVO (editor de entidades) ─────────────────────────────────
+      // Si los árboles del bosque tienen recortes del PNG (`treeN_sup`/`treeN_iso`),
+      // se dibuja el sprite en vez de la plantilla de píxeles de siempre.
+      const claveArteBosque = (idxForest >= 0 && idxForest <= 4) ? arteDeArbolPara('tree' + idxForest, c, r) : null;
+      if (claveArteBosque) {
+        const lodF = zoom >= GRAPHICS_CONFIG.smoothingThreshold ? 1 : 0.8;
+        const base = (viewMode === 'iso' ? iso.h : tileSize);
+        // Tamaño del árbol clásico de ESA celda (misma plantilla y escala que usaría
+        // el dibujado de siempre), para que el arte del PNG no salga más pequeño.
+        const baseEscala = (viewMode === 'iso') ? iso.w : tileSize;
+        const alto = alturaArteArbol(tpl, baseEscala, lodF, sizeJitter);
+        const aspecto = Math.max(0.45, Math.min(1.9, getRegisteredSpriteAspect(claveArteBosque)));
+        const ancho = Math.max(base * 0.46, Math.round(alto * aspecto));
+        const fase = treeSwayPhase(c, r);
+        if (r >= _treePlayerRow) {
+          window._deferredForestTrees.push({ arte: claveArteBosque, w: ancho, h: alto, cx, cy: cy + 2, depth: r + 1, col: c, row: r, fase });
+        } else if (!dibujarArbolArteDirecto(claveArteBosque, cx, cy + 2, ancho, alto, fase)) {
+          drawEntitySpriteAt(claveArteBosque, cx, cy + 2, ancho, alto, { noShadow: true, sway: 0.8, phase: fase });
+        }
+        continue;
+      }
       // Balanceo: bitmap pre-renderizado de esa fase de viento → UN drawImage por
       // árbol, con coordenadas enteras y sin suavizado (nítido).
       const wave = Math.sin(nowTrees * 0.0016 + treeSwayPhase(c, r)) * windTrees;
       const bend = wave * scale * 0.55;
-      if (r > _treePlayerRow) {
-        // Delante del jugador: al pase diferido (se pinta tras el personaje).
+      if (r >= _treePlayerRow) {
+        // A la altura del jugador o por delante: al pase diferido (se pinta tras el
+        // personaje). El corte es `>=` y no `>`: un árbol de la MISMA fila tiene el
+        // tronco al lado pero la copa 3-4 celdas más arriba, así que también tapa al
+        // personaje. Con `>` el jugador salía siempre dibujado sobre las copas.
         window._deferredForestTrees.push({ tpl, scale, cx, cy, bend, depth: r + 1, col: c, row: r, tplIndex });
       } else {
         drawTreeTemplateSway(tpl, scale, cx, cy, bend);
@@ -20355,7 +21650,8 @@ function drawOccludedReveals(rects) {
         } else {
           try {
             drawAnimal(ctx, ent.kind === 'horse' ? 'horse' : 'dog', cx, y + ts * 0.92, ts * (ent.kind === 'horse' ? 1.5 : 1.0), {
-              state: ent.moveTarget ? 'run' : 'idle', flip: false, now: Date.now()
+              state: ent.kind === 'horse' ? horseStateFor(ent, Date.now()) : 'idle',
+              flip: !!ent._flip, now: Date.now()
             });
           } catch (e) {}
         }
@@ -20417,7 +21713,8 @@ function drawTreeOcclusionOverlay(ent) {
     const renderVariant = resolveTreeSpriteVariant(variant, ent.col || 0, ent.row || 0);
     if (hasRegisteredSprite(renderVariant)) {
       const lodFactor = zoom >= GRAPHICS_CONFIG.smoothingThreshold ? 1 : 0.8;
-      const spriteH = Math.max(tileSize * 0.72, Math.round(tileSize * (ent.size || 1) * 1.28 * lodFactor * TREE_SIZE_SCALE));
+      const baseEscala = (viewMode === 'iso') ? getIsoTileSize().w : tileSize;
+      const spriteH = alturaArteArbol(plantillaArbolPara(variant, ent.col || 0, ent.row || 0), baseEscala, lodFactor, ent.size || 1);
       const aspect = Math.max(0.45, Math.min(1.9, getRegisteredSpriteAspect(renderVariant)));
       const spriteW = Math.max(tileSize * 0.46, Math.round(spriteH * aspect));
       const jitterX = Math.floor((tileNoise(ent.col || 0, ent.row || 0, 7, 8) - 0.5) * tileSize * 0.18);
@@ -22273,6 +23570,35 @@ function ensureResourceFloatPanel() {
   } catch (e) { return false; }
 }
 try { window.ensureResourceFloatPanel = ensureResourceFloatPanel; } catch (e) {}
+
+// ── CUÁNDO SE ENSEÑA LA VENTANITA DE RECURSOS ───────────────────────────────
+// Pedido: «el flotante de recursos se muestre cuando algún valor incremente, no es
+// práctico que esté siempre visible». El panel se queda oculto (ver `#res-float` en
+// styles.css) y esto le pone la clase `res-visible` durante unos segundos. Lo llama
+// `updateUI()` SÓLO cuando cambia de verdad algún contador (y una vez al empezar,
+// para que el jugador sepa que existe).
+let _resVisibleTimer = null;
+function mostrarPanelRecursos(ms = 6000) {
+  try {
+    const panel = document.getElementById('res-float');
+    const grupo = document.querySelector('.res-group');
+    const objetivo = panel || grupo;
+    if (!objetivo) return false;
+    objetivo.classList.add('res-visible');
+    if (_resVisibleTimer) clearTimeout(_resVisibleTimer);
+    _resVisibleTimer = setTimeout(() => {
+      _resVisibleTimer = null;
+      try {
+        const p2 = document.getElementById('res-float');
+        if (p2) p2.classList.remove('res-visible');
+        const g2 = document.querySelector('.res-group');
+        if (g2) g2.classList.remove('res-visible');
+      } catch (e) {}
+    }, Math.max(700, ms | 0));
+    return true;
+  } catch (e) { return false; }
+}
+try { window.mostrarPanelRecursos = mostrarPanelRecursos; } catch (e) {}
 
 // ── MENÚ DE PAUSA (Escape) ─────────────────────────────────────────────────
 let _pausaAntes = null;
@@ -24588,8 +25914,23 @@ function setViewMode(mode) {
   const isoBtn = document.getElementById('btn-view-iso');
   const devOrthoBtn = document.getElementById('btn-dev-view-ortho');
   const devIsoBtn = document.getElementById('btn-dev-view-iso');
-  [orthoBtn, devOrthoBtn].filter(Boolean).forEach(btn => btn.classList.toggle('active', mode === 'ortho'));
-  [isoBtn, devIsoBtn].filter(Boolean).forEach(btn => btn.classList.toggle('active', mode === 'iso'));
+  const menuOrthoBtn = document.getElementById('btn-menu-view-ortho');
+  const menuIsoBtn = document.getElementById('btn-menu-view-iso');
+  [orthoBtn, devOrthoBtn, menuOrthoBtn].filter(Boolean).forEach(btn => btn.classList.toggle('active', mode === 'ortho'));
+  [isoBtn, devIsoBtn, menuIsoBtn].filter(Boolean).forEach(btn => btn.classList.toggle('active', mode === 'iso'));
+  // El volumen de los edificios se aplica SÓLO en isométrico (ver
+  // engine/building-volume.js), así que el lienzo fuente de cada sprite cambia de
+  // tamaño al cambiar de vista: hay que tirar las cachés de sprites.
+  try { clearSpriteBitmaps(); } catch (e) {}
+  // Los botones del menú «Ver» viven dentro de un panel con su propio color:
+  // hay que marcarlos a mano porque `.active` solo existe en la barra interna.
+  [[menuOrthoBtn, 'ortho'], [menuIsoBtn, 'iso']].forEach(([b, m]) => {
+    if (!b) return;
+    const on = (mode === m);
+    b.style.background = on ? 'rgba(255,210,122,0.18)' : 'transparent';
+    b.style.borderColor = on ? '#FFD27A' : '#555';
+    b.style.color = on ? '#FFD27A' : 'inherit';
+  });
   // Al arrancar sólo se pinta la caché de la vista activa (pintar las dos era la
   // mitad del tiempo de carga del terreno). Al cambiar de vista, si la caché que
   // hace falta no está hecha, se construye ahora en segundo plano.
@@ -24985,6 +26326,15 @@ document.addEventListener('keydown', e => {
     ensurePauseMenu();
     togglePauseMenu(true);
     return;
+  }
+  // ── ACCIONES DEL CABALLO (sólo montado) ──────────────────────────────────
+  // X encabritarse · Z relinchar · B piafar · N galopar. En modo edición y a pie
+  // estas teclas no se tocan, así que no chocan con los atajos de construcción.
+  if (!editMode && e.key) {
+    const accion = horseActionForKey(e.key);
+    if (accion && estaMontado()) {
+      if (runHorseAction(accion.id)) { e.preventDefault(); return; }
+    }
   }
   if (!editMode && e.key && e.key.toLowerCase() === 'k') {
     const pet = getActivePetDog();
@@ -25758,6 +27108,9 @@ function postMapInit() {
   // (mientras, enseña «Generando mundo…» en vez de una rejilla a medias).
   try { window._worldReadyAt = window._worldReadyAt || Date.now(); } catch (e) {}
   try { ensureResourceFloatPanel(); } catch (e) {}
+  // Una vez al empezar: que el jugador vea dónde está la ventanita de recursos
+  // (luego sólo aparece cuando cambia algún contador).
+  try { mostrarPanelRecursos(9000); } catch (e) {}
   try { ensurePauseMenu(); } catch (e) {}
   try {
     updateUI();

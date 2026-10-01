@@ -636,8 +636,12 @@ const graves = [];     // tumbas (entidades especiales)
 3. **No crear canvases offscreen**: Renderizar a un canvas intermedio para luego hacer
    `drawImage` reintroduce la dependencia de GPU y añade un paso innecesario.
 
-4. **Limpiar cachés en desarrollo**: `npm run start-electron-dev` ejecuta
-   `scripts/clean-dev.js` que borra localStorage, cachés GPU y archivos temporales.
+4. **Cachés en desarrollo**: `npm run start-electron-dev` **NO borra nada** (ni
+   localStorage, ni cachés GPU, ni partidas guardadas): antes ejecutaba
+   `scripts/clean-dev.js --hard` y además ponía `MESOBUILDER_CLEAR_CACHE=1`, que hace
+   que el juego vacíe todas las claves `meso.*` al arrancar. Si quieres empezar de
+   cero a propósito: `npm run start-electron-dev-limpio` (o `node scripts/clean-dev.js --hard`).
+   Sin argumentos, `clean-dev.js` sólo borra los `temp_*.txt` del proyecto.
 
 5. **Colores predefinidos**: Usar strings de color constantes (`#C8A87A`) en vez de
    crear objetos `rgba()` dinámicamente. El motor de canvas los parsea igual de rápido

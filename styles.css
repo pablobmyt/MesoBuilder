@@ -2597,6 +2597,27 @@ body.hud-idle #char-card:hover {
   filter: none;
 }
 
+/* ── La ventanita de RECURSOS sólo se enseña cuando cambia un contador ─────
+   Pedido: «el flotante de recursos se muestre cuando algún valor incremente, no
+   es práctico que esté siempre visible». El motor le pone la clase `res-visible`
+   unos segundos cada vez que cambian trigo, ladrillos o población (ver
+   `mostrarPanelRecursos()` en el motor) y aquí se retira sola. El bloque
+   `#res-float` (con sus medidas) vive en `mesoUiCssExtra()`; esto sólo añade el
+   estado de reposo y la vuelta al pasar el ratón por encima. */
+#res-float,
+#topbar .res-group {
+  transition: opacity var(--hud-idle-out) ease, transform var(--hud-idle-out) ease;
+}
+#res-float {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+#res-float.res-visible,
+#res-float:hover {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 /* La barra superior se queda SIEMPRE visible (en reposo baja un poco el brillo,
    pero no se va): esconderla obligaba a "cazar" el borde de arriba para ver los
    recursos y en la practica se veia como que la barra no aparecia. */
