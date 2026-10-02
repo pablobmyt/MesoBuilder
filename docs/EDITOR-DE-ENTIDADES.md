@@ -164,6 +164,13 @@ rectángulos siguen guardados pase lo que pase: volver a «Nuevo» los recupera 
 `"estilo"` también puede ponerse a mano en `data/entity-views.json` para fijar el
 valor por defecto del proyecto (sin el campo se entiende `nuevo`).
 
+> **Por defecto del proyecto: `"estilo": "nuevo"` (2026-10-02).** Antes venía
+> `"clasico"` como red de seguridad mientras los recortes arrastraban el «parche
+> de suelo» de la hoja (ver más abajo). El jugador puede volver a «Clásico»
+> cuando quiera desde **Nueva partida → Opciones → Estilo de arte**; los sprites
+> clásicos nunca se borran. Si aparece el problema del parche de suelo, la vuelta
+> atrás es poner ese campo a `"clasico"` o elegir «Clásico» en el desplegable.
+
 Orden de prioridad del estilo (de más a menos):
 
 1. `MesoEntityViews.estilo(v)` en caliente / consola (`window._mesoEstiloForzado`).
@@ -190,9 +197,11 @@ nuevo frente a ~2,5 ms con el clásico.
 La solución es **que el recorte no incluya el parche**: sube el borde inferior del
 rectángulo (y afina los laterales) hasta que el montículo quede fuera de la vista.
 
-Mientras eso no esté hecho, el proyecto arranca en **clásico** (`"estilo": "clasico"`
-en `data/entity-views.json`) para que el suelo no desaparezca. Cuando los recortes
-estén limpios, cambia ese valor a `"nuevo"` (o elige «Nuevo» en el desplegable).
+Mientras eso no esté hecho, el proyecto arrancaba en **clásico** (`"estilo": "clasico"`
+en `data/entity-views.json`) para que el suelo no desapareciera. **Desde el
+2026-10-02 el valor por defecto del proyecto es `"nuevo"`** (petición del
+usuario): si vuelve a verse la plancha de suelo, cambia ese valor a `"clasico"`
+o elige «Clásico» en el desplegable.
 
 Y sin recargar, desde la consola del juego:
 

@@ -154,8 +154,17 @@ const clearRuntimeCaches = () => clearRuntimeCachesImpl({
 let _introMidiData = null;
 let _introSynths = null;
 
+// ── MÚSICA DEL JUEGO: DESACTIVADA DE MOMENTO ────────────────────────────────
+// `index.html` deja `window.MESO_MUSICA_ACTIVA = false` mientras se desarrolla:
+// escuchar la música a diario es insufrible. Con el interruptor apagado no
+// suena nada musical (ni el WAV/MIDI de la intro ni la música del menú), pero
+// NINGÚN fichero se borra: poner `true` la vuelve a activar. Los efectos de
+// sonido (SoundManager) no se tocan.
+function musicaActiva() { return window.MESO_MUSICA_ACTIVA === true; }
+
 async function loadIntroMusicMIDI() {
   try {
+    if (!musicaActiva()) return false;   // música apagada de momento (desarrollo)
     if (_introMidiData) return true; // Already loaded
 
     // El parser MIDI viene de un <script> de CDN. Si no está disponible
@@ -189,6 +198,7 @@ async function loadIntroMusicMIDI() {
 
 async function playIntroMusicMIDI() {
   try {
+    if (!musicaActiva()) return false;   // música apagada de momento (desarrollo)
     if (!_introMidiData) {
       console.warn('game-engine: MIDI data not loaded');
       return false;
@@ -13626,13 +13636,37 @@ function endCartWelcomeScene() {
   } catch (e) {}
 }
 
-// Rótulos de la escena (aparecen por tiempos sobre la acción).
-const CART_SCENE_LINES = [
-  'Ur, año 2 de la siembra.',
-  'Adapa vuelve a casa en el carro de su padre.',
-  'El río Don sigue dando de comer a quien lo trabaja.',
-  'Ya se ve el humo de la chimenea…'
-];
+// Rótulos de la escena (aparecen por tiempos sobre la acción). VAN POR ÉPOCA: el
+// carro de Adapa llegando a casa en Mesopotamia hablaba del «río Don» y de un
+// «año de la siembra» en Ur, que son de la línea soviética (el canon narrativo
+// vive en docs/GUION-NARRATIVO.md: la aldea de Adapa es Kidu-Lam y el río de su
+// valle es el Éufrates).
+function cartSceneLines() {
+  const epoch = window._currentEpoch || 'mesopotamia';
+  const quien = (window.player && window.player.name) ? window.player.name : 'Adapa';
+  if (epoch === 'urss') {
+    return [
+      'Novozarya, otoño de 1926.',
+      `${quien} vuelve a casa en el carro de su padre.`,
+      'El río Don sigue dando de comer a quien lo trabaja.',
+      'Ya se ve el humo de la chimenea…'
+    ];
+  }
+  if (epoch === 'medieval') {
+    return [
+      'Reino del Norte, año 1187.',
+      `${quien} vuelve a casa en el carro de su padre.`,
+      'El río sigue dando de comer a quien lo trabaja.',
+      'Ya se ve el humo de la chimenea…'
+    ];
+  }
+  return [
+    'Kidu-Lam, año 2 de la siembra.',
+    `${quien} vuelve a casa en el carro de su padre.`,
+    'El Éufrates sigue dando de comer a quien lo trabaja.',
+    'Ya se ve el humo de la cocina…'
+  ];
+}
 
 function drawCartWelcomeScene(ctx, W, H) {
   const sc = window._cartScene;
@@ -13750,9 +13784,10 @@ function drawCartWelcomeScene(ctx, W, H) {
     }
 
     // ── Rótulos ──
-    const idx = Math.min(CART_SCENE_LINES.length - 1, Math.floor(p * CART_SCENE_LINES.length));
-    const lineAlpha = Math.max(0, Math.min(1, (p * CART_SCENE_LINES.length) - idx + 0.15));
-    const texto = CART_SCENE_LINES[idx];
+    const lineas = cartSceneLines();
+    const idx = Math.min(lineas.length - 1, Math.floor(p * lineas.length));
+    const lineAlpha = Math.max(0, Math.min(1, (p * lineas.length) - idx + 0.15));
+    const texto = lineas[idx];
     ctx.globalAlpha = 1;
     ctx.font = 'bold 20px Georgia, serif';
     ctx.textAlign = 'center';
@@ -24198,6 +24233,9 @@ function iniciarIntroDeTextoCuandoToca(intentos) {
 
 function startIntroSequence() {
   window._introSeq = { phase: 0, phaseStart: performance.now(), done: false, musicStarted: false };
+  // Música de la intro (WAV y, si carga, el MIDI): desactivada de momento, ver
+  // `musicaActiva()`. Sin música, el relato funciona igual (avanza a clics).
+  if (!musicaActiva()) return;
   // Prepare intro music - play on first user gesture to bypass autoplay policy
   const introAudio = new Audio('data/Sounds/ussr.wav');
   introAudio.id = 'intro-music-player';
@@ -24363,6 +24401,85 @@ function drawAnimatedUSSRFlagSequence(ctx, W, H, t, isLastPhase) {
   }
 }
 
+// ── INTRODUCCIÓN AL MUNDO (última fase del relato de arranque) ───────────────
+// Pedido: «hacer una breve introducción al mundo cuando comienza una partida,
+// mostrando sitios importantes y contando el contexto». El contenido sale del
+// canon narrativo (docs/GUION-NARRATIVO.md) y va POR ÉPOCA, para que el jugador
+// sepa qué lugares le esperan y qué está en juego antes de tomar el control.
+function introWorldBriefing(epoch) {
+  if (epoch === 'urss') {
+    return {
+      titulo: 'NOVOZARYA Y ALREDEDORES',
+      contexto: [
+        'Nieve, acero y una red frágil de trenes y hornos: el distrito depende',
+        'de que los suministros sigan llegando antes de la ventisca.'
+      ],
+      lugares: [
+        { n: 'Novozarya', d: 'tu pueblo: la central, el koljós y las casas de los obreros.' },
+        { n: 'El río Don', d: 'la vía de agua que trae la crecida anunciada.' },
+        { n: 'La estación', d: 'único enlace con el distrito; si se corta, queda aislado.' },
+        { n: 'La comisaría', d: 'Markova manda aquí: sin su permiso no hay víveres.' }
+      ]
+    };
+  }
+  if (epoch === 'medieval') {
+    return {
+      titulo: 'EL REINO DEL NORTE',
+      contexto: [
+        'Caminos, ríos y aldeas que viven del clima y del comercio.',
+        'Las murallas protegen, pero la tormenta que viene no entiende de muros.'
+      ],
+      lugares: [
+        { n: 'Tu casa', d: 'el hogar que debes asegurar antes de partir.' },
+        { n: 'El priorato', d: 'donde el anciano leyó las señales en el cielo.' },
+        { n: 'Las villas del norte', d: 'adonde debe llegar el aviso a tiempo.' }
+      ]
+    };
+  }
+  return {
+    titulo: 'EL MUNDO DE MESOPOTAMIA',
+    contexto: [
+      'El Éufrates crece cada primavera: quien controla el agua, controla la cosecha.',
+      'Aldeas de barro y cebada viven a la sombra de las ciudades amuralladas.'
+    ],
+    lugares: [
+      { n: 'Kidu-Lam', d: 'tu aldea: la casa de tu familia, los graneros y el pozo.' },
+      { n: 'El Éufrates', d: 'el río que da de comer y que ahora anuncia la gran crecida.' },
+      { n: 'Nínagara', d: 'la ciudad del rey Ur-Nammu, al norte: adonde debes llevar el aviso.' },
+      { n: 'El templo de Enlil', d: 'la sacerdotisa Enlil-Ama guarda allí los presagios.' }
+    ]
+  };
+}
+
+// Pinta el briefing del mundo centrado y escalado con la ALTURA del lienzo (en
+// ventanas pequeñas no se sale de la pantalla). Sin dependencias: sólo texto.
+function dibujarBriefingDelMundo(ctx, W, H, brief) {
+  const s = Math.max(0.62, Math.min(1.3, H / 560));
+  const filas = [];
+  filas.push({ t: brief.titulo, bold: true, size: 20, color: '#FFD27A', gap: 8, serif: 'Georgia, serif' });
+  brief.contexto.forEach((c) => filas.push({ t: c, size: 13, color: 'rgba(255,240,210,0.86)', gap: 3 }));
+  filas.push({ t: '', size: 6, color: 'transparent', gap: 8 });
+  brief.lugares.forEach((l) => {
+    filas.push({ t: '• ' + l.n, bold: true, size: 14.5, color: '#e3c98c', gap: 1 });
+    filas.push({ t: l.d, size: 12.5, color: 'rgba(255,235,200,0.8)', gap: 11 });
+  });
+  const total = filas.reduce((a, f) => a + (f.size + f.gap) * s, 0);
+  let y = Math.max(16, H / 2 - total / 2);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  filas.forEach((f) => {
+    const size = Math.max(8, f.size * s);
+    const alto = (f.size + f.gap) * s;
+    if (f.t) {
+      ctx.font = (f.bold ? 'bold ' : '') + size.toFixed(1) + 'px ' + (f.serif || 'serif');
+      ctx.fillStyle = f.color;
+      ctx.fillText(f.t, W / 2, y + alto / 2);
+    }
+    y += alto;
+  });
+  ctx.textBaseline = 'alphabetic';
+}
+
 function drawIntroSequence(ctx, W, H) {
   const seq = window._introSeq;
   if (!seq || seq.done) return;
@@ -24382,18 +24499,29 @@ function drawIntroSequence(ctx, W, H) {
   const cx = W / 2, cy = H / 2;
   const epochNow = window._currentEpoch || 'mesopotamia';
   const homePrologueMode = !!window._homePrologueIntro;
-  const protagonistName = (window.player && window.player.name) ? window.player.name : 'el camarada';
-  const protagonistTitle = (window.player && window.player.title) ? window.player.title : 'responsable del distrito';
-  // Phase 5-6: Show USSR flag animation after story
+  const protagonistName = (window.player && window.player.name) ? window.player.name : (epochNow === 'urss' ? 'el camarada' : 'Adapa');
+  const protagonistTitle = (window.player && window.player.title) ? window.player.title : (epochNow === 'urss' ? 'responsable del distrito' : '');
+  // Última fase: en la URSS se iza la bandera; en las demás épocas, la tarjeta de
+  // salida. Antes la bandera soviética se dibujaba también al empezar en
+  // Mesopotamia, que es de otra historia por completo.
   if (seq.phase >= 4) {
-    ctx.globalAlpha = alpha;
-    // Draw animated USSR flag being constructed
-    drawAnimatedUSSRFlagSequence(ctx, W, H, t, seq.phase === 6);
-    ctx.globalAlpha = 1.0;
+    if (epochNow === 'urss') {
+      ctx.globalAlpha = alpha;
+      // Draw animated USSR flag being constructed
+      drawAnimatedUSSRFlagSequence(ctx, W, H, t, seq.phase === 6);
+      ctx.globalAlpha = 1.0;
+    } else {
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#FFD27A';
+      ctx.font = 'bold 18px serif';
+      ctx.fillText('Comienza el viaje', cx, cy - 4);
+    }
     ctx.textAlign = 'center';
-    ctx.font = '12px monospace';
+    ctx.font = '11px monospace';
     ctx.fillStyle = 'rgba(200,200,200,0.6)';
-    ctx.fillText('[ Enter / Espacio / E / Click para continuar ]', cx, H - 30);
+    ctx.fillText(epochNow === 'urss'
+      ? '[ Enter / Espacio / E / Click para continuar ]'
+      : '[ Enter / Espacio / E / Click para iniciar ]', cx, H - 30);
     ctx.restore();
     return;
   }
@@ -24401,16 +24529,24 @@ function drawIntroSequence(ctx, W, H) {
     ctx.textAlign = 'center';
     ctx.fillStyle = '#c8a96e';
     ctx.font = 'italic 18px serif';
-    if (homePrologueMode) ctx.fillText('Casa aislada, antes del amanecer', cx, cy - 18);
+    if (homePrologueMode) {
+      ctx.fillText(epochNow === 'urss' ? 'Casa aislada, antes del amanecer'
+        : epochNow === 'medieval' ? 'Casa del guardabosque, antes del amanecer'
+        : 'Kidu-Lam, antes del amanecer', cx, cy - 18);
+    }
     else if (epochNow === 'urss') ctx.fillText('URSS clásica, 1926', cx, cy - 18);
     else if (epochNow === 'medieval') ctx.fillText('Reino del Norte, año 1187', cx, cy - 18);
     else ctx.fillText('Mesopotamia, 2350 a.C.', cx, cy - 18);
     ctx.font = '13px serif';
     ctx.fillStyle = 'rgba(255,235,200,0.82)';
-    if (homePrologueMode) ctx.fillText('Primero, prepara un cultivo y calma a tu familia antes de que la noche empeore.', cx, cy + 10);
+    if (homePrologueMode) {
+      ctx.fillText(epochNow === 'urss'
+        ? 'Primero, asegura el cultivo y calma a tu familia antes de que la noche empeore.'
+        : 'Primero, prepara un cultivo y calma a tu familia antes de que caiga la noche.', cx, cy + 10);
+    }
     else if (epochNow === 'urss') ctx.fillText('Novozarya, un pueblo soviético entre nieve y acero, depende de una red frágil de suministro.', cx, cy + 10);
     else if (epochNow === 'medieval') ctx.fillText('Entre caminos y ríos, toda aldea depende del clima y del comercio.', cx, cy + 10);
-    else ctx.fillText('Entre el Río Don y el Río Ob Nord, bajo el hielo perpetuo, solo el trabajo colectivo sostiene la vida.', cx, cy + 10);
+    else ctx.fillText('Entre el Éufrates y la llanura de arcilla, una aldea de barro y cebada espera la crecida.', cx, cy + 10);
     ctx.font = '11px monospace';
     ctx.fillStyle = 'rgba(200,200,200,0.6)';
     ctx.fillText('[ Enter / Espacio / E / Click para continuar ]', cx, cy + 52);
@@ -24418,53 +24554,68 @@ function drawIntroSequence(ctx, W, H) {
     ctx.textAlign = 'center';
     ctx.font = '14px serif';
     ctx.fillStyle = 'rgba(255,240,210,0.92)';
-    const lore = homePrologueMode
-      ? [
-          `Eres ${protagonistName}, ${protagonistTitle}.`,
-          'Acabas de volver a casa tras días de tensión en los caminos.',
-          '',
-          'Antes de pensar en política o guerra, debes asegurar comida:',
-          'prepara un cultivo junto a casa para los tuyos.',
-          '',
-          'Tu familia está nerviosa y te pide calma.',
-          'Cuando termines, entra en casa, duerme y mañana afrontarás lo que venga.'
-        ]
-      : (epochNow === 'urss')
-      ? [
-          `Eres ${protagonistName}, ${protagonistTitle} en Novozarya.`,
-          'La noche pasada, un sabotaje dejó al pueblo sin calefacción ni reservas.',
-          '',
-          'El viejo operador de radio interceptó un aviso crítico:',
-          'una ventisca histórica y una crecida bloquearán la región en cuarenta días.',
-          '',
-          'Tu misión: reorganizar el pueblo, asegurar víveres y',
-          'activar la red de emergencia antes de que Novozarya quede aislada.'
-        ]
-      : (epochNow === 'medieval')
-        ? [
-            'Tu aldea, Kidu-Lam, fue saqueada al amanecer por bandidos del norte.',
-            'Eres Adapa, cazador y último mensajero con fuerzas para viajar.',
-            `Tu aldea, Kidu-Lam, fue saqueada al amanecer por bandidos del norte.`,
-            `Eres ${protagonistName}, cazador y último mensajero con fuerzas para viajar.`,
-            '',
-            'El anciano del priorato leyó señales de tormenta en el cielo:',
-            'en cuarenta días, una riada cubrirá campos y caminos.',
-            '',
-            'Tu misión: llevar el aviso a las villas del norte',
-            'antes de que el reino quede aislado.'
-          ]
-        : [
-            'Tu aldea, Kidu-Lam, fue arrasada por raiders del norte al amanecer.',
-            'Eres Adapa — cazador, superviviente, el único con la mente despejada.',
-            '',
-            `Eres ${protagonistName} — cazador, superviviente, el único con la mente despejada.`,
-            ``,
-            'El anciano del templo ha leído los presagios en los astros:',
-            'en cuarenta días, el gran diluvio llegará y lo borrará todo.',
-            '',
-            'Tu misión: llevar el aviso a las ciudades del norte',
-            'antes de que las aguas lo sepulten todo.'
-          ];
+    let lore;
+    if (homePrologueMode && epochNow === 'urss') {
+      lore = [
+        `Eres ${protagonistName}, ${protagonistTitle}.`,
+        'Acabas de volver a casa tras días de tensión en los caminos.',
+        '',
+        'Antes de pensar en política o guerra, debes asegurar comida:',
+        'prepara un cultivo junto a casa para los tuyos.',
+        '',
+        'Tu familia está nerviosa y te pide calma.',
+        'Cuando termines, entra en casa, duerme y mañana afrontarás lo que venga.'
+      ];
+    } else if (homePrologueMode) {
+      lore = [
+        `Eres ${protagonistName}, cazador y labrador de Kidu-Lam.`,
+        'Acabas de volver a casa tras días de tensión en los caminos.',
+        '',
+        'Antes de pensar en guerreros o presagios, debes asegurar la comida:',
+        'prepara un cultivo junto a casa para los tuyos.',
+        '',
+        'Tu familia está nerviosa y te pide calma.',
+        'Cuando termines, entra en casa, duerme y mañana afrontarás lo que venga.'
+      ];
+    } else if (epochNow === 'urss') {
+      lore = [
+        `Eres ${protagonistName}, ${protagonistTitle} en Novozarya.`,
+        'La noche pasada, un sabotaje dejó al pueblo sin calefacción ni reservas.',
+        '',
+        'El viejo operador de radio interceptó un aviso crítico:',
+        'una ventisca histórica y una crecida bloquearán la región en cuarenta días.',
+        '',
+        'Tu misión: reorganizar el pueblo, asegurar víveres y',
+        'activar la red de emergencia antes de que Novozarya quede aislada.'
+      ];
+    } else if (epochNow === 'medieval') {
+      lore = [
+        'Tu aldea fue saqueada al amanecer por bandidos del norte.',
+        `Eres ${protagonistName}, cazador y último mensajero con fuerzas para viajar.`,
+        '',
+        'El anciano del priorato leyó señales de tormenta en el cielo:',
+        'en cuarenta días, una riada cubrirá campos y caminos.',
+        '',
+        'Tu misión: llevar el aviso a las villas del norte',
+        'antes de que el reino quede aislado.'
+      ];
+    } else {
+      // MESOPOTAMIA (canon: docs/GUION-NARRATIVO.md). El arranque es el prólogo
+      // en casa, así que el relato NO puede decir que la aldea ya está arrasada.
+      lore = [
+        'Tu aldea, Kidu-Lam, vive del río y del trabajo de la tierra.',
+        `Eres ${protagonistName}: cazador, labrador y el único con la mente despejada.`,
+        '',
+        'Pero el valle está inquieto: las patrullas registran los caminos',
+        'y se habla de restos que no son de esta aldea.',
+        '',
+        'Los ancianos leen presagios en el cauce del río:',
+        'en cuarenta días, una gran crecida lo sepultará todo.',
+        '',
+        'Tu misión: llevar el aviso a Nínagara, la ciudad del norte,',
+        'antes de que las aguas lo borren todo.'
+      ];
+    }
     const lh = 22;
     const startY = cy - ((lore.length - 1) * lh) / 2;
     lore.forEach((line, i) => ctx.fillText(line, cx, startY + i * lh));
@@ -24477,14 +24628,18 @@ function drawIntroSequence(ctx, W, H) {
     ctx.shadowBlur = 20;
     ctx.fillStyle = '#FFD27A';
     ctx.font = 'bold 34px serif';
-    if (homePrologueMode) ctx.fillText('OPERACIÓN SOMBRA FRÍA', cx, cy - 10);
-    else if (epochNow === 'urss') ctx.fillText('OPERACIÓN NOVOZARYA', cx, cy - 10);
-    else if (epochNow === 'medieval') ctx.fillText('ADAPA Y LA TORMENTA', cx, cy - 10);
-    else ctx.fillText('ADAPA Y EL DILUVIO', cx, cy - 10);
+    // El título va por ÉPOCA, no por «hay prólogo»: en una partida de historia de
+    // Mesopotamia el cartel decía «OPERACIÓN SOMBRA FRÍA», que es de la línea
+    // soviética y no tiene nada que ver con Adapa ni con el diluvio.
+    const tituloEpoca = epochNow === 'urss' ? 'OPERACIÓN NOVOZARYA'
+      : epochNow === 'medieval' ? 'ADAPA Y LA TORMENTA'
+      : 'ADAPA Y EL DILUVIO';
+    if (homePrologueMode && epochNow === 'urss') ctx.fillText('OPERACIÓN SOMBRA FRÍA', cx, cy - 10);
+    else ctx.fillText(tituloEpoca, cx, cy - 10);
     ctx.shadowBlur = 0;
     ctx.font = 'italic 15px serif';
     ctx.fillStyle = 'rgba(255,240,210,0.75)';
-    if (homePrologueMode) ctx.fillText('Un thriller de espionaje en tierra hostil', cx, cy + 26);
+    if (homePrologueMode && epochNow === 'urss') ctx.fillText('Un thriller de espionaje en tierra hostil', cx, cy + 26);
     else if (epochNow === 'urss') ctx.fillText('Una historia de un pueblo soviético', cx, cy + 26);
     else if (epochNow === 'medieval') ctx.fillText('Una crónica del reino medieval', cx, cy + 26);
     else ctx.fillText('Una historia de Mesopotamia', cx, cy + 26);
@@ -24492,13 +24647,13 @@ function drawIntroSequence(ctx, W, H) {
     ctx.fillStyle = 'rgba(200,200,200,0.6)';
     ctx.fillText('[ Enter / Espacio / E / Click para continuar ]', cx, cy + 62);
   } else if (seq.phase === 3) {
+    // INTRODUCCIÓN AL MUNDO: contexto + sitios importantes (por época).
+    dibujarBriefingDelMundo(ctx, W, H, introWorldBriefing(epochNow));
     ctx.textAlign = 'center';
-    ctx.fillStyle = '#FFD27A';
-    ctx.font = 'bold 18px serif';
-    ctx.fillText('Comienza el viaje', cx, cy - 4);
+    ctx.textBaseline = 'alphabetic';
     ctx.font = '11px monospace';
-    ctx.fillStyle = 'rgba(200,200,200,0.7)';
-    ctx.fillText('[ Enter / Espacio / E / Click para iniciar ]', cx, cy + 28);
+    ctx.fillStyle = 'rgba(200,200,200,0.6)';
+    ctx.fillText('[ Enter / Espacio / E / Click para continuar ]', cx, H - 30);
   }
   ctx.restore();
 }
@@ -27308,14 +27463,16 @@ function init() {
             await generateSpriteImages(prog);
             console.log && console.log('game-engine: sprite images generation complete');
             try { if (window._onEngineProgress) window._onEngineProgress(55, 'Sprites listos'); } catch (e) {}
-            // Load intro MIDI music
-            try { if (window._onEngineProgress) window._onEngineProgress(57, 'Cargando música de intro...'); } catch (e) {}
-            const midiLoaded = await loadIntroMusicMIDI();
-            if (midiLoaded) {
-              console.log && console.log('game-engine: intro MIDI music loaded');
-              try { if (window._onEngineProgress) window._onEngineProgress(59, 'Música lista'); } catch (e) {}
-            } else {
-              console.warn('game-engine: intro MIDI music failed to load, continuing without music');
+            // Load intro MIDI music (sólo si la música no está desactivada)
+            if (musicaActiva()) {
+              try { if (window._onEngineProgress) window._onEngineProgress(57, 'Cargando música de intro...'); } catch (e) {}
+              const midiLoaded = await loadIntroMusicMIDI();
+              if (midiLoaded) {
+                console.log && console.log('game-engine: intro MIDI music loaded');
+                try { if (window._onEngineProgress) window._onEngineProgress(59, 'Música lista'); } catch (e) {}
+              } else {
+                console.warn('game-engine: intro MIDI music failed to load, continuing without music');
+              }
             }
           } catch (e) {}
           try { if (window._onEngineProgress) window._onEngineProgress(60, 'Generando mapa...'); } catch (e) {}

@@ -162,6 +162,45 @@ ya **no exige `terrain.seed`** (las partidas antiguas no lo tenían y se estaban
 descartando, regenerando el mundo). Si falta, se deriva una semilla estable del
 propio mundo guardado.
 
+## Textos de arranque por época + introducción al mundo + música apagada (2026-10-02)
+
+Pedido: el texto con el que arranca una partida de **Mesopotamia** no era
+coherente con la historia, y hacía falta una breve **introducción al mundo** con
+los sitios importantes; además, dejar la música en silencio mientras se
+desarrolla.
+
+**Por qué no era coherente.** El relato de arranque (`drawIntroSequence`) tenía
+la rama de Mesopotamia rellenada con texto soviético: en la primera fase decía
+«Entre el Río Don y el Río Ob Nord, bajo el hielo perpetuo…», y la tarjeta de
+título mostraba **«OPERACIÓN SOMBRA FRÍA — Un thriller de espionaje en tierra
+hostil»** (el modo prólogo pintaba siempre ese cartel, fuera cual fuera la
+época). También se dibujaba la **bandera soviética** como última fase en todas
+las épocas, y el relato repetía dos veces la frase de presentación de Adapa.
+Los rótulos del carruaje (`cartSceneLines()`, antes `CART_SCENE_LINES`) hablaban
+de «Ur» y del «río Don».
+
+**Qué se ha hecho.**
+
+* `cartSceneLines()` devuelve los rótulos **por época** (Mesopotamia: Kidu-Lam y
+  el Éufrates) y usa el nombre real del jugador.
+* La fase 0 (sitio y momento), la fase 1 (relato) y la fase 2 (título) van por
+  época y por modo; el prólogo en casa ya no dice que la aldea está arrasada
+  (el canon la mantiene en pie: ver `docs/GUION-NARRATIVO.md`).
+* **Fase 3 nueva: introducción al mundo.** `introWorldBriefing(epoch)` devuelve
+  un contexto breve y una lista de **sitios importantes** (Kidu-Lam, el Éufrates,
+  Nínagara, el templo de Enlil…), y `dibujarBriefingDelMundo()` lo pinta centrado
+  y escalado con la altura del lienzo (no se sale en ventanas pequeñas).
+* La **bandera soviética** sólo se iza en la URSS; en las demás épocas la última
+  fase es la tarjeta «Comienza el viaje».
+
+**Música desactivada de momento.** Interruptor único:
+`window.MESO_MUSICA_ACTIVA` (lo fija `MENU_MUSIC_ENABLED` en `index.html` y lo lee
+`musicaActiva()` en el motor). Con `false` no suena la música del menú
+(`March_of_the_Vanguard.mp3`) ni la de la intro (`ussr.wav` y el MIDI). **Ningún
+fichero se borra**: poner el interruptor a `true` la vuelve a activar. Los SFX
+(`SoundManager`) siguen funcionando. El desplegable «Volumen música» se conserva,
+con una nota en Configuración de que está desactivada.
+
 ## Pendiente
 
 * Los cultivos dan **trigo** al cosechar, sea cual sea su familia (la apariencia ya

@@ -523,6 +523,7 @@
             <div>
               <label style="font-size:13px">Volumen música: <span id="label-audio-music">34%</span></label>
               <input id="menu-audio-music" type="range" min="0" max="100" step="1" value="34" style="width:100%">
+              <div style="font-size:11px;color:#a8987a;margin-top:2px">Música desactivada de momento durante el desarrollo.</div>
             </div>
             <label style="font-size:13px;display:flex;align-items:center;gap:8px;color:#fff">
               <input id="menu-audio-sfx-enabled" type="checkbox" checked>
@@ -891,6 +892,13 @@
   const AUDIO_SFX_KEY = 'meso.audio.sfx';
   const DEFAULT_AUDIO_SETTINGS = { master: 70, music: 34, sfxEnabled: true };
   const MENU_MUSIC_SRC = 'data/Sounds/March_of_the_Vanguard.mp3';
+  // ── MÚSICA: DESACTIVADA DE MOMENTO ────────────────────────────────────────
+  // Durante el desarrollo, escuchar la música a diario es insufrible. Esta
+  // bandera (y `window.MESO_MUSICA_ACTIVA` para el motor) deja TODO el audio
+  // musical en silencio —menú, intro WAV y MIDI— sin quitar ningún fichero:
+  // poner `true` vuelve a activarla. Los efectos de sonido (SFX) no se tocan.
+  const MENU_MUSIC_ENABLED = false;
+  window.MESO_MUSICA_ACTIVA = MENU_MUSIC_ENABLED;
   let _menuMusic = null;
   let _menuMusicHooked = false;
   let _menuUiSfxBound = false;
@@ -932,7 +940,7 @@
     const masterNorm = master / 100;
     const musicNorm = music / 100;
     try {
-      if (_menuMusic) _menuMusic.volume = Math.max(0, Math.min(1, masterNorm * musicNorm));
+      if (MENU_MUSIC_ENABLED && _menuMusic) _menuMusic.volume = Math.max(0, Math.min(1, masterNorm * musicNorm));
     } catch (e) {}
     try {
       if (window.SoundManager) {
@@ -985,6 +993,7 @@
 
   function initMenuMusic() {
     try {
+      if (!MENU_MUSIC_ENABLED) return;   // música apagada de momento (desarrollo)
       const root = document.getElementById('main-menu-root');
       if (!root || root.style.display === 'none' || window._standaloneEditorMode) return;
       const settings = readAudioSettings();
