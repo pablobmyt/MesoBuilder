@@ -48,7 +48,11 @@ import { createTextures } from './game-engine-textures.js';
 // de mapas: lo usa el mapa inicial y las bandas nuevas del mundo que crece.
 import { createTerrainGenerator, TERRAIN_PROFILES } from './terrain-generator.js';
 import { buildTreeTemplates, drawTreePixels, treeSwayPhase, treeSwayBitmap, TREE_SWAY_BUCKETS } from './tree-art.js';
-import { drawAnimal } from './animal-art.js';
+import { drawAnimal, setAnimalArtProvider } from './animal-art.js';
+// CABALLOS CON HOJA DE SPRITES: recorta el caballo de `data/sheets/Caballos.png`
+// (medido por `tools/build-horse-sheet.py`) y se lo sirve a `animal-art.js`. Si la
+// hoja falta, el caballo se sigue generando procedural.
+import { initHorseSheet, horseSheetProvider, horseSheetDefaultCoat } from './horse-sheet-art.js';
 // Volumen 2.5D de los edificios: SÓLO en la vista isométrica (ver el módulo).
 import { addIsometricVolume, VOLUMEN } from './building-volume.js';
 import { VISTAS, materialesDeEdificio, limpiarMateriales, drawPlantaTecho } from './building-volume.js';
@@ -8025,6 +8029,13 @@ function drawWheatIcon(ctx, w, h) {
         // Vistas recortadas de un PNG (editor de entidades): se registran AHORA,
         // antes de reconstruir las cachés, para que el mundo salga ya con ellas.
         try { await cargarVistasDeEntidades(); } catch (e) { console.warn('vistas de entidad err', e); }
+        // Hoja de caballos: el proveedor se enchufa YA (animal-art.js le pregunta
+        // por cada caballo) y la carga va en segundo plano. Mientras no esté lista,
+        // el caballo se dibuja procedural: nunca se queda sin caballos.
+        try {
+          setAnimalArtProvider(horseSheetProvider);
+          initHorseSheet();
+        } catch (e) { console.warn('hoja de caballos err', e); }
         // Rebuild map caches now that sprite library is ready (avoids stale pre-library renders)
         try {
           mapCacheDirty = true;
@@ -8681,6 +8692,15 @@ const HORSE_ACTION_MS = 120;   // duración mínima para que se vea la pose
 
 function horseActionList() { return HORSE_ACTIONS.slice(); }
 function horseActionDef(id) { return HORSE_ACTIONS.find(a => a.id === id) || null; }
+
+// Pelaje del caballo con la hoja de sprites. SIEMPRE EL MISMO: el usuario pidió
+// que el caballo no cambiase de aspecto, así que todos comparten el pelaje por
+// defecto de `data/horse-sheet.json` (o `window._caballoPelaje` si se toca desde
+// la consola). PARA RECUPERAR LA VARIEDAD: devolver aquí
+// `Math.abs(hash(ent.id)) % horseSheetCoatCount()` en vez del valor fijo.
+function horseCoatOf(ent) {
+  try { return horseSheetDefaultCoat(); } catch (e) { return 0; }
+}
 
 // ¿Qué estado de animación le toca al caballo? Primero la acción en curso, luego
 // el aire según cómo se mueva (paso, trote o galope).
@@ -13146,7 +13166,8 @@ function drawPlayer() {
       ctx.restore();
       drawAnimal(ctx, 'horse', cxM, cyM, spriteW * 1.5, {
         state: mountedHorseState(now),
-        flip: (dir === 'left'), back: (dir === 'up'), now
+        flip: (dir === 'left'), back: (dir === 'up'), now,
+        variant: horseCoatOf(player._mount), mounted: true
       });
       player._mountStrideSeenIso = player._walkTime || 0;
       _pyIso = py - Math.round(spriteH * 0.34);
@@ -13244,7 +13265,8 @@ function drawPlayer() {
       ctx.restore();
       drawAnimal(ctx, 'horse', cxM, cyM, spriteW * 1.5, {
         state: mountedHorseState(now),
-        flip: (dir === 'left'), back: (dir === 'up'), now
+        flip: (dir === 'left'), back: (dir === 'up'), now,
+        variant: horseCoatOf(player._mount), mounted: true
       });
       player._mountStrideSeen = player._walkTime || 0;
       _pyRide = py - Math.round(spriteH * 0.34);
@@ -13665,7 +13687,8 @@ function drawCartWelcomeScene(ctx, W, H) {
     const horseW = Math.round(W * 0.13);
     try {
       drawAnimal(ctx, 'horse', cartX + Math.round(horseW * 0.72), cartY + 4 + bote, horseW,
-        { state: rodando ? 'run' : 'idle', phase01: (now * 0.004) % 1, now, flip: true });
+        { state: rodando ? 'run' : 'idle', phase01: (now * 0.004) % 1, now, flip: true,
+          variant: window._cartHorseCoat || 0, mounted: true });
     } catch (e) {}
     // Lanzas del carro
     ctx.strokeStyle = '#6B4A22'; ctx.lineWidth = 3;
@@ -15971,7 +15994,8 @@ function render() {
       } catch (e) {}
       drawAnimal(ctx, 'horse', cxH, cyH, anchoH, {
         state: horseStateFor(ent, now), phase01: horseActPhase(ent, now),
-        flip: miraIzq, back: haciaArriba, now
+        flip: miraIzq, back: haciaArriba, now,
+        variant: horseCoatOf(ent), mounted: (ent === player._mount)
       });
       // Cuerda al poste si esta amarrado
       if (ent.tethered) {
@@ -22031,7 +22055,8 @@ function drawOccludedReveals(rects) {
           try {
             drawAnimal(ctx, ent.kind === 'horse' ? 'horse' : 'dog', cx, y + ts * 0.92, ts * (ent.kind === 'horse' ? 1.5 : 1.0), {
               state: ent.kind === 'horse' ? horseStateFor(ent, Date.now()) : 'idle',
-              flip: !!ent._flip, now: Date.now()
+              flip: !!ent._flip, now: Date.now(),
+              variant: ent.kind === 'horse' ? horseCoatOf(ent) : 0
             });
           } catch (e) {}
         }

@@ -105,7 +105,8 @@
         }
       },
       "ajusteHuella": true,
-      "hoja": "data/sheets/Villa_objetos.png"
+      "hoja": "data/sheets/Villa_objetos.png",
+      "animaciones": {}
     },
     "tree0": {
       "sistema": "nuevo",
@@ -361,9 +362,24 @@
       "ajusteHuella": true
     },
     "mesopotamian_baths": {
-      "sistema": "antiguo",
-      "vistas": {},
-      "ajusteHuella": true
+      "sistema": "nuevo",
+      "vistas": {
+        "sup": {
+          "x": 28,
+          "y": 572,
+          "w": 310,
+          "h": 154
+        },
+        "iso": {
+          "x": 15,
+          "y": 95,
+          "w": 610,
+          "h": 379
+        }
+      },
+      "ajusteHuella": true,
+      "animaciones": {},
+      "hoja": "data/sheets/Termas.png"
     },
     "lamp_post": {
       "sistema": "antiguo",
@@ -386,9 +402,24 @@
       "ajusteHuella": true
     },
     "farm": {
-      "sistema": "antiguo",
-      "vistas": {},
-      "ajusteHuella": true
+      "sistema": "nuevo",
+      "vistas": {
+        "sup": {
+          "x": 20,
+          "y": 565,
+          "w": 318,
+          "h": 154
+        },
+        "iso": {
+          "x": 18,
+          "y": 100,
+          "w": 618,
+          "h": 370
+        }
+      },
+      "ajusteHuella": true,
+      "animaciones": {},
+      "hoja": "data/sheets/Granja.png"
     },
     "factory": {
       "sistema": "antiguo",
@@ -432,7 +463,8 @@
         }
       },
       "ajusteHuella": true,
-      "hoja": "data/sheets/SpriteGeneral.png"
+      "hoja": "data/sheets/SpriteGeneral.png",
+      "animaciones": {}
     },
     "temple": {
       "sistema": "antiguo",
@@ -456,7 +488,8 @@
         }
       },
       "ajusteHuella": true,
-      "hoja": "data/sheets/Villa_objetos.png"
+      "hoja": "data/sheets/Villa_objetos.png",
+      "animaciones": {}
     },
     "granary": {
       "sistema": "nuevo",
@@ -495,6 +528,60 @@
       },
       "ajusteHuella": true,
       "hoja": "data/sheets/Observatory.png"
+    },
+    "weed": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true,
+      "animaciones": {}
+    },
+    "watchtower": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true,
+      "animaciones": {}
+    },
+    "pixel_building_isolated": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true,
+      "animaciones": {}
+    },
+    "pet_dog": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true,
+      "animaciones": {}
+    },
+    "mountain": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true,
+      "animaciones": {}
+    },
+    "mesopotamian_house_shaded": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true,
+      "animaciones": {}
+    },
+    "mesopotamian_house": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true,
+      "animaciones": {}
+    },
+    "mesopotamian_gate_v": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true,
+      "animaciones": {}
+    },
+    "market": {
+      "sistema": "antiguo",
+      "vistas": {},
+      "ajusteHuella": true,
+      "animaciones": {}
     }
   }
 }

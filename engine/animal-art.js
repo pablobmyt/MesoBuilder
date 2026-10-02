@@ -503,7 +503,27 @@ function animFor(kind, state, p) {
 const BITMAPS = new Map();
 const FRAMES = 8;
 
-function bitmapFor(kind, state, bucket, back) {
+// ── ARTE EXTERNO (hoja de sprites del usuario) ───────────────────────────────
+// Un animal se puede dibujar con arte recortado de un PNG en vez del procedural.
+// El proveedor recibe (kind, state, bucket, back, opts) y devuelve un bitmap
+// `{canvas, w, h}` o null (null = se genera el arte de siempre). Se usa para los
+// CABALLOS: ver `engine/horse-sheet-art.js`.
+// OJO: lo que devuelve el proveedor NO se guarda en BITMAPS, porque su clave no
+// lleva el pelaje y un caballo castaño acabaría pintado como el negro. El
+// proveedor cachea lo suyo (una entrada por fotograma y pelaje).
+let ART_PROVIDER = null;
+export function setAnimalArtProvider(fn) {
+  ART_PROVIDER = (typeof fn === 'function') ? fn : null;
+  BITMAPS.clear();
+}
+
+function bitmapFor(kind, state, bucket, back, opts) {
+  if (ART_PROVIDER) {
+    try {
+      const ext = ART_PROVIDER(kind, state, bucket, !!back, opts || {});
+      if (ext && ext.canvas) return ext;
+    } catch (e) { /* si el arte externo falla, se dibuja el procedural */ }
+  }
   const key = kind + '|' + state + '|' + bucket + '|' + (back ? 'back' : 'front');
   let bmp = BITMAPS.get(key);
   if (bmp) return bmp;
@@ -532,7 +552,9 @@ function bitmapFor(kind, state, bucket, back) {
  * @param {number} x centro horizontal (px de pantalla)
  * @param {number} yBase base (px de pantalla, donde apoya las patas)
  * @param {number} ancho ancho deseado en px
- * @param {object} [opts] { state, phase01, flip, now, ent }
+ * @param {object} [opts] { state, phase01, flip, now, ent, variant, mounted, back }
+ *   `variant` y `mounted` los usa el proveedor de arte externo (el pelaje del
+ *   caballo y si lleva silla). El arte procedural los ignora.
  */
 export function drawAnimal(ctx, kind, x, yBase, ancho, opts = {}) {
   const spec = SPECS[kind] || SPECS.rabbit;
@@ -547,7 +569,7 @@ export function drawAnimal(ctx, kind, x, yBase, ancho, opts = {}) {
   }
   const bucket = Math.floor(phase * FRAMES) % FRAMES;
   const back = !!opts.back;
-  const bmp = bitmapFor(kind, state, bucket, back);
+  const bmp = bitmapFor(kind, state, bucket, back, opts);
   const w = Math.max(6, Math.round(ancho));
   const h = Math.max(6, Math.round(w * (bmp.h / bmp.w)));
   const px = Math.round(x - w / 2);
