@@ -11,7 +11,9 @@
     "package-win": "electron-packager . MesoBuilder --platform=win32 --arch=x64 --out=dist --overwrite",
     "clean-cache": "npm cache clean --force && npm cache verify",
     "pixel-editor": "node scripts/serve-pixel-editor.js",
-    "editor": "node scripts/serve-entity-editor.js"
+    "editor": "node scripts/serve-entity-editor.js",
+    "docs-index": "node tools/build-docs-index.mjs",
+    "entity-index": "node tools/build-entity-index.mjs"
   },
   "devDependencies": {
     "electron": "^26.0.0",

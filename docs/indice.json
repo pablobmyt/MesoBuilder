@@ -1,0 +1,258 @@
+{
+  "generado": "2026-10-05T13:34:41.325Z",
+  "nota": "Generado por tools/build-docs-index.mjs. Es la lista que enseña la guía del juego (F1).",
+  "docs": [
+    {
+      "archivo": "MANUAL.md",
+      "titulo": "Manual del jugador",
+      "grupo": "Cómo jugar",
+      "descripcion": "Controles, supervivencia, construcción, agricultura, edición y problemas conocidos.",
+      "lineas": 1605
+    },
+    {
+      "archivo": "docs/ACCIONES-Y-ANIMACIONES.md",
+      "titulo": "Acciones y animaciones del personaje",
+      "grupo": "Sistemas",
+      "descripcion": "Se abre con V o con el botón flotante 🎭 Acciones (abajo a la izquierda).",
+      "lineas": 61
+    },
+    {
+      "archivo": "docs/AGRICULTURA.md",
+      "titulo": "Agricultura y cultivos (trigo por fases)",
+      "grupo": "Sistemas",
+      "descripcion": "fase. Tarda 2 días por fase y 1 día si la parcela está junto al agua",
+      "lineas": 67
+    },
+    {
+      "archivo": "docs/ARTE-ARBOLES-Y-ANIMALES.md",
+      "titulo": "Árboles y animales — arte y animación",
+      "grupo": "Sistemas",
+      "descripcion": "bosque, además, caía en la plantilla de manojo de hierba, así que se veía",
+      "lineas": 127
+    },
+    {
+      "archivo": "docs/CABALLO-ACCIONES-Y-ANIMACIONES.md",
+      "titulo": "Caballo: animaciones y acciones (como el jugador)",
+      "grupo": "Sistemas",
+      "descripcion": "Antes el caballo era un bloque con patas y tres estados (idle/walk/run).",
+      "lineas": 127
+    },
+    {
+      "archivo": "docs/CABALLO-HOJA-DE-SPRITES.md",
+      "titulo": "El caballo con hoja de sprites (un solo caballo, animado por partes)",
+      "grupo": "Sistemas",
+      "descripcion": "El caballo se dibujaba procedural: engine/animal-art.js lo generaba por",
+      "lineas": 179
+    },
+    {
+      "archivo": "docs/CADAVERES.md",
+      "titulo": "Cadáveres: descomposición y esqueletos",
+      "grupo": "Sistemas",
+      "descripcion": "Un cuerpo no desaparece: se descompone.",
+      "lineas": 244
+    },
+    {
+      "archivo": "docs/DIALOGOS-Y-ENCARGOS.md",
+      "titulo": "Diálogos con opciones y encargos sorpresa",
+      "grupo": "Sistemas",
+      "descripcion": "aviso (ni marcador encima del vecino ni panel que salte antes de hablar),",
+      "lineas": 214
+    },
+    {
+      "archivo": "docs/EDIFICIOS-VOLUMEN-Y-CRECIMIENTO.md",
+      "titulo": "Edificios con volumen (2.5D) y crecimiento del mundo",
+      "grupo": "Sistemas",
+      "descripcion": "vista isométrica parecían recortes pegados al suelo.",
+      "lineas": 195
+    },
+    {
+      "archivo": "docs/ESTRUCTURAS.md",
+      "titulo": "Estructuras (conjuntos de edificios) — MesoBuilder",
+      "grupo": "Sistemas",
+      "descripcion": "Antes, un ziggurat, un templo o un mercado podían aparecer sueltos o \"como",
+      "lineas": 213
+    },
+    {
+      "archivo": "docs/GUIA-EN-EL-JUEGO.md",
+      "titulo": "Guía dentro del juego (todos los markdown, a un F1)",
+      "grupo": "Sistemas",
+      "descripcion": "Cómo se abre esta guía (F1), qué enseña y cómo se genera la lista de documentos.",
+      "lineas": 92
+    },
+    {
+      "archivo": "docs/GUION-NARRATIVO.md",
+      "titulo": "GUION NARRATIVO",
+      "grupo": "Sistemas",
+      "descripcion": "GUION NARRATIVO — ADAPA Y EL DILUVIO",
+      "lineas": 364
+    },
+    {
+      "archivo": "docs/HERIDAS-Y-CABALLO.md",
+      "titulo": "Heridas del jugador, ficha (Tab) y caballo",
+      "grupo": "Sistemas",
+      "descripcion": "Cada ataque deja marca en una zona concreta (head, torso, lArm, rArm,",
+      "lineas": 106
+    },
+    {
+      "archivo": "docs/HUD-DINAMICO.md",
+      "titulo": "HUD dinámico y orden de capas",
+      "grupo": "Sistemas",
+      "descripcion": "Antes había información fija en pantalla todo el rato (guía rápida, objetivo,",
+      "lineas": 125
+    },
+    {
+      "archivo": "docs/HUD-MINIMALISTA.md",
+      "titulo": "HUD minimalista y moderno",
+      "grupo": "Sistemas",
+      "descripcion": "Antes el HUD era «bronce y madera»: bordes de 2 px, tipografía monoespaciada,",
+      "lineas": 78
+    },
+    {
+      "archivo": "docs/INTERFAZ-SUPERIOR.md",
+      "titulo": "Interfaz superior (barra superior, barra de menú y botón de edición)",
+      "grupo": "Sistemas",
+      "descripcion": "Notas de la corrección «arriba no deja hacer clic».",
+      "lineas": 75
+    },
+    {
+      "archivo": "docs/INTERIORES.md",
+      "titulo": "Interiores de los edificios — MesoBuilder",
+      "grupo": "Sistemas",
+      "descripcion": "Sólo seis tipos de edificio tenían interior y, además, la puerta de entrada se",
+      "lineas": 166
+    },
+    {
+      "archivo": "docs/OBSERVATORIO.md",
+      "titulo": "El Observatorio",
+      "grupo": "Sistemas",
+      "descripcion": "La cúpula desde la que se mira el cielo de Mesopotamia.",
+      "lineas": 108
+    },
+    {
+      "archivo": "docs/PUERTAS-Y-CONTROL.md",
+      "titulo": "Puertas de muralla y control de paso — MesoBuilder",
+      "grupo": "Sistemas",
+      "descripcion": "capital, 1 en la base militar).",
+      "lineas": 127
+    },
+    {
+      "archivo": "docs/RENDERIZADO-PIXEL.md",
+      "titulo": "Sistema de Renderizado Pixel-Art de MesoBuilder — Guía Completa",
+      "grupo": "Sistemas",
+      "descripcion": "MesoBuilder usa un único canvas 2D HTML5 como superficie de dibujo.",
+      "lineas": 864
+    },
+    {
+      "archivo": "docs/RIOS-Y-PESCADORES.md",
+      "titulo": "RÍOS Y PESCADORES",
+      "grupo": "Sistemas",
+      "descripcion": "veían los dos ríos azules, pero en el mundo no aparecía agua: el cartel vertical",
+      "lineas": 79
+    },
+    {
+      "archivo": "docs/SIGILO.md",
+      "titulo": "Sigilo, coberturas y zonas vigiladas",
+      "grupo": "Sistemas",
+      "descripcion": "La petición fue: «una zona para la primera misión, tengamos que hacer algo de",
+      "lineas": 377
+    },
+    {
+      "archivo": "docs/TERRENO-CULTIVOS-PERRO-Y-BIENVENIDA.md",
+      "titulo": "TERRENO PERDIDO, CULTIVOS VARIADOS, PERRO Y BIENVENIDA",
+      "grupo": "Sistemas",
+      "descripcion": "Con el menú externo (index.html, o sea el juego de verdad) y sin",
+      "lineas": 209
+    },
+    {
+      "archivo": "docs/TERRENO-Y-MUNDO.md",
+      "titulo": "Terreno coherente y mundo que crece — MesoBuilder",
+      "grupo": "Sistemas",
+      "descripcion": "El del editor es mejor (coherente, reproducible y con transiciones suaves), así",
+      "lineas": 386
+    },
+    {
+      "archivo": "docs/UN-SPRITE-POR-VISTA.md",
+      "titulo": "Un sprite por vista: TECHO (arriba) + ISOMÉTRICA",
+      "grupo": "Sistemas",
+      "descripcion": "Ojo con los árboles: el motor pide el sprite por su clave con sufijo de vista",
+      "lineas": 139
+    },
+    {
+      "archivo": "docs/VEGETACION-CULTIVOS-Y-SONIDO.md",
+      "titulo": "VEGETACIÓN, CULTIVOS Y SONIDO",
+      "grupo": "Sistemas",
+      "descripcion": "Ahora el minimapa es fijo: se pinta siempre que la partida esté en marcha",
+      "lineas": 133
+    },
+    {
+      "archivo": "ACTUALIZACIONES.md",
+      "titulo": "🎮 MesoBuilder - Actualizaciones Implementadas",
+      "grupo": "Desarrollo",
+      "descripcion": "Actualmente usa datos WAV silenciosos para fallback (no genera errores).",
+      "lineas": 193
+    },
+    {
+      "archivo": "docs/ARRANQUE-GUARDADO-E-INTERFAZ.md",
+      "titulo": "Arranque, guardado y interfaz flotante",
+      "grupo": "Desarrollo",
+      "descripcion": "engine/game-engine.js es un módulo ES.",
+      "lineas": 179
+    },
+    {
+      "archivo": "docs/AUDITORIA.md",
+      "titulo": "Auditoría de MesoBuilder — 2026-09-25",
+      "grupo": "Desarrollo",
+      "descripcion": "que había (y hay) son varias averías silenciosas que se comen funcionalidad sin",
+      "lineas": 615
+    },
+    {
+      "archivo": "CINEMATICAS_README.md",
+      "titulo": "Introducción Cinematográfica de MesoBuilder",
+      "grupo": "Desarrollo",
+      "descripcion": "modified: 2026-05-29T11:37:25.487Z",
+      "lineas": 136
+    },
+    {
+      "archivo": "docs/EDITOR-DE-ENTIDADES.md",
+      "titulo": "Editor de entidades (elegir sistema y recortar las vistas del PNG)",
+      "grupo": "Desarrollo",
+      "descripcion": "La lista completa de sprites, los grupos, recortar cada vista y montar animaciones.",
+      "lineas": 738
+    },
+    {
+      "archivo": "docs/IDEAS-Y-BOCETOS.md",
+      "titulo": "IDEAS Y BOCETOS — Adapa y el diluvio",
+      "grupo": "Desarrollo",
+      "descripcion": "Ideas y bocetos pendientes de decidir.",
+      "lineas": 351
+    },
+    {
+      "archivo": "ideas.md",
+      "titulo": "TODO de ideas / mejoras pendientes",
+      "grupo": "Desarrollo",
+      "descripcion": "galope, comer, beber, sentarse, saludar/festejar/bailar, coger algo del suelo.",
+      "lineas": 30
+    },
+    {
+      "archivo": "docs/MODO-DEBUG.md",
+      "titulo": "Modo Debug / Inspector visual — MesoBuilder",
+      "grupo": "Desarrollo",
+      "descripcion": "Herramientas de depuración: inspector, MESO_DEBUG y atajos de pruebas.",
+      "lineas": 156
+    },
+    {
+      "archivo": "docs/RENDIMIENTO.md",
+      "titulo": "Rendimiento — MesoBuilder",
+      "grupo": "Desarrollo",
+      "descripcion": "tillFieldRect llamaba a setBuildingCells() por celda, y cada llamada",
+      "lineas": 378
+    },
+    {
+      "archivo": "TODO.md",
+      "titulo": "TODO",
+      "grupo": "Desarrollo",
+      "descripcion": "Pendientes anotados del proyecto.",
+      "lineas": 40
+    }
+  ]
+}

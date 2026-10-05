@@ -29,6 +29,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { entities, rabbits, foxes, graves } from './entities.js';
+import { icono as iconoUI } from './icons.js';
 
 const ADJUST_FILE = 'data/sprite-adjustments.json';
 const STORAGE_KEY = 'meso.debug.overrides.v1';
@@ -1006,7 +1007,7 @@ export function createDebugTools(deps) {
       panel.id = 'meso-debug-panel';
       panel.innerHTML = `
         <div class="mdp-head">
-          <span class="mdp-title">🔧 Debug · Inspector</span>
+          <span class="mdp-title">${iconoUI('llave', { size: 14 })} Debug · Inspector</span>
           <span class="mdp-head-actions">
             <button class="mdp-x" data-act="collapse" title="Plegar">–</button>
             <button class="mdp-x" data-act="close" title="Cerrar (F9)">✕</button>
@@ -1136,7 +1137,7 @@ export function createDebugTools(deps) {
       </div>
       <datalist id="mdp-sprite-keys">${options}</datalist>
       <div class="mdp-row">
-        <button class="mdp-btn" data-act2="spriteGallery" title="Ver todos los sprites del juego en grande, cada uno dentro de la huella que ocupa">🔍 Ver biblioteca de sprites</button>
+        <button class="mdp-btn" data-act2="spriteGallery" title="Ver todos los sprites del juego en grande, cada uno dentro de la huella que ocupa">${iconoUI('lupa', { size: 13 })} Ver biblioteca de sprites</button>
       </div>
       <div class="mdp-hint">${keys.length} sprites disponibles. Coloca cualquier sprite del juego en el mundo para verlo de cerca, moverlo y ajustarlo.</div>
     `;
@@ -1835,7 +1836,7 @@ export function createDebugTools(deps) {
       const btn = document.createElement('button');
       btn.className = 'tool-btn';
       btn.id = 'btn-debug-mode';
-      btn.textContent = '🔧 Debug (F9)';
+      btn.innerHTML = `${iconoUI('llave', { size: 13 })}<span>Debug (F9)</span>`;
       btn.addEventListener('click', () => setEnabled(!state.enabled));
       target.appendChild(btn);
       // indicador de estado en el botón

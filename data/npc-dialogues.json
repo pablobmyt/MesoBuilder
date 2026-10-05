@@ -8,7 +8,23 @@
       "Dicen que en el comité central acumulan reservas para diez años completos.",
       "Cuidado con los merodeadores del bosque; la noche pasada rondaron el perímetro.",
       "Los niños juegan cerca del río... les advierto que el hielo aún no es seguro."
-    ]
+    ],
+    "phrasesPorEpoca": {
+      "mesopotamia": [
+        "El barro del río da casas y da cebada. Lo demás lo trae el tiempo.",
+        "En mi familia llevamos sembrando esta orilla desde antes del rey.",
+        "¿Has visto a los hombres del norte? Andan contando las barcas del río.",
+        "Dicen que el templo guarda tablillas con todos los diluvios que ha habido.",
+        "Los niños juegan en el canal… y el canal este año baja raro."
+      ],
+      "medieval": [
+        "Los caminos están revueltos: bandidos y soldados que no se distinguen.",
+        "Mi familia lleva aquí desde antes del rey actual. Hemos visto de todo.",
+        "¿Has visto pasar jinetes hacia el norte? Yo no quiero ni mirarlos.",
+        "Este invierno pinta peor que el anterior. Ya escasea la leña.",
+        "Los niños juegan junto al vado… no me fío de esa corriente."
+      ]
+    }
   },
   "farmer": {
     "phrases": [
@@ -18,7 +34,23 @@
       "Una buena cosecha requiere paciencia, trabajo organizado y coordinación con el camarada delegado.",
       "Ayer vi heladas inusuales en los cultivos del norte... mal presagio para la temporada.",
       "Las herramientas de hierro se desgastan. Necesitamos refuerzo de la fábrica estatal."
-    ]
+    ],
+    "phrasesPorEpoca": {
+      "mesopotamia": [
+        "La tierra de la ribera es blanda y agradecida: da dos cosechas si la riegas bien.",
+        "Sembramos la cebada cuando el río se retira y deja el limo.",
+        "El canal viejo está cegado. Habría que limpiarlo entre todos.",
+        "Una buena cosecha quiere paciencia, agua y gente que trabaje a la vez.",
+        "Este año el grano ha salido corto. Mal asunto."
+      ],
+      "medieval": [
+        "La tierra buena está junto al río; lo demás es pedregal.",
+        "Sembramos el lino cuando florecen los frutales.",
+        "El molino lleva tres días parado. Falta agua o falta maña.",
+        "Una buena cosecha quiere paciencia y trabajo ordenado.",
+        "Las heladas han llegado tarde. Mal asunto para el grano."
+      ]
+    }
   },
   "shepherd": {
     "phrases": [
@@ -27,7 +59,21 @@
       "La lana de este año será de buena calidad. El rebaño está fuerte.",
       "El río ha estado más congelado que de costumbre. Preocupante para el próximo ciclo.",
       "En la estepa, no hay muchos lugares donde esconderse de la ventisca: solo el trabajo organizado nos salva."
-    ]
+    ],
+    "phrasesPorEpoca": {
+      "mesopotamia": [
+        "Las cabras suben a las colinas cuando el aire cambia.",
+        "Vendo lana y leche. Y si me apuras, alguna cabra.",
+        "Al este hay hierba buena, pero el camino lo cortan los ladrones.",
+        "Mi perro avisa antes que el pastor más viejo del poblado."
+      ],
+      "medieval": [
+        "Las ovejas suben solas cuando huele a tormenta.",
+        "Vendo lana y queso. Tú dirás.",
+        "Al norte hay pasto, pero también lobos y peor gente.",
+        "Mi perro es mejor guardián que la mitad de la guardia."
+      ]
+    }
   },
   "merchant": {
     "phrases": [
@@ -38,7 +84,22 @@
       "Los comisarios de Leningrado pagan bien por herramientas de calidad y equipos industriales.",
       "Un mercader sin contactos en el comité es como un barco sin timón.",
       "¿Tienes algo para intercambiar? Las pieles de marta cibeles están de moda en los comités."
-    ]
+    ],
+    "phrasesPorEpoca": {
+      "mesopotamia": [
+        "Traigo cobre de Nínagara y sal del salino. ¿Qué necesitas?",
+        "El precio del grano sube con cada barca que no llega.",
+        "Un buen trato es igual de rápido de cerrar en cualquier orilla.",
+        "Los escribas anotan las deudas mejor que la memoria.",
+        "Si el río crece como dicen, más vale tener grano guardado."
+      ],
+      "medieval": [
+        "Traigo paño de la ciudad y sal del valle. ¿Qué te hace falta?",
+        "El precio sube con cada camino cortado.",
+        "Trato rápido, que la feria cierra al anochecer.",
+        "El prior compra mucho; con él no regateas, obedeces."
+      ]
+    }
   },
   "guard": {
     "phrases": [
@@ -48,7 +109,22 @@
       "Los saboteadores no se han visto desde la última ronda de purgas.",
       "El Partido exige disciplina inquebrantable. Nada se filtra por estos puestos de control.",
       "Mantén tus herramientas y armas dentro de los moldes permitidos por la normativa."
-    ]
+    ],
+    "phrasesPorEpoca": {
+      "mesopotamia": [
+        "La muralla se defiende sola; el problema es la puerta.",
+        "Registramos a todo el que entra. Es orden de la capital.",
+        "Se han visto desconocidos por el sur. Camina con luz.",
+        "No corras en el vano de la puerta, que el arco es bajo.",
+        "Los turnos son largos, pero un vigilante dormido no sirve."
+      ],
+      "medieval": [
+        "La muralla se defiende sola; el problema es la puerta.",
+        "Registramos a todo el que entra por orden del señor.",
+        "Hay desconocidos en el camino del sur. Ve con luz.",
+        "No corras por el portón, que el arco es bajo."
+      ]
+    }
   },
   "elder": {
     "phrases": [
@@ -57,7 +133,23 @@
       "Cuando era niño, el Ob era menos impredecible. O quizás el mundo ha cambiado.",
       "Los presagios en las nubes no mienten, aunque los comités frecuentemente sí.",
       "Recuerda: el agua que calienta la casa también puede congelarte si la abandonas."
-    ]
+    ],
+    "phrasesPorEpoca": {
+      "mesopotamia": [
+        "He visto crecer el río cuarenta veces. Esta vez va distinto.",
+        "Los presagios se leen en el cauce, no en los huesos.",
+        "Cuando era joven, esta orilla era solo juncos.",
+        "Respeta al templo y el templo te respetará a ti.",
+        "Escucha a los viejos: sabemos cosas que no están escritas."
+      ],
+      "medieval": [
+        "He visto crecer el río cuarenta veces. Esta promete.",
+        "Las señales se leen en el cielo y en el cauce, no en los huesos.",
+        "Cuando era joven, esto era solo juncos.",
+        "Respeta al priorato y el priorato te respetará.",
+        "El que no escucha a los viejos acaba pagándolo."
+      ]
+    }
   },
   "scribe": {
     "phrases": [
@@ -67,7 +159,22 @@
       "El delegado necesita cuentas exactas. Un error en los libros puede costar el cargo.",
       "He copiado los mandatos del Kremlin doscientas veces. Cada vez comprendo mejor la lógica revolucionaria.",
       "Los impuestos se pagan en cereales, trabajo o acero. No hay otra manera permitida."
-    ]
+    ],
+    "phrasesPorEpoca": {
+      "mesopotamia": [
+        "Cada tablilla guarda un año de esta ciudad. Ya van trescientos.",
+        "Un contrato mal escrito cuesta más que el doble de lo pactado.",
+        "El saber se escribe para el que vendrá después de la crecida.",
+        "Sé contar, escribir y callar. Con eso se vive bien.",
+        "Pregunta por Imitti si buscas historia y no rumores."
+      ],
+      "medieval": [
+        "Cada pergamino guarda un año de este reino.",
+        "Un contrato mal escrito cuesta el doble de lo pactado.",
+        "Escribo para el que vendrá después de la tormenta.",
+        "Pregunta en el archivo si buscas historia y no rumores."
+      ]
+    }
   },
   "priestess": {
     "phrases": [
@@ -77,7 +184,22 @@
       "El pabellón de actos conecta la teoría con la práctica. Es el eje del colectivo.",
       "Las aguas glaciales del río reflejan la voluntad del pueblo trabajador.",
       "Sin estructuración, sin orden. Sin orden, sin industria. Sin industria no hay Soviet."
-    ]
+    ],
+    "phrasesPorEpoca": {
+      "mesopotamia": [
+        "El templo está abierto al que entra con respeto.",
+        "Las ofrendas al dios se entregan en el altar, no en la calle.",
+        "Los astros no mienten; los hombres sí.",
+        "Enlil escucha a quien habla bajo y cumple lo prometido.",
+        "Esta noche hay luna nueva: es momento de plegaria."
+      ],
+      "medieval": [
+        "La iglesia está abierta al que entra con respeto.",
+        "Las ofrendas se entregan en el altar, no en la plaza.",
+        "El cielo no miente; los hombres sí.",
+        "Esta noche toca plegaria por los que viajan."
+      ]
+    }
   },
   "storyteller": {
     "phrases": [
@@ -86,7 +208,20 @@
       "Los mitos de la clase campesina son memorias del sufrimiento. Escúchalos bien.",
       "Dicen que antes de la colectivización, los hombres vivían como animales egoístas y salvajes.",
       "La historia del camarada y el kulak... ¿quién era realmente el enemigo, en verdad?"
-    ]
+    ],
+    "phrasesPorEpoca": {
+      "mesopotamia": [
+        "Te contaré una historia: la del rey que quiso atar el río.",
+        "En el diluvio anterior solo se salvó quien construyó su barca a tiempo.",
+        "Las historias viajan en las barcas, de orilla a orilla.",
+        "Un cuento bien contado alimenta tanto como el pan."
+      ],
+      "medieval": [
+        "Te contaré la historia del rey que quiso atar el río.",
+        "En la gran riada solo se salvó quien construyó su barca a tiempo.",
+        "Las historias viajan con los mercaderes, de feria en feria."
+      ]
+    }
   },
   "survivor": {
     "phrases": [
@@ -95,7 +230,20 @@
       "Todo lo que teníamos... se fue en una hora de fuego.",
       "¿Volverán? No lo sé. Pero no pienso abandonar la causa colectiva.",
       "El Camarada Korolyov sigue en el pueblo organizando resistencia. Es un líder verdadero."
-    ]
+    ],
+    "phrasesPorEpoca": {
+      "mesopotamia": [
+        "Perdí mi casa en una inundación. No pienso perder otra.",
+        "Ando por los caminos: donde hay trabajo, hay techo.",
+        "Aquí nadie te da nada gratis, pero tampoco te lo quitan a la fuerza.",
+        "Con el agua hasta las rodillas se aprende a nadar deprisa."
+      ],
+      "medieval": [
+        "Perdí mi casa en una riada. No pienso perder otra.",
+        "Ando los caminos: donde hay trabajo, hay techo.",
+        "Aquí nadie da nada gratis, pero tampoco lo quitan a la fuerza."
+      ]
+    }
   },
   "oficial_estraperlo": {
     "phrases": [
@@ -107,7 +255,20 @@
       "Esto no es traición, camarada. Es supervivencia con criterio.",
       "Recuerda: en el mercado negro no hay recibos, pero sí consecuencias.",
       "El Coronel Markova sospecha de todos. Muévete de noche si usas lo que te di."
-    ]
+    ],
+    "phrasesPorEpoca": {
+      "mesopotamia": [
+        "Psst… tengo grano que no está en el registro. ¿Te interesa?",
+        "El templo dice una cosa y el granero cuenta otra.",
+        "Precios de amigo para quien no pregunta de dónde viene.",
+        "Si viene la crecida, mi almacén valdrá el doble. Cosas del mercado."
+      ],
+      "medieval": [
+        "Psst… tengo grano que no está en el registro del señor.",
+        "El priorato predica una cosa y el granero cuenta otra.",
+        "Precios de amigo para quien no pregunta de dónde viene."
+      ]
+    }
   },
   "fisher": {
     "phrases": [
@@ -117,6 +278,19 @@
       "Con esta cana saco un barbel de tres palmos.",
       "Las barcas del embarcadero salen al alba.",
       "No te acerques al borde: la orilla esta blandida."
-    ]
+    ],
+    "phrasesPorEpoca": {
+      "mesopotamia": [
+        "El río está revuelto. Poco pescado y malo.",
+        "Con esta red saco para mi casa y algo para vender.",
+        "Cuando el agua baja turbia, algo se mueve río arriba.",
+        "Las barcas de caña duran la temporada; las viejas se pudren."
+      ],
+      "medieval": [
+        "El río viene revuelto. Poco pescado y malo.",
+        "Cuando el agua baja turbia, algo se mueve río arriba.",
+        "Con esta red saco para casa y algo para vender."
+      ]
+    }
   }
 }

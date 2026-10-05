@@ -409,3 +409,206 @@ window.player.name                          // nombre del protagonista disponibl
 window.MESO_DEBUG.getState()                // estado del inspector
 window.MESO_DEBUG.snapshot()                // ajustes visuales guardados
 ```
+
+---
+
+## Auditoría de UI y coherencia — 2026-10-05
+
+> Pedido: repasar la interfaz («lo más minimalista posible, que los elementos se
+> muestren sólo cuando hacen falta») y buscar cosas que puedan estar mal.
+> Método: ejecución en Chromium, lectura del estado en vivo del motor y repaso de
+> los textos por época.
+
+### Corregido en esta tanda
+
+1. **Aviso de acción («Entrar [E]») sin caja.** Era una píldora de vidrio oscuro
+   con marco y una tecla dibujada como botón. Ahora es **sólo texto** y el color
+   se elige según la **luminancia del fondo** (se muestrea la franja que queda
+   debajo, cada 350 ms y sólo mientras el aviso está a la vista), con un halo del
+   color contrario para que se lea incluso encima de un borde.
+   Comprobación: `MESO_DEBUG.testDraw.aviso.estado()` (y `.forzarFondo(lum)`).
+2. **Recuadro de FPS/estadísticas (`#debug-hud`).** Se creaba **siempre** y tapaba
+   la esquina superior derecha en plena partida. Ahora sólo se enseña con el
+   interruptor «Rendimiento (HUD)» del menú Dev, con `?debug=1` o con
+   `MESO_DEBUG.perf.toggle()`, y la elección se recuerda en `meso.perfHud`.
+3. **Frases de los NPC.** `data/npc-dialogues.json` estaba escrito **entero para
+   la URSS**: en Mesopotamia un aldeano hablaba de camiones de abastecimiento y
+   del comité central. Cada tipo tiene ahora `phrasesPorEpoca` (Mesopotamia y
+   medieval) y el motor elige con `frasesDeNpc(tipo, época)`; `phrases` queda
+   como respaldo.
+4. **Rótulos del río en Mesopotamia:** decían «RÍO DON» y «RÍO OB NORD» (los
+   ríos soviéticos) → ahora «ÉUFRATES» y «TIGRIS».
+5. **`EPOCH_PROFILES.mesopotamia.foundedLog`** decía «Novozarya establecida a
+   orillas del Río Ob Nord, bajo protocolo estatal» → ahora Kidu-Lam y el
+   Éufrates, y los respaldos de `addLog` ya no son soviéticos.
+6. **`EPOCH_UI_PROFILES.mesopotamia.texts.riverName`:** «Río Don» → «Éufrates»
+   (es lo que se ve en el tooltip de la casilla).
+
+### Pendiente (detectado, no tocado)
+
+* **Kidu aparece antes de tiempo.** El perro acompaña desde el capítulo 0 («Kidu,
+  contigo no me siento solo»), pero el guion lo reserva para el **capítulo 2**.
+  Arreglo: mover `ensurePetDogCompanion()` a `advanceStoryChapter(2)`.
+* **Recursos con nombre fuera de época.** En Mesopotamia se llaman «Trigo» y
+  «Ladrillos» cuando el canon habla de **cebada** y **adobe**. Cambiarlo toca HUD,
+  tutorial y recetas: es decisión de contenido.
+* **Barra de HABILIDADES siempre visible** (Golpear/Dash/Heal/Beacon/Perro). Se
+  decidió así a propósito; si se quiere minimalismo total, podría replegarse a un
+  botón como la lista de acciones (🎭).
+* **Botón «✏️ Editar» siempre a la vista**, también en modo historia, aunque es
+  una herramienta de autor. Se podría ocultar con `window._storyMode`.
+* **Restos muertos** tras mover los encargos al diálogo: `maybeOfferSideMission`,
+  `renderSideMissionOffer` e `isNpcMissionGiver` ya no se llaman.
+* **`getImageData` del aviso de acción:** Chrome sugiere `willReadFrequently`,
+  pero ese atributo obligaría a que el canvas del juego (pintado miles de veces
+  por fotograma) fuese software. Se muestrea cada 350 ms y sólo mientras hay
+  aviso; si la lectura falla, queda el color por defecto con halo. Es un aviso
+  informativo, no un error.
+
+---
+
+## Bocadillos, iconos y nombres de recurso — 2026-10-05 (segunda pasada)
+
+> Pedido: «los bocadillos de diálogo se han ido a tomar por culo», «lo de usar
+> emojis en la app me parece un poco cutre, busca una alternativa» y seguir con
+> los pendientes de la auditoría anterior.
+
+### 1. Los bocadillos de los NPC (avería de verdad, medida)
+
+El síntoma era que un personaje que hablaba llenaba la pantalla de un cartel
+blanco. Medido en el canvas (968×728): un bocadillo con una frase de las nuevas
+(«La tierra de la ribera es blanda y agradecida…») salía de **490 px de ancho y
+una sola línea**. Tres causas, las tres arregladas:
+
+1. **No se envolvía el texto.** Ahora se parte en líneas con `envolverTexto()`
+   a un ancho máximo (`min(220, W·0.32)`) → ese mismo bocadillo queda en **3
+   líneas y 230×60 px**.
+2. **Podía salirse del lienzo.** Ahora se recorta a la pantalla y, si no cabe
+   arriba de la cabeza, se pinta debajo (con la cola invertida).
+3. **La lista crecía sin freno.** La edad se comprobaba DESPUÉS del recorte por
+   «fuera de pantalla», así que un bocadillo que quedaba fuera nunca se borraba
+   de `floatingTexts`. Ahora se mira la edad primero y, además, no se dejan más
+   de 10 a la vez.
+
+También se quitó el corte por `zoom < 0.7` (con una partida guardada con zoom
+bajo no se veía NINGÚN bocadillo) y `spawnFloatingText` guarda por fin `force`
+(se calculaba y se perdía) y acepta `{ icono }` para pintar un glifo en vez de
+texto (corazones del perro, huellas).
+
+### 2. El panel de diálogo ya no corta frases
+
+El panel tenía alto fijo y el texto se descartaba con `if (ty <= maxY)`: con una
+frase larga (o ventana pequeña) el NPC se quedaba a media frase. Ahora el texto
+se **mide primero** (`envolverTexto`), el panel se dimensiona para que quepa
+todo junto con las opciones, se reduce el cuerpo de letra (15→12 px) si hace
+falta y, sólo como último recurso, se recorta con «…» (nunca se solapa con las
+opciones).
+
+### 3. Fuera emojis: juego de iconos propio
+
+`engine/icons.js` (nuevo): 32 iconos **monocromos de línea** en rejilla 24×24
+que pintan con `currentColor` (heredan el color del HUD y del tema), se ven
+igual en cualquier sistema y sirven en el DOM (`iconoUI('golpear')` → `<svg>`) y
+en el lienzo (`dibujarIcono(ctx, …)` con `Path2D`, usado por las barras de
+supervivencia, el reloj día/noche y los corazones del perro).
+
+Sustituidos: barra de habilidades (⚔️💨🩹📍🐕), lista de acciones
+(🧭🪓🏗️💱✨📜🏹), botón de acciones (🎭), editar/jugar (✏️🎮), captura (📷),
+menú de pausa (💾🎯📖🔉🔊🔇🏠), coronas del objetivo (🔄✖), tooltip de coste
+(🧱🌾 → «Costo: 5 adobe y 2 cebada»), panel del perro (🐕) y los filtros del
+panel de depuración. Quedan a propósito los **glifos de texto** (✕, ✓, ☰, ★),
+que no son emojis.
+
+### 4. Nombres de recurso del canon
+
+En Mesopotamia el HUD decía «Trigo» y «Ladrillos». Ahora
+`EPOCH_UI_PROFILES.mesopotamia.resources` usa **Cebada** y **Adobe**, y los
+avisos de cosecha, el registro diario, el menú de pausa, el tooltip de coste y la
+descripción de las misiones usan `getResourceDisplay()` (etiqueta por época) en
+vez de texto fijo.
+
+### 5. Kidu ya no aparece antes de tiempo
+
+El perro salía desde el prólogo («Kidu, contigo no me siento solo»), pero el
+guion lo reserva para el **capítulo 2**. Ahora: en modo historia se crea en
+`advanceStoryChapter(2)` (con su aviso) y no al empezar la partida; en modo
+libre sigue acompañando desde el principio. Las partidas guardadas que ya lo
+tenían lo conservan.
+
+### 6. Emojis, cerrado del todo (2026-10-05, cuarta pasada)
+
+En la pasada anterior se cambiaron los emojis de la barra de habilidades, la
+lista de acciones, el menú de pausa, las coronas del objetivo, el panel del perro
+y las barras de supervivencia. Faltaban dos sitios que sí se veían:
+
+* **Lista de acciones del jugador** (tecla V): los 13 gestos (✋ 💬 👋 🙌 🕺 🪑 🤔
+  🐾 📣 🍞 💧 🐎 🫞), las 8 acciones del caballo y el rombo «◆» de cada acción de
+  turno. Ahora `PLAYER_GESTURES`, `HORSE_ACTIONS` y `ACTIONS` guardan **nombres de
+  icono** (no glifos) y el panel pinta `iconoUI(...)`: 23 de sus 24 botones
+  llevan SVG. De paso, la descripción de «Recolectar» decía «trigo o ladrillos»
+  (texto heredado de la URSS) y ahora es genérica.
+* **Panel/botón de depuración** (F9): 🔧 del título y del botón de la barra, y
+  🔍 «Ver biblioteca de sprites».
+* `engine/icons.js` pasa de 32 a **41 iconos** (hablar, saludo, nota, silla,
+  bombilla, herradura, cuerda, viento, ajustes).
+
+Quedan a propósito los **glifos de texto** (✕, ✓, ☰, ★): son monocromos y no
+cambian de aspecto entre plataformas.
+
+### 7. Pendiente y sin tocar (a propósito, pendiente de decisión)
+
+* La **barra de habilidades** está siempre a la vista aunque no haya nada
+  equipado; con el HUD dinámico ya se atenúa, pero podría ocultarse del todo si
+  no hay habilidad activa.
+* El botón **Editar** (modo edición) sigue apareciendo en modo historia.
+
+### 8. Cadáveres que se descomponen (2026-10-05, sexta pasada)
+
+Antes, al morir alguien, el cuerpo se borraba a los 5,5 s y aparecía una tumba
+(aunque hubiera caído en mitad del campo). Ahora el cuerpo **se descompone por
+etapas** y acaba en un **esqueleto** que se queda en el mundo; la tumba se
+levanta sólo si la muerte fue **dentro de una estructura**. Detalle y pruebas en
+`docs/CADAVERES.md`.
+
+### 9. Visión de enemigos, tecla U y saqueo de cadáveres (2026-10-05, séptima)
+
+* **La visión es de los enemigos, no de todo el mundo.** El cono de visión salió
+  de la zona de sigilo y ahora lo tienen los guardias, soldados, oficiales,
+  comisarios, milicias, patrullas, los enemigos del guion, los de torre y
+  **cualquier NPC al que agredas o que se enfade**. Un aldeano, un mercader o un
+  pescador **no** tienen cono (medido: 0 de 218 entre oficios civiles; los que sí
+  lo tienen son 223 guardias/oficiales). Si un guardia de fuera te completa el
+  medidor te **vigila** (12 s) sin abandonar el puesto; si ya eres buscado o el
+  NPC es hostil, viene a por ti.
+* **Tecla `U` (modo visión):** 2 s con el juego en **blanco y negro a 0,25 de
+  tiempo** y algo de difuminado, con las **áreas de visión en rojo** encima,
+  cartel de cuántos te han localizado y **10 s de cooldown** (con aviso).
+* **Los conos ya no se dibujan en partida** («el rango de visión no se debería ver
+  en ningún modo que no sea el que se activa pulsando la U»): antes cada vigía
+  llevaba su haz permanente (10.124 píxeles de diferencia) y ahora la diferencia
+  de brillo con y sin zona es de 0,011 por canal y píxel. En partida sólo queda el
+  **medidor de sospecha** sobre la cabeza del vigía (y sólo cuando te está
+  viendo), los corchetes de cobertura, el marcador del botín y el cartel de
+  estado, que además enseña la tecla `U` la primera vez.
+* **Cadáveres:** se pueden **saquear con `E`** (aviso `Saquear`, nunca «Hablar»),
+  con botín por oficio decidido al morir, y el cuerpo **putrefacto contagia**:
+  infección de 45 s que resta vida hasta que la cortas con **Curar** (tecla 3) o se
+  pasa sola. El HUD gana una cuarta fila mientras dura.
+* **Agresión sólo con motivo** (petición del usuario: «en los momentos normales…
+  los enemigos sólo deberían perseguir y atacarme si estoy agrediendo a alguien»):
+  que un enemigo te VEA ya no basta. Antes, la reacción al verte llamaba a
+  `alertNearbyNPCs`, que ponía hostil a todos los NPC armados en 7 celdas y subía
+  el nivel de búsqueda: entrar por las murallas bastaba para que te persiguieran.
+  Ahora ver sólo gira al PNJ hacia ti; se te echan encima si estás buscado, si el
+  PNJ ya era hostil o si es enemigo del guion. Y cuando el nivel de búsqueda llega
+  a 0, **la ciudad se calma** (antes el `_hostile` no se borraba nunca).
+* **La zona vigilada sólo es peligrosa con la misión en marcha**: sin haber
+  aceptado el encargo, sus guardias son guardias normales (sin alarma y sin
+  golpes). Medido: 110 de vida → 110 delante de un vigía sin misión, y → 0 con la
+  misión aceptada.
+* **Coste:** el sistema de visión de los 200+ guardias llegaba a costar **22 ms
+  por fotograma** porque cada muestra de cada rayo recorría todas las entidades;
+  con un índice de celdas bloqueantes (±26 celdas, refresco cada 250 ms), saltando
+  los vigilantes a más de 18 celdas y espaciando la comprobación, baja a **0,1 ms**.
+
+Detalle y medidas en `docs/SIGILO.md` (§4-bis y §4-ter) y `docs/CADAVERES.md` (§4).

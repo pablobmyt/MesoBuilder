@@ -39,7 +39,7 @@
   button.act { background: rgba(227,201,140,.18); border-color: var(--gold); color: var(--gold); }
   .fila { display: flex; gap: 6px; }
   .fila > * { flex: 1; }
-  .lista { max-height: 44vh; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+  .lista { max-height: min(58vh, 620px); overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
   .item { padding: 5px 8px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,.05); display: flex; justify-content: space-between; gap: 6px; }
   .item > .nom { flex: 1; }
   .item > .der { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
@@ -47,6 +47,17 @@
   .item.sel { background: rgba(227,201,140,.16); color: var(--gold); }
   .item small { color: var(--dim); }
   .item .marca { color: var(--ok); font-size: 11px; }
+  /* Cabecera de grupo de la lista (suelos, cultivos, cadáveres y tumbas…). Se
+     pega arriba al desplazar para no perder de vista dónde estás. */
+  .grupo-lista { position: sticky; top: 0; z-index: 1; background: #14171b; color: var(--gold);
+    font-size: 10.5px; letter-spacing: .7px; text-transform: uppercase; padding: 5px 8px;
+    border-bottom: 1px solid var(--line); border-top: 1px solid var(--line); }
+  .grupo-lista span { color: var(--dim); letter-spacing: 0; text-transform: none; margin-left: 6px; }
+  /* Sprite que el MOTOR genera en marcha (cultivos, esqueletos, tumbas): no está en
+     el JSON, así que antes ni aparecía en esta lista. */
+  .item .marca.motor { color: #c9a2ff; border: 1px solid rgba(201,162,255,.55); border-radius: 999px; padding: 0 6px; }
+  /* Sin nada recortado todavía: es la lista de lo que FALTA por hacer. */
+  .item .marca.sin { color: var(--bad); border: 1px dashed rgba(255,138,106,.6); border-radius: 999px; padding: 0 6px; }
   /* Entidades con ANIMACIONES (el personaje, el caballo, el perro…): resalte a la
      izquierda y globo con cuántas tienen, para encontrarlas y editarlas de un golpe. */
   .item.con-anim { box-shadow: inset 3px 0 0 var(--anim); }
@@ -115,8 +126,13 @@
   <input id="buscar" type="text" placeholder="Buscar…" style="margin-bottom:6px">
   <!-- Filtro para quedarse sólo con las que tienen animaciones (personaje,
        caballo, perro… las de varios movimientos), que son las que se editan. -->
-  <label style="display:flex;align-items:center;gap:6px;text-transform:none;margin:0 0 6px">
+  <label style="display:flex;align-items:center;gap:6px;text-transform:none;margin:0 0 4px">
     <input id="soloAnim" type="checkbox"> sólo las que tienen animaciones
+  </label>
+  <!-- Y el filtro contrario, el que responde a «no encuentro las tumbas»: todo
+       lo que el juego dibuja y todavía NO tiene recortes asignados. -->
+  <label style="display:flex;align-items:center;gap:6px;text-transform:none;margin:0 0 6px">
+    <input id="soloSin" type="checkbox"> sólo las que no tienen recortes
   </label>
   <div class="lista" id="listaEntidades"></div>
   <div id="listaInfo" class="ayuda" style="margin-top:4px"></div>
@@ -514,12 +530,32 @@ function spriteOriginal(caja, maximo) {
   return { def, gw, gh, w, h, x: Math.round(caja.x + (caja.w - w) / 2), y: Math.round(caja.y + (caja.h - h) / 2), escala };
 }
 
-function pintarSpriteOriginal(g, spr) {
+function pintarSpriteOriginal(g, spr, sinPlato) {
   if (!spr) return;
+  // ── Plato claro detrás del sprite ────────────────────────────────────────
+  // Hay sprites que son TODO negro (la lápida de las tumbas, los esqueletos) y
+  // sobre el fondo oscuro del editor no se veían: parecía que no tenían dibujo.
+  if (!sinPlato) {
+    g.fillStyle = 'rgba(200,206,214,.92)';
+    g.fillRect(spr.x - 2, spr.y - 2, spr.w + 4, spr.h + 4);
+  }
   for (const p of spr.def.pixels) {
     if (!p || !p[2]) continue;
     g.fillStyle = p[2];
     g.fillRect(spr.x + p[0] * spr.escala, spr.y + p[1] * spr.escala, spr.escala, spr.escala);
+  }
+  // Con el zoom alto, la rejilla de píxeles (para contar píxeles a ojo).
+  if (!sinPlato && spr.escala >= 4) {
+    g.save();
+    g.strokeStyle = 'rgba(0,0,0,.16)';
+    g.lineWidth = 1;
+    for (let x = 1; x < spr.gw; x++) {
+      g.beginPath(); g.moveTo(spr.x + x * spr.escala + .5, spr.y); g.lineTo(spr.x + x * spr.escala + .5, spr.y + spr.h); g.stroke();
+    }
+    for (let y = 1; y < spr.gh; y++) {
+      g.beginPath(); g.moveTo(spr.x, spr.y + y * spr.escala + .5); g.lineTo(spr.x + spr.w, spr.y + y * spr.escala + .5); g.stroke();
+    }
+    g.restore();
   }
 }
 
@@ -784,6 +820,17 @@ $('lienzo').addEventListener('pointerup', (ev) => {
 });
 
 // ── Entidades ───────────────────────────────────────────────────────────────
+// La lista sale de `data/entity-index.json`, que genera:
+//
+//     node tools/build-entity-index.mjs        (o: npm run entity-index)
+//
+// y que es LA MISMA que la librería de sprites del motor al arrancar: las claves
+// de `data/entity-pixels.json` MÁS las que el motor registra en marcha (cultivos
+// por fases, esqueletos, la lápida de las tumbas, el observatorio). Antes esta
+// lista se montaba a mano con el JSON y un filtro que tiraba `interior_*` o los
+// iconos, así que sprites que el juego dibuja no aparecían por ningún lado (las
+// tumbas, por ejemplo, ni existían como sprite). Si el índice no está, se
+// funciona como antes (JSON + fijos) para no quedarse sin lista.
 async function cargarNombres() {
   const fijos = ['PERSONAJE', 'NPC', 'PERRO', 'CABALLO', 'LOBO', 'CONEJO', 'ZORRO'];
   // SUELOS: baldosas del terreno. El motor las busca por estos nombres exactos
@@ -797,30 +844,64 @@ async function cargarNombres() {
   // `observatory_sup` y `observatory_iso`.
   const sinSpriteEnJson = ['observatory'];
   est.nombres = suelos.concat(fijos).concat(sinSpriteEnJson);
+  est.grupoDe = {}; est.origenDe = {}; est.notaDe = {}; est.grupoOrden = [];
   try {
     const r = await fetch(rutaProyecto('data/entity-pixels.json') + '?t=' + Date.now());
     const j = await r.json();
     // Los píxeles del JSON se guardan para poder enseñar, en el lienzo y en la
     // vista previa, **el sprite que hay ahora en el juego**.
     est.pixeles = j.icons || j || {};
+  } catch (e) { est.pixeles = est.pixeles || {}; }
+
+  // 1) El índice completo (lo normal).
+  try {
+    const r = await fetch(rutaProyecto('data/entity-index.json') + '?t=' + Date.now());
+    if (r.ok) {
+      const idx = await r.json();
+      const claves = Array.isArray(idx) ? idx : (idx.claves || []);
+      if (claves.length) {
+        est.nombres = claves.map(k => k.clave);
+        for (const k of claves) {
+          est.grupoDe[k.clave] = k.grupo || 'Otros';
+          est.origenDe[k.clave] = k.origen || 'json';
+          est.notaDe[k.clave] = k.nota || '';
+          if (est.grupoOrden.indexOf(k.grupo) < 0) est.grupoOrden.push(k.grupo);
+          // Píxeles que SÓLO conoce el motor (cultivos, esqueletos, tumbas,
+          // observatorio): sin esto el lienzo saldría vacío al elegirlos, porque
+          // no están en `data/entity-pixels.json`.
+          if (k.def && Array.isArray(k.def.pixels)) est.pixeles[k.clave] = k.def;
+        }
+        const delMotor = claves.filter(k => k.origen === 'motor').length;
+        aviso(est.nombres.length + ' sprites · ' + est.grupoOrden.length + ' grupos · ' +
+          delMotor + ' los genera el motor (cultivos, esqueletos, tumbas…)');
+        pintarLista();
+        return;
+      }
+    }
+  } catch (e) { /* sin índice: se sigue con la lista de antes */ }
+
+  // 2) Respaldo: las claves del JSON, como se hacía antes de que existiera el
+  //    índice (sin grupos y sin lo que genera el motor).
+  try {
     const claves = Object.keys(est.pixeles).sort();
-    // fuera los que no son arte del mundo (iconos de inventario, banderas…).
-    // OJO: los ÁRBOLES (tree0..tree6) y la vegetación SÍ tienen que salir.
-    const basura = /^(icon|flag|makarov|ma_g|interior_)/i;
+    const basura = /^(icon|flag|makarov|ma_g)/i;   // los `interior_*` SÍ salen
     const arte = claves.filter((k) => !basura.test(k));
     est.nombres = suelos.concat(fijos).concat(sinSpriteEnJson).concat(arte);
-    aviso(est.nombres.length + ' entidades (' + arte.length + ' con sprite en el JSON)');
+    for (const k of est.nombres) { est.grupoDe[k] = 'Sin clasificar'; est.origenDe[k] = 'json'; }
+    est.grupoOrden = ['Sin clasificar'];
+    aviso(est.nombres.length + ' entidades (falta data/entity-index.json: ejecuta «node tools/build-entity-index.mjs»)', true);
   } catch (e) {
-    aviso('No pude leer data/entity-pixels.json: abre este editor con el servidor de desarrollo (node scripts/dev-server.js)', true);
+    aviso('No pude leer los sprites: abre este editor con el servidor de desarrollo (node tools/dev-server.js)', true);
   }
   pintarLista();
 }
 
 function esPersonaje(n) { return PERSONAJE_DIRECCIONES && /PERSONAJE|NPC|PERRO|CABALLO|LOBO|CONEJO|ZORRO/i.test(n); }
 
-// El buscador y el filtro de «sólo con animaciones» repintan la lista.
+// El buscador y los filtros de la lista repintan la lista.
 $('buscar').addEventListener('input', pintarLista);
 $('soloAnim').addEventListener('change', pintarLista);
+if ($('soloSin')) $('soloSin').addEventListener('change', pintarLista);
 
 // Animaciones que tiene registradas una entidad, SIN crearla (listar no debe
 // escribir nada: sólo se crea la entrada cuando de verdad se edita algo).
@@ -839,16 +920,36 @@ function detalleDeAnimacion(clave, a) {
 function pintarLista() {
   const q = ($('buscar').value || '').toLowerCase();
   const soloAnim = !!($('soloAnim') && $('soloAnim').checked);
+  const soloSin = !!($('soloSin') && $('soloSin').checked);
   const cont = $('listaEntidades');
   cont.innerHTML = '';
-  let visibles = 0, conAnim = 0, conVarias = 0;
+  let visibles = 0, conAnim = 0, conVarias = 0, sinRecortes = 0, total = 0;
+  let grupoPintado = null;
   est.nombres.forEach((n) => {
     const e = est.entidades[n] || {};
     const anims = animacionesDeEntidad(n);
+    const tieneRecortes = !!(e.vistas && Object.keys(e.vistas).length);
+    total++;
     if (anims.length) { conAnim++; if (anims.length > 1) conVarias++; }
+    if (!tieneRecortes) sinRecortes++;
     if (q && n.toLowerCase().indexOf(q) < 0) return;
     if (soloAnim && !anims.length) return;
+    if (soloSin && tieneRecortes) return;
     visibles++;
+    // Cabecera de grupo (suelos, cultivos, cadáveres y tumbas, interiores…) con
+    // cuántas entidades tiene entre las que se están viendo.
+    const grupo = est.grupoDe[n] || '';
+    if (grupo && grupo !== grupoPintado) {
+      grupoPintado = grupo;
+      const cuantas = est.nombres.filter(x => (est.grupoDe[x] || '') === grupo &&
+        (!q || x.toLowerCase().indexOf(q) >= 0) &&
+        (!soloAnim || animacionesDeEntidad(x).length) &&
+        (!soloSin || !(est.entidades[x] && est.entidades[x].vistas && Object.keys(est.entidades[x].vistas).length))).length;
+      const h = document.createElement('div');
+      h.className = 'grupo-lista';
+      h.innerHTML = grupo + '<span>' + cuantas + '</span>';
+      cont.appendChild(h);
+    }
     const div = document.createElement('div');
     div.className = 'item' + (n === est.sel ? ' sel' : '');
     const nv = e.sistema === 'nuevo' ? Object.keys(e.vistas || {}).length : 0;
@@ -867,16 +968,28 @@ function pintarLista() {
         ' · clic para editar';
       globo = '<span class="marca anim' + (anims.length > 1 ? ' varias' : '') + '">anim · ' + anims.length + '</span>';
     }
+    // ── ORIGEN Y ESTADO ───────────────────────────────────────────────────
+    // `motor` = lo genera el motor en marcha (no está en el JSON). Y el aviso de
+    // «sin recortes» es lo que responde a «no encuentro las tumbas»: en la lista
+    // se ve de un golpe qué sprites del juego siguen sin arte asignado.
+    const esMotor = est.origenDe[n] === 'motor';
+    let motor = esMotor ? '<span class="marca motor" title="Lo registra el motor al arrancar (no está en entity-pixels.json)">motor</span>' : '';
+    let sin = (!tieneRecortes && !e.hoja)
+      ? '<span class="marca sin" title="Todavía no le has recortado nada: no tiene hoja propia ni vistas">sin recortes</span>'
+      : '';
+    const nota = est.notaDe[n];
+    if (nota) div.title = (div.title ? div.title + ' · ' : '') + nota;
     div.innerHTML = '<span class="nom">' + n + '</span>' +
-      '<span class="der">' + marca + globo + '</span>';
+      '<span class="der">' + marca + globo + motor + sin + '</span>';
     div.addEventListener('click', () => seleccionar(n));
     cont.appendChild(div);
   });
   const info = $('listaInfo');
   if (info) {
-    info.textContent = visibles + ' de ' + est.nombres.length + ' entidades' +
-      (soloAnim ? ' (sólo con animaciones)' : '') + ' · ' + conAnim + ' con animaciones' +
-      (conVarias ? ' (' + conVarias + ' con varios movimientos)' : '');
+    info.textContent = visibles + ' de ' + total + ' sprites' +
+      (soloAnim ? ' (sólo con animaciones)' : '') + (soloSin ? ' (sólo sin recortes)' : '') +
+      ' · ' + conAnim + ' con animaciones' + (conVarias ? ' (' + conVarias + ' con varios movimientos)' : '') +
+      ' · ' + sinRecortes + ' sin recortes';
   }
 }
 

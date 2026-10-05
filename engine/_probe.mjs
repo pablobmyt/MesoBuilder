@@ -47,7 +47,6 @@ import { createTextures } from './game-engine-textures.js';
 import { createStealthSystem } from './stealth.js';
 import { createGuia } from './guia.js';
 import { createCorpseArt } from './corpse-art.js';
-import { registerGraveSprite, CLAVE_TUMBA } from './grave-art.js';
 // Generador de terreno COHERENTE (ruido de valor + fbm) compartido con el editor
 // de mapas: lo usa el mapa inicial y las bandas nuevas del mundo que crece.
 import { createTerrainGenerator, TERRAIN_PROFILES } from './terrain-generator.js';
@@ -301,6 +300,9 @@ function stopIntroMusicMIDI() {
 import { entities, rabbits, foxes, graves, placeResource, placeRabbit, placeFox, spawnNPC, placeTree, createGrave } from './entities.js';
 // Iconos propios (monocromos, `currentColor`) en lugar de emojis: ver engine/icons.js
 import { icono as iconoUI, ICONOS as ICONOS_UI, dibujarIcono } from './icons.js';
+
+window.__mesoProbe = { despertarHud: typeof despertarHud, fijarHud: typeof fijarHud, hudOn: typeof hudOn, actualizarEstadoHudDom: typeof actualizarEstadoHudDom, hudInputWake: typeof hudInputWake, hudVisibleAhora: typeof hudVisibleAhora, render: typeof render, drawSurvivalHud: typeof drawSurvivalHud, drawMiniMap: typeof drawMiniMap, drawPlayer: typeof drawPlayer, drawBuilding: typeof drawBuilding, vigilanteTerreno: typeof vigilanteTerreno, startCartWelcomeScene: typeof startCartWelcomeScene, programarEscenaBienvenida: typeof programarEscenaBienvenida, endCartWelcomeScene: typeof endCartWelcomeScene, drawCartWelcomeScene: typeof drawCartWelcomeScene, notify: typeof notify, showInstruction: typeof showInstruction, saveAppState: typeof saveAppState, loadAppState: typeof loadAppState, asegurarMundoCargado: typeof asegurarMundoCargado, applyPlayerMoveTiles: typeof applyPlayerMoveTiles, repaintTerrainRegion: typeof repaintTerrainRegion, paintTerrainCellInCache: typeof paintTerrainCellInCache, isoTerrainCacheGeometry: typeof isoTerrainCacheGeometry, rebuildMapCachesAsync: typeof rebuildMapCachesAsync, rebuildMapCache: typeof rebuildMapCache, ensureResourceFloatPanel: typeof ensureResourceFloatPanel, ensurePauseMenu: typeof ensurePauseMenu, togglePauseMenu: typeof togglePauseMenu, startMission: typeof startMission, completeMission: typeof completeMission, trackObjective: typeof trackObjective, cycleObjective: typeof cycleObjective, plantCropAt: typeof plantCropAt, advanceCrops: typeof advanceCrops };
+
 
 const canvas  = document.getElementById('gameCanvas');
 const ctx     = canvas.getContext('2d');
@@ -3231,12 +3233,6 @@ try { window.MESO_CADAVERES = corpseArt; } catch (e) {}
 function registerCorpseSprites() {
   try { return corpseArt.registrarSprites(window.ENTITY_PIXEL_LIBRARY); } catch (e) { return {}; }
 }
-// La lápida de las tumbas era píxeles metidos a mano en el bucle de dibujo: no
-// estaba en la librería, así que no salía en el editor de entidades y no se le
-// podía asignar una hoja. Ahora es la clave `tumba` (ver engine/grave-art.js).
-function registerGraveSprites() {
-  try { return registerGraveSprite(window.ENTITY_PIXEL_LIBRARY); } catch (e) { return null; }
-}
 
 // ── SIGILO: ZONA VIGILADA, COBERTURAS Y HACES DE VISIÓN ────────────────────
 // El sistema entero vive en engine/stealth.js; aquí sólo se le prestan las
@@ -5099,12 +5095,7 @@ const debugTools = createDebugTools({
       esqueletos: () => {
         try {
           return (entities || []).filter(e => e && e.kind === 'skeleton')
-            .map(e => ({
-              id: e.id, nombre: e.name, variante: e.variante, pos: [e.col, e.row], de: e.fromName || null,
-              // `figura` = se dibuja con la forma del muerto (y no con el sprite
-              // de huesos genérico) porque guarda su paleta.
-              figura: e.figura !== false, conPaleta: !!e.palette
-            }));
+            .map(e => ({ id: e.id, nombre: e.name, variante: e.variante, pos: [e.col, e.row], de: e.fromName || null }));
         } catch (e) { return String(e); }
       },
       borrarEsqueletos: () => {
@@ -5211,23 +5202,6 @@ const debugTools = createDebugTools({
       } catch (e) { return null; }
     },
     buildInfo: (type) => ({ size: getBuildingSize(type), sprite: resolveBuildingSpriteKey(type) }),
-    // Etiqueta de nombre del mundo (la de encima de los personajes) pintada en un
-    // lienzo de pruebas con fondo tipo hierba: sirve para mirar el estilo
-    // (contorno negro, sin recuadro) sin pelearse con la cámara ni con la
-    // animación de la escena.
-    etiqueta: (texto, opts) => {
-      try {
-        const o = opts || {};
-        const cv = document.createElement('canvas');
-        cv.width = Math.max(60, o.ancho || 220);
-        cv.height = Math.max(30, o.alto || 60);
-        const g = cv.getContext('2d');
-        g.fillStyle = o.fondoPrueba || '#7A8B5A';
-        g.fillRect(0, 0, cv.width, cv.height);
-        dibujarEtiquetaMundo(g, cv.width / 2, cv.height - 10, texto, o);
-        return cv;
-      } catch (e) { return String(e); }
-    },
     // Rendimiento: HUD en pantalla y contadores de cachés.
     perf: {
       toggle: (v) => togglePerfHud(v),
@@ -6889,21 +6863,6 @@ function drawCharacterPixels(ctx, palette, x, y, scale, opts) {
 const CORPSE_LINGER_MS = 40000;
 const PLAYER_DOWNED_LINGER_MS = 4500;
 
-// Geometría de un cuerpo TUMBADO, en píxeles de pantalla de la celda que ocupa.
-// La usan el cadáver (entidad caída) y el ESQUELETO FIJO que lo sustituye a los
-// 40 s: al salir de la misma cuenta, el esqueleto queda exactamente donde estaba
-// el cuerpo (si esto se duplicara, al convertirse el cadáver el esqueleto
-// «saltaría» de sitio).
-function geometriaDeCuerpoCaido(x, y, tileSize) {
-  const ts = Math.max(8, Number(tileSize) || 16);
-  const scale = Math.max(1, Math.round(ts / 20));
-  const grid = getHumanoidSpriteGridSize();
-  const w = grid * scale, h = grid * scale;
-  const px = Math.floor(Number(x) + ts * 0.5 - w / 2);
-  const py = Math.floor(Number(y) + ts - h);
-  return { scale, w, h, px, py, cx: px + w * 0.5, cy: py + h * 0.78 };
-}
-
 function isDownedEntity(ent, now = Date.now()) {
   return !!(ent && ent._deadUntil && now < ent._deadUntil);
 }
@@ -6932,7 +6891,7 @@ function esMuerteEnEstructura(ent) {
 // Convierte un cadáver ya descompuesto en un ESQUELETO fijo: una entidad inerte
 // (sin IA, sin colisión, sin botín) que se guarda con la partida y se queda ahí
 // para siempre. Es decorado del mundo, como una roca, así que no acumula coste.
-function convertirEnEsqueleto(ref, variante, opts) {
+function convertirEnEsqueleto(ref, variante) {
   try {
     if (!ref) return null;
     const c = Math.floor((typeof ref.x === 'number' ? ref.x : ref.col) || 0);
@@ -6944,17 +6903,6 @@ function convertirEnEsqueleto(ref, variante, opts) {
       // OJO: los bichos (conejos, zorros) NO traen `kind`, así que la variante se
       // pasa desde quien llama; si no, se deduce del tamaño.
       variante: variante || corpseArt.esqueletoPara(ref.kind, ref.size),
-      // LA PALETA DEL MUERTO: es lo que permite dibujar el esqueleto CON SU FORMA
-      // (misma silueta y misma postura que el cadáver) y no una calavera
-      // genérica. Se guarda con la partida, como el resto de la entidad. El valor
-      // por defecto es el MISMO que usa el dibujo del cadáver, para que el paso
-      // de cuerpo a esqueleto no cambie de colores.
-      palette: { ...((ref.palette && typeof ref.palette === 'object') ? ref.palette : DEFAULT_PALETTE) },
-      // ¿Su cadáver era la FIGURA del muerto (el muñeco tumbado) o un montón de
-      // huesos de bicho? Los conejos y los zorros son los únicos que lo dicen a
-      // mano (`opts.bicho`); un lobo o un merodeador pequeño también salen con
-      // variante animal, pero su cadáver ES el muñeco.
-      figura: !(opts && opts.bicho === true),
       name: ref.name ? ('Restos de ' + ref.name) : 'Restos humanos',
       fromName: ref.name || null,
       fromKind: ref.kind || null,
@@ -7540,7 +7488,7 @@ function cleanupExpiredCorpses(now = Date.now()) {
       const rab = rabbits[i];
       if (rab && rab._deadUntil && now >= rab._deadUntil) {
         if (rab._murioEnInterior) createGrave(rab, rab.col || Math.floor(rab.x || 0), rab.row || Math.floor(rab.y || 0));
-        else convertirEnEsqueleto(rab, 'animal', { bicho: true });
+        else convertirEnEsqueleto(rab, 'animal');
         rabbits.splice(i, 1);
       }
     }
@@ -7548,7 +7496,7 @@ function cleanupExpiredCorpses(now = Date.now()) {
       const fox = foxes[i];
       if (fox && fox._deadUntil && now >= fox._deadUntil) {
         if (fox._murioEnInterior) createGrave(fox, fox.col || Math.floor(fox.x || 0), fox.row || Math.floor(fox.y || 0));
-        else convertirEnEsqueleto(fox, 'animal', { bicho: true });
+        else convertirEnEsqueleto(fox, 'animal');
         foxes.splice(i, 1);
       }
     }
@@ -9205,8 +9153,6 @@ function drawWheatIcon(ctx, w, h) {
         // Los esqueletos de los cadáveres: se registran igual que los cultivos,
         // con la librería ya cargada (si no, `drawEntitySpriteAt` no los vería).
         try { registerCorpseSprites(); } catch (e) { console.warn('corpse sprites err', e); }
-        // Y la lápida de las tumbas (antes eran píxeles a mano en el dibujo).
-        try { registerGraveSprites(); } catch (e) { console.warn('grave sprite err', e); }
         // Vistas recortadas de un PNG (editor de entidades): se registran AHORA,
         // antes de reconstruir las cachés, para que el mundo salga ya con ellas.
         try { await cargarVistasDeEntidades(); } catch (e) { console.warn('vistas de entidad err', e); }
@@ -14392,11 +14338,18 @@ function drawPlayer() {
     } else {
       drawCharacterPixels(ctx, player.palette, px, _pyIso, scale, { dir, frame: walkFrame, headOnly: inWater, outfit: player.outfit || 'tunic', anim: _animPlayerIso });
     }
-    // Nombre del jugador sobre la cabeza: sin recuadro, con contorno negro (el
-    // mismo estilo que las etiquetas de los NPC, ver `dibujarEtiquetaMundo`).
+    // draw player name above head
     try {
       if (player && player.name) {
-        dibujarEtiquetaMundo(ctx, x + spriteW * 0.5, py - 2, player.name, { size: 12, maxAncho: 150 });
+        ctx.save();
+        ctx.font = 'bold 12px sans-serif';
+        const label = player.name;
+        const textW = ctx.measureText(label).width;
+        const lx = x - textW / 2 + spriteW / 2;
+        const ly = py - 6;
+        ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(lx - 4, ly - 12, textW + 8, 16);
+        ctx.fillStyle = '#FFF'; ctx.fillText(label, lx, ly);
+        ctx.restore();
       }
     } catch (e) {}
       // draw equipped item on player (simple overlay near hands)
@@ -14510,10 +14463,15 @@ function drawPlayer() {
       }
     } catch (e) {}
     if (!downed) drawPlayerAttackSwing(px, py, spriteW, spriteH, tileSize);
-    // Nombre del jugador (vista ortogonal): mismo estilo que los NPC.
+    // draw player name (orthographic)
     try {
       if (player && player.name) {
-        dibujarEtiquetaMundo(ctx, x + tileSize * 0.5, py - 2, player.name, { size: 12, maxAncho: 150 });
+        ctx.save(); ctx.font = 'bold 12px sans-serif';
+        const label2 = player.name; const w2 = ctx.measureText(label2).width;
+        const lx2 = x + tileSize * 0.5 - w2/2; const ly2 = py - 6;
+        ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(lx2 - 4, ly2 - 12, w2 + 8, 16);
+        ctx.fillStyle = '#FFF'; ctx.fillText(label2, lx2, ly2);
+        ctx.restore();
       }
     } catch (e) {}
   }
@@ -15196,68 +15154,46 @@ function envolverTexto(ctx, texto, maxW, opts) {
   } catch (e) { return [String(texto || '')]; }
 }
 
-// Etiqueta de nombre sobre una entidad (jugador, NPCs, perro, conejos, zorros,
-// tumbas). Antes cada sitio hacía la cuenta a mano con measureText + fillRect +
-// fillText: `fillText` heredaba el `textAlign`/`textBaseline` que hubiera dejado
-// el último que dibujó (casi siempre 'center'/'middle' del HUD), así que el texto
-// aparecía DESPLAZADO respecto a su recuadro, y si el nombre era largo se salía.
-//
-// AHORA el nombre va SIN recuadro: letra clara con CONTORNO NEGRO. La caja oscura
-// tapaba el terreno y la cabeza del propio personaje, y con el borde se lee igual
-// de bien sobre arena clara que sobre hierba, piedra o agua. Además:
-//   · se fija `textAlign`/`textBaseline` a mano (no se hereda nada del HUD),
-//   · la fuente va en NEGRITA y con las posiciones redondeadas a píxel entero
-//     (el texto borroso canta en un juego de píxeles),
-//   · el contorno se traza ANTES y más grueso que el relleno, así el borde queda
-//     por fuera de la letra y no se comen los huecos (la 'a', la 'e', la 'o').
-//
-// `o.fondo` sigue existiendo por si algún día hace falta el recuadro, pero por
-// defecto no se pinta nada detrás.
-const FUENTE_ETIQUETA = 'system-ui, "Segoe UI", -apple-system, "Helvetica Neue", Arial, sans-serif';
-
+// Etiqueta de nombre sobre una entidad (NPCs, perro, conejos, zorros, tumbas).
+// Antes cada sitio hacía la cuenta a mano con measureText + fillRect + fillText:
+// `fillText` heredaba el `textAlign`/`textBaseline` que hubiera dejado el último
+// que dibujó (casi siempre 'center'/'middle' del HUD), así que el texto aparecía
+// DESPLAZADO respecto a su recuadro, y si el nombre era largo se salía. Aquí se
+// fija todo de forma explícita, se envuelve en dos líneas como mucho y el
+// recuadro se recorta al ancho del lienzo.
 function dibujarEtiquetaMundo(ctx, sx, sy, texto, opts) {
   const txt = String(texto == null ? '' : texto).trim();
   if (!txt) return;
   const o = opts || {};
-  const size = Math.max(8, o.size || 12);
+  const size = o.size || 12;
   const padX = 5, padY = 3, lineH = size + 3;
   let anchoLienzo = Number(o.anchoLienzo) || 0;
   if (!anchoLienzo) { try { anchoLienzo = canvas.width; } catch (e) { anchoLienzo = 640; } }
   anchoLienzo = Math.max(80, anchoLienzo);
   const maxAncho = Math.max(48, Math.min(o.maxAncho || 150, anchoLienzo - 14));
   ctx.save();
-  ctx.font = (o.negrita === false ? '' : '700 ') + size + 'px ' + (o.fuente || FUENTE_ETIQUETA);
+  ctx.font = (o.negrita ? 'bold ' : '') + size + 'px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
-  ctx.lineJoin = 'round';
-  ctx.miterLimit = 2;
   const filas = envolverTexto(ctx, txt, maxAncho, { partirPalabras: true, maxFilas: 2 });
   let anchoMax = 0;
   for (const f of filas) anchoMax = Math.max(anchoMax, ctx.measureText(f).width);
   const w = Math.min(anchoLienzo - 8, Math.ceil(anchoMax) + padX * 2);
-  const alto = padY * 2 + filas.length * lineH;
-  // `sy` es la BASE de la etiqueta: el texto crece hacia arriba desde ahí.
-  let x = Math.round(sx);
-  x = Math.max(4 + w / 2, Math.min(anchoLienzo - 4 - w / 2, x));
-  let y = Math.max(2 + padY, Math.round(sy - alto));
-  if (o.fondo) {
-    ctx.fillStyle = o.fondo;
-    try {
-      ctx.beginPath();
-      if (ctx.roundRect) ctx.roundRect(Math.round(x - w / 2), y, w, alto, 4);
-      else ctx.rect(Math.round(x - w / 2), y, w, alto);
-      ctx.fill();
-    } catch (e) { ctx.fillRect(Math.round(x - w / 2), y, w, alto); }
-  }
-  // Contorno negro (más grueso que el relleno: el borde queda por fuera).
-  ctx.strokeStyle = o.borde || '#000000';
-  ctx.lineWidth = Math.max(3, Math.round(size / 4));
+  const h = padY * 2 + filas.length * lineH;
+  let x = Math.round(sx - w / 2);
+  x = Math.max(4, Math.min(anchoLienzo - w - 4, x));
+  let y = Math.round(sy - h);            // `sy` es la BASE: la caja crece hacia arriba
+  y = Math.max(4, y);
+  ctx.fillStyle = o.fondo || 'rgba(10,10,12,0.66)';
+  try {
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(x, y, w, h, 4);
+    else ctx.rect(x, y, w, h);
+    ctx.fill();
+  } catch (e) { ctx.fillRect(x, y, w, h); }
+  ctx.fillStyle = o.color || '#FFF';
   for (let k = 0; k < filas.length; k++) {
-    ctx.strokeText(filas[k], x, Math.round(y + padY + lineH * k + size - 2));
-  }
-  ctx.fillStyle = o.color || '#FFFFFF';
-  for (let k = 0; k < filas.length; k++) {
-    ctx.fillText(filas[k], x, Math.round(y + padY + lineH * k + size - 2));
+    ctx.fillText(filas[k], Math.round(x + w / 2), Math.round(y + padY + lineH * k + size - 2));
   }
   ctx.restore();
 }
@@ -17254,12 +17190,8 @@ function render() {
         const dir = ent.dir || 'down';
         const walkFrame = ent._walkFrame || 0;
         if (downedEnt) {
-          // Un cuerpo tumbado: la misma geometría que el esqueleto fijo que lo
-          // sustituye (ver `geometriaDeCuerpoCaido`), así no salta de sitio al
-          // descomponerse.
-          const geo = geometriaDeCuerpoCaido(x, y, tileSize);
-          const cx = geo.cx;
-          const cy = geo.cy;
+          const cx = px + spriteW * 0.5;
+          const cy = py + spriteH * 0.78;
           // CADÁVER: se descompone por etapas (fresco → hinchado → huesos →
           // esqueleto). El arte y las horas están en engine/corpse-art.js.
           try {
@@ -17966,9 +17898,6 @@ function render() {
 
   // ── ESQUELETOS (lo que queda de los muertos al raso) ─────────────────────
   // Entidades inertes `kind: 'skeleton'`: decorado que se guarda con la partida.
-  // Se dibujan CON LA FIGURA del muerto (misma silueta, misma postura tumbada y
-  // mismo sitio, con la geometría del cadáver); si el esqueleto viene de una
-  // partida antigua (sin paleta) se cae al sprite de huesos de siempre.
   try {
     const tileSizeEsq = getTileSize();
     for (let i = 0; i < entities.length; i++) {
@@ -17977,14 +17906,7 @@ function render() {
       const p = worldToScreen(esq.x || esq.col, esq.y || esq.row);
       const offPad = viewMode === 'iso' ? Math.max(24, isoSize.w) : Math.max(24, tileSizeEsq);
       if (p.x < -offPad || p.x > W + offPad || p.y < -offPad || p.y > H + offPad) continue;
-      const geo = geometriaDeCuerpoCaido(p.x, p.y, tileSizeEsq);
-      corpseArt.dibujarEsqueletoFijo({
-        ctx, x: p.x, y: p.y, tileSize: tileSizeEsq,
-        variante: esq.variante,
-        palette: esq.palette || null,
-        figura: esq.figura !== false,
-        cx: geo.cx, cy: geo.cy, w: geo.w, h: geo.h, scale: geo.scale
-      });
+      corpseArt.dibujarEsqueletoFijo({ ctx, x: p.x, y: p.y, tileSize: tileSizeEsq, variante: esq.variante });
     }
   } catch (e) {}
 
@@ -18002,16 +17924,38 @@ function render() {
         return;
       }
       
-      // ── La lápida es un SPRITE (clave `tumba`) ────────────────────────────
-      // Antes los píxeles de la cruz y su relleno estaban aquí dentro, así que
-      // la tumba no existía en la librería del motor: no salía en el editor de
-      // entidades y no se le podía asignar una hoja. Ahora se dibuja como
-      // cualquier otra cosa del mundo (`drawEntitySpriteAt`), de modo que si le
-      // has recortado un PNG en el editor se ve el tuyo y, si no, el de siempre
-      // (engine/grave-art.js). El anclaje es el mismo de antes: centrada en su
-      // casilla y con el pie un poco por debajo del centro.
+      // Render grave using pixel art design: cross tombstone with soil
+      // Grid 16x16, draw pixels
       ctx.save();
-      drawEntitySpriteAt(CLAVE_TUMBA, gx + tileSize * 0.5, gy + tileSize * 1.02, tileSize * 1.15, tileSize * 1.15, { ignoreEntityScale: true });
+      const scale = Math.max(1, Math.floor(tileSize / 14));
+      const centerX = Math.floor(gx + tileSize * 0.5);
+      const centerY = Math.floor(gy + tileSize * 0.6);
+      
+      // Draw cross border (black outline)
+      const borderPixels = [
+        [2,14],[13,14],[2,13],[13,13],[2,12],[13,12],[2,11],[13,11],[2,10],[13,10],[2,9],[13,9],[2,8],[13,8],
+        [3,8],[12,8],[3,7],[12,7],[3,6],[12,6],[3,5],[12,5],[4,5],[11,5],[4,4],[11,4],[5,4],[10,4],
+        [5,3],[10,3],[6,3],[9,3],[7,3],[8,3],[3,14],[12,14],[4,14],[11,14],[5,14],[10,14],[6,14],[9,14],[7,14],[8,14]
+      ];
+      
+      for (const [px, py] of borderPixels) {
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(centerX - 8*scale + px*scale, centerY - 8*scale + py*scale, scale, scale);
+      }
+      
+      // Draw gray fill (interior)
+      const fillPixels = [
+        [7,10],[8,10],[6,10],[7,11],[7,9],[9,10],[8,11],[8,9],[5,10],[6,11],[6,9],
+        [7,12],[7,8],[10,10],[9,11],[9,9],[8,12],[8,8],[4,10],[5,11],[5,9],[6,12],[6,8],
+        [7,13],[7,7],[11,10],[10,11],[10,9],[9,12],[9,8],[3,11],[3,9],[4,12],[4,8],[5,13],[5,7],
+        [8,13],[8,7],[11,11],[11,9],[12,10],[3,10],[4,11],[4,9],[3,12],[3,8]
+      ];
+      
+      for (const [px, py] of fillPixels) {
+        ctx.fillStyle = '#808080';
+        ctx.fillRect(centerX - 8*scale + px*scale, centerY - 8*scale + py*scale, scale, scale);
+      }
+      
       ctx.restore();
       
       // Draw grave name

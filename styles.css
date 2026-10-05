@@ -2808,3 +2808,16 @@ body.hud-idle #action-list-panel { opacity: 1 !important; }
   color: rgba(206, 213, 226, 0.62);
   border-top: 1px solid var(--hud-line-soft); padding-top: 8px;
 }
+/* ═══════════════════════════════════════════════════════════════════════════
+   ICONOS SVG (engine/icons.js) — en lugar de emojis
+   ───────────────────────────────────────────────────────────────────────────
+   Los iconos pintan con `currentColor`, así que heredan el color del botón, la
+   casilla o el panel donde van: no hay que pintarlos uno a uno por tema. Aquí
+   sólo se alinean con el texto y se evita que se encojan en los flex.
+   ═══════════════════════════════════════════════════════════════════════════ */
+button svg, .action-bar-icon svg, .pm-box button svg { vertical-align: -2px; flex: 0 0 auto; }
+#ability-bar .ability-slot svg { display: block; margin: 0 auto; }
+#pause-menu .pm-box button svg { margin-right: 7px; vertical-align: -3px; }
+#btn-actions-open svg, #btn-editmode svg { vertical-align: -2px; margin-right: 5px; }
+#action-list-panel .pa-ico svg { vertical-align: -3px; }
+#meso-debug-panel .mdp-title svg, #meso-debug-panel .mdp-btn svg { vertical-align: -2px; margin-right: 5px; }

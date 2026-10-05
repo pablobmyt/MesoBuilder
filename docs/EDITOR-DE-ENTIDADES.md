@@ -256,11 +256,64 @@ que hay contra lo que vas a poner. Y cuando la entidad no tiene nada asignado, e
 mismo sprite se pinta en el centro del lienzo —al desaparecer el PNG anterior— con
 la etiqueta «así se ve en el juego ahora».
 
-### También salen los árboles y la vegetación
+### Salen TODOS los sprites (la lista es el índice del motor)
 
-La lista incluye **todo** el arte del mundo: `tree0`..`tree6` (las plantillas de
-árbol), `weed`, `wheat`, `tree*`, matas, cañas… Sólo se filtran los iconos que no
-son arte del mundo (`icon*`, banderas, `interior_*`).
+La lista ya no es «las claves del JSON menos unas cuantas»: es **todo lo que el
+motor sabe dibujar**, agrupado y con una marca en cada cosa que no tiene recortes.
+
+El problema que había: `data/entity-pixels.json` es la librería *base*, y hay arte
+que **no está ahí** porque lo registra el motor al arrancar (los cultivos por fases,
+los esqueletos, la lápida de las tumbas, el observatorio); encima, la lista
+excluía por nombre (`icon*`, `flag*`, `interior_*`, `makarov*`), así que catorce
+muebles de interior y la pistola no aparecían por ningún lado.
+
+Ahora la lista la genera **`tools/build-entity-index.mjs`** → `data/entity-index.json`:
+
+```
+npm run entity-index     (o: node tools/build-entity-index.mjs)
+```
+
+No adivina por el nombre: **importa los módulos del motor** (`plant-art.js`,
+`corpse-art.js`, `grave-art.js`, `observatory.js`) y llama a sus funciones de
+registro para preguntarles qué claves añaden (y con qué píxeles). Si mañana se
+añade una fase de cultivo o un sprite nuevo, aparece sola al regenerar.
+
+Los grupos (en este orden):
+
+| Grupo | Qué trae |
+|---|---|
+| Suelos (baldosas) | `suelo_arena`, `suelo_tierra`, `suelo_arcilla`, `suelo_agua` |
+| Personajes y animales | `PERSONAJE`, `NPC`, `PERRO`, `CABALLO`, `LOBO`, `CONEJO`, `ZORRO`, `beast`, `raider`… |
+| Cultivos (fases de crecimiento) | `wheat0..3`, `vine0..3`, `bush0..3`, `leafy0..3`… |
+| Cadáveres y tumbas | `tumba`, `esqueleto_humano`, `esqueleto_animal` |
+| Vegetación | árboles, palmeras, cañas, matas, hierba |
+| Interiores (muebles y adornos) | los catorce `interior_*` (cama, mesa, arcón…) |
+| Edificios | casas, templos, murallas, pozos, observatorio… |
+| URSS | lo soviético |
+| Iconos e interfaz | iconos, banderas, `makarov_pm` |
+| Otros / decoración | lo que no encaja en ningún patrón |
+
+En la lista, cada grupo lleva su **cabecera pegajosa** con el número de sprites, y
+cada entrada puede llevar dos marcas:
+
+- `motor` (morado) — **no está** en `data/entity-pixels.json`: lo registra el motor
+  al arrancar. Son los cultivos, los esqueletos, la lápida y el observatorio.
+- `sin recortes` (rojo) — todavía no tiene hoja propia **ni** vistas: es lo que
+  queda por hacer.
+
+Con la casilla **«sólo las que no tienen recortes»** la lista se queda en esas, que
+es la forma rápida de ver qué falta (y para encontrar una concreta, el buscador de
+arriba: `tumba`, `interior_bed`…).
+
+Al elegir un sprite que sólo conoce el motor, el lienzo **enseña sus píxeles**
+(el índice los guarda), así que no aparece en blanco. Como hay arte que es todo
+negro (la lápida, los esqueletos), ese sprite de referencia se pinta sobre un
+**plato claro** con la rejilla de píxeles cuando el zoom es alto: si no, sobre el
+fondo oscuro del editor parecía que no tenía dibujo.
+
+> **Al añadir un sprite al motor, regenera el índice** (`npm run entity-index`) para
+> que salga en el editor. Si el editor no encuentra `data/entity-index.json`,
+> funciona igual pero con la lista antigua (y lo avisa).
 
 La mayoría de las veces basta con la compartida: tu hoja de referencia trae todos
 los edificios juntos y las entidades sin `hoja` la heredan. El JSON sólo guarda
@@ -272,8 +325,9 @@ ruta en «Ruta del PNG» → **Cargar PNG**.
 ## Uso
 
 1. **Ruta del PNG + Cargar PNG.** Zoom con el control de la izquierda.
-2. Elige la entidad en la lista (arriba `PERSONAJE`, `CABALLO`… y luego los
-   edificios de `data/entity-pixels.json`).
+2. Elige la entidad en la lista, que va **por grupos** (Suelos, Personajes y
+   animales, Cultivos, Cadáveres y tumbas, Vegetación, Interiores, Edificios…; ver
+   «Salen TODOS los sprites»). El buscador de arriba filtra por nombre o por clave.
 3. **Antiguo** / **Nuevo (por vistas)**.
    - *Antiguo*: el juego la dibuja como hasta ahora (su sprite de siempre; en
      isométrico, con el volumen 2.5D).

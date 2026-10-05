@@ -165,8 +165,36 @@ Con la barra abierta:
 | `G` | Enviar NPCs seleccionados a recoger |
 | `H` | Mantener posición (NPCs seleccionados) |
 | `R` | Reagrupar NPCs cerca del jugador |
-| `Escape` | Limpiar selección / cerrar mapa cenital |
+| `Escape` | Limpiar selección / cerrar mapa cenital / **cancelar el trazo en curso** |
 | `Enter` | Abrir/cerrar guía de juego |
+| `Ctrl` (mantenido) | **Modo sigilo**: agachado y, junto a una tapia o caja, arrimado a la cobertura |
+| `Ctrl` + clic | Ir a la cobertura más cercana al punto pulsado (si no hay tapia, sigues seleccionando) |
+| `U` | **Visión de enemigos**: 2 s con el juego en blanco y negro (a 0,25 de tiempo, con difuminado) y los conos de visión de los enemigos en rojo. Cooldown de 10 s. *Es la única forma de ver el rango de visión: en partida normal no se dibuja.* |
+| `F1` | **Guía del juego**: el manual y TODOS los documentos del proyecto dentro del juego, con buscador (también está en el botón **Guía (F1)** del menú de arriba). `Esc` la cierra. Ver `docs/GUIA-EN-EL-JUEGO.md` |
+| Clic + arrastrar | **Trazar**: lanzas lo que lleves en la mano; con `Alt`, la ruta del perro (modo ataque) |
+
+> El detalle del sigilo (conos de visión —tecla `U`—, medidor de sospecha,
+> alarma, la zona y su misión) está en `docs/SIGILO.md`.
+>
+> **Sólo te atacan si haces algo.** Que un guardia te vea no basta: sólo se gira
+> hacia ti. Se te echan encima si estás buscado (has disparado o agredido a
+> alguien), si ese PNJ ya era hostil o si es un enemigo de la historia. La ciudad
+> se calma sola unos segundos después del último aviso. La zona vigilada del
+> almacén sólo da alarma **mientras la misión de sigilo está aceptada**.
+
+### Muerte, cadáveres y esqueletos
+
+Cuando alguien muere deja un **cuerpo que se descompone** (fresco →
+descomponiéndose → huesos → esqueleto) y al final se queda un **esqueleto** que
+permanece en el mundo. Si la muerte ocurre **dentro de una estructura** no hay
+descomposición: se levanta la **tumba**. Detalle en `docs/CADAVERES.md`.
+
+Los cuerpos se pueden **saquear** con `E` cuando estás a su lado (el aviso dice
+`Saquear`; no pone «Hablar», porque un muerto no habla). El botín depende de
+quién era, y cuanto más podrido esté el cuerpo más riesgo hay de **contagiarte**:
+la infección te quita vida durante 45 s y se corta con la habilidad **Curar**
+(tecla 3) — mientras dura, el HUD de supervivencia enseña una cuarta fila con los
+segundos que quedan.
 
 ---
 
@@ -613,7 +641,14 @@ Al presionar **E** cerca de un NPC, se abre el panel de diálogo:
 - Si no → usa una frase aleatoria de `NPC_DIALOGUES[npc.npcType]`
 - Presionar **E** avanza la conversación; al cerrar, el índice queda guardado para la próxima vez
 
-**Funciones clave**: `openNpcDialogue(npc)`, `advanceDialogue()`, `drawDialoguePanel(ctx, W, H)`
+**Opciones y encargos sorpresa.** Los vecinos (no los NPCs de guion) pueden
+terminar la charla con **2-3 respuestas para elegir lo que dice el jugador**, y
+de vez en cuando te **encargan una misión a mitad de la conversación sin aviso
+previo** (no hay «!» sobre el NPC ni panel antes de hablar). Detalle completo en
+[`docs/DIALOGOS-Y-ENCARGOS.md`](docs/DIALOGOS-Y-ENCARGOS.md); para probarlo sin
+jugar: `MESO_DEBUG.testDraw.dialogo.*`.
+
+**Funciones clave**: `openNpcDialogue(npc)`, `advanceDialogue()`, `drawDialoguePanel(ctx, W, H)`, `prepararConversacionConOpciones(npc, dlg)`, `colarMisionEnDialogo(npc, dlg)`
 
 ---
 

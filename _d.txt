@@ -1,0 +1,13 @@
+361:+      ctx.fillRect(0, 0, W, H);
+378:+      ctx.fillRect(x, y, w * (restante / VISION_CFG.duracionMs), 5);
+1711:+// Antes cada sitio hacía la cuenta a mano con measureText + fillRect + fillText:
+1746:+  } catch (e) { ctx.fillRect(x, y, w, h); }
+2055:-          ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(p.x - w/2 - 4, p.y - 18, w + 8, 16);
+2077:-          ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(p.x - w / 2 - 4, p.y - 18, w + 8, 16);
+2118:-        ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(p.x - w/2 - 4, p.y - 18, w + 8, 16);
+2157:-          ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(p.x - w/2 - 4, p.y - 18, w + 8, 16);
+2225:-      const borderPixels = [
+2233:-        ctx.fillRect(centerX - 8*scale + px*scale, centerY - 8*scale + py*scale, scale, scale);
+2237:-      const fillPixels = [
+2246:-        ctx.fillRect(centerX - 8*scale + px*scale, centerY - 8*scale + py*scale, scale, scale);
+2261:-          ctx.fillRect(p.x - w/2 - 5, p.y - 20, w + 10, 16);

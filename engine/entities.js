@@ -113,6 +113,10 @@ export function tickEntities(now) {
     for (let i = entities.length - 1; i >= 0; i--) {
       const en = entities[i];
       if (!en || en.kind !== 'player' || !en.id || en.id.indexOf('npc-') !== 0) continue;
+      // Un CADÁVER no anda: mientras el cuerpo se descompone se queda donde cayó
+      // (si no, se levantaba y se iba a pasear dejando un rastro).
+      if (en._deadUntil && now < en._deadUntil) continue;
+      if (en._deadAt) continue;
       // Puesto fijo (guardias de puerta): no se les echa a andar por el pueblo,
       // siguen su ronda de control desde el bucle principal.
       if (en._keepPost) continue;
@@ -142,9 +146,19 @@ export function tickEntities(now) {
         if (Math.random() < 0.12) {
           try {
             const dlgType = en.npcType || 'villager';
-            const cfg = window.NPC_DIALOGUES[dlgType] || null;
-            if (cfg && Array.isArray(cfg.phrases) && cfg.phrases.length > 0) {
-              const ph = cfg.phrases[Math.floor(Math.random() * cfg.phrases.length)];
+            // Frase POR ÉPOCA cuando el motor expone el ayudante (el fichero de
+            // diálogos trae frases de la URSS y juegos propios para Mesopotamia y
+            // medieval); si no, se usa el respaldo de siempre.
+            let ph = '';
+            if (typeof window.fraseAleatoriaDeNpc === 'function') {
+              ph = window.fraseAleatoriaDeNpc(dlgType) || '';
+            } else {
+              const cfg = window.NPC_DIALOGUES[dlgType] || null;
+              if (cfg && Array.isArray(cfg.phrases) && cfg.phrases.length > 0) {
+                ph = cfg.phrases[Math.floor(Math.random() * cfg.phrases.length)];
+              }
+            }
+            if (ph) {
               // floating text near NPC
               if (window.spawnFloatingText) window.spawnFloatingText(en.col + 0.5, en.row - 0.1, ph, '#FFF');
               else if (window.floatingTexts) window.floatingTexts.push({ born: now, life: 2600, x: 0, y: 0, yv: -0.3, color: '#FFF', text: ph, col: en.col, row: en.row });
