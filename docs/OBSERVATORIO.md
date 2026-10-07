@@ -11,7 +11,8 @@ interacción (`E`), el apuntado con el ratón/teclado y el sitio donde dibujar.
 
 1. **Construir**: el botón *Observatorio* (al final del panel de construcción) o el
    editor de mapas. Cuesta 26 ladrillos y 8 de trigo, ocupa 3×3 y sólo existe en la
-   época **Mesopotamia** (en la URSS el botón se oculta solo).
+   época **Mesopotamia** (en la URSS el botón se oculta solo). El mundo, además, ya
+   trae **uno** puesto (ver «El observatorio del mundo»).
 2. **Entrar**: con `E` al lado de la cúpula. Aparece «Observar el cielo» en el aviso
    de interacción, igual que en las puertas.
 3. **Apuntar** moviendo el cielo dentro del ocular:
@@ -28,6 +29,39 @@ interacción (`E`), el apuntado con el ratón/teclado y el sitio donde dibujar.
 Mientras está abierto, la interfaz del mundo se apaga entera (clase
 `body.observatorio-abierto` en `styles.css`): en la cúpula no se construye, no se
 tala y no se abre el mapa, así que el motor se queda con todas las teclas y el ratón.
+
+## El observatorio del mundo: hay UNO (2026-10-07)
+
+> Pedido: *«los observatorios no aparecen, tiene que haber 1 observatorio»*.
+
+No había ninguno: hasta ahora la cúpula sólo existía si el jugador la construía a
+mano, así que un mundo recién generado no tenía ninguna.
+
+Ahora **todo mundo de Mesopotamia trae exactamente una**, levantada por el
+generador junto a la **capital** (o al poblado de origen si el mapa no tuviera
+capital). La coloca `asegurarObservatorioDelMundo()` (`engine/game-engine.js`), que
+busca un hueco de 3×3 en anillos de 12, 15, 19, 25, 33 y 44 celdas alrededor del
+centro del pueblo, y descarta cualquier sitio que pise un edificio o un río
+(`canPlaceAt`), que sea agua o marisma, o que caiga **encima de una calzada** (que
+no se plante la cúpula en medio de la avenida).
+
+Dos detalles importantes:
+
+- **Es idempotente**: antes de nada cuenta los observatorios del mundo
+  (`contarObservatorios()`, que cuenta EDIFICIOS, no las 9 celdas de su huella) y,
+  si ya hay uno, sale sin tocar nada. Si el jugador levanta otro con el botón, se
+  respeta: la regla es «al menos uno del mundo», no «exactamente uno y punto».
+- **También se repasa al CARGAR una partida**, con la época ya restaurada: el mapa
+  no se regenera al cargar, así que una partida guardada antes de esto recibe su
+  cúpula la primera vez que se abre. En la URSS no se levanta (el botón también se
+  oculta: las tablillas están en un museo).
+
+En el **minimapa y el mapa grande** (`M`) el observatorio se pinta en azul claro
+(`#8FD0E8`) para poder encontrarlo de un vistazo, como el templo y el zigurat van en
+crema.
+
+Para probarlo sin jugar: `MESO_DEBUG.observatorio.construirAlLado()` levanta otro
+al lado del jugador.
 
 ## Lo «progresivo»: qué pasa al apuntar a una constelación
 

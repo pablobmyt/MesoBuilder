@@ -2519,6 +2519,10 @@ function loadAppState() {
     try {
       if (s.epoch) applyEpochProfile(s.epoch, false);
     } catch (e) { console.warn('epoch restore skipped', e); }
+    // El observatorio del mundo, en las partidas guardadas sin él: el mapa no se
+    // vuelve a generar al cargar, así que se repasa aquí (con la ÉPOCA ya puesta:
+    // en la URSS no se levanta). Es idempotente: si ya hay cúpula, no toca nada.
+    try { asegurarObservatorioDelMundo(s.epoch || window._currentEpoch); } catch (e) {}
     try {
       if (s.camera && typeof s.camera === 'object') {
         if (typeof s.camera.camX === 'number') camX = s.camera.camX;
@@ -11239,6 +11243,83 @@ function settlementOverlapsExisting(plan, margen) {
   } catch (e) { return false; }
 }
 
+// ── EL OBSERVATORIO DEL MUNDO ───────────────────────────────────────────────
+// Pedido: «los observatorios no aparecen, tiene que haber 1 observatorio».
+//
+// Hay UN observatorio por mundo: la cúpula del astrónomo, que es donde se leen
+// las tablillas MUL.APIN (ver docs/OBSERVATORIO.md). Se levanta junto a la
+// CAPITAL y, si el mapa no tuviera capital, junto al poblado de origen. Es cosa
+// de Mesopotamia: en la URSS el botón se oculta y aquí tampoco se construye.
+//
+// Es IDEMPOTENTE y barato: si el mundo ya tiene uno (partida vieja, editor de
+// mapas o el que levantó el jugador) no toca nada. Se llama al generar el mapa
+// y al CARGAR una partida, así que una partida antigua sin cúpula la recibe al
+// volver a entrar y nunca llega a haber dos.
+function contarObservatorios() {
+  try {
+    const vistos = new Set();
+    for (let r = 0; r < ROWS; r++) {
+      const fila = grid[r];
+      if (!fila) continue;
+      for (let c = 0; c < COLS; c++) {
+        const cell = fila[c];
+        if (!cell) continue;
+        const tipo = (typeof cell === 'string') ? cell : cell.type;
+        if (tipo !== 'observatory') continue;
+        // La huella son 9 celdas (3×3) con el mismo `baseCol/baseRow`: se cuentan
+        // EDIFICIOS, no celdas.
+        vistos.add((cell && cell.baseCol !== undefined) ? (cell.baseCol + ',' + cell.baseRow) : (c + ',' + r));
+      }
+    }
+    return vistos.size;
+  } catch (e) { return 0; }
+}
+
+function asegurarObservatorioDelMundo(epochId) {
+  try {
+    // La época se puede pasar a mano: al CARGAR una partida, `window._currentEpoch`
+    // todavía no es la del guardado cuando se repasa el mundo.
+    if ((epochId || window._currentEpoch || 'mesopotamia') === 'urss') return null;   // en la URSS no hay cúpula
+    if (contarObservatorios() > 0) return null;                                      // ya hay uno: no se toca
+    const size = getBuildingSize('observatory');
+    const pueblos = window._VILLAGES || [];
+    const ref = pueblos.find(v => v && v.type === 'capital') || pueblos.find(v => v && v.type === 'origin') || null;
+    const centroC = ref ? Math.floor(((ref.minC || 0) + (ref.maxC || 0)) / 2) : Math.floor(COLS / 2);
+    const centroR = ref ? Math.floor(((ref.minR || 0) + (ref.maxR || 0)) / 2) : Math.floor(ROWS / 2);
+    // Un sitio vale si cabe el 3×3, no pisa río ni edificio (canPlaceAt) y la
+    // celda y su marco son suelo firme: ni agua ni marisma (que no quede a nado)
+    // ni calzada (la cúpula no se planta en medio de la avenida).
+    const sitioSuelto = (c, r) => {
+      if (c < 2 || r < 2 || c + size.w > COLS - 2 || r + size.h > ROWS - 2) return false;
+      if (!canPlaceAt(c, r, 'observatory')) return false;
+      for (let rr = r - 1; rr <= r + size.h; rr++) {
+        for (let cc = c - 1; cc <= c + size.w; cc++) {
+          if (rr < 0 || cc < 0 || rr >= ROWS || cc >= COLS) continue;
+          const b = tileBiome[rr] && tileBiome[rr][cc];
+          if (b === 'water' || b === 'deep_water' || b === 'marsh') return false;
+          if (b === 'road' || b === 'concrete_road' || b === 'canal_road') return false;
+        }
+      }
+      return true;
+    };
+    // Anillos alrededor del pueblo: primero cerca (12 celdas, se ve al llegar) y
+    // luego más lejos, por si el casco urbano y el río no dejan hueco antes.
+    for (const radio of [12, 15, 19, 25, 33, 44]) {
+      for (let a = 0; a < 24; a++) {
+        const ang = (a / 24) * Math.PI * 2;
+        const c = Math.round(centroC + Math.cos(ang) * radio - size.w / 2);
+        const r = Math.round(centroR + Math.sin(ang) * radio - size.h / 2);
+        if (!sitioSuelto(c, r)) continue;
+        setBuildingCells(c, r, 'observatory');
+        try { console.log('[observatorio] levantado en ' + c + ',' + r + (ref ? (' junto a ' + (ref.name || ref.type)) : '')); } catch (e) {}
+        return { col: c, row: r };
+      }
+    }
+    try { console.warn('[observatorio] no encontré hueco para la cúpula del mundo'); } catch (e) {}
+    return null;
+  } catch (e) { return null; }
+}
+
 function spawnVillage(baseCol, baseRow, opts) {
   // Levantar un asentamiento son cientos de setBuildingCells: en bloque.
   beginBulkBuild();
@@ -13227,6 +13308,10 @@ function generateMapInner(mapType, opts) {
       }
     }
   } catch (e) {}
+  // ── 7c. El observatorio del mundo (uno, junto a la capital) ──
+  // Va DESPUÉS del viario a propósito: si se levantara antes, la carretera podría
+  // caerle encima. Es idempotente, así que no hay riesgo de acabar con dos.
+  try { asegurarObservatorioDelMundo(); } catch (e) { console.warn('[observatorio] fallo al levantarlo', e); }
   // ── 8. Player spawn near first village ──
   try {
     let spawnC, spawnR;
@@ -27561,6 +27646,9 @@ function buildMiniMapCache(mapW, mapH, scaleX, scaleY) {
         const bt = (typeof cell === 'object') ? cell.type : cell;
         let bColor = '#D4A030';
         if (bt === 'temple' || bt === 'ziggurat') bColor = '#F0E0A0';
+        // El observatorio es ÚNICO en el mundo (ver `asegurarObservatorioDelMundo`)
+        // y se marca en azul para poder encontrarlo de un vistazo en el mapa.
+        else if (bt === 'observatory') bColor = '#8FD0E8';
         else if (bt === 'farm' || bt === 'farm_plot') bColor = '#50AA40';
         else if (bt === 'market' || bt === 'granary') bColor = '#C07820';
         else if (bt === 'tower') bColor = '#808080';

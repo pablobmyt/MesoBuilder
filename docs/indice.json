@@ -1,5 +1,5 @@
 {
-  "generado": "2026-10-05T13:34:41.325Z",
+  "generado": "2026-10-07T07:58:03.772Z",
   "nota": "Generado por tools/build-docs-index.mjs. Es la lista que enseña la guía del juego (F1).",
   "docs": [
     {
@@ -126,7 +126,7 @@
       "titulo": "El Observatorio",
       "grupo": "Sistemas",
       "descripcion": "La cúpula desde la que se mira el cielo de Mesopotamia.",
-      "lineas": 108
+      "lineas": 142
     },
     {
       "archivo": "docs/PUERTAS-Y-CONTROL.md",
