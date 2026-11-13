@@ -242,20 +242,39 @@
       "sistema": "nuevo",
       "vistas": {
         "sup": {
-          "x": 155,
-          "y": 1266,
-          "w": 58,
-          "h": 95
+          "x": 260,
+          "y": 1262,
+          "w": 63,
+          "h": 97
         },
         "iso": {
-          "x": 145,
-          "y": 131,
-          "w": 100,
-          "h": 133
+          "x": 251,
+          "y": 128,
+          "w": 108,
+          "h": 140
         }
       },
       "ajusteHuella": true,
       "hoja": "data/sheets/Murallas.png"
+    },
+    "wall_side": {
+      "sistema": "nuevo",
+      "vistas": {
+        "sup": {
+          "x": 516,
+          "y": 82,
+          "w": 70,
+          "h": 112
+        },
+        "iso": {
+          "x": 544,
+          "y": 791,
+          "w": 106,
+          "h": 141
+        }
+      },
+      "ajusteHuella": true,
+      "hoja": "data/sheets/Murallas2.png"
     },
     "wall_segment_h": {
       "sistema": "nuevo",

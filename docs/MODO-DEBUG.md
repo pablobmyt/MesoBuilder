@@ -140,6 +140,23 @@ Formato:
   con la construcción, el movimiento ni los clics del juego.
 * Todo el módulo está envuelto en `try/catch`: un fallo del inspector nunca debe
   tumbar el juego.
+* **El ajuste se tiene que publicar en los globals que lee el render.** El motor
+  consulta `window._mesoDbgSprite` y `window._mesoDbgBuilding`, que rellena
+  `syncGlobals()`. Antes `syncGlobals()` solo se llamaba cuando el ámbito era
+  `sprite`, así que el **primer** ajuste de un edificio dejaba la tabla local
+  actualizada (el panel y el guardado lo veían) pero `window._mesoDbgBuilding`
+  seguía siendo `null`: `drawBuilding` no lo miraba nunca → «ajusto la escala y no
+  pasa nada». Ahora se publica siempre (sprites, edificios y entidad concreta);
+  es barato porque solo reasigna la referencia de la tabla.
+* **La clave del ajuste tiene que ser la clave con la que el motor DIBUJA.** Para
+  los árboles no es `ent.variant` sino lo que resuelve `resolveTreeSpriteVariant`
+  (`treeN_sup` / `treeN_iso` con el arte nuevo, o el `treeN` de turno según la
+  celda). El inspector pregunta al motor por esa clave
+  (`deps.resolveEntitySpriteKey`, implementado en `game-engine.js` como
+  `resolveEntitySpriteKeyDeEntidad`) en vez de deducirla del `variant`.
+* La **planta** de la vista de techo (`drawPlantaTecho`, apagada por defecto) se
+  mide por la huella, no por el sprite: el ajuste de escala del modo debug se le
+  aplica aparte para que tampoco se ignore si alguien activa `vistas({superior:true})`.
 
 ---
 

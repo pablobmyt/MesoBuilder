@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Muralla: previsualización de recortes</title>
+<style>
+  body { background:#15151a; color:#eee; font:13px/1.5 system-ui, sans-serif; margin:16px; }
+  h1 { font-size:18px; color:#FFD27A; margin:0 0 4px; }
+  h2 { font-size:14px; color:#9fd; margin:18px 0 6px; }
+  p { margin:4px 0; color:#bbb; max-width:900px; }
+  code { background:#26262e; padding:1px 4px; border-radius:3px; color:#ffd; }
+  canvas { display:block; background:#2b2b33; image-rendering: pixelated; border:1px solid #444; }
+  .fila { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-start; margin-bottom:8px; }
+  .caja { background:#22222a; padding:6px; border:1px solid #3a3a44; border-radius:4px; }
+  .et { color:#ffd27a; font-size:12px; margin-top:4px; }
+  .et b { color:#fff; }
+  .error { color:#ff8080; }
+</style>
+</head>
+<body>
+<h1>Muralla: previsualización de los recortes</h1>
+<p>Esto dibuja los recortes de <code>data/entity-views.json</code> <b>igual que los dibuja el juego</b>
+(misma escala, mismo anclaje, casilla de 32&nbsp;px, zoom 1), ampliado 3× sólo para verlo. Los recortes
+se leen del fichero: si cambias un recorte (en el editor de entidades o a mano), recarga esta página.</p>
+<div id="salida"></div>
+<script>
+const TILE = 32, ISO_RATIO = 0.5, ZOOM = 1, K = 3;
+const CLAVES = ['wall_segment_h', 'wall_side', 'wall_tower'];
+const N = 6;   // piezas seguidas en cada tira
+
+// Las mismas cuentas que drawEntitySpriteAt + cargarVistasDeEntidades
+function medidas(vista, crop, ajusteHuella) {
+  const drawW = TILE * ZOOM;
+  const drawH = vista === 'iso' ? TILE * ZOOM * ISO_RATIO : TILE * ZOOM;
+  const margen = (vista === 'sup' && ajusteHuella) ? 0.125 : 0;
+  const m = Math.round(crop.w * margen), n = Math.round(crop.h * margen);
+  const gw = crop.w + m * 2, gh = crop.h + n * 2;
+  const maxH = Math.max(drawH * 2.5, drawH + 8);
+  const esc = Math.max(0.2, Math.min(drawW / gw, maxH / gh));
+  return { gw, gh, m, n, esc, ancho: gw * esc, alto: gh * esc, drawW, drawH };
+}
+
+async function main() {
+  const salida = document.getElementById('salida');
+  let mapa;
+  try {
+    const j = await (await fetch('/data/entity-views.json?t=' + Date.now())).json();
+    mapa = j.entidades || j;
+  } catch (e) { salida.innerHTML = '<p class="error">No se pudo leer /data/entity-views.json (¿el servidor de desarrollo está en la raíz del proyecto?)</p>'; return; }
+
+  // Las rutas de las hojas del JSON son relativas a la raíz del proyecto.
+  const abrir = async (ruta) => {
+    const url = '/' + String(ruta).replace(/^https?:\/\/[^/]+\//, '').replace(/^\//, '');
+    const img = new Image();
+    img.src = url + (url.indexOf('?') < 0 ? '?v=' + Date.now() : '');
+    await img.decode();
+    return img;
+  };
+
+  for (const vista of ['sup', 'iso']) {
+    const h2 = document.createElement('h2');
+    h2.textContent = vista === 'sup' ? 'VISTA DE ARRIBA (sup)' : 'VISTA ISOMÉTRICA (iso)';
+    salida.appendChild(h2);
+    for (const clave of CLAVES) {
+      const e = mapa[clave];
+      if (!e || !e.vistas || !e.vistas[vista]) {
+        const p = document.createElement('p');
+        p.className = 'error';
+        p.textContent = clave + ': no tiene recorte para la vista ' + vista;
+        salida.appendChild(p);
+        continue;
+      }
+      const crop = e.vistas[vista];
+      const img = await abrir(e.hoja);
+      const mt = medidas(vista, crop, e.ajusteHuella !== false);
+
+      const caja = document.createElement('div'); caja.className = 'fila';
+      const cont = document.createElement('div'); cont.className = 'caja';
+      const cv = document.createElement('canvas');
+      const anchoMundo = TILE * N, altoMundo = Math.max(TILE * 3, mt.alto + TILE);
+      cv.width = Math.round(anchoMundo * K); cv.height = Math.round(altoMundo * K);
+      const g = cv.getContext('2d');
+      g.setTransform(K, 0, 0, K, 0, 0);
+      g.imageSmoothingEnabled = false;
+      // suelo y rejilla de casillas
+      g.fillStyle = '#3b3b45';
+      g.fillRect(0, 0, anchoMundo, TILE * N);
+      g.strokeStyle = 'rgba(255,255,255,0.10)';
+      for (let i = 0; i <= N; i++) {
+        g.beginPath(); g.moveTo(i * TILE + 0.5, 0); g.lineTo(i * TILE + 0.5, TILE * N); g.stroke();
+        g.beginPath(); g.moveTo(0, i * TILE + 0.5); g.lineTo(anchoMundo, i * TILE + 0.5); g.stroke();
+      }
+      // las piezas, como las pone el juego: ancla en el centro-abajo de su casilla
+      for (let i = 0; i < N; i++) {
+        const cx = (i + 0.5) * TILE;
+        const cyAbajo = TILE;                       // el muro ocupa 1×1: su casilla es la de arriba
+        const offX = cx - mt.gw * mt.esc / 2;
+        const offY = cyAbajo - mt.gh * mt.esc + mt.drawH * 0.08;
+        g.drawImage(img, crop.x, crop.y, crop.w, crop.h,
+          offX + mt.m * mt.esc, offY + mt.n * mt.esc, crop.w * mt.esc, crop.h * mt.esc);
+      }
+      cont.appendChild(cv);
+      const et = document.createElement('div'); et.className = 'et';
+      et.innerHTML = '<b>' + clave + '.' + vista + '</b> · recorte ' + crop.w + '×' + crop.h +
+        ' en (' + crop.x + ',' + crop.y + ') · rejilla ' + mt.gw + '×' + mt.gh +
+        ' · escala ' + mt.esc.toFixed(3) + ' → <b>' + mt.ancho.toFixed(1) + '×' + mt.alto.toFixed(1) + ' px</b> en el juego';
+      cont.appendChild(et);
+      caja.appendChild(cont);
+
+      // el recorte ampliado, tal cual
+      const cont2 = document.createElement('div'); cont2.className = 'caja';
+      const cv2 = document.createElement('canvas');
+      cv2.width = crop.w * 2; cv2.height = crop.h * 2;
+      const g2 = cv2.getContext('2d'); g2.imageSmoothingEnabled = false;
+      g2.drawImage(img, crop.x, crop.y, crop.w, crop.h, 0, 0, crop.w * 2, crop.h * 2);
+      cont2.appendChild(cv2);
+      const et2 = document.createElement('div'); et2.className = 'et';
+      et2.textContent = 'el recorte a 2× (' + e.hoja + ')';
+      cont2.appendChild(et2);
+      caja.appendChild(cont2);
+      salida.appendChild(caja);
+    }
+  }
+
+  // hoja completa con los rectángulos marcados
+  const h2 = document.createElement('h2');
+  h2.textContent = 'La hoja, con los recortes marcados';
+  salida.appendChild(h2);
+  const usadas = {};
+  for (const clave of CLAVES) {
+    const e = mapa[clave];
+    if (!e || !e.vistas || !e.hoja) continue;
+    usadas[e.hoja] = usadas[e.hoja] || [];
+    for (const v of Object.keys(e.vistas)) usadas[e.hoja].push({ clave, v, r: e.vistas[v] });
+  }
+  for (const ruta of Object.keys(usadas)) {
+    const img = await abrir(ruta);
+    const caja = document.createElement('div'); caja.className = 'caja';
+    const maxW = 1000;
+    const k = Math.min(1, maxW / img.width);
+    const cv = document.createElement('canvas');
+    cv.width = img.width * k; cv.height = img.height * k;
+    const g = cv.getContext('2d');
+    g.fillStyle = '#111'; g.fillRect(0, 0, cv.width, cv.height);
+    g.drawImage(img, 0, 0, cv.width, cv.height);
+    g.font = '11px monospace'; g.lineWidth = 2;
+    g.strokeStyle = 'rgba(255,255,255,0.10)';
+    for (let x = 0; x < img.width; x += 100) { g.beginPath(); g.moveTo(x * k, 0); g.lineTo(x * k, cv.height); g.stroke(); }
+    for (let y = 0; y < img.height; y += 100) { g.beginPath(); g.moveTo(0, y * k); g.lineTo(cv.width, y * k); g.stroke(); }
+    const colores = ['#FF3B3B', '#3BFF6B', '#3B9BFF', '#FFD23B', '#FF3BE1'];
+    usadas[ruta].forEach((u, i) => {
+      const c = colores[i % colores.length];
+      g.strokeStyle = c;
+      g.strokeRect(u.r.x * k, u.r.y * k, u.r.w * k, u.r.h * k);
+      g.fillStyle = c;
+      g.fillText(u.clave + '.' + u.v, u.r.x * k + 2, u.r.y * k + 12);
+    });
+    caja.appendChild(cv);
+    const et = document.createElement('div'); et.className = 'et';
+    et.textContent = ruta + '  (rejilla de referencia cada 100 px)';
+    caja.appendChild(et);
+    salida.appendChild(caja);
+  }
+}
+main();
+</script>
+</body>
+</html>

@@ -640,19 +640,76 @@ con su tamaño de siempre.
 ## Muros: el arte va por ORIENTACIÓN, no por tipo
 
 En el juego el muro es **un solo tipo de edificio** (`wall_segment`), pero el arte se
-recorta por **orientación**: `wall_segment_h` (el muro corre de este a oeste) y
-`wall_segment_v` (de norte a sur). El motor elige la clave según la orientación de la
-celda y luego aplica la vista (`_sup` / `_iso`).
+recorta por **orientación**: `wall_segment_h` (el muro corre de este a oeste) y el
+**lateral**, que tiene entidad propia: `wall_side` (el muro corre de norte a sur). El
+motor elige la clave según la orientación de la celda y luego aplica la vista
+(`_sup` / `_iso`).
 
 Cosas que conviene saber:
 
-- Si recortas **sólo** `wall_segment_v`, los muros horizontales seguirán con el sprite
-  de siempre. Hay que hacer los dos (y la torre, `wall_tower`, que sí es su propio tipo).
-- Cada entidad tiene su interruptor **Antiguo / Nuevo**: si `wall_segment_h` está en
+- **El lateral es `wall_side`.** Se recorta/ajusta a mano como cualquier otra entidad
+  (aparece en la lista del editor, grupo *Edificios*), y es independiente del muro
+  horizontal: tocar el lateral **no** cambia el de arriba/abajo. Si algún día se borra
+  su arte, el motor cae a `wall_segment_v` y, si tampoco existe, al dibujo procedural.
+- Hay que hacer los dos (y la torre, `wall_tower`, que sí es su propio tipo).
+- **OJO con el rectángulo: cada orientación es un panel DISTINTO de la hoja.** En
+  `Murallas.png`, la fila «TRAMOS DE MURO» de la sección isométrica tiene el panel
+  «MURO RECTO HORIZONTAL» en x≈145 y el «MURO RECTO VERTICAL» en x≈251. Estuvieron los
+  dos apuntando al panel horizontal (x 145-155 en iso y en ortogonal), así que **el muro
+  que corría de norte a sur se dibujaba con el arte del horizontal**: en los laterales de
+  la muralla se veía el mismo muro de frente, sin girar. Referencia de los buenos:
+  `wall_side` → `iso: 251,128,108,140` y `sup: 260,1262,63,97`; `wall_segment_h` →
+  `iso: 145,128,102,140` y `sup: 153,1262,63,97`.
+- **El arte del icono (`icons.wall_side` y `icons.wall_segment_v` en
+  `data/entity-pixels.json`) tiene que medir 32×80, como el horizontal.** Manda el tamaño
+  del sprite en `drawEntitySpriteAt`: con `gridW = 32` y una casilla de 32 px, si el arte
+  mide 80 de alto se dibuja a escala 1 y llena la casilla; si mide más (estuvo en 96) se
+  reduce para caber y **deja huecos entre segmentos** (26,7 px en vez de 32) además de
+  quedar más alto que el muro horizontal.
+- Cada entidad tiene su interruptor **Antiguo / Nuevo**: si `wall_side` está en
   «Antiguo», el juego lo dibuja con el sprite de siempre aunque le hagas recortes.
   Es la causa típica de «se ven los dos estilos a la vez» en una partida.
 - Lo mismo vale para `wall_tower`, `mesopotamian_arch` y el resto: el arte nuevo manda
   en cuanto la entidad está en «Nuevo» y tiene recortes.
+
+### Hojas nuevas: cómo sacar el recorte sin adivinar
+
+`data/sheets/Murallas2.png` (estilo esmaltado, con la banda azul) trae, en cada vista,
+una fila de 4 celdas por sección: **frente**, **trasera**, **lado derecho** y
+**lado izquierdo**. Dos detalles que importan:
+
+- Cada celda trae un **tramo de muralla de 2-3 módulos** (no un módulo suelto), así que
+  hay que **cortar un módulo** (≈100-110 px de ancho, como los recortes de la hoja
+  vieja). Un recorte de 245 px de ancho se dibujaría diminuto: la escala que aplica el
+  motor es `min(ancho de casilla / rejillaW, …)`, o sea que **cuanto más ancho es el
+  recorte, más pequeña sale la pieza**.
+- La hoja tiene **fondo transparente de verdad** (alfa 0) y, en algunas zonas, un damero
+  gris pintado y líneas guía rojas/amarillas: al medir hay que ignorar todo eso.
+
+Dos herramientas para esto (no hace falta editor de imagen):
+
+```bash
+# 1) ¿Qué hay en cada celda? (parte la hoja por sus barras grises de rótulo)
+node tools/hoja-arte.mjs celdas data/sheets/Murallas2.png
+
+# 2) La CAJA EXACTA del dibujo de una zona: es el x,y,w,h que va al JSON
+node tools/hoja-arte.mjs perfil data/sheets/Murallas2.png 474 720 780 935
+#    → CAJA DEL ARTE: x 475 y 791 w 236 h 141
+#    y además:  ascii (dibuja la zona en texto)  ·  blobs (lista los dibujos)
+#               puntos (color y alfa en un punto suelto)
+```
+
+Y para **ver cómo queda dentro del juego** (misma escala, mismo anclaje, y la tira de
+6 casillas seguidas para comprobar que los módulos enlazan):
+
+```bash
+node scripts/dev-server.js          # servidor en http://localhost:4321
+# abre  http://localhost:4321/tools/muralla-preview.html
+```
+
+La página lee los recortes de `data/entity-views.json`, así que enseña siempre lo que
+hay. Deja los números que calcula en cada pieza («escala 0,284 → 30,1×40,0 px en el
+juego»): si el lateral y el frente salen muy distintos de tamaño, el recorte está mal.
 
 ## Qué hace el juego con esto
 

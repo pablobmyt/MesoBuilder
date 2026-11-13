@@ -53,6 +53,12 @@ import { registerGraveSprite, CLAVE_TUMBA } from './grave-art.js';
 import { createTerrainGenerator, TERRAIN_PROFILES } from './terrain-generator.js';
 import { buildTreeTemplates, drawTreePixels, treeSwayPhase, treeSwayBitmap, TREE_SWAY_BUCKETS } from './tree-art.js';
 import { drawAnimal, setAnimalArtProvider } from './animal-art.js';
+// Iconos dibujados en lienzo (inventario y biblioteca de sprites). Puras: sólo
+// dependen de su `ctx` y de los caches globales, así que viven fuera del monolito.
+import { drawRegisteredIcon, drawItemIcon } from './game-engine-icons.js';
+// Textos por época, guion de las escenas del mapa, misiones de la historia y la
+// bandera del relato de arranque: datos y dibujo puros, sin estado del motor.
+import { drawAnimatedUSSRFlagSequence, introWorldBriefing, getMapSceneScript, buildStoryQuestsForEpoch } from './game-engine-story-utils.js';
 // CABALLOS CON HOJA DE SPRITES: recorta el caballo de `data/sheets/Caballos.png`
 // (medido por `tools/build-horse-sheet.py`) y se lo sirve a `animal-art.js`. Si la
 // hoja falta, el caballo se sigue generando procedural.
@@ -68,6 +74,506 @@ const PLANTA_SKIP = new Set([
   'road', 'concrete_road', 'farm_plot', 'steel_foundry', 'soviet_streetlight',
   'lamp_post', 'dock', 'cueva'
 ]);
+
+// ═════════════════════════════════════════════════════════════════════════
+//  MODO DE JUEGO  (decidido el 2026-10-13)
+// ═════════════════════════════════════════════════════════════════════════
+// El proyecto se queda con UN juego: **colonia en tiempo real en Mesopotamia**.
+// Todo lo narrativo (prólogo en casa, actos, cinemáticas de arranque, NPCs de
+// guion, misiones de historia, épocas soviética/medieval en el menú) queda
+// APAGADO desde este interruptor en lugar de borrado: así se puede recuperar
+// una escena o un NPC suelto sin desenterrar el guion entero.
+//   · MODO_COLONIA = true   → colonia: construir, producir, crecer, defender.
+//   · NARRATIVA    = false  → sin historia: ni prólogo, ni capítulos, ni intros.
+const MODO_COLONIA = true;
+const NARRATIVA = !MODO_COLONIA;
+try { window.MESO_MODO = MODO_COLONIA ? 'colonia' : 'historia'; } catch (e) {}
+// En colonia se puede construir SIN entrar en modo edición (era el candado que
+// dejaba el bucle de colonia fuera del juego).
+const CONSTRUIR_EN_JUEGO = MODO_COLONIA;
+
+// ── COLONIA: la colonia es lo que construyes TÚ ────────────────────────────
+// Sólo cuentan los edificios colocados a mano (marca `playerBuilt` en sus
+// celdas): las ciudades que genera el mundo son escenario, no tu economía.
+// Así la población es de verdad la puntuación de la partida.
+const COLONIA_HITOS = [
+  { id: 'aldea',   nombre: 'Aldea',   pop: 0,   desbloquea: ['house', 'farm', 'granary', 'road'] },
+  { id: 'villa',   nombre: 'Villa',   pop: 20,  desbloquea: ['market', 'well', 'reed_hut', 'pottery', 'sheepfold', 'fountain', 'wall_segment'] },
+  { id: 'ciudad',  nombre: 'Ciudad',  pop: 50,  desbloquea: ['temple', 'mesopotamian_villa_detailed', 'observatory', 'lamp_post', 'dock', 'watchtower', 'wall_tower'] },
+  { id: 'capital', nombre: 'Capital', pop: 100, desbloquea: ['ziggurat', 'mesopotamian_baths', 'tower'] }
+];
+let _coloniaHito = 0;
+let _coloniaCapacidad = 0;   // cuánta gente alojan tus edificios (HUD: 12/25)
+let _avisoHitoEnCurso = false;
+let _objetivoColonia = 0;      // índice de la cadena de objetivos (abajo)
+let _objetivoAvisado = -1;
+
+// ── OBJETIVOS DE LA COLONIA ───────────────────────────────────────────────
+// La cadena que responde a «¿y ahora qué hago?». Son metas NUMÉRICAS que se
+// comprueban solas (números, no escenas) y se cumplen construyendo y creciendo:
+// en cuanto se cumple una, pasa a la siguiente y avisa. Es la respuesta al
+// «tengo el mundo para mí pero no hay nada que hacer».
+const OBJETIVOS_COLONIA = [
+  {
+    id: 'base', titulo: 'Asienta tu aldea',
+    desc: 'Tienes cebada y adobe para empezar. Levanta una GRANJA (da comida) y un GRANERO (da adobe): son tu motor.',
+    pasos: ['Elige «Granja» en la lista de construir y haz clic en un hueco libre.', 'Haz lo mismo con «Granero».', 'Cada día (2 minutos reales) tus edificios rinden solos.'],
+    comprueba: () => contarEdificiosDelJugador('farm') >= 1 && contarEdificiosDelJugador('granary') >= 1
+  },
+  {
+    id: 'gente', titulo: 'Aloja a tu gente',
+    desc: 'La población es tu puntuación. Cada casa aloja 5 habitantes y viene gente sola mientras haya cebada.',
+    pasos: ['Construye una CASA.', 'Mira «Población» en este panel: sube 3 al día hacia lo que alojas.'],
+    comprueba: () => _coloniaCapacidad >= 5
+  },
+  {
+    id: 'villa', titulo: 'Llega a Villa (20 habitantes)',
+    desc: 'Con 20 habitantes tu asentamiento es una Villa y se abren edificios nuevos: mercado, pozo y el MURO.',
+    pasos: ['Construye casas hasta alojar 20 habitantes.', 'Vigila la cebada: cada habitante come 0,25 al día.'],
+    comprueba: () => _coloniaHito >= 1
+  },
+  {
+    id: 'dique', titulo: 'Levanta un dique',
+    desc: 'Cada 6 días el río sube y se lleva la vega labrada. El agua NO pasa por donde hay un edificio: un muro es un dique.',
+    pasos: ['Coloca 3 muros («Muro (dique)») entre el río y tus parcelas.', 'Los avisos de crecida son los días 5, 11, 17…'],
+    comprueba: () => contarEdificiosDelJugador('wall_segment') >= 3
+  },
+  {
+    id: 'crecida', titulo: 'Aguanta la primera crecida',
+    desc: 'Cuando el río baja, la vega vuelve a estar seca. Lo que se haya llevado por delante, perdido.',
+    pasos: ['Espera a que el agua se retire (dura 2 días).'],
+    comprueba: () => !!window._crecidaSuperada
+  },
+  {
+    id: 'ciudad', titulo: 'Llega a Ciudad (50 habitantes)',
+    desc: 'Ciudad abre el templo, la villa noble y el observatorio.',
+    pasos: ['Sigue construyendo casas y comida para sostenerlas.'],
+    comprueba: () => _coloniaHito >= 2
+  },
+  {
+    id: 'capital', titulo: 'Llega a Capital (100 habitantes)',
+    desc: 'El último hito. La capital es el zigurat: hace falta adobe y cebada de sobra.',
+    pasos: ['Reúne 30 adobe y 10 cebada.', 'Construye el ZIGURAT.'],
+    comprueba: () => _coloniaHito >= 3
+  }
+];
+
+function objetivoActualDeColonia() { return OBJETIVOS_COLONIA[_objetivoColonia] || null; }
+
+// Cuenta edificios TUYOS (los que producen). Se llama poco (al construir y al
+// cambiar el día), no en cada fotograma.
+function contarEdificiosDelJugador(tipo) {
+  try {
+    let n = 0;
+    for (let r = 0; r < ROWS; r++) {
+      const fila = grid[r];
+      if (!fila) continue;
+      for (let c = 0; c < COLS; c++) {
+        const cell = fila[c];
+        if (!cell || typeof cell !== 'object') continue;
+        if (!cell.playerBuilt) continue;
+        if (cell.baseCol !== c || cell.baseRow !== r) continue;   // sólo la celda ancla
+        const t = resolveEpochBuildingType(cell.type);
+        if (t === tipo || cell.type === tipo) n++;
+      }
+    }
+    return n;
+  } catch (e) { return 0; }
+}
+
+function evaluarObjetivosDeColonia(avisar) {
+  if (!MODO_COLONIA) return _objetivoColonia;
+  try {
+    refrescarCapacidadDeColonia();   // el aforo manda en «Aloja a tu gente»
+    let cumplidos = 0;
+    while (_objetivoColonia < OBJETIVOS_COLONIA.length) {
+      const o = OBJETIVOS_COLONIA[_objetivoColonia];
+      let cumple = false;
+      try { cumple = !!o.comprueba(); } catch (e) { cumple = false; }
+      if (!cumple) break;
+      _objetivoColonia++;
+      cumplidos++;
+      try { notify('Objetivo cumplido: ' + o.titulo); } catch (e) {}
+      try { sfx('missionComplete'); } catch (e) {}
+      try { addLog('── Objetivo cumplido: ' + o.titulo); } catch (e) {}
+    }
+    const act = objetivoActualDeColonia();
+    if (act && _objetivoAvisado !== _objetivoColonia) {
+      _objetivoAvisado = _objetivoColonia;
+      if (avisar !== false) {
+        try {
+          showInstruction('Objetivo: ' + act.titulo,
+            act.desc + '\n' + (act.pasos || []).map(p => '· ' + p).join('\n'), 10000);
+        } catch (e) {}
+      }
+    }
+    if (cumplidos > 0) { try { actualizarHudDeColonia(); } catch (e) {} }
+  } catch (e) {}
+  return _objetivoColonia;
+}
+
+// ── BRIEFING DE ENTRADA ───────────────────────────────────────────────────
+// Se enseña UNA vez (y a mano con el «?» del panel): qué es este juego, cómo se
+// juega y cuál es el objetivo de ahora. Sin esto el mundo se siente vacío.
+function mostrarBriefingDeColonia(forzar) {
+  if (!MODO_COLONIA) return;
+  try {
+    const yaVisto = (() => { try { return localStorage.getItem('meso.coloniaIntroVista') === '1'; } catch (e) { return false; } })();
+    if (yaVisto && !forzar) return;
+    if (document.getElementById('colonia-briefing')) return;
+    const act = objetivoActualDeColonia();
+    const pasos = (act && act.pasos || []).map(p => '<div style="margin:2px 0 0 10px">· ' + p + '</div>').join('');
+    const el = document.createElement('div');
+    el.id = 'colonia-briefing';
+    el.setAttribute('data-title', 'Cómo se juega');
+    el.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:9600;width:min(560px,92vw);'
+      + 'padding:16px 18px;border-radius:12px;background:rgba(12,13,16,0.96);border:1px solid rgba(227,201,140,0.28);'
+      + 'color:#e9e4d6;font:13px/1.45 system-ui,"Segoe UI",Arial,sans-serif;box-shadow:0 18px 48px rgba(0,0,0,0.6)';
+    el.innerHTML =
+      '<div style="font-size:16px;font-weight:700;color:#e3c98c;letter-spacing:.5px">Tu colonia junto al río</div>'
+      + '<div style="margin-top:6px;opacity:.9">Estás fundando un asentamiento en Mesopotamia. No hay más historia: '
+      + 'lo que cuenta es lo que construyes. Tres reglas y a jugar:</div>'
+      + '<div style="margin-top:10px;padding:9px 11px;border-radius:8px;background:rgba(255,255,255,0.045)">'
+      + '<div><b>1. Construye.</b> Elige un edificio en la lista de la izquierda y haz clic en un hueco del mapa. Cuesta adobe y cebada.</div>'
+      + '<div style="margin-top:4px"><b>2. Cada día rinde.</b> Un día son 2 minutos: tus granjas y graneros producen solos y llega gente.</div>'
+      + '<div style="margin-top:4px"><b>3. Cada 6 días sube el río.</b> Se lleva la vega labrada. Un muro (dique) lo frena.</div>'
+      + '<div style="margin-top:4px"><b>Puntuación:</b> la población. Aldea → Villa (20) → Ciudad (50) → Capital (100).</div>'
+      + '</div>'
+      + (act ? ('<div style="margin-top:10px;color:#e3c98c;font-weight:700">Objetivo ahora: ' + act.titulo + '</div>'
+        + '<div style="margin-top:3px;opacity:.9">' + act.desc + '</div>' + pasos) : '')
+      + '<div style="margin-top:12px;display:flex;justify-content:flex-end;gap:8px">'
+      + '<button id="colonia-briefing-ok" style="padding:8px 16px;border-radius:8px;border:1px solid rgba(227,201,140,0.5);background:rgba(227,201,140,0.16);color:#f3ecd8;font-weight:700;cursor:pointer">Empezar</button></div>';
+    document.body.appendChild(el);
+    const cerrar = () => { try { localStorage.setItem('meso.coloniaIntroVista', '1'); } catch (e) {} el.remove(); };
+    const btn = document.getElementById('colonia-briefing-ok');
+    if (btn) btn.addEventListener('click', cerrar);
+    try { document.addEventListener('keydown', function esc(ev) { if (ev.key === 'Escape' || ev.key === 'Enter') { cerrar(); document.removeEventListener('keydown', esc); } }, { passive: true }); } catch (e) {}
+  } catch (e) {}
+}
+function cerrarBriefingDeColonia() {
+  try { const el = document.getElementById('colonia-briefing'); if (el) el.remove(); } catch (e) {}
+}
+function hitoDeColonia() { return COLONIA_HITOS[_coloniaHito] || COLONIA_HITOS[0]; }
+function indiceHitoDeEdificio(type) {
+  for (let i = 0; i < COLONIA_HITOS.length; i++) if (COLONIA_HITOS[i].desbloquea.indexOf(type) >= 0) return i;
+  return -1;
+}
+function edificioDesbloqueado(type) {
+  if (!MODO_COLONIA || !type || type === 'demolish') return true;
+  const i = indiceHitoDeEdificio(type);
+  return i < 0 || _coloniaHito >= i;   // lo que no está en ninguna lista no se toca
+}
+function motivoBloqueoEdificio(type) {
+  const i = indiceHitoDeEdificio(type);
+  if (i < 0) return '';
+  const h = COLONIA_HITOS[i];
+  const nombre = (getBuildingDef(type) || {}).name || type;
+  return nombre + ' se desbloquea al llegar a ' + h.nombre + ' (' + h.pop + ' habitantes).';
+}
+// Recuenta el hito (por población) y avisa cuando se sube de nivel.
+function actualizarHitoDeColonia() {
+  if (!MODO_COLONIA) return _coloniaHito;
+  try {
+    if (_avisoHitoEnCurso) return _coloniaHito;
+    let nuevo = 0;
+    for (let i = 0; i < COLONIA_HITOS.length; i++) if ((res.pop || 0) >= COLONIA_HITOS[i].pop) nuevo = i;
+    if (nuevo !== _coloniaHito) {
+      const sube = nuevo > _coloniaHito;
+      _coloniaHito = nuevo;
+      if (sube) {
+        const h = COLONIA_HITOS[nuevo];
+        _avisoHitoEnCurso = true;
+        try { notify('¡Tu asentamiento ya es una ' + h.nombre + '!'); } catch (e) {}
+        try {
+          const nombres = h.desbloquea.map(t => (getBuildingDef(t) || {}).name || t).filter(Boolean).join(', ');
+          if (nombres) notify('Nuevos edificios: ' + nombres);
+        } catch (e) {}
+        try { sfx('levelUp'); } catch (e) {}
+        try { aplicarHitosAlMenuConstruccion(); } catch (e) {}
+        try { addLog('── Hito alcanzado: ' + h.nombre + ' (' + res.pop + ' habitantes)'); } catch (e) {}
+        _avisoHitoEnCurso = false;
+      }
+    }
+  } catch (e) { _avisoHitoEnCurso = false; }
+  return _coloniaHito;
+}
+// Marca la huella de un edificio colocado por el jugador (es lo que produce).
+function marcarComoConstruidoPorElJugador(col, row, type) {
+  if (!MODO_COLONIA) return;
+  try {
+    const sz = getBuildingSize(type);
+    for (let r = 0; r < sz.h; r++) {
+      for (let c = 0; c < sz.w; c++) {
+        const cell = grid[row + r] && grid[row + r][col + c];
+        if (cell && typeof cell === 'object') cell.playerBuilt = true;
+      }
+    }
+  } catch (e) {}
+  // El aforo tiene que subir YA: si espera al cierre del día, construyes una
+  // casa y el panel sigue diciendo «Población 0/0» durante dos minutos.
+  refrescarCapacidadDeColonia();
+}
+// Aforo de la colonia AHORA MISMO. Cuenta solo lo que ha puesto el jugador,
+// igual que la producción diaria (el mundo que genera el mapa es escenario).
+function calcularCapacidadDeColonia() {
+  if (!MODO_COLONIA) return 0;
+  let cap = 0;
+  try {
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const info = getCellInfo(c, r);
+        if (!info || !info.isBase) continue;
+        const cell = grid[r] && grid[r][c];
+        if (!cell || typeof cell !== 'object' || !cell.playerBuilt) continue;
+        const b = getBuildingDef(info.type);
+        if (b) cap += (b.prodPop || 0);
+      }
+    }
+  } catch (e) {}
+  return cap;
+}
+function refrescarCapacidadDeColonia() {
+  if (!MODO_COLONIA) return _coloniaCapacidad;
+  const cap = calcularCapacidadDeColonia();
+  if (cap !== _coloniaCapacidad) {
+    _coloniaCapacidad = cap;
+    try { updateUI(); } catch (e) {}
+  }
+  return _coloniaCapacidad;
+}
+// Oculta de la paleta lo que aún no toca (y suelta la herramienta si se bloqueó).
+function aplicarHitosAlMenuConstruccion() {
+  if (!MODO_COLONIA) return;
+  try {
+    const palette = getEpochBuildPalette(window._currentEpoch || 'mesopotamia');
+    document.querySelectorAll('.build-btn').forEach(btn => {
+      const type = btn.dataset ? btn.dataset.type : null;
+      if (!type) return;
+      const visible = palette.indexOf(type) >= 0 && edificioDesbloqueado(type);
+      btn.style.display = visible ? '' : 'none';
+      btn.title = visible ? (getBuildingDisplay(type).desc || '') : motivoBloqueoEdificio(type);
+      if (!visible) {
+        btn.classList.add('bloqueado');
+        if (selectedTool === type) { selectedTool = null; btn.classList.remove('selected'); }
+      } else btn.classList.remove('bloqueado');
+    });
+  } catch (e) {}
+}
+
+// ── HUD DE COLONIA: una sola barra ─────────────────────────────────────────
+// Sustituye al panel de objetivo de la etapa narrativa: hito, día y las tres
+// cifras que importan, con la barra de progreso hacia el siguiente hito.
+function crearHudDeColonia() {
+  if (!MODO_COLONIA) return;
+  try {
+    if (document.getElementById('colonia-hud')) return;
+    const el = document.createElement('div');
+    el.id = 'colonia-hud';
+    el.setAttribute('data-title', 'Colonia');
+    el.style.cssText = 'position:fixed;left:12px;top:52px;z-index:860;min-width:214px;padding:8px 10px;'
+      + 'border-radius:10px;background:rgba(13,14,17,0.66);border:1px solid rgba(255,255,255,0.075);'
+      + 'color:#e9e4d6;font:12px/1.35 system-ui,"Segoe UI",Arial,sans-serif;backdrop-filter:blur(6px)';
+    el.innerHTML =
+      '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">'
+      + '<span id="ch-hito" style="font-weight:700;letter-spacing:1px;color:#e3c98c">ALDEA</span>'
+      + '<span id="ch-dia" style="opacity:.75"></span></div>'
+      + '<div id="ch-cifras" style="margin-top:4px"></div>'
+      + '<div style="margin-top:6px;height:4px;border-radius:3px;background:rgba(255,255,255,0.12);overflow:hidden">'
+      + '<i id="ch-barra-i" style="display:block;height:100%;width:0%;background:#e3c98c"></i></div>'
+      + '<div id="ch-siguiente" style="margin-top:4px;opacity:.75"></div>'
+      + '<div style="margin-top:7px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.09);display:flex;gap:6px;align-items:flex-start">'
+      + '<div style="flex:1"><div id="ch-objetivo" style="color:#f0e6c8;font-weight:700"></div>'
+      + '<div id="ch-objetivo-n" style="opacity:.6;margin-top:2px"></div></div>'
+      + '<button id="ch-ayuda" title="Cómo se juega" style="width:20px;height:20px;border-radius:50%;border:1px solid rgba(255,255,255,0.25);background:transparent;color:#e3c98c;cursor:pointer;font-weight:700;line-height:1">?</button>'
+      + '</div>';
+    document.body.appendChild(el);
+    try {
+      const ayuda = document.getElementById('ch-ayuda');
+      if (ayuda) ayuda.addEventListener('click', () => mostrarBriefingDeColonia(true));
+    } catch (e) {}
+  } catch (e) {}
+}
+function actualizarHudDeColonia() {
+  if (!MODO_COLONIA) return;
+  try {
+    const el = document.getElementById('colonia-hud');
+    if (!el) return;
+    const hito = hitoDeColonia();
+    const siguiente = COLONIA_HITOS[_coloniaHito + 1] || null;
+    const set = (id, txt) => { const n = document.getElementById(id); if (n) n.textContent = txt; };
+    set('ch-hito', String(hito.nombre).toUpperCase());
+    set('ch-dia', 'Día ' + dayCount + (crecidaActiva() ? ' · CRECIDA' : ''));
+    set('ch-cifras', `Adobes ${res.brick} · Cebada ${res.wheat} · Población ${res.pop}/${_coloniaCapacidad}`);
+    const act = objetivoActualDeColonia();
+    set('ch-objetivo', act ? ('▸ ' + act.titulo) : 'Colonia terminada: sigue creciendo');
+    set('ch-objetivo-n', 'Objetivo ' + Math.min(_objetivoColonia + 1, OBJETIVOS_COLONIA.length) + ' de ' + OBJETIVOS_COLONIA.length + (act ? '' : ' (completados)'));
+    const bar = document.getElementById('ch-barra-i');
+    if (siguiente) {
+      const desde = hito.pop, hasta = siguiente.pop;
+      const pct = Math.max(0, Math.min(100, Math.round(((res.pop - desde) / Math.max(1, hasta - desde)) * 100)));
+      set('ch-siguiente', 'Siguiente: ' + siguiente.nombre + ' · ' + res.pop + '/' + hasta + ' hab.');
+      if (bar) bar.style.width = pct + '%';
+    } else {
+      set('ch-siguiente', 'Nivel máximo alcanzado');
+      if (bar) bar.style.width = '100%';
+    }
+  } catch (e) {}
+}
+// En colonia sobra el cromo del otro juego (botón de autor, lista de gestos y el
+// panel de objetivo de la etapa narrativa, que se queda vacío).
+function ocultarChromeNoColonia() {
+  if (!MODO_COLONIA) return;
+  try {
+    ['btn-editmode', 'btn-actions-open', 'res-float'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    });
+    if (!(window._objectives || []).length) {
+      const qh = document.getElementById('quest-hud');
+      if (qh) qh.style.display = 'none';
+    }
+  } catch (e) {}
+}
+
+// ── LA CRECIDA ────────────────────────────────────────────────────────────
+// El reloj del juego. Cada CRECIDA_PERIODO días el río sube: el agua entra en la
+// vega baja anegando unas celdas durante CRECIDA_DURACION días y se lleva por
+// delante las parcelas labradas. Los EDIFICIOS hacen de DIQUE (el agua no pasa
+// por su celda ni más allá), así que la defensa contra el río se construye: muro
+// o casa en la orilla y la vega queda protegida.
+const CRECIDA_PERIODO = 6;    // cada cuántos días sube el río
+const CRECIDA_DURACION = 2;   // días que tarda en retirarse
+const CRECIDA_PROFUNDIDAD = 4; // celdas que puede avanzar desde el cauce
+let _crecida = { activa: false, celdas: [], empezada: 0 };
+function crecidaActiva() { return !!(_crecida && _crecida.activa); }
+// API de diagnóstico (como el resto del proyecto: MESO_*): permite comprobar la
+// vega que anegaría el agua sin esperar seis días de partida.
+try {
+  window.MESO_CRECIDA = {
+    estado: () => ({ activa: crecidaActiva(), celdas: _crecida.celdas.length, empezada: _crecida.empezada, periodo: CRECIDA_PERIODO, duracion: CRECIDA_DURACION }),
+    mapa: () => celdasQueAniegaLaCrecida().length,
+    forzar: () => { iniciarCrecida(); return _crecida.celdas.length; },
+    retirar: () => terminarCrecida()
+  };
+} catch (e) {}
+// API de colonia (diagnóstico y ajuste de los hitos, igual que los testDraw.*):
+// `fijarPoblacion(n)` permite probar los desbloqueos sin esperar días de partida.
+try {
+  window.MESO_COLONIA = {
+    estado: () => ({
+      modo: MODO_COLONIA ? 'colonia' : 'historia',
+      hito: hitoDeColonia().id, indice: _coloniaHito,
+      pop: res.pop, capacidad: _coloniaCapacidad,
+      hitos: COLONIA_HITOS.map(h => ({ id: h.id, nombre: h.nombre, pop: h.pop, desbloquea: h.desbloquea.slice() })),
+      desbloqueados: COLONIA_HITOS.slice(0, _coloniaHito + 1).reduce((a, h) => a.concat(h.desbloquea), []),
+      objetivos: OBJETIVOS_COLONIA.map((o, i) => ({ id: o.id, titulo: o.titulo, cumplido: i < _objetivoColonia })),
+      objetivoActual: objetivoActualDeColonia() ? objetivoActualDeColonia().id : null,
+      edificios: { granja: contarEdificiosDelJugador('farm'), granero: contarEdificiosDelJugador('granary'), casa: contarEdificiosDelJugador('house'), muro: contarEdificiosDelJugador('wall_segment') },
+      crecidasSuperadas: window._crecidaSuperada || 0
+    }),
+    edificioDesbloqueado: (t) => edificioDesbloqueado(t),
+    evaluarObjetivos: () => evaluarObjetivosDeColonia(),
+    briefing: (forzar) => mostrarBriefingDeColonia(forzar),
+    capacidad: () => refrescarCapacidadDeColonia(),
+    fijarPoblacion: (n) => { res.pop = Math.max(0, Math.round(Number(n) || 0)); refrescarCapacidadDeColonia(); actualizarHitoDeColonia(); aplicarHitosAlMenuConstruccion(); updateUI(); evaluarObjetivosDeColonia(); return res.pop; }
+  };
+} catch (e) {}
+
+// Celdas que el agua puede anegar: desde el cauce hacia los lados, parando en
+// seco con lo que hace de dique (cualquier edificio), el terreno alto o la calzada.
+function celdasQueAniegaLaCrecida() {
+  const out = [];
+  try {
+    const rbm = window._RIVER_FULL_MAP;
+    if (!rbm) return out;
+    const visto = new Set();
+    for (let r = 1; r < ROWS - 1; r++) {
+      for (let c = 1; c < COLS - 1; c++) {
+        if (!rbm[r] || !rbm[r][c]) continue;
+        for (const signo of [-1, 1]) {
+          for (let d = 1; d <= CRECIDA_PROFUNDIDAD; d++) {
+            const cc = c + signo * d;
+            if (cc < 1 || cc >= COLS - 1) break;
+            const key = r * COLS + cc;
+            const b = tileBiome[r] && tileBiome[r][cc];
+            if (b === 'water') continue;                     // ya es agua (margen del cauce)
+            if (grid[r] && grid[r][cc]) break;               // DIQUE: el agua no pasa de aquí
+            if (b === 'hills' || b === 'saline') break;      // terreno alto
+            if (b === 'road' || b === 'concrete_road' || b === 'canal_road') break;
+            const h = (heightMap[r] && typeof heightMap[r][cc] === 'number') ? heightMap[r][cc] : 0.3;
+            if (h > 0.5) break;
+            if (visto.has(key)) continue;
+            visto.add(key);
+            out.push({ c: cc, r, bioma: b || 'alluvial' });
+          }
+        }
+      }
+    }
+  } catch (e) { console.warn('crecida: mapear la vega', e); }
+  return out;
+}
+
+function iniciarCrecida() {
+  if (!MODO_COLONIA || crecidaActiva()) return;
+  try {
+    const celdas = celdasQueAniegaLaCrecida();
+    if (!celdas.length) return;
+    let parcelas = 0;
+    for (const cel of celdas) {
+      try { tileBiome[cel.r][cel.c] = 'water'; } catch (e) {}
+      // A ras de suelo, el agua se lleva las parcelas labradas.
+      const cell = grid[cel.r] && grid[cel.r][cel.c];
+      const t = cell ? ((typeof cell === 'string') ? cell : (cell.type || '')) : '';
+      if (t === 'farm_plot') {
+        try { clearBuildingCells(cel.c, cel.r, 'farm_plot'); } catch (e) {}
+        parcelas++;
+      }
+      try { if (_crops && typeof cropKeyOf === 'function') _crops.delete(cropKeyOf(cel.c, cel.r)); } catch (e) {}
+    }
+    _crecida = { activa: true, celdas, empezada: dayCount };
+    try { mapCacheDirty = true; rebuildMapCacheDebounced(); } catch (e) {}
+    notify('¡La crecida cubre la vega! Se ha llevado ' + parcelas + ' parcelas.');
+    addLog('── CRECIDA: el río sube (' + celdas.length + ' celdas anegadas).');
+    try { sfx('wind', { volume: 0.8 }); } catch (e) {}
+    actualizarHudDeColonia();
+  } catch (e) { console.warn('iniciarCrecida', e); }
+}
+
+function terminarCrecida() {
+  try {
+    if (!crecidaActiva()) return;
+    const n = _crecida.celdas.length;
+    for (const cel of _crecida.celdas) {
+      try { tileBiome[cel.r][cel.c] = cel.bioma || 'alluvial'; } catch (e) {}
+    }
+    _crecida = { activa: false, celdas: [], empezada: 0 };
+    try { window._crecidaSuperada = (window._crecidaSuperada || 0) + 1; } catch (e) {}
+    try { mapCacheDirty = true; rebuildMapCacheDebounced(); } catch (e) {}
+    notify('Las aguas se retiran: la vega vuelve a estar seca.');
+    addLog('── La crecida se retira (' + n + ' celdas recuperadas).');
+    actualizarHudDeColonia();
+    try { evaluarObjetivosDeColonia(); } catch (e) {}
+  } catch (e) {}
+}
+
+// Si la partida se guardó con la crecida a medias, al volver el agua se quedaría
+// para siempre: se devuelve la vega a su bioma seco al entrar al mundo.
+function limpiarCrecidaDeSesionAnterior() {
+  if (!MODO_COLONIA) return;
+  try {
+    const celdas = celdasQueAniegaLaCrecida();
+    let limpiadas = 0;
+    for (const cel of celdas) {
+      const b = tileBiome[cel.r] && tileBiome[cel.r][cel.c];
+      const esCauce = window._RIVER_FULL_MAP && window._RIVER_FULL_MAP[cel.r] && window._RIVER_FULL_MAP[cel.r][cel.c];
+      if (b === 'water' && !esCauce) { tileBiome[cel.r][cel.c] = cel.bioma || 'alluvial'; limpiadas++; }
+    }
+    if (limpiadas) {
+      try { mapCacheDirty = true; rebuildMapCacheDebounced(); } catch (e) {}
+      try { console.log('[crecida] vega recuperada de la sesión anterior:', limpiadas); } catch (e) {}
+    }
+  } catch (e) {}
+}
 import { buildWheatStages, wheatSpriteKey, registerPlantSprites, WHEAT_STAGE_NAMES, CROP_TYPES, CROP_TYPE_NAMES, cropSpriteKey } from './plant-art.js';
 import { createDebugTools } from './game-engine-debug-utils.js';
 // Arte del personaje COMPARTIDO con el menú (vista previa del editor): una sola
@@ -1510,6 +2016,49 @@ const GRAPHICS_CONFIG = {
   dialogZoomThreshold: 0.7 // minimum zoom to show NPC speech bubbles / floating text
 };
 
+// ── FILTRO DE PIXELADO DEL MUNDO ────────────────────────────────────────────
+// El arte del juego mezcla sprites de densidades muy distintas (píxeles de arte
+// de 16, 24, 32… y edificios a densidad 4 o 16), así que al lado de una casa
+// dibujada «gorda» el resto parece de otra resolución. Bajar el mundo entero a
+// un búfer más pequeño y volver a subirlo SIN suavizado deja bloques uniformes
+// y todo se lee como un solo juego.
+//
+// Se aplica AL MUNDO TERMINADO, justo antes del HUD: así el aviso de acción, el
+// minimapa, las barras, el objetivo, los diálogos y la guía siguen nítidos (son
+// interfaz) y sólo se pixela lo que es juego. Se puede apagar en DEV ▸ «Pixelado
+// suave» y se recuerda la elección.
+//
+// LO QUE NO SE FILTRA: los TEXTOS y los AVISOS del mundo (nombres sobre las
+// cabezas, bocadillos, números de daño, pistas «E», marcadores de misión y el
+// puntero de oclusión). Se dibujan en una cola aparte (`textoMundo`) y se pintan
+// DESPUÉS del filtro, así que el resto del mundo queda uniforme pero lo que hay
+// que leer se lee. Antes se pixelaban con todo lo demás y los nombres salían
+// emborronados.
+//
+// Y TAMPOCO SE FILTRAN LOS PERSONAJES: jugador, aldeanos, perro y conejos van en
+// otra cola (`spriteSinFiltro`) que se pinta justo después del filtro y antes de
+// los textos. Sus sprites son de densidad 16/24 y al lado del mundo pixelado se
+// veían sucios; además el jugador tiene que distinguirse siempre. Los árboles
+// que quedan POR DELANTE del jugador se vuelven a pintar encima para que la
+// oclusión siga funcionando (ver `_ocluirTrasSprites`).
+const PIXELADO = {
+  activo: true,
+  bloque: 2,        // lado del bloque en píxeles: 2 = leve · 3-4 = marcado
+  mezcla: 0.9,     // 1 = pixelado puro · <1 = se deja ver el original por debajo
+  maxBloques: 1400  // tope del búfer intermedio (no gastar memoria en 4K)
+};
+try {
+  const g = localStorage.getItem('meso.pixelado');
+  if (g === '0') PIXELADO.activo = false;
+  else if (g === '1') PIXELADO.activo = true;
+  const b = Number(localStorage.getItem('meso.pixeladoBloque'));
+  if (Number.isFinite(b) && b >= 2 && b <= 4) PIXELADO.bloque = Math.round(b);
+  const m = Number(localStorage.getItem('meso.pixeladoMezcla'));
+  if (Number.isFinite(m) && m > 0.3 && m <= 1) PIXELADO.mezcla = m;
+} catch (e) {}
+
+let _pixeladoCv = null, _pixeladoCtx = null;
+
 // ── RESOURCES ─────────────────────────────────────────────────
 const res = { wheat: 50, brick: 40, pop: 0 };
 
@@ -2012,8 +2561,9 @@ function getEpochBuildPalette(epochId) {
   }
   // El observatorio va al FINAL a propósito: los ocho primeros puestos están
   // casados uno a uno con los botones de construir y con los atajos H/V/F/Y/K/G/Z.
-  // Su botón se marca con `data-fijo` (ver remapBuildButtonsForEpoch).
-  return ['house', 'mesopotamian_villa_detailed', 'farm', 'temple', 'market', 'granary', 'ziggurat', 'road', 'well', 'fountain', 'lamp_post', 'reed_hut', 'pottery', 'sheepfold', 'dock', 'watchtower', 'observatory'];
+  // Su botón se marca con `data-fijo` (ver remapBuildButtonsForEpoch). Igual que
+  // el muro (dique de la crecida), que también va con `data-fijo`.
+  return ['house', 'mesopotamian_villa_detailed', 'farm', 'temple', 'market', 'granary', 'ziggurat', 'road', 'well', 'fountain', 'lamp_post', 'reed_hut', 'pottery', 'sheepfold', 'dock', 'watchtower', 'observatory', 'wall_segment'];
 }
 
 function remapBuildButtonsForEpoch() {
@@ -2039,6 +2589,8 @@ function remapBuildButtonsForEpoch() {
       const mappedType = palette[i] || btn.dataset.type;
       btn.dataset.type = mappedType;
     }
+    // MODO COLONIA: además de la época, la paleta filtra por hito alcanzado.
+    aplicarHitosAlMenuConstruccion();
   } catch (e) {}
 }
 
@@ -3196,6 +3748,10 @@ let _gateTickAt = 0;
 let _worldTickAt = 0;
 let _cacheWatchAt = 0;
 let _gameStartedAt = 0;
+// Última pasada de la simulación de NPC (tareas + paseo + habla). Va a ~5 Hz y no
+// en cada fotograma: cada NPC ya lleva su propio freno interno (800-1000 ms), así
+// que recorrer las ~1.400 entidades 60 veces por segundo no servía de nada.
+let _npcSimAt = 0;
 
 // Posición en pantalla de una entidad, aplicando su sacudida de impacto si la
 // tiene (así el sprite tiembla unos píxeles durante ~0,2 s al recibir un golpe).
@@ -5259,6 +5815,19 @@ const debugTools = createDebugTools({
         cuerposEnCache: (() => { try { return _cuerpoCache.size; } catch (e) { return 0; } })(),
         mbSprites: +(_spriteBitmapBytes / 1048576).toFixed(2),
         entidades: (window.entities || []).length,
+        // Pixelado del mundo: qué se queda fuera del filtro (ver PIXELADO y
+        // `spriteSinFiltro`/`textoMundo`). `tapasRepintadas` son los árboles de
+        // delante que se vuelven a pintar encima del jugador para que la
+        // oclusión siga funcionando.
+        pixelado: {
+          activo: !!PIXELADO.activo,
+          bloque: PIXELADO.bloque,
+          mezcla: PIXELADO.mezcla,
+          spritesDiferidos: window._spritesDiferidos || 0,
+          textosDiferidos: window._textosDiferidos || 0,
+          tapasRepintadas: window._tapasRepintadas || 0,
+          framesFiltrados: window._pixeladoFrames || 0
+        },
         ultimoRepintadoTerreno: _lastTerrainMark,
         // Suelo: si `repintados` sube y sube mientras se juega, la caché se está
         // reconstruyendo de más (y con ella las texturas viejas del terreno).
@@ -5804,6 +6373,9 @@ const debugTools = createDebugTools({
     try { Object.keys(BUILDINGS).forEach(k => { const s = getBuildingSize(k); out[k] = { w: s.w, h: s.h }; }); } catch (e) {}
     return out;
   },
+  // Clave con la que el motor PINTA el sprite de esta entidad (no siempre coincide
+  // con su `variant`: los árboles la resuelven por celda y por estilo de arte).
+  resolveEntitySpriteKey: (ref) => { try { return resolveEntitySpriteKeyDeEntidad(ref); } catch (e) { return null; } },
   moveBuilding: (type, fromCol, fromRow, toCol, toRow) => moveBuildingTo(type, fromCol, fromRow, toCol, toRow),
   spawnPreviewSprite: (key, col, row) => spawnPreviewSprite(key, col, row),
   centerCameraOn: (col, row) => centerCameraOnWorld(col, row),
@@ -7834,68 +8406,6 @@ function drawCharacterPortrait(ctx, w, h, palette, opts) {
   drawCharacterPixels(ctx, palette, px, py, scale, opts);
 }
 
-// Draw an icon by name using loaded pixel-library or cached icon canvases
-function drawRegisteredIcon(ctx, name, w, h) {
-  try {
-    const hasLibDef = !!(window.ENTITY_PIXEL_LIBRARY && window.ENTITY_PIXEL_LIBRARY[name]);
-    if (hasLibDef) {
-      const liveCanvas = (window._ENTITY_BITMAPS && window._ENTITY_BITMAPS[name]) || (window._ICON_BITMAPS && window._ICON_BITMAPS[name]) || window.createCanvasFromPixelDef(window.ENTITY_PIXEL_LIBRARY[name], name, Math.min(w, h));
-      if (liveCanvas) {
-        ctx.clearRect(0,0,w,h);
-        ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(liveCanvas, 0, 0, w, h);
-        return;
-      }
-    }
-    // prefer pre-generated sprite images (blob URLs attached to hidden Image elements)
-    if (window._SPRITE_IMAGES && window._SPRITE_IMAGES[name]) {
-      const img = window._SPRITE_IMAGES[name];
-      if (img && img.complete) { ctx.clearRect(0,0,w,h); ctx.imageSmoothingEnabled = false; ctx.drawImage(img, 0, 0, w, h); return; }
-    }
-    // prefer prebuilt cached canvases
-    if (window._ICON_BITMAPS && window._ICON_BITMAPS[name]) {
-      const img = window._ICON_BITMAPS[name];
-      ctx.clearRect(0,0,w,h);
-      ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(img, 0, 0, w, h);
-      return;
-    }
-    // try entity bitmap cache
-    if (window._ENTITY_BITMAPS && window._ENTITY_BITMAPS[name]) {
-      const img = window._ENTITY_BITMAPS[name];
-      ctx.clearRect(0,0,w,h);
-      ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(img, 0, 0, w, h);
-      return;
-    }
-    // try raw pixel definitions library
-    if (window.ENTITY_PIXEL_LIBRARY && window.ENTITY_PIXEL_LIBRARY[name]) {
-      const c = window.createCanvasFromPixelDef(window.ENTITY_PIXEL_LIBRARY[name], name, Math.min(w,h));
-      if (c) { ctx.clearRect(0,0,w,h); ctx.imageSmoothingEnabled = false; ctx.drawImage(c, 0, 0, w, h); return; }
-    }
-    // HARD FALLBACK: draw pixels with fillRect (bypasses drawImage for Electron GPU compat)
-    if (window.ENTITY_PIXEL_LIBRARY && window.ENTITY_PIXEL_LIBRARY[name]) {
-      try {
-        const def = window.ENTITY_PIXEL_LIBRARY[name];
-        const grid = def.grid || 9;
-        const pixels = def.pixels || [];
-        const scale = Math.max(1, Math.floor(Math.min(w, h) / grid));
-        ctx.clearRect(0, 0, w, h);
-        for (let i = 0; i < pixels.length; i++) {
-          const p = pixels[i];
-          if (p && p[2]) {
-            ctx.fillStyle = p[2];
-            ctx.fillRect(p[0] * scale, p[1] * scale, scale, scale);
-          }
-        }
-        return;
-      } catch (e) {}
-    }
-    // fallback: clear
-    ctx.clearRect(0,0,w,h);
-  } catch (e) { console.warn('drawRegisteredIcon err', name, e); ctx.clearRect(0,0,w,h); }
-}
-
 // ── CACHÉ DE SPRITES (rendimiento) ──────────────────────────────────────────
 // Dibujar los sprites pixel a pixel son MILES de fillRect por fotograma: una
 // casa son 144, el zigurat 2.496, y el mapa tiene cientos de edificios y
@@ -8363,6 +8873,26 @@ function arteDeArbolPara(clave, c, r) {
   return lista[Math.max(0, Math.min(lista.length - 1, Math.floor(seed * lista.length)))];
 }
 
+// Caja (maxX, maxY) de una plantilla de árbol. Antes se recorría la rejilla de
+// píxeles ENTERA en cada árbol y en cada fotograma, y desde DOS sitios (`alturaArteArbol`
+// y `drawTreeTemplateSway`). La caja de una plantilla no cambia nunca, así que se
+// cachea por la propia matriz (WeakMap: si se genera otra plantilla, se recalcula).
+const _cajaPlantilla = new WeakMap();
+function cajaDePlantilla(tpl) {
+  if (!tpl || !tpl.length) return { maxX: 0, maxY: 0 };
+  let c = _cajaPlantilla.get(tpl);
+  if (c) return c;
+  let maxX = 0, maxY = 0;
+  for (let i = 0; i < tpl.length; i++) {
+    const p = tpl[i];
+    if (p && p[0] > maxX) maxX = p[0];
+    if (p && p[1] > maxY) maxY = p[1];
+  }
+  c = { maxX, maxY };
+  _cajaPlantilla.set(tpl, c);
+  return c;
+}
+
 // Altura (en píxeles de pantalla) del ARTE NUEVO de un árbol.
 // Se calcula como el árbol CLÁSICO de esa celda: altura de la plantilla × su escala.
 // Antes el recorte del PNG se dibujaba a `tileSize * 1.28 * 0.85` (unas 26 px con
@@ -8372,11 +8902,7 @@ function arteDeArbolPara(clave, c, r) {
 function alturaArteArbol(tpl, base, lodFactor, sizeHint) {
   let altoTpl = 16;
   try {
-    if (tpl && tpl.length) {
-      let m = 0;
-      for (const p of tpl) { if (p && p[1] > m) m = p[1]; }
-      altoTpl = m + 1;
-    }
+    if (tpl && tpl.length) altoTpl = cajaDePlantilla(tpl).maxY + 1;
   } catch (e) {}
   const escala = Math.max(1, Math.floor((base / 4.8) * (Number(lodFactor) || 1) * (Number(sizeHint) || 1)));
   return Math.max(10, Math.round(altoTpl * escala * escalaArteArboles()));
@@ -8412,14 +8938,32 @@ function plantillaArbolPara(variant, c, r) {
   } catch (e) { return null; }
 }
 
+// Proporción (ancho/alto) de un sprite registrado. CACHEADA: el cálculo recorre
+// TODOS los píxeles del sprite para sacar su caja, y los recortes del PNG son
+// enormes (`tree0_sup`: 12.169 píxeles). Se llamaba por árbol y por fotograma en
+// el bosque, así que el barrido costaba ~2,4 ms por vuelta completa (y con ~100
+// árboles visibles, milisegundos por fotograma) para devolver SIEMPRE el mismo
+// número. El WeakMap se apunta al objeto que se recorre (la imagen o la matriz de
+// píxeles), así que un sprite re-registrado se recalcula solo: no hay que invalidar
+// nada a mano.
+const _aspectoImagen = new WeakMap();
+const _aspectoPixels = new WeakMap();
 function getRegisteredSpriteAspect(name) {
   try {
     const img = (window._SPRITE_IMAGES && window._SPRITE_IMAGES[name]) || (window._ICON_BITMAPS && window._ICON_BITMAPS[name]) || (window._ENTITY_BITMAPS && window._ENTITY_BITMAPS[name]);
-    if (img && img.width > 0 && img.height > 0) return img.width / img.height;
+    if (img && img.width > 0 && img.height > 0) {
+      const c = _aspectoImagen.get(img);
+      if (c !== undefined) return c;
+      const v = img.width / img.height;
+      _aspectoImagen.set(img, v);
+      return v;
+    }
   } catch (e) {}
   try {
     const def = window.ENTITY_PIXEL_LIBRARY && window.ENTITY_PIXEL_LIBRARY[name];
     if (!def || !Array.isArray(def.pixels) || def.pixels.length === 0) return 1;
+    const cache = _aspectoPixels.get(def.pixels);
+    if (cache !== undefined) return cache;
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const p of def.pixels) {
       const px = Number(p && p[0]);
@@ -8432,7 +8976,9 @@ function getRegisteredSpriteAspect(name) {
     }
     const w = (maxX - minX + 1);
     const h = (maxY - minY + 1);
-    if (w > 0 && h > 0) return w / h;
+    const v = (w > 0 && h > 0) ? (w / h) : 1;
+    _aspectoPixels.set(def.pixels, v);
+    return v;
   } catch (e) {}
   return 1;
 }
@@ -8471,6 +9017,25 @@ function resolveTreeSpriteVariant(variant, col, row) {
   } catch (e) {
     return variant;
   }
+}
+
+// Clave con la que el MOTOR dibuja de verdad el sprite de una entidad. La usa el
+// inspector de debug (F9) para saber a quién aplica el ajuste de escala/offset: si
+// usa una clave DISTINTA de la del dibujado, el ajuste se guarda pero nadie lo lee
+// (síntoma: «ajusto la escala y no pasa nada»). Con los árboles pasa justo eso:
+// su `variant` no es la clave del sprite, la elige `resolveTreeSpriteVariant`.
+function resolveEntitySpriteKeyDeEntidad(ref) {
+  if (!ref || typeof ref !== 'object') return null;
+  if (ref._dbg && ref._dbg.sprite) return ref._dbg.sprite;
+  if (ref.sprite) return ref.sprite;   // entidades de previsualización del modo debug
+  if (ref.kind === 'tree') {
+    const v = ref.variant || 'tree0';
+    return resolveTreeSpriteVariant(v, ref.col || 0, ref.row || 0) || v;
+  }
+  if (ref.kind === 'pet' && ref.petType === 'dog') return 'pet_dog';
+  if (ref.subtype) return ref.subtype;
+  if (ref.variant) return ref.variant;
+  return null;
 }
 
 // Debug HUD overlay: shows FPS, ms/frame, draw counts and particle/entity counts
@@ -11018,6 +11583,9 @@ function setupHomePrologueSpawn(anchorCol, anchorRow) {
         { name: 'Cabo Naram', col: Math.min(COLS - 1, homeDoorCol + 2), row: Math.min(ROWS - 1, homeDoorRow + 1) }
       ]
     };
+    // MODO COLONIA: la casa se queda (es el punto de partida del fundador) pero el
+    // prólogo narrativo NO arranca: ni familia, ni patrulla, ni objetivos de guion.
+    if (!NARRATIVA) { window._homePrologue.active = false; window._homePrologue.stage = 'colonia'; }
     // Remove any guard/story NPCs that may have been spawned near home from world gen
     try {
       for (let i = entities.length - 1; i >= 0; i--) {
@@ -11036,7 +11604,7 @@ function setupHomePrologueSpawn(anchorCol, anchorRow) {
     // Show initial prologue instruction and set first objective
     setTimeout(() => {
       try {
-        if (window._homePrologue && !window._homePrologue.instructionShown) {
+        if (NARRATIVA && window._homePrologue && !window._homePrologue.instructionShown) {
           window._homePrologue.instructionShown = true;
           const fallbackTarget = { col: spawnC + 2, row: spawnR + 2 };
           const firstField = findNearestCultivableCell(fallbackTarget.col, fallbackTarget.row, 14) || fallbackTarget;
@@ -11086,10 +11654,13 @@ function setupHomePrologueSpawn(anchorCol, anchorRow) {
       try { window.updateEquippedUI && window.updateEquippedUI(); } catch (e) {}
       try { window.updateInventory && window.updateInventory(); } catch (e) {}
     } catch (e) {}
-    window._homePrologueIntro = true;
-    // La bienvenida (carruaje de Adapa) se programa aquí también: así arranca
-    // pase lo que pase con el orden entre la creación del prólogo y `postMapInit`.
-    try { programarEscenaBienvenida(1500); } catch (e) {}
+    window._homePrologueIntro = NARRATIVA;
+    // La bienvenida (el carruaje) sólo tiene sentido con el prólogo narrativo.
+    if (NARRATIVA) {
+      // Se programa aquí también: así arranca pase lo que pase con el orden entre
+      // la creación del prólogo y `postMapInit`.
+      try { programarEscenaBienvenida(1500); } catch (e) {}
+    }
     try { mapCacheDirty = true; rebuildMapCacheDebounced(); } catch (e) {}
     return true;
   } catch (e) {
@@ -13046,6 +13617,44 @@ function canWalkTo(col, row, options = null) {
 
 // placeResource/placeRabbit moved to engine/entities.js
 
+// ── MUNDO NUEVO: la rejilla se vacía SIEMPRE antes de generar ───────────────
+// El mapa se levantaba ENCIMA del que hubiera: si al arrancar se había restaurado
+// una partida (o ya se había generado un mundo en la sesión), los edificios y los
+// MUROS viejos seguían en la rejilla y el mundo nuevo crecía sobre ellos. Lo que
+// se veía era «varias filas de muros»: dos capitales solapadas, cada una con su
+// muralla (una pegada a la otra, con dos hileras paralelas de lienzos).
+// Antes la limpieza la hacía a mano UNO de los botones (el modal interno de
+// «Generar partida»), así que los demás caminos —menú externo, capital de
+// respaldo, mundo de reemplazo— sembraban el mundo sobre el anterior.
+// Ahora la limpieza vive aquí: la hace el propio generador cuando se le pide un
+// mundo nuevo (`freshSeed`), venga de donde venga.
+function limpiarMundoParaGenerar() {
+  try {
+    for (let r = 0; r < ROWS; r++) {
+      let row = grid[r];
+      if (!Array.isArray(row)) { grid[r] = new Array(COLS).fill(null); continue; }
+      for (let c = 0; c < COLS; c++) row[c] = null;
+      while (row.length < COLS) row.push(null);
+    }
+  } catch (e) { console.warn('limpiar rejilla', e); }
+  try { entities.length = 0; } catch (e) {}
+  try { rabbits.length = 0; } catch (e) {}
+  try { foxes.length = 0; } catch (e) {}
+  try { graves.length = 0; } catch (e) {}
+  try { if (Array.isArray(window._ENEMIES)) window._ENEMIES.length = 0; } catch (e) {}
+  try { if (Array.isArray(window.effectParticles)) window.effectParticles.length = 0; } catch (e) {}
+  try { if (Array.isArray(window.floatingTexts)) window.floatingTexts.length = 0; } catch (e) {}
+  try { if (Array.isArray(window._shotProjectiles)) window._shotProjectiles.length = 0; } catch (e) {}
+  try { structureSystem.clearPlaced(); } catch (e) {}
+  try { window._VILLAGES = []; } catch (e) {}
+  try { window._GATES = []; } catch (e) {}
+  try { window._savedExterior = null; } catch (e) {}
+  try { window._homePrologue = null; } catch (e) {}
+  try { if (window._explored && window._explored.fill) window._explored.fill(0); } catch (e) {}
+  try { window._miniMapCache = null; } catch (e) {}
+  try { mapCache = {}; window.MAP_CHUNKS = {}; mapCacheDirty = true; } catch (e) {}
+}
+
 function generateMap(mapType, opts) {
   // Toda la generación es una colocación masiva: se evitan los escaneos de
   // puertas de interior y las invalidaciones de caché por celda (el mapa acaba
@@ -13056,6 +13665,10 @@ function generateMap(mapType, opts) {
 }
 
 function generateMapInner(mapType, opts) {
+  // Partida NUEVA ⇒ mundo nuevo desde cero. Nunca sobre la rejilla anterior.
+  if (opts && opts.freshSeed) {
+    try { limpiarMundoParaGenerar(); } catch (e) { console.warn('mundo: limpieza previa falló', e); }
+  }
   // ── 1. Ríos (Río Don A/oeste, Río Ob Nord B/este) ────────────────────────
   // El cauce es una función PURA de la fila (senos de periodo largo), no un
   // paseo aleatorio: así el río se puede evaluar en filas que todavía no
@@ -13633,11 +14246,12 @@ function drawBuilding(col, row, type, alpha) {
   }
 
   // ── MODO DEBUG: ajustes por tipo de edificio (escala / desplazamiento) ──
+  let dbgBuildingScale = 1;
   try {
     if (window._mesoDbgBuilding) {
       const badj = window._mesoDbgBuilding[type];
       if (badj) {
-        if (Number.isFinite(badj.scale) && badj.scale !== 1) { W *= badj.scale; H *= badj.scale; }
+        if (Number.isFinite(badj.scale) && badj.scale !== 1) { dbgBuildingScale = badj.scale; W *= badj.scale; H *= badj.scale; }
         if (Number.isFinite(badj.offsetX) && badj.offsetX) x += badj.offsetX * W;
         if (Number.isFinite(badj.offsetY) && badj.offsetY) y += badj.offsetY * H;
       }
@@ -13736,7 +14350,13 @@ function drawBuilding(col, row, type, alpha) {
           try {
             const mat = materialesDeEdificio(useKey, def.pixels, def.gridW || def.grid, def.gridH || def.grid);
             const ts = getTileSize();
-            drawPlantaTecho(ctx, x, y, ts * size.w, ts * size.h, mat);
+            // La planta se mide por la HUELLA, así que el ajuste de escala del modo
+            // debug hay que aplicarlo aquí aparte (antes se ignoraba: con la vista de
+            // techo activada, escalar un edificio no hacía nada). Crece desde el
+            // centro de la huella para no descolgarse de su casilla.
+            const pw = ts * size.w * dbgBuildingScale;
+            const ph = ts * size.h * dbgBuildingScale;
+            drawPlantaTecho(ctx, x - (pw - ts * size.w) / 2, y - (ph - ts * size.h) / 2, pw, ph, mat);
             ctx.restore();
             return;
           } catch (e) { /* si algo falla, sigue con el sprite de siempre */ }
@@ -13856,12 +14476,23 @@ function drawBuilding(col, row, type, alpha) {
     // Read stored orientation: 'h' = horizontal (N/S row), 'v' = vertical (E/W column)
     const _wallOrient = (grid[row] && grid[row][col] && grid[row][col].orient) ? grid[row][col].orient : 'h';
     // El muro no tiene sprite propio (`wall_segment` no existe como arte): el arte
-    // se dibuja POR ORIENTACIÓN (`wall_segment_h` / `wall_segment_v`), que es lo que
-    // se recorta a mano en el editor de entidades. Y manda la VARIANTE DE LA VISTA
-    // (`_sup` / `_iso`): sin mirarla, el muro seguía con el sprite antiguo aunque
-    // tuvieras arte nuevo y se veía una mezcla de arte viejo y nuevo en la partida.
-    const _wallKey = _wallOrient === 'v' ? 'wall_segment_v' : 'wall_segment_h';
-    const _wallVariante = _wallKey + (viewMode === 'iso' ? '_iso' : '_sup');
+    // se dibuja POR ORIENTACIÓN, que es lo que se recorta a mano en el editor de
+    // entidades. Y manda la VARIANTE DE LA VISTA (`_sup` / `_iso`): sin mirarla, el
+    // muro seguía con el sprite antiguo aunque tuvieras arte nuevo y se veía una
+    // mezcla de arte viejo y nuevo en la partida.
+    //
+    // El LATERAL (orientación 'v', o sea los muros que corren de norte a sur) tiene
+    // ENTIDAD PROPIA: `wall_side`. Son dibujos distintos (uno se ve de frente y el
+    // otro en profundidad) y así se puede recortar/ajustar el del lateral a mano sin
+    // tocar el del muro horizontal. Si `wall_side` no tiene arte (partidas o hojas
+    // antiguas), se sigue usando `wall_segment_v` como siempre.
+    const _wallVista = viewMode === 'iso' ? '_iso' : '_sup';
+    let _wallKey = 'wall_segment_h';
+    if (_wallOrient === 'v') {
+      const hayLateral = hasRegisteredSprite('wall_side' + _wallVista) || hasRegisteredSprite('wall_side');
+      _wallKey = hayLateral ? 'wall_side' : 'wall_segment_v';
+    }
+    const _wallVariante = _wallKey + _wallVista;
     if (hasRegisteredSprite(_wallVariante)) {
       drawEntitySpriteAt(_wallVariante, x + W * 0.5, y + H, W, H, { ignoreEntityScale: true });
       ctx.restore();
@@ -14481,7 +15112,7 @@ function drawPlayer() {
     // mismo estilo que las etiquetas de los NPC, ver `dibujarEtiquetaMundo`).
     try {
       if (player && player.name) {
-        dibujarEtiquetaMundo(ctx, x + spriteW * 0.5, py - 2, player.name, { size: 12, maxAncho: 150 });
+        textoMundo(() => dibujarEtiquetaMundo(ctx, x + spriteW * 0.5, py - 2, player.name, { size: 12, maxAncho: 150 }));
       }
     } catch (e) {}
       // draw equipped item on player (simple overlay near hands)
@@ -14598,7 +15229,7 @@ function drawPlayer() {
     // Nombre del jugador (vista ortogonal): mismo estilo que los NPC.
     try {
       if (player && player.name) {
-        dibujarEtiquetaMundo(ctx, x + tileSize * 0.5, py - 2, player.name, { size: 12, maxAncho: 150 });
+        textoMundo(() => dibujarEtiquetaMundo(ctx, x + tileSize * 0.5, py - 2, player.name, { size: 12, maxAncho: 150 }));
       }
     } catch (e) {}
   }
@@ -14857,6 +15488,7 @@ function startCartWelcomeScene(opts = {}) {
 // En Electron el precargado de sprites tarda bastante: la cinemática se consumía
 // entera DETRÁS del cartel y daba la impresión de que «no carga la introducción».
 function programarEscenaBienvenida(delay) {
+  if (!NARRATIVA) { window._cartScenePendiente = false; return; }  // MODO COLONIA: sin cinemática.
   window._cartScenePendiente = true;
   const intentar = (intentos) => {
     try {
@@ -15081,13 +15713,308 @@ function drawCartWelcomeScene(ctx, W, H) {
   } catch (e) { try { ctx.restore(); } catch (e2) {} }
 }
 
+// ── FILTRO DE PIXELADO DEL MUNDO ────────────────────────────────────────────
+// (la tabla PIXELADO y el búfer viven arriba, junto a GRAPHICS_CONFIG)
+function aplicarPixeladoMundo() {
+  try {
+    if (!PIXELADO.activo) return;
+    const b = Math.max(2, Math.round(PIXELADO.bloque || 2));
+    const W = canvas.width, H = canvas.height;
+    if (W < 32 || H < 32) return;
+    let mw = Math.ceil(W / b), mh = Math.ceil(H / b);
+    // En pantallas enormes se sube el bloque para no crear un búfer gigante.
+    const maxLado = Math.max(mw, mh);
+    if (maxLado > PIXELADO.maxBloques) {
+      const k = Math.ceil(maxLado / PIXELADO.maxBloques);
+      mw = Math.max(8, Math.ceil(mw / k)); mh = Math.max(8, Math.ceil(mh / k));
+    }
+    if (!_pixeladoCv) {
+      _pixeladoCv = document.createElement('canvas');
+      _pixeladoCtx = _pixeladoCv.getContext('2d');
+    }
+    if (_pixeladoCv.width !== mw || _pixeladoCv.height !== mh) {
+      _pixeladoCv.width = mw; _pixeladoCv.height = mh;
+    }
+    const g = _pixeladoCtx;
+    // 1) Reducir CON suavizado: cada bloque sale de promediar su zona (bloque
+    //    limpio, sin aliasing) y es una sola operación de la GPU.
+    g.imageSmoothingEnabled = true;
+    try { g.imageSmoothingQuality = 'low'; } catch (e) {}
+    g.globalCompositeOperation = 'copy';
+    g.drawImage(canvas, 0, 0, W, H, 0, 0, mw, mh);
+    // 2) Ampliar SIN suavizado y MEZCLANDO con lo que ya había (`source-over` con
+    //    alfa). Con alfa 1 el lienzo quedaría reemplazado por los bloques; con 0,85
+    //    se deja pasar un 15 % del dibujo original, así que el bloqueo se nota pero
+    //    el mundo no queda «cortado» — es el «un pelín más leve». El original está
+    //    debajo, así que no hace falta limpiar el lienzo antes.
+    const alfa = (PIXELADO.mezcla > 0 && PIXELADO.mezcla < 1) ? PIXELADO.mezcla : 1;
+    ctx.imageSmoothingEnabled = false;
+    if (alfa >= 1) {
+      ctx.globalCompositeOperation = 'copy';
+      ctx.drawImage(_pixeladoCv, 0, 0, mw, mh, 0, 0, mw * b, mh * b);
+    } else {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = alfa;
+      ctx.drawImage(_pixeladoCv, 0, 0, mw, mh, 0, 0, mw * b, mh * b);
+      ctx.globalAlpha = 1;
+    }
+    ctx.globalCompositeOperation = 'source-over';
+    try { window._pixeladoFrames = (window._pixeladoFrames || 0) + 1; } catch (e) {}
+  } catch (e) {
+    // Si el filtro falla alguna vez, se apaga y el juego sigue igual que antes.
+    PIXELADO.activo = false;
+    try { ctx.globalCompositeOperation = 'source-over'; } catch (e2) {}
+    try { ctx.globalAlpha = 1; } catch (e2) {}
+  }
+}
+
+// ── COLA DE TEXTOS Y AVISOS DEL MUNDO (NO SE FILTRAN) ───────────────────────
+// Los nombres sobre las cabezas, los bocadillos, los números de daño y las pistas
+// «E» se dibujan con el mundo, pero pixelados se emborronan. Aquí se DIFIEREN:
+// durante el mundo se apuntan y, justo después del filtro, se pintan nítidos.
+// Sin filtro activo no se difiere nada (coste cero).
+const _colaTextoMundo = [];
+function textoMundo(fn) {
+  if (PIXELADO.activo) { try { _colaTextoMundo.push(fn); return; } catch (e) {} }
+  try { fn(); } catch (e) {}
+}
+function dibujarColaTextoMundo() {
+  try { window._textosDiferidos = _colaTextoMundo.length; } catch (e) {}
+  for (let i = 0; i < _colaTextoMundo.length; i++) { try { _colaTextoMundo[i](); } catch (e) {} }
+  _colaTextoMundo.length = 0;
+}
+
+// ── COLA DE SPRITES QUE NO SE FILTRAN ───────────────────────────────────────
+// El jugador, los aldeanos, el perro y los conejos se dibujan con el mundo, así
+// que el filtro de pixelado los emborronaba igual que la hierba: el jugador es
+// justo lo que hay que distinguir siempre, y los personajes son también los
+// sprites de más densidad del juego. Igual que los textos, se DIFIEREN y se
+// pintan justo después del filtro (y antes de los textos, para que los nombres
+// sigan quedando encima).
+//
+// Se guarda una clave de PROFUNDIDAD (la misma que usa el orden de dibujado del
+// mundo) para que al vaciar la cola se respete el orden entre ellos: un aldeano
+// que va delante del jugador lo sigue tapando. Sin filtro activo la cola no se
+// usa: se dibuja en el acto, exactamente como antes.
+const _colaSpriteSinFiltro = [];
+function spriteSinFiltro(z, fn) {
+  if (PIXELADO.activo) { try { _colaSpriteSinFiltro.push({ z: z || 0, fn }); return; } catch (e) {} }
+  try { fn(); } catch (e) {}
+}
+function dibujarColaSpritesSinFiltro() {
+  try { window._spritesDiferidos = _colaSpriteSinFiltro.length; } catch (e) {}
+  if (_colaSpriteSinFiltro.length > 1) _colaSpriteSinFiltro.sort((a, b) => a.z - b.z);
+  for (let i = 0; i < _colaSpriteSinFiltro.length; i++) { try { _colaSpriteSinFiltro[i].fn(); } catch (e) {} }
+  const n = _colaSpriteSinFiltro.length;
+  _colaSpriteSinFiltro.length = 0;
+  return n;
+}
+
+// ── LO QUE TAPA AL JUGADOR SE VUELVE A PINTAR ENCIMA ────────────────────────
+// Como el jugador ya no se filtra, se dibuja DESPUÉS de los árboles que tiene
+// delante: sin esto se le vería subido a las copas (flotando sobre el bosque) y
+// el puntero dorado de oclusión aparecería sin motivo. Así que, mientras se
+// pinta la cola diferida, se apunta qué cacharros de delante le tapan; y en
+// cuanto se ha pintado el sprite nítido, se vuelven a pintar encima. La oclusión
+// queda exactamente igual que siempre.
+let _ocluirTrasSprites = [];
+function redibujarElementoDeCola(it) {
+  if (!it) return;
+  try {
+    if (it.f) {
+      // Árbol del bosque (arte del PNG o plantilla de píxeles).
+      if (it.f.arte) {
+        const fase = it.f.fase || treeSwayPhase(it.f.col || 0, it.f.row || 0);
+        if (dibujarArbolArteDirecto(it.f.arte, it.f.cx, it.f.cy, it.f.w, it.f.h, fase)) return;
+        drawEntitySpriteAt(it.f.arte, it.f.cx, it.f.cy, it.f.w, it.f.h, { noShadow: true, sway: 0.8, phase: fase });
+        return;
+      }
+      drawTreeTemplateSway(it.f.tpl, it.f.scale, it.f.cx, it.f.cy, it.f.bend);
+      return;
+    }
+    if (it.b) { drawBuilding(it.b.col, it.b.row, it.b.type); return; }
+    drawTreeOcclusionOverlay(it.t);
+  } catch (e) {}
+}
+function redibujarTapasDelJugador() {
+  // `_ocluirTrasSprites` ya viene en orden de profundidad (la cola está
+  // ordenada), así que no hay que reordenar nada.
+  try { window._tapasRepintadas = _ocluirTrasSprites.length; } catch (e) {}
+  for (let i = 0; i < _ocluirTrasSprites.length; i++) redibujarElementoDeCola(_ocluirTrasSprites[i]);
+  _ocluirTrasSprites = [];
+}
+
+// ── TEXTOS FLOTANTES DEL MUNDO (bocadillos, números de daño, avisos) ────────
+// Vivían dentro de `render()` (en la sección de efectos) y por eso el filtro de
+// pixelado los emborronaba. Ahora son función propia y se llaman DESPUÉS del
+// filtro: el mundo queda uniforme y lo que hay que leer se lee nítido.
+function dibujarTextosFlotantes(W, H, tileSize, nowEff, cinematicActive) {
+  try {
+    for (let i = floatingTexts.length - 1; i >= 0; i--) {
+      const ft = floatingTexts[i];
+      // La EDAD se mira ANTES que el recorte: antes, un bocadillo que quedaba
+      // fuera de pantalla (o el zoom era bajo) se recortaba con `continue`
+      // ANTES de comprobar `t >= 1`, así que no se borraba NUNCA de la lista y
+      // ésta crecía sin freno mientras el mundo se movía.
+      const age = nowEff - ft.born;
+      const t = age / ft.life;
+      if (t >= 1) { floatingTexts.splice(i,1); continue; }
+      // during cinematics, skip rendering floating speech bubbles
+      if (cinematicActive && !ft.force) continue;
+      // cheap cull for floating texts not near viewport
+      try {
+        if (typeof ft.worldX === 'number' && typeof ft.worldY === 'number') {
+          const p = worldToScreen(ft.worldX, ft.worldY);
+          if (p.x < -80 || p.x > W + 80 || p.y < -80 || p.y > H + 80) { continue; }
+        }
+      } catch (e) {}
+      // if world positions provided, reproject to screen so text follows moving entities
+      if (typeof ft.worldX === 'number' && typeof ft.worldY === 'number') {
+        const p = worldToScreen(ft.worldX, ft.worldY);
+        ft.x = p.x;
+        // Position bubble clearly above the entity head (scales with tile/zoom size)
+        ft.y = p.y - Math.max(18, Math.round(tileSize * 0.55));
+      }
+      ft.y += ft.yv * 1.6;
+      const alpha = Math.max(0, 1 - t);
+      // ── BOCADILLO ───────────────────────────────────────────────────────
+      // Antes se dibujaba en UNA sola línea y a su ancho natural: una frase de
+      // 80 caracteres generaba una barra blanca de ~490 px (medido) cruzando la
+      // pantalla, y con varios vecinos hablando a la vez la vista se llenaba de
+      // carteles. Ahora el texto se ENVUELVE, el bocadillo se RECORTA al lienzo
+      // y su cola apunta igualmente a la entidad.
+      const cx = (typeof ft.x === 'number') ? ft.x : 0;
+      const cy = (typeof ft.y === 'number') ? ft.y : 0;
+      const prevSmoothing = ctx.imageSmoothingEnabled;
+      ctx.imageSmoothingEnabled = true;
+      try { ctx.imageSmoothingQuality = 'high'; } catch(e){}
+      ctx.globalAlpha = alpha;
+
+      // Glifos sin caja (corazones del perro, huellas): se pintan con el MISMO
+      // repertorio de iconos que la interfaz, no con emojis.
+      if (ft.icono) {
+        try { dibujarIcono(ctx, ft.icono, cx, cy, 16, ft.color); } catch (e) {}
+        ctx.globalAlpha = 1;
+        ctx.imageSmoothingEnabled = prevSmoothing;
+        continue;
+      }
+
+      ctx.font = 'bold 13px sans-serif';
+      ctx.textBaseline = 'alphabetic';
+      // El ancho útil se fija ANTES de medir y el texto se envuelve a ese ancho:
+      // así nunca puede ser más ancho que su bocadillo. Y se limita a 3 líneas
+      // con puntos suspensivos: una parrafada no puede tapar media pantalla.
+      const maxAncho = Math.max(72, Math.min(220, Math.round(W * 0.32)));
+      const filas = envolverTexto(ctx, ft.text || '', maxAncho, { maxFilas: 3 });
+      if (!filas.length) { ctx.globalAlpha = 1; ctx.imageSmoothingEnabled = prevSmoothing; continue; }
+      let anchoMax = 0;
+      for (const f of filas) anchoMax = Math.max(anchoMax, ctx.measureText(f).width);
+      const padX = 10, padY = 6, lineH = 16;
+      const bubbleW = Math.min(W - 8, Math.round(anchoMax) + padX * 2);
+      const bubbleH = padY * 2 + filas.length * lineH;
+      let bx = Math.round(cx - bubbleW / 2);
+      bx = Math.max(4, Math.min(W - bubbleW - 4, bx));
+      let by = Math.round(cy - bubbleH - 10);
+      let colaAbajo = true;
+      if (by < 4) { by = Math.round(cy + 14); colaAbajo = false; }
+      const bgColor = 'rgba(255,255,255,0.97)';
+      const strokeColor = 'rgba(60,40,10,0.55)';
+      try {
+        ctx.fillStyle = bgColor; ctx.strokeStyle = strokeColor; ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(bx, by, bubbleW, bubbleH, 6);
+        else ctx.rect(bx, by, bubbleW, bubbleH);
+        ctx.fill(); ctx.stroke();
+        // cola hacia la entidad (recortada al bocadillo)
+        const tx = Math.round(Math.max(bx + 12, Math.min(bx + bubbleW - 12, cx)));
+        const ty = colaAbajo ? by + bubbleH : by;
+        ctx.beginPath();
+        ctx.moveTo(tx - 5, ty);
+        ctx.lineTo(tx + 5, ty);
+        if (colaAbajo) ctx.lineTo(tx, ty + 7); else ctx.lineTo(tx, ty - 7);
+        ctx.closePath(); ctx.fill(); ctx.stroke();
+      } catch (e) { /* ignore drawing issues */ }
+      // texto centrado en el bocadillo
+      try {
+        ctx.fillStyle = '#1a1200';
+        ctx.textBaseline = 'middle';
+        for (let k = 0; k < filas.length; k++) {
+          const wf = ctx.measureText(filas[k]).width;
+          ctx.fillText(filas[k], Math.round(bx + (bubbleW - wf) / 2), Math.round(by + padY + lineH * k + lineH / 2 + 1));
+        }
+        ctx.textBaseline = 'alphabetic';
+      } catch (e) {}
+      ctx.globalAlpha = 1;
+      ctx.imageSmoothingEnabled = prevSmoothing;
+    }
+    // Y no se dejan más de 10 a la vez: varios vecinos hablando a la vez
+    // llenaban la pantalla de carteles.
+    if (floatingTexts.length > 10) floatingTexts.splice(0, floatingTexts.length - 10);
+  } catch (e) { /* ignore effect rendering errors */ }
+}
+try {
+  window.MESO_PIXELADO = {
+    config: PIXELADO,
+    activo: () => PIXELADO.activo,
+    activar: (v) => { PIXELADO.activo = !!v; try { localStorage.setItem('meso.pixelado', PIXELADO.activo ? '1' : '0'); } catch (e) {} return PIXELADO.activo; },
+    bloque: (n) => { const b = Math.max(2, Math.min(4, Math.round(Number(n) || 2))); PIXELADO.bloque = b; try { localStorage.setItem('meso.pixeladoBloque', String(b)); } catch (e) {} return b; },
+    // Cuánto del pixelado se aplica: 1 = puro, 0,9 = por defecto (leve), 0,4 = apenas se nota.
+    mezcla: (n) => { const m = Math.max(0.3, Math.min(1, Number(n) || 0.9)); PIXELADO.mezcla = m; try { localStorage.setItem('meso.pixeladoMezcla', String(m)); } catch (e) {} return m; }
+  };
+} catch (e) {}
+
 // ── VIGILANTE DEL TERRENO ───────────────────────────────────────────────────
 // Red de seguridad para Electron: si a los pocos segundos de estar jugando la
 // caché de terreno no está lista, o el lienzo sale de UN SOLO color (nada
 // pintado, un cartel encima o una caché a medias), se fuerza la reconstrucción y
 // se avisa por consola. Antes cualquier fallo así se quedaba «sin renderizar el
 // terreno» para siempre y había que reiniciar a ciegas.
+//
+// OJO CON LA MUESTRA: la comprobación de color miraba la ESQUINA SUPERIOR
+// IZQUIERDA del lienzo (0,0,160,120), que es justo donde el motor pinta la
+// tarjeta del objetivo y la guía rápida. Durante los primeros segundos de
+// partida esa zona es interfaz (pocos tonos), así que la muestra salía «plana»
+// CASI SIEMPRE y el vigilante concluía que el volcado de la caché no funcionaba
+// en ese equipo: activaba `_noTerrainCacheBlit` y el terreno pasaba a pintarse
+// celda a celda PARA SIEMPRE. Medido: de 0,6 ms por fotograma a 20-50 ms (de 90
+// a 30 FPS) sin ningún aviso en pantalla. Ahora se muestrean cinco puntos
+// alrededor del CENTRO (siempre mundo) y hacen falta dos confirmaciones
+// seguidas para dar la alarma.
 let _terrainWatchdogAt = 0;
+
+function lienzoParecePlano() {
+  try {
+    const W = canvas.width, H = canvas.height;
+    if (W < 80 || H < 80) return false;
+    const cx = Math.floor(W / 2), cy = Math.floor(H / 2);
+    const d = Math.round(Math.min(W, H) * 0.18);
+    const muestras = [[cx, cy], [cx - d, cy], [cx + d, cy], [cx, cy - d], [cx, cy + d]];
+    const R = 12;   // media ventana: se miran bloques de 24×24
+    // UNA SOLA LECTURA. Antes eran cinco `getImageData` seguidos y cada uno
+    // obliga a sincronizar con la GPU (medido: decenas de ms cada uno), así que
+    // esta comprobación —que corre una vez por partida, a los pocos segundos—
+    // se notaba como un tirón largo. Se coge el rectángulo que cubre las cinco
+    // muestras y se mira dentro.
+    const x0 = Math.max(0, cx - d - R), x1 = Math.min(W, cx + d + R);
+    const y0 = Math.max(0, cy - d - R), y1 = Math.min(H, cy + d + R);
+    const bw = Math.max(1, x1 - x0), bh = Math.max(1, y1 - y0);
+    const datos = ctx.getImageData(x0, y0, bw, bh).data;
+    const tonos = new Set();
+    for (let s = 0; s < muestras.length; s++) {
+      const bx = Math.max(0, Math.min(W - 24, muestras[s][0] - R));
+      const by = Math.max(0, Math.min(H - 24, muestras[s][1] - R));
+      let k = 0;
+      for (let y = by; y < Math.min(by + 24, y1); y++) {
+        for (let x = bx; x < Math.min(bx + 24, x1); x++, k++) {
+          if (k % 37 !== 0) continue;   // misma densidad de muestreo que antes
+          const i = ((y - y0) * bw + (x - x0)) * 4;
+          tonos.add((datos[i] >> 3) + ',' + (datos[i + 1] >> 3) + ',' + (datos[i + 2] >> 3));
+        }
+      }
+    }
+    return tonos.size <= 3;
+  } catch (e) { return false; }
+}
 function vigilanteTerreno() {
   try {
     if (!window._gameStarted || window.currentInterior) return;
@@ -15113,31 +16040,28 @@ function vigilanteTerreno() {
     }
     if (cacheLista && !mapCacheDirty) {
       window._terrainWatchdogOk = true;
-      // Sólo queda la comprobación de color, UNA vez, pasados unos segundos.
+      // Sólo queda la comprobación de color, pasados unos segundos y descartando
+      // los frames en los que el mundo aún no está (carteles, cinemáticas).
       if (!window._terrainColorCheckDone && (ahora - (window._worldReadyAt || ahora)) > 7000) {
         window._terrainColorCheckDone = true;
         try {
-          const cv = canvas;
-          if (cv && cv.width > 8 && cv.height > 8) {
-            const datos = ctx.getImageData(0, 0, 160, 120).data;   // muestra pequeña: no bloquea el fotograma
-            const tonos = new Set();
-            for (let i = 0; i < datos.length; i += 4 * 53) tonos.add((datos[i] >> 3) + ',' + (datos[i + 1] >> 3) + ',' + (datos[i + 2] >> 3));
-            if (tonos.size <= 3) {
-              console.warn('[terreno] el lienzo sale de un solo color (' + tonos.size + ' tono/s)');
-              if (window._terrainColorRetried) {
-                // El volcado de la caché no funciona en este equipo (GPU/Electron):
-                // se pasa a pintar el terreno celda a celda, que siempre se ve.
-                console.warn('[terreno] se desactiva el volcado de caché y se pinta por celdas');
-                window._noTerrainCacheBlit = true;
-              } else {
-                window._terrainColorRetried = true;
-                window._terrainColorCheckDone = false;   // volver a probar tras reconstruir
-                mapCacheDirty = true;
-                try { rebuildMapCachesAsync(); } catch (e) {}
-              }
+          if (lienzoParecePlano()) {
+            window._terrainPlanoVeces = (window._terrainPlanoVeces || 0) + 1;
+            console.warn('[terreno] el lienzo sale de un solo color (aviso ' + window._terrainPlanoVeces + '/2)');
+            if (window._terrainPlanoVeces >= 2) {
+              // CONFIRMADO en dos comprobaciones seguidas (separadas por una
+              // reconstrucción): el volcado de la caché no funciona en este equipo
+              // (GPU/Electron). Se pasa a pintar el terreno celda a celda, que
+              // siempre se ve, aunque cueste mucho más por fotograma.
+              console.warn('[terreno] se desactiva el volcado de caché y se pinta por celdas');
+              window._noTerrainCacheBlit = true;
             } else {
-              window._terrainColorRetried = false;
+              window._terrainColorCheckDone = false;   // volver a probar tras reconstruir
+              mapCacheDirty = true;
+              try { rebuildMapCachesAsync(); } catch (e) {}
             }
+          } else {
+            window._terrainPlanoVeces = 0;
           }
         } catch (e) {}
       }
@@ -15348,29 +16272,44 @@ function dibujarEtiquetaMundo(ctx, sx, sy, texto, opts) {
 }
 
 
-function luminanciaBajoElAviso(x, y, w, h) {
+// ── LUMINANCIA DEL FONDO DEL AVISO (SIN TOCAR EL LIENZO) ────────────────────
+// AQUÍ ESTABAN LOS TIRONES. Esta función hacía un `ctx.getImageData(75×20)` cada
+// 350 ms para decidir si el texto del aviso va claro u oscuro. El lienzo del
+// juego lo tiene la GPU, así que leerlo obliga a sincronizar: MEDIDO en este
+// equipo, cada lectura bloqueaba el hilo principal entre 40 y 95 ms (un
+// fotograma normal cuesta ~8 ms), o sea el juego iba fino y se congelaba casi un
+// décimo de segundo tres veces por segundo. Chrome avisaba además de que
+// `getImageData` repetido quiere `willReadFrequently`, pero ese atributo
+// obligaría a que TODO el canvas fuese software y se pinta miles de veces por
+// fotograma — no compensa.
+//
+// El color que hay debajo se sabe por DATOS (bioma y edificio de la celda del
+// jugador), así que se calcula sin leer nada. Se sigue suavizando el cambio para
+// que al cruzar de celda el color no salte de golpe.
+function luminanciaBajoElAviso() {
   try {
-    const ahora = performance.now();
-    // Cada 350 ms basta (el aviso sólo vive unos segundos y el terreno bajo el
-    // jugador cambia despacio). Leer píxeles del lienzo no es gratis: Chrome
-    // avisa de que `getImageData` repetido iría mejor con `willReadFrequently`,
-    // pero ese atributo obligaría a que TODO el canvas del juego fuese software
-    // (se pinta miles de veces por fotograma) — no compensa.
-    if (ahora - _avisoFondo.at < 350) return _avisoFondo.lum;
-    _avisoFondo.at = ahora;
-    const cx = Math.max(0, Math.min(canvas.width - 1, Math.round(x)));
-    const cy = Math.max(0, Math.min(canvas.height - 1, Math.round(y)));
-    const cw = Math.max(1, Math.min(canvas.width - cx, Math.round(w)));
-    const ch = Math.max(1, Math.min(canvas.height - cy, Math.round(h)));
-    const datos = ctx.getImageData(cx, cy, cw, ch).data;
-    let suma = 0, n = 0;
-    for (let i = 0; i < datos.length; i += 4 * 5) {   // 1 de cada 5 píxeles basta
-      suma += (0.2126 * datos[i] + 0.7152 * datos[i + 1] + 0.0722 * datos[i + 2]) / 255;
-      n++;
-    }
-    if (n) _avisoFondo.lum = suma / n;
+    const objetivo = luminanciaDeCelda(Math.floor(player.x || 0), Math.floor(player.y || 0));
+    _avisoFondo.lum += (objetivo - _avisoFondo.lum) * 0.35;
+    _avisoFondo.at = performance.now();
     return _avisoFondo.lum;
   } catch (e) { return _avisoFondo.lum; }
+}
+
+// Luminancia (0-1) del suelo de una celda, deducida del color del bioma. Si hay
+// un edificio se devuelve un valor oscuro fijo: los muros y los tejados son
+// oscuros en todas las épocas.
+function luminanciaDeCelda(col, row) {
+  try {
+    if (col < 0 || row < 0 || col >= COLS || row >= ROWS) return 0.35;
+    if (typeof grid !== 'undefined' && grid[row] && grid[row][col]) return 0.3;
+    const b = (tileBiome[row] && tileBiome[row][col]) || null;
+    const hex = getBiomeFillColor(b);
+    const r = parseInt(hex.slice(1, 3), 16) / 255;
+    const g = parseInt(hex.slice(3, 5), 16) / 255;
+    const bl = parseInt(hex.slice(5, 7), 16) / 255;
+    if (!isFinite(r) || !isFinite(g) || !isFinite(bl)) return 0.35;
+    return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
+  } catch (e) { return 0.35; }
 }
 
 function pintarAvisoDeAccion(dt) {
@@ -15407,7 +16346,7 @@ function pintarAvisoDeAccion(dt) {
     ctx.translate(0, Math.round((1 - _avisoAlpha) * 6));     // entra subiendo
 
     // Color según el FONDO: claro → texto oscuro; oscuro → texto claro.
-    const lum = luminanciaBajoElAviso(x - 6, y - 14, ancho + 12, 20);
+    const lum = luminanciaBajoElAviso();
     const sobreClaro = lum > 0.56;
     const colorTexto = sobreClaro ? '#15171C' : '#F7F4EA';
     const colorTecla = sobreClaro ? '#6E4E0C' : '#FFD27A';
@@ -15518,7 +16457,7 @@ function render() {
   // `MESO_DEBUG.perf.sections()` devuelve la media por fotograma. Sirve para no
   // adivinar dónde se va el tiempo cuando el juego va lento.
   const _ptOn = !!window._perfSections;
-  const _pt = { pre: 0, tiles: 0, terreno: 0, arboles: 0, edificios: 0, entidades: 0, animales: 0, fx: 0, cola: 0, noche: 0, deferred: 0, hud: 0 };
+  const _pt = { pre: 0, tiles: 0, terreno: 0, arboles: 0, edificios: 0, entidades: 0, animales: 0, fx: 0, cola: 0, noche: 0, filtro: 0, sprites: 0, textos: 0, deferred: 0, sim: 0, ui: 0, diag: 0, hud: 0 };
   let _ptLast = _ptOn ? performance.now() : 0;
   const _mark = _ptOn ? (k) => { const n = performance.now(); _pt[k] += n - _ptLast; _ptLast = n; } : () => {};
   if (_ptOn) _pt.pre += _ptLast - _ptStart;
@@ -16959,6 +17898,10 @@ function render() {
   })();
   let _playerDrawnEnCola = false;
   const _playerSortKey = (viewMode === 'iso') ? (Math.floor(player.x) + Math.floor(player.y)) : (player.y || 0);
+  // El JUGADOR (con su caballo, si va montado, y su ropa/herramienta) NO se
+  // filtra: se apunta a la cola de sprites nítidos con su clave de profundidad,
+  // así que al vaciarla cae en el mismo sitio del orden pero sin pixelar.
+  const _pintarJugador = () => { try { drawPlayer(); drawPlayerHealth(); } catch (e) {} };
   _entityList.forEach(ent => {
     if (!ent) return;
     // El JUGADOR se dibuja en su turno dentro de esta misma lista ordenada por
@@ -16967,7 +17910,7 @@ function render() {
     // pasar por delante de él.
     if (!_playerDrawnEnCola && _entitySortKey(ent) > _playerSortKey) {
       _playerDrawnEnCola = true;
-      try { drawPlayer(); drawPlayerHealth(); } catch (e) {}
+      spriteSinFiltro(_playerSortKey, _pintarJugador);
     }
     // update flying jet patrol paths each frame
     if (ent._flyLoop) {
@@ -17370,6 +18313,11 @@ function render() {
           // If NPC has a custom entity-pixels sprite (e.g. commissar), prefer it
           const npcSpriteKey = ent.npcType === 'commissar' ? 'commissar' : (ent.npcType === 'priestess' ? 'priestess' : null);
           const npcCustomSprite = npcSpriteKey && ((window._ENTITY_BITMAPS && window._ENTITY_BITMAPS[npcSpriteKey]) || (window._SPRITE_IMAGES && window._SPRITE_IMAGES[npcSpriteKey]));
+          // El sprite del aldeano NO se filtra (ver `spriteSinFiltro`): se
+          // aparca con su profundidad y se pinta nítido tras el filtro. La
+          // armadura del guardia y la caña del pescador van con él, que se
+          // dibujan encima del mismo sprite y en las mismas coordenadas.
+          spriteSinFiltro(_entitySortKey(ent), () => {
           if (npcCustomSprite) {
             try { ctx.save(); ctx.imageSmoothingEnabled = false; ctx.drawImage(npcCustomSprite, px, py, spriteW, spriteH); ctx.restore(); } catch(e) {}
           } else {
@@ -17386,6 +18334,7 @@ function render() {
               try { drawFisherKit(ctx, px, py, scale, { dir, now }); } catch (e) {}
             }
           }
+          });
         }
         // draw hp bar above the tile
         const hpPct = Math.max(0, (ent.hp || 0) / (ent.maxHp || 1));
@@ -17434,7 +18383,7 @@ function render() {
         const dist = Math.hypot(ent.x - player.x, ent.y - player.y);
         if (dist <= NAME_MAX_DIST && ent.name && !ent.isStoryNPC) { // Don't draw name for story NPCs here, handled by dialogue
           const p = worldToScreen(ent.x + 0.5, ent.y - 0.2);
-          dibujarEtiquetaMundo(ctx, p.x, p.y - 4, ent.name, { size: 12, maxAncho: 150 });
+          textoMundo(() => dibujarEtiquetaMundo(ctx, p.x, p.y - 4, ent.name, { size: 12, maxAncho: 150 }));
         }
       } catch (e) {}
       // highlight NPC if selected
@@ -17556,6 +18505,8 @@ function render() {
             } catch (e) {}
           }
         }
+        // El PERRO tampoco se filtra: sombra y sprite van a la cola de nítidos.
+        spriteSinFiltro(_entitySortKey(ent), () => {
         ctx.save();
         ctx.fillStyle = 'rgba(0,0,0,0.24)';
         ctx.beginPath();
@@ -17566,6 +18517,7 @@ function render() {
           state: (ent._petUntil && ent._petUntil > now) ? 'run' : ((ent.moveTarget || ent.fetchMode) ? 'run' : 'idle'),
           flip: facingLeft,
           now
+        });
         });
         const hpPct = Math.max(0, (ent.hp || 0) / Math.max(1, ent.maxHp || 1));
         if (shouldShowEntityHealthBar(ent, now)) {
@@ -17578,7 +18530,7 @@ function render() {
         const dist = Math.hypot((ent.x || ent.col) - player.x, (ent.y || ent.row) - player.y);
         if (dist <= NAME_MAX_DIST && ent.name) {
           const p = worldToScreen((ent.x || ent.col) + 0.1, (ent.y || ent.row) - 0.25);
-          dibujarEtiquetaMundo(ctx, p.x, p.y - 4, ent.name, { size: 12, maxAncho: 150 });
+          textoMundo(() => dibujarEtiquetaMundo(ctx, p.x, p.y - 4, ent.name, { size: 12, maxAncho: 150 }));
         }
       } catch (e) {}
     } else if (ent.kind === 'ambient' && ent.subtype === 'soviet_fighter_jet') {
@@ -17752,10 +18704,12 @@ function render() {
       const dist = Math.hypot(ent.col - player.x, ent.row - player.y);
       if (dist < 1.5 && !ent._chopUntil) {
         const bx = x + tileSize*0.5; const by = y - 12;
-        ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.strokeStyle = '#222';
-        ctx.beginPath(); ctx.roundRect ? ctx.roundRect(bx-12, by-18, 24, 20, 6) : ctx.rect(bx-12, by-18, 24, 20);
-        ctx.fill(); ctx.stroke();
-        ctx.fillStyle = '#111'; ctx.font = '14px monospace'; ctx.fillText('E', bx-4, by-4);
+        textoMundo(() => {
+          ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.strokeStyle = '#222';
+          ctx.beginPath(); ctx.roundRect ? ctx.roundRect(bx-12, by-18, 24, 20, 6) : ctx.rect(bx-12, by-18, 24, 20);
+          ctx.fill(); ctx.stroke();
+          ctx.fillStyle = '#111'; ctx.font = '14px monospace'; ctx.fillText('E', bx-4, by-4);
+        });
       }
 
       // chopping in progress: draw circular progress and finish when done
@@ -17805,7 +18759,7 @@ function render() {
     if (typeof rab.y !== 'number') rab.y = rab.row;
     if (!_playerDrawnEnCola && _entitySortKey(rab) > _playerSortKey) {
       _playerDrawnEnCola = true;
-      try { drawPlayer(); drawPlayerHealth(); } catch (e) {}
+      spriteSinFiltro(_playerSortKey, _pintarJugador);
     }
     const downedRab = isDownedEntity(rab, now);
     const { col, row, hp, maxHp, size } = rab;
@@ -17845,6 +18799,8 @@ function render() {
       if (rab.moveTarget) rabFlip = (rab.moveTarget.x < rab.x);
       else if (typeof rab._lastX === 'number') rabFlip = (rab.x < rab._lastX);
     } catch (e) {}
+    // Los CONEJOS tampoco se filtran: sombra y sprite a la cola de nítidos.
+    spriteSinFiltro(_entitySortKey(rab), () => {
     try {
       ctx.save();
       ctx.fillStyle = 'rgba(0,0,0,0.22)';
@@ -17860,6 +18816,7 @@ function render() {
         now
       });
     } catch (e) {}
+    });
     if (downedRab) {
       ctx.save();
       ctx.fillStyle = 'rgba(80,30,30,0.45)';
@@ -17883,7 +18840,7 @@ function render() {
       const dist = Math.hypot(rab.x - player.x, rab.y - player.y);
       if (dist <= NAME_MAX_DIST && rab.name) {
         const p = worldToScreen(rab.x + 0.5, rab.y - 0.2);
-        dibujarEtiquetaMundo(ctx, p.x, p.y - 4, rab.name, { size: 12, maxAncho: 150 });
+        textoMundo(() => dibujarEtiquetaMundo(ctx, p.x, p.y - 4, rab.name, { size: 12, maxAncho: 150 }));
       }
     } catch (e) {}
     // highlight if selected
@@ -17924,7 +18881,7 @@ function render() {
       const downedFox = isDownedEntity(fox, now);
       if (!_playerDrawnEnCola && _entitySortKey(fox) > _playerSortKey) {
         _playerDrawnEnCola = true;
-        try { drawPlayer(); drawPlayerHealth(); } catch (e) {}
+        spriteSinFiltro(_playerSortKey, _pintarJugador);
       }
       const { col, row, hp, maxHp, size } = fox;
       // prefer continuous position when available
@@ -18009,7 +18966,7 @@ function render() {
         const dist = Math.hypot(fox.col - player.x, fox.row - player.y);
         if (dist <= NAME_MAX_DIST && fox.name) {
           const p = worldToScreen(fox.col + 0.5, fox.row - 0.2);
-          dibujarEtiquetaMundo(ctx, p.x, p.y - 4, fox.name, { size: 12, maxAncho: 150 });
+          textoMundo(() => dibujarEtiquetaMundo(ctx, p.x, p.y - 4, fox.name, { size: 12, maxAncho: 150 }));
         }
       } catch (e) {}
     });
@@ -18106,7 +19063,7 @@ function render() {
         const dist = Math.hypot((grave.x || grave.col) - player.x, (grave.y || grave.row) - player.y);
         if (zoom >= nameZoom && dist <= maxDist) {
           const p = worldToScreen(grave.x, grave.y - 0.3);
-          dibujarEtiquetaMundo(ctx, p.x, p.y - 6, grave.name, { size: 11, maxAncho: 160, color: '#DDD' });
+          textoMundo(() => dibujarEtiquetaMundo(ctx, p.x, p.y - 6, grave.name, { size: 11, maxAncho: 160, color: '#DDD' }));
         }
       } catch (e) {}
       
@@ -18115,19 +19072,21 @@ function render() {
       if (distHint < 1.2) {
         const hx = gx + tileSize*0.5;
         const hy = gy - 20;
-        ctx.save();
-        ctx.fillStyle = 'rgba(200,200,255,0.9)';
-        ctx.strokeStyle = '#555';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.roundRect ? ctx.roundRect(hx-16, hy-18, 32, 20, 4) : ctx.rect(hx-16, hy-18, 32, 20);
-        ctx.fill();
-        ctx.stroke();
-        ctx.fillStyle = '#111';
-        ctx.font = '12px monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText('E', hx, hy-4);
-        ctx.restore();
+        textoMundo(() => {
+          ctx.save();
+          ctx.fillStyle = 'rgba(200,200,255,0.9)';
+          ctx.strokeStyle = '#555';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.roundRect ? ctx.roundRect(hx-16, hy-18, 32, 20, 4) : ctx.rect(hx-16, hy-18, 32, 20);
+          ctx.fill();
+          ctx.stroke();
+          ctx.fillStyle = '#111';
+          ctx.font = '12px monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText('E', hx, hy-4);
+          ctx.restore();
+        });
       }
     });
   } catch (e) {}
@@ -18179,106 +19138,9 @@ function render() {
       const a = Math.max(0, 1 - t);
       ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(1, 3 * (1 - t)), 0, Math.PI*2); ctx.fill(); ctx.restore();
     }
-    for (let i = floatingTexts.length - 1; i >= 0; i--) {
-      const ft = floatingTexts[i];
-      // La EDAD se mira ANTES que el recorte: antes, un bocadillo que quedaba
-      // fuera de pantalla (o el zoom era bajo) se recortaba con `continue`
-      // ANTES de comprobar `t >= 1`, así que no se borraba NUNCA de la lista y
-      // ésta crecía sin freno mientras el mundo se movía.
-      const age = nowEff - ft.born;
-      const t = age / ft.life;
-      if (t >= 1) { floatingTexts.splice(i,1); continue; }
-      // during cinematics, skip rendering floating speech bubbles
-      if (cinematicActive && !ft.force) continue;
-      // cheap cull for floating texts not near viewport
-      try {
-        if (typeof ft.worldX === 'number' && typeof ft.worldY === 'number') {
-          const p = worldToScreen(ft.worldX, ft.worldY);
-          if (p.x < -80 || p.x > W + 80 || p.y < -80 || p.y > H + 80) { continue; }
-        }
-      } catch (e) {}
-      // if world positions provided, reproject to screen so text follows moving entities
-      if (typeof ft.worldX === 'number' && typeof ft.worldY === 'number') {
-        const p = worldToScreen(ft.worldX, ft.worldY);
-        ft.x = p.x;
-        // Position bubble clearly above the entity head (scales with tile/zoom size)
-        ft.y = p.y - Math.max(18, Math.round(tileSize * 0.55));
-      }
-      ft.y += ft.yv * 1.6;
-      const alpha = Math.max(0, 1 - t);
-      // ── BOCADILLO ───────────────────────────────────────────────────────
-      // Antes se dibujaba en UNA sola línea y a su ancho natural: una frase de
-      // 80 caracteres generaba una barra blanca de ~490 px (medido) cruzando la
-      // pantalla, y con varios vecinos hablando a la vez la vista se llenaba de
-      // carteles. Ahora el texto se ENVUELVE, el bocadillo se RECORTA al lienzo
-      // y su cola apunta igualmente a la entidad.
-      const cx = (typeof ft.x === 'number') ? ft.x : 0;
-      const cy = (typeof ft.y === 'number') ? ft.y : 0;
-      const prevSmoothing = ctx.imageSmoothingEnabled;
-      ctx.imageSmoothingEnabled = true;
-      try { ctx.imageSmoothingQuality = 'high'; } catch(e){}
-      ctx.globalAlpha = alpha;
-
-      // Glifos sin caja (corazones del perro, huellas): se pintan con el MISMO
-      // repertorio de iconos que la interfaz, no con emojis.
-      if (ft.icono) {
-        try { dibujarIcono(ctx, ft.icono, cx, cy, 16, ft.color); } catch (e) {}
-        ctx.globalAlpha = 1;
-        ctx.imageSmoothingEnabled = prevSmoothing;
-        continue;
-      }
-
-      ctx.font = 'bold 13px sans-serif';
-      ctx.textBaseline = 'alphabetic';
-      // El ancho útil se fija ANTES de medir y el texto se envuelve a ese ancho:
-      // así nunca puede ser más ancho que su bocadillo. Y se limita a 3 líneas
-      // con puntos suspensivos: una parrafada no puede tapar media pantalla.
-      const maxAncho = Math.max(72, Math.min(220, Math.round(W * 0.32)));
-      const filas = envolverTexto(ctx, ft.text || '', maxAncho, { maxFilas: 3 });
-      if (!filas.length) { ctx.globalAlpha = 1; ctx.imageSmoothingEnabled = prevSmoothing; continue; }
-      let anchoMax = 0;
-      for (const f of filas) anchoMax = Math.max(anchoMax, ctx.measureText(f).width);
-      const padX = 10, padY = 6, lineH = 16;
-      const bubbleW = Math.min(W - 8, Math.round(anchoMax) + padX * 2);
-      const bubbleH = padY * 2 + filas.length * lineH;
-      let bx = Math.round(cx - bubbleW / 2);
-      bx = Math.max(4, Math.min(W - bubbleW - 4, bx));
-      let by = Math.round(cy - bubbleH - 10);
-      let colaAbajo = true;
-      if (by < 4) { by = Math.round(cy + 14); colaAbajo = false; }
-      const bgColor = 'rgba(255,255,255,0.97)';
-      const strokeColor = 'rgba(60,40,10,0.55)';
-      try {
-        ctx.fillStyle = bgColor; ctx.strokeStyle = strokeColor; ctx.lineWidth = 1.2;
-        ctx.beginPath();
-        if (ctx.roundRect) ctx.roundRect(bx, by, bubbleW, bubbleH, 6);
-        else ctx.rect(bx, by, bubbleW, bubbleH);
-        ctx.fill(); ctx.stroke();
-        // cola hacia la entidad (recortada al bocadillo)
-        const tx = Math.round(Math.max(bx + 12, Math.min(bx + bubbleW - 12, cx)));
-        const ty = colaAbajo ? by + bubbleH : by;
-        ctx.beginPath();
-        ctx.moveTo(tx - 5, ty);
-        ctx.lineTo(tx + 5, ty);
-        if (colaAbajo) ctx.lineTo(tx, ty + 7); else ctx.lineTo(tx, ty - 7);
-        ctx.closePath(); ctx.fill(); ctx.stroke();
-      } catch (e) { /* ignore drawing issues */ }
-      // texto centrado en el bocadillo
-      try {
-        ctx.fillStyle = '#1a1200';
-        ctx.textBaseline = 'middle';
-        for (let k = 0; k < filas.length; k++) {
-          const wf = ctx.measureText(filas[k]).width;
-          ctx.fillText(filas[k], Math.round(bx + (bubbleW - wf) / 2), Math.round(by + padY + lineH * k + lineH / 2 + 1));
-        }
-        ctx.textBaseline = 'alphabetic';
-      } catch (e) {}
-      ctx.globalAlpha = 1;
-      ctx.imageSmoothingEnabled = prevSmoothing;
-    }
-    // Y no se dejan más de 10 a la vez: varios vecinos hablando a la vez
-    // llenaban la pantalla de carteles.
-    if (floatingTexts.length > 10) floatingTexts.splice(0, floatingTexts.length - 10);
+    // Los TEXTOS FLOTANTES (bocadillos, números de daño) ya no se dibujan aquí:
+    // se pintan DESPUÉS del filtro de pixelado, en `dibujarTextosFlotantes()`
+    // (definida arriba), para que no salgan emborronados.
   } catch (errFx) { /* ignore effect rendering errors */ }
 
   // Draw movement target marker
@@ -18673,7 +19535,7 @@ function render() {
   // Si nada de lo que va delante del jugador se ha dibujado todavía, aquí es su
   // turno (encima de todo lo que ya estaba detrás).
   if (!_playerDrawnEnCola) {
-    try { drawPlayer(); drawPlayerHealth(); } catch (e) {}
+    spriteSinFiltro(_playerSortKey, _pintarJugador);
     _playerDrawnEnCola = true;
   }
   _mark('fx');
@@ -18685,6 +19547,9 @@ function render() {
   // antes que árbol, luego por posición), así que el orden no baila.
   try {
     const cola = [];
+    // Se vacía SIEMPRE (no sólo si hay cola): si no, quedarían dentro las tapas
+    // del fotograma anterior y se re-pintarían donde ya no toca.
+    _ocluirTrasSprites = [];
     if (Array.isArray(window._deferredBuildings)) {
       for (const b of window._deferredBuildings) cola.push({ d: b.depth || 0, p: 0, s: (b.col || 0) * 1000 + (b.row || 0), b });
       window._deferredBuildings = [];
@@ -18713,24 +19578,39 @@ function render() {
       // puntero dorado de `_occlusionMarkers` para no perderlo de vista).
       const _tapadoArbol = [];  // se calculan pero no disparan el rescate
       const _ts = getTileSize();
+      // ── ¿ESTE CACHARRO DE DELANTE TAPA AL JUGADOR? ────────────────────────
+      // El jugador no se filtra, o sea que se pinta DESPUÉS de todo esto: si un
+      // árbol que tiene delante no se vuelve a pintar encima, se le vería subido
+      // a la copa. Se apunta el que toca su caja y se re-pinta tras los sprites.
+      const _boxJug = _playerScreenBox;
+      const _apuntarTapa = (rect, it) => {
+        try {
+          if (!rect || !_boxJug || !_boxJug.w) return;
+          if (_boxJug.x < rect.x + rect.w && _boxJug.x + _boxJug.w > rect.x &&
+              _boxJug.y < rect.y + rect.h && _boxJug.y + _boxJug.h > rect.y) _ocluirTrasSprites.push(it);
+        } catch (e) {}
+      };
       for (const it of cola) {
         if (it.f) {
           // Arbol del bosque diferido: mismo dibujado que en el pase normal.
           if (it.f.arte) {
             // Arte nuevo (editor de entidades): el sprite del PNG, directo de su caché.
             if (dibujarArbolArteDirecto(it.f.arte, it.f.cx, it.f.cy, it.f.w, it.f.h, it.f.fase || treeSwayPhase(it.f.col || 0, it.f.row || 0))) {
-              _tapadoArbol.push({ x: it.f.cx - it.f.w / 2, y: it.f.cy - it.f.h, w: it.f.w, h: it.f.h });
+              const rectA = { x: it.f.cx - it.f.w / 2, y: it.f.cy - it.f.h, w: it.f.w, h: it.f.h };
+              _tapadoArbol.push(rectA); _apuntarTapa(rectA, it);
               continue;
             }
             drawEntitySpriteAt(it.f.arte, it.f.cx, it.f.cy, it.f.w, it.f.h,
               { noShadow: true, sway: 0.8, phase: treeSwayPhase(it.f.col || 0, it.f.row || 0) });
-            _tapadoArbol.push({ x: it.f.cx - it.f.w / 2, y: it.f.cy - it.f.h, w: it.f.w, h: it.f.h });
+            const rectA2 = { x: it.f.cx - it.f.w / 2, y: it.f.cy - it.f.h, w: it.f.w, h: it.f.h };
+            _tapadoArbol.push(rectA2); _apuntarTapa(rectA2, it);
             continue;
           }
           drawTreeTemplateSway(it.f.tpl, it.f.scale, it.f.cx, it.f.cy, it.f.bend);
           const anchoF = (it.f.tpl.reduce((m, p) => Math.max(m, p[0]), 0) + 1) * it.f.scale;
           const altoF = (it.f.tpl.reduce((m, p) => Math.max(m, p[1]), 0) + 1) * it.f.scale;
-          _tapadoArbol.push({ x: it.f.cx - anchoF / 2, y: it.f.cy - altoF, w: anchoF, h: altoF });
+          const rectF = { x: it.f.cx - anchoF / 2, y: it.f.cy - altoF, w: anchoF, h: altoF };
+          _tapadoArbol.push(rectF); _apuntarTapa(rectF, it);
           continue;
         }
         if (it.b) {
@@ -18738,12 +19618,26 @@ function render() {
           try {
             const tamB = getBuildingSize(it.b.type);
             const pb = worldToScreen(it.b.col, it.b.row);
+            // OJO: los EDIFICIOS no se re-pintan (`_apuntarTapa` no se llama aquí).
+            // Ellos ya tienen su propio remedio cuando tapan al jugador: el
+            // «círculo de rescate» de `drawOccludedReveals`, que lo enseña
+            // translúcido a través del muro. Si se re-pintara el edificio encima
+            // del sprite nítido, ese rescate quedaría debajo y el jugador
+            // desaparecería otra vez.
             _tapado.push({ x: pb.x, y: pb.y - _ts * 1.2, w: tamB.w * _ts, h: tamB.h * _ts * 2.2 });
           } catch (e) {}
           continue;
         }
         const _m = drawTreeOcclusionOverlay(it.t);
         if (_m) window._occlusionMarkers.push(_m);
+        // Árbol suelto (kind 'tree'): su caja es su celda, con la copa por
+        // encima. Sirve para saber si tapa al jugador.
+        try {
+          if (it.t) {
+            const pt = worldToScreen(it.t.col || 0, it.t.row || 0);
+            _apuntarTapa({ x: pt.x, y: pt.y - _ts, w: _ts * 1.6, h: _ts * 2.2 }, it);
+          }
+        } catch (e) {}
       }
       // CIRCULO DE TRANSICIÓN: si un personaje ha quedado tapado por lo que se
       // acaba de pintar (murallas, casas), se aclara un circulo suyo para que se le
@@ -18790,10 +19684,36 @@ function render() {
       ctx.fillStyle = gwarm; ctx.fillRect(0, 0, W, H);
     }
   } catch(e) {}
+  _mark('noche');
+  // ── FILTRO DE PIXELADO DEL MUNDO ────────────────────────────────────────
+  // El mundo está TERMINADO en este punto (terreno, árboles, edificios,
+  // entidades, animales, la cola diferida y la viñeta de noche). Todo lo que se
+  // pinta a partir de aquí es interfaz (aviso de acción, minimapa, barras,
+  // objetivo, diálogos), así que el filtro no la toca.
+  try { aplicarPixeladoMundo(); } catch (e) {}
+  _mark('filtro');
+
+  // ── SPRITES Y TEXTOS QUE NO SE FILTRAN ─────────────────────────────────
+  // Van aquí a propósito, sobre el mundo ya filtrado:
+  //  1) los PERSONAJES (jugador, aldeanos, perro, conejos), que se aparcaron en
+  //     su turno de profundidad (ver `spriteSinFiltro`);
+  //  2) los cacharros de delante que tapan al jugador, re-pintados encima para
+  //     que la oclusión siga igual (ver `_ocluirTrasSprites`);
+  //  3) los TEXTOS del mundo: nombres sobre las cabezas, bocadillos, números de
+  //     daño, pistas «E» y los marcadores de misión y de oclusión.
+  // Así el mundo queda uniforme y lo que hay que LEER (y a quien hay que ver) se
+  // ve nítido. Además nada de esto queda tapado por el filtro.
+  try {
+    const _nSprites = dibujarColaSpritesSinFiltro();
+    if (_nSprites) redibujarTapasDelJugador();
+  } catch (e) {}
+  _mark('sprites');
+  try { dibujarColaTextoMundo(); } catch (e) {}
+  try { dibujarTextosFlotantes(W, H, tileSize, now, cinematicActive); } catch (e) {}
   try { drawPlayerOcclusionIndicators(); } catch (e) {}
   try { drawMissionMarker(); } catch (e) {}
-  try { drawMissionStatus(); } catch (e) {}
-  _mark('noche');
+  if (NARRATIVA) { try { drawMissionStatus(); } catch (e) {} }
+  _mark('textos');
 
   try {
     window._interactionTarget = null;
@@ -18873,12 +19793,22 @@ function render() {
             if (dist < bestSceneDist && dist <= (sc.radius || 1.6)) { bestScene = sc; bestSceneDist = dist; }
           }
         } catch (e) {}
+        // Escaneo de lo que se puede usar (Entrar / Recoger / Hablar / Talar).
+        // Va sobre TODAS las entidades cada ~120 ms, así que se descarta lo
+        // lejano con una caja antes de calcular la distancia: `Math.hypot` para
+        // 1.500 entidades es de lo más caro del escaneo y el 99 % de ellas está
+        // a más de las 1,6 celdas de alcance máximo (los umbrales de abajo son
+        // 1,2 / 1,45 / 1,5 / 1,6, todos dentro de la caja).
+        const ppx = player.x || 0, ppy = player.y || 0;
+        const ALCANCE = 1.6;
         for (let i = 0; i < entities.length; i++) {
           const ent = entities[i];
           if (!ent) continue;
           const ex = (ent.x !== undefined ? ent.x : ent.col) + 0.5;
           const ey = (ent.y !== undefined ? ent.y : ent.row) + 0.5;
-          const dist = Math.hypot(ex - (player.x || 0), ey - (player.y || 0));
+          const ddx = ex - ppx, ddy = ey - ppy;
+          if (ddx > ALCANCE || ddx < -ALCANCE || ddy > ALCANCE || ddy < -ALCANCE) continue;
+          const dist = Math.hypot(ddx, ddy);
           if (ent.kind === 'player' && ent.id && ent.id.indexOf('npc-') === 0) {
             // CADÁVER: no se habla con él, se REGISTRA (saquear). Los bichos no
             // guardan botín, así que sus cuerpos no entran aquí.
@@ -18992,7 +19922,7 @@ function render() {
       );
     }
   }
-  if (editMode && hoverCell && selectedTool && selectedTool !== 'demolish') {
+  if ((editMode || CONSTRUIR_EN_JUEGO) && hoverCell && selectedTool && selectedTool !== 'demolish') {
     const { col, row } = hoverCell;
     if (col >= 0 && col < COLS && row >= 0 && row < ROWS) {
       const canAfford = canBuild(selectedTool);
@@ -19007,7 +19937,7 @@ function render() {
     }
   }
 
-  if (editMode && hoverCell && selectedTool === 'demolish') {
+  if ((editMode || CONSTRUIR_EN_JUEGO) && hoverCell && selectedTool === 'demolish') {
     const { col, row } = hoverCell;
     if (col >= 0 && col < COLS && row >= 0 && row < ROWS) {
       const info = getCellInfo(col, row);
@@ -19058,6 +19988,14 @@ function render() {
   } catch (e) {}
 
   // Request next frame for animation
+  // ── SIMULACIÓN DE NPC (tareas, paseo y habla) ─────────────────────────────
+  // No depende del fotograma: se ejecuta a ~5 Hz. Cada NPC tiene dentro su propio
+  // freno (`shouldUpdateEntity`, 800-1000 ms), así que esto sólo evita recorrer las
+  // ~1.400 entidades 60 veces por segundo para, como mucho, actualizar un puñado
+  // de NPC. Medido: 1,3-2 ms por fotograma que se ahorran.
+  const _npcSimToca = (now - _npcSimAt) >= 200;
+  if (_npcSimToca) _npcSimAt = now;
+  if (_npcSimToca) {
   // process NPC tasks (simple simulated executor)
   try {
     const nowTick = now;
@@ -19300,8 +20238,10 @@ function render() {
       }
     }
   } catch (e) {}
+  }   // fín de la simulación de NPC (5 Hz)
 
   try { tickEnemies(now); } catch (e) { /* ignore enemy tick errors */ }
+  _mark('sim');
   if (worldMapOverlayVisible) {
     try { drawWorldMapOverlay(W, H); } catch (e) {}
   }
@@ -19370,6 +20310,7 @@ function render() {
   try { if (window._activeObjective) drawObjectiveArrow(ctx, W, H); } catch (e) {}
 
   // update diagnostic overlay with simple performance counters
+  _mark('ui');
   try {
     const diag = document.getElementById('engine-status');
     if (diag) {
@@ -19381,6 +20322,7 @@ function render() {
     }
   } catch (e) {}
   try { drawPerfHud(dt); } catch (e) {}
+  _mark('diag');
   try {
     const shots = window._shotProjectiles;
     if (Array.isArray(shots) && shots.length > 0) {
@@ -19695,12 +20637,15 @@ try { window.startDefenseMode = startDefenseMode; window.spawnWave = spawnWave; 
 
 function placeBuild(col, row) {
   if (startLocked && !window._standaloneEditorMode) return;
-  if (!editMode) return;
+  if (!editMode && !CONSTRUIR_EN_JUEGO) return;   // MODO COLONIA: se construye sin modo edición.
   if (!selectedTool || selectedTool === 'demolish') return;
   if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return;
   if (!canPlaceAt(col, row, selectedTool)) { notify('No puedes construir aquí.'); return; }
   if (!canBuild(selectedTool)) {
     notify('Recursos insuficientes.'); return;
+  }
+  if (MODO_COLONIA && !edificioDesbloqueado(selectedTool)) {
+    notify('Todavía no: ' + motivoBloqueoEdificio(selectedTool)); return;
   }
   const effectiveType = resolveEpochBuildingType(selectedTool);
   const b = getBuildingDef(effectiveType) || getBuildingDef(selectedTool);
@@ -19709,7 +20654,9 @@ function placeBuild(col, row) {
     res.wheat -= (b.costWheat || 0);
   }
   setBuildingCells(col, row, effectiveType);
+  marcarComoConstruidoPorElJugador(col, row, effectiveType);
   updateUI();
+  evaluarObjetivosDeColonia();
   addLog(`Construido: ${getBuildingDisplay(effectiveType).name} en (${col},${row})`);
   gainXP(10);
   notify(`${getBuildingDisplay(effectiveType).name} construida.`);
@@ -19737,8 +20684,11 @@ function placeBuild(col, row) {
 // Place multiple buildings inside a rect (attempts to place as many as resources allow)
 function placeBuildMultiple(rect) {
   if (startLocked && !window._standaloneEditorMode) return;
-  if (!editMode) return;
+  if (!editMode && !CONSTRUIR_EN_JUEGO) return;   // MODO COLONIA: se construye sin modo edición.
   if (!selectedTool || selectedTool === 'demolish') return;
+  if (MODO_COLONIA && !edificioDesbloqueado(selectedTool)) {
+    notify('Todavía no: ' + motivoBloqueoEdificio(selectedTool)); return [];
+  }
   const size = getBuildingSize(selectedTool);
   // iterate top-left anchors inside rect
   const placed = [];
@@ -19755,11 +20705,13 @@ function placeBuildMultiple(rect) {
         res.wheat -= b.costWheat;
       }
       setBuildingCells(c, r, effectiveType);
+      marcarComoConstruidoPorElJugador(c, r, effectiveType);
       placed.push({c,r});
     }
   }
   if (placed.length > 0) {
     updateUI(); addLog(`Construidos ${placed.length} x ${getBuildingDisplay(selectedTool).name}`);
+    try { evaluarObjetivosDeColonia(); } catch (e) {}
     // update missions for bulk builds
     try {
       if (window._missions && window._missions.length > 0) {
@@ -19783,7 +20735,7 @@ function placeBuildMultiple(rect) {
 
 function demolishCell(col, row) {
   if (startLocked && !window._standaloneEditorMode) return;
-  if (!editMode) return;
+  if (!editMode && !CONSTRUIR_EN_JUEGO) return;   // MODO COLONIA: también se derriba en partida.
   if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return;
   const info = getCellInfo(col, row);
   if (!info) return;
@@ -19798,6 +20750,7 @@ function demolishCell(col, row) {
   updateUI();
   addLog(`Demolido: ${b.name} en (${col},${row})`);
   notify(`${b.name} demolida.`);
+  if (MODO_COLONIA) { try { refrescarCapacidadDeColonia(); evaluarObjetivosDeColonia(); } catch (e) {} }
 }
 
 function createFieldNearHome(options = {}) {
@@ -19895,6 +20848,12 @@ function applyDailyProduction() {
     for (let c = 0; c < COLS; c++) {
       const info = getCellInfo(c, r);
       if (!info || !info.isBase) continue;
+      // MODO COLONIA: la colonia es lo que construyes TÚ. Lo que genera el mundo
+      // (ciudades, aldeas, murallas) es escenario: no produce ni cuenta población.
+      if (MODO_COLONIA) {
+        const cell = grid[r] && grid[r][c];
+        if (!cell || typeof cell !== 'object' || !cell.playerBuilt) continue;
+      }
       // OJO: getBuildingDef nunca devuelve undefined; antes esto lanzaba
       // "Cannot read properties of undefined (reading 'prodWheat')" con
       // partidas que contenían tipos de edificio antiguos y abortaba el frame.
@@ -19907,13 +20866,37 @@ function applyDailyProduction() {
     }
   }
   // Consumption
-  const consumption = Math.floor(res.pop * 0.1);
+  const consumption = Math.floor(res.pop * (MODO_COLONIA ? 0.25 : 0.1));
   dWheat -= consumption;
+  if (MODO_COLONIA) {
+    // La población es CAPACIDAD (lo que aloja lo construido), no una fábrica de
+    // gente: crece poco a poco hacia ella y sólo mientras haya cebada. Sin
+    // cebada se marcha gente del asentamiento.
+    _coloniaCapacidad = dPop;
+    const crecimiento = Math.max(0, Math.min(3, _coloniaCapacidad - res.pop));
+    if ((res.wheat + dWheat) <= 0 && res.pop > 0) dPop = -Math.max(1, Math.round(res.pop * 0.05));
+    else dPop = crecimiento;
+  }
 
   res.wheat = Math.max(0, res.wheat + dWheat);
   res.brick = Math.max(0, res.brick + dBrick);
   res.pop   = Math.max(0, res.pop   + dPop);
   dayCount++;
+  // ── LA CRECIDA: el reloj de la colonia ─────────────────────────────────
+  if (MODO_COLONIA) {
+    try {
+      const ciclo = dayCount % CRECIDA_PERIODO;
+      if (ciclo === CRECIDA_PERIODO - 1) {
+        notify('Los ríos suben: mañana llega la crecida. Levanta un dique o trabaja en alto.');
+        try { showInstruction('La crecida llega mañana', 'Los ríos suben y el agua se queda 2 días en la vega. Se lleva las parcelas labradas; los edificios hacen de dique. Los avisos son los días 5, 11, 17…', 9000); } catch (e) {}
+      } else if (ciclo === 0 && dayCount > 1) {
+        iniciarCrecida();
+      } else if (ciclo === CRECIDA_DURACION && crecidaActiva()) {
+        terminarCrecida();
+      }
+      evaluarObjetivosDeColonia();
+    } catch (e) { console.warn('ciclo de crecida', e); }
+  }
   // El trigo de las parcelas avanza una fase con cada dia.
   try { advanceCrops(); } catch (e) {}
   // Las heridas se curan de una en una por dia (y en casa, mas rapido).
@@ -19970,6 +20953,11 @@ function gainXP(amount) {
 // vuelve a retirar unos segundos después; ver `body.hud-idle` en styles.css).
 let _resHuella = '';
 function updateUI() {
+  try {
+    // MODO COLONIA: el hito y el HUD de colonia se refrescan con cualquier cambio.
+    actualizarHitoDeColonia();
+    actualizarHudDeColonia();
+  } catch (e) {}
   document.getElementById('res-wheat').textContent = res.wheat;
   document.getElementById('res-brick').textContent = res.brick;
   document.getElementById('res-pop').textContent   = res.pop;
@@ -20108,128 +21096,6 @@ function completeSideMission(mission) {
     try { saveAppStateDebounced(); } catch (e) {}
     try { if (window.renderMissions) window.renderMissions(); } catch (e) {}
   } catch (e) {}
-}
-
-function drawItemIcon(ctx, itemId, w = 28, h = 28) {
-  if (!ctx) return;
-  const id = String(itemId || '').toLowerCase();
-  ctx.clearRect(0, 0, w, h);
-
-  if (id === 'wheat') {
-    try {
-      const hudWheat = document.getElementById('icon-wheat');
-      if (hudWheat && hudWheat.tagName === 'CANVAS') {
-        ctx.drawImage(hudWheat, 0, 0, hudWheat.width, hudWheat.height, 0, 0, w, h);
-        return;
-      }
-    } catch (e) {}
-    ctx.fillStyle = '#DAA520'; ctx.fillRect(6, 8, 16, 12);
-    ctx.fillStyle = '#4A7C3F'; ctx.fillRect(12, 4, 3, 11);
-    return;
-  }
-  if (id === 'brick' || id === 'brick-block') {
-    ctx.fillStyle = '#B04A2D'; ctx.fillRect(4, 8, 20, 12);
-    ctx.fillStyle = 'rgba(0,0,0,0.12)';
-    ctx.fillRect(7, 10, 5, 3); ctx.fillRect(14, 10, 5, 3); ctx.fillRect(10, 14, 5, 3);
-    return;
-  }
-  if (id === 'wood' || id === 'plank') {
-    ctx.fillStyle = '#8B5A38'; ctx.fillRect(4, 8, 20, 12);
-    ctx.fillStyle = '#7A4A2A';
-    for (let i = 0; i < 3; i++) ctx.fillRect(6 + i * 6, 9 + (i % 2), 1, 10);
-    return;
-  }
-  if (id === 'stone') {
-    const stoneSprite = (window._ENTITY_BITMAPS && window._ENTITY_BITMAPS['stone']) || (window._SPRITE_IMAGES && window._SPRITE_IMAGES['stone']);
-    if (stoneSprite) { try { ctx.save(); ctx.imageSmoothingEnabled = false; ctx.drawImage(stoneSprite, 0, 0, w, h); ctx.restore(); } catch(e) {} }
-    else { ctx.fillStyle = '#808080'; ctx.fillRect(5, 8, 18, 12); ctx.fillStyle = '#6b6b6b'; ctx.fillRect(7, 11, 5, 6); }
-    return;
-  }
-  if (id === 'food' || id === 'berry' || id === 'bush') {
-    ctx.fillStyle = '#7A3B1E'; ctx.fillRect(12, 6, 3, 5);
-    ctx.fillStyle = '#D14A3A'; ctx.beginPath(); ctx.arc(10, 14, 4, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(16, 14, 4, 0, Math.PI * 2); ctx.fill();
-    return;
-  }
-  if (id === 'water') {
-    ctx.fillStyle = '#2E8BFF';
-    ctx.beginPath(); ctx.moveTo(14, 5); ctx.bezierCurveTo(19, 11, 21, 14, 21, 18); ctx.bezierCurveTo(21, 22, 18, 25, 14, 25); ctx.bezierCurveTo(10, 25, 7, 22, 7, 18); ctx.bezierCurveTo(7, 14, 9, 11, 14, 5); ctx.fill();
-    return;
-  }
-  if (id === 'meat') {
-    ctx.fillStyle = '#A84C3A'; ctx.fillRect(7, 10, 14, 10);
-    ctx.fillStyle = '#F0E5D8'; ctx.fillRect(5, 12, 2, 6); ctx.fillRect(21, 12, 2, 6);
-    return;
-  }
-  if (id === 'stick') {
-    ctx.fillStyle = '#8B5A38'; ctx.fillRect(13, 6, 2, 16);
-    return;
-  }
-  if (id === 'stone-axe' || id === 'axe') {
-    ctx.fillStyle = '#6b6b6b'; ctx.fillRect(5, 9, 15, 6);
-    ctx.fillStyle = '#7a4a2a'; ctx.fillRect(15, 12, 3, 12);
-    return;
-  }
-  if (id === 'stone-pick') {
-    ctx.fillStyle = '#6b6b6b'; ctx.fillRect(5, 8, 14, 5);
-    ctx.fillStyle = '#7a4a2a'; ctx.fillRect(15, 11, 3, 12);
-    return;
-  }
-  if (id === 'stone-hoe') {
-    ctx.fillStyle = '#7a4a2a'; ctx.fillRect(13, 7, 2, 15);
-    ctx.fillStyle = '#8f8f8f'; ctx.fillRect(8, 8, 10, 3);
-    return;
-  }
-  if (id === 'stone-sword' || id === 'sword') {
-    ctx.fillStyle = '#9a9a9a'; ctx.fillRect(6, 7, 14, 4);
-    ctx.fillStyle = '#7a4a2a'; ctx.fillRect(16, 11, 3, 12);
-    return;
-  }
-  if (id === 'spear') {
-    ctx.fillStyle = '#7a4a2a'; ctx.fillRect(13, 6, 2, 15);
-    ctx.fillStyle = '#9a9a9a'; ctx.beginPath(); ctx.moveTo(14, 3); ctx.lineTo(17, 8); ctx.lineTo(11, 8); ctx.closePath(); ctx.fill();
-    return;
-  }
-  if (id === 'club') {
-    ctx.fillStyle = '#7a4a2a'; ctx.fillRect(13, 7, 2, 14);
-    ctx.fillStyle = '#6b4a2f'; ctx.beginPath(); ctx.arc(14, 6, 4, 0, Math.PI * 2); ctx.fill();
-    return;
-  }
-  if (id === 'makarov_pm') {
-    // Body
-    ctx.fillStyle = '#343236'; ctx.fillRect(4, 8, 18, 7);
-    ctx.fillStyle = '#1a1919'; ctx.fillRect(5, 9, 16, 5);
-    // Barrel tip
-    ctx.fillStyle = '#0a0707'; ctx.fillRect(20, 10, 4, 3);
-    // Grip
-    ctx.fillStyle = '#4f2c25'; ctx.fillRect(10, 15, 8, 10);
-    ctx.fillStyle = '#693e36'; ctx.fillRect(11, 16, 6, 8);
-    // Trigger guard
-    ctx.fillStyle = '#121111'; ctx.fillRect(8, 14, 3, 4);
-    return;
-  }
-  if (id === 'campfire') {
-    ctx.fillStyle = '#7a4a2a'; ctx.fillRect(7, 16, 14, 2); ctx.fillRect(9, 14, 10, 2);
-    ctx.fillStyle = '#E67E22'; ctx.beginPath(); ctx.moveTo(14, 8); ctx.lineTo(18, 15); ctx.lineTo(10, 15); ctx.closePath(); ctx.fill();
-    return;
-  }
-  if (id === 'furnace') {
-    ctx.fillStyle = '#6f6f6f'; ctx.fillRect(6, 7, 16, 16);
-    ctx.fillStyle = '#c85'; ctx.fillRect(11, 13, 6, 5);
-    return;
-  }
-  if (id === 'beacon') {
-    ctx.fillStyle = '#8B5A38'; ctx.fillRect(13, 14, 2, 10);
-    ctx.fillStyle = '#FFD27A'; ctx.fillRect(11, 8, 6, 6);
-    return;
-  }
-  if (id === 'potion') {
-    ctx.fillStyle = '#9a6bd6'; ctx.fillRect(10, 10, 8, 10);
-    ctx.fillStyle = '#ddd'; ctx.fillRect(12, 7, 4, 3);
-    return;
-  }
-
-  ctx.fillStyle = '#666'; ctx.fillRect(6, 6, 16, 16);
 }
 
 // ── CRAFTING SYSTEM ───────────────────────────────────────
@@ -22247,6 +23113,21 @@ function createMenuBar() {
   optPerf.innerHTML = `<input type='checkbox' ${_perfHudOn ? 'checked' : ''}> Rendimiento (HUD)`;
   optPerf.querySelector('input').addEventListener('change', (e) => { togglePerfHud(!!e.target.checked); });
   devMenu.appendChild(optPerf);
+  // Pixelado suave del mundo: baja el mundo a un búfer y lo vuelve a subir sin
+  // suavizado. Uniforma sprites de densidades distintas. Se recuerda.
+  const optPixel = document.createElement('label'); optPixel.style.display='block'; optPixel.style.cursor='pointer'; optPixel.style.marginTop='6px';
+  optPixel.innerHTML = `<input type='checkbox' ${PIXELADO.activo ? 'checked' : ''}> Pixelado suave (uniforma el mundo)`;
+  optPixel.querySelector('input').addEventListener('change', (e) => { try { MESO_PIXELADO.activar(!!e.target.checked); } catch (err) {} });
+  devMenu.appendChild(optPixel);
+  // Intensidad: la mezcla deja pasar parte del dibujo original, así que subirla
+  // marca más los bloques y bajarla lo deja casi imperceptible.
+  const pixRow = document.createElement('div'); pixRow.style.display='flex'; pixRow.style.gap='6px'; pixRow.style.marginTop='4px';
+  const pixMenos = document.createElement('button'); pixMenos.textContent = 'Pixelado más leve'; pixMenos.className = 'tool-btn';
+  const pixMas = document.createElement('button'); pixMas.textContent = 'más fuerte'; pixMas.className = 'tool-btn';
+  pixMenos.addEventListener('click', () => { try { MESO_PIXELADO.mezcla(PIXELADO.mezcla - 0.1); } catch (err) {} });
+  pixMas.addEventListener('click', () => { try { MESO_PIXELADO.mezcla(PIXELADO.mezcla + 0.1); } catch (err) {} });
+  pixRow.appendChild(pixMenos); pixRow.appendChild(pixMas);
+  devMenu.appendChild(pixRow);
   // Niebla de guerra: todo lo no explorado se ve negro (para probar el efecto)
   const optFog = document.createElement('label'); optFog.style.display='block'; optFog.style.cursor='pointer'; optFog.style.marginTop='6px';
   optFog.innerHTML = `<input type='checkbox' ${window._fogEnabled ? 'checked' : ''}> Niebla de guerra (sólo mapa explorado)`;
@@ -23441,8 +24322,8 @@ function drawTreeTemplateSway(tpl, scale, cx, cy, bendPx) {
   try {
     if (!tpl || !tpl.length) return null;
     const s = Math.max(1, Math.round(scale) || 1);
-    let maxX = 0, maxY = 0;
-    for (const p of tpl) { if (p[0] > maxX) maxX = p[0]; if (p[1] > maxY) maxY = p[1]; }
+    const _caja = cajaDePlantilla(tpl);
+    const maxX = _caja.maxX, maxY = _caja.maxY;
     const spriteW = (maxX + 1) * s;
     const spriteH = (maxY + 1) * s;
     const sx = Math.round(cx - spriteW / 2);
@@ -24491,11 +25372,9 @@ function showStartupParams() {
         try { prog && prog.hide(); } catch (e) {}
 
         showLoadingOverlay('Generando mapa...');
-        // reset state then generate map
-        try { if (typeof grid !== 'undefined' && grid && grid.length) { for (let x = 0; x < grid.length; x++) for (let y = 0; y < (grid[x] || []).length; y++) grid[x][y] = null; } } catch (e) {}
-        try { if (typeof entities !== 'undefined' && entities && entities.length) entities.length = 0; } catch (e) {}
-        try { rabbits.length = 0; foxes.length = 0; } catch (e) {}
-        try { mapCache = {}; window.MAP_CHUNKS = {}; mapCacheDirty = true; } catch (e) {}
+        // La limpieza del mundo anterior la hace ya `generateMap({freshSeed:true})`
+        // (`limpiarMundoParaGenerar`): así todos los caminos de «partida nueva»
+        // —este modal, el menú externo y la capital de respaldo— parten igual.
         // Partida nueva ⇒ mundo nuevo (semilla nueva), no la misma de la vez anterior.
         window._TERRAIN_SEED = null;
         try { window._homePrologue = null; } catch (e) {}
@@ -24844,6 +25723,7 @@ window._mapSceneTriggers = window._mapSceneTriggers || [];
 window._storyTargets = window._storyTargets || {};
 
 function getCurrentStoryTarget() {
+  if (!NARRATIVA) return null;   // MODO COLONIA: sin objetivo de guion.
   try {
     const chapter = window._storyChapter || 0;
     if (chapter <= 0 || chapter >= 3) return null;
@@ -24876,57 +25756,7 @@ function getCurrentStoryTarget() {
   return null;
 }
 
-function buildStoryQuestsForEpoch(epochId) {
-  if (epochId === 'urss') {
-    return [
-      null,
-      { id: 'story_ch1', title: 'Orden de Emergencia',
-        desc: 'Reúnete en Novozarya con la comisaria del distrito y activa el protocolo de invierno.',
-        target: 1, progress: 0, reward: { food: 2, stone: 1 },
-        watch: null, isStory: true },
-      { id: 'story_ch2', title: 'El Trato en la Oscuridad',
-        desc: 'Busca al oficial Kozlov en el mercado negro de Novozarya. A cambio de 3 comida y 2 piedra, te entregar\u00e1 una Makarov PM con 8 balas. Protege el convoy de suministros.',
-        target: 5, progress: 0, reward: { food: 3, stone: 2, makarov_pm: 1, makarov_ammo: 8 },
-        watch: null, isStory: true },
-      { id: 'story_ch3', title: '¡Novozarya aguanta el frente!',
-        desc: 'El pueblo ha resistido la tormenta: la red de suministro sigue en pie.',
-        target: 1, progress: 1, reward: {},
-        watch: null, isStory: true, done: true }
-    ];
-  }
-  if (epochId === 'medieval') {
-    return [
-      null,
-      { id: 'story_ch1', title: 'El aviso del anciano',
-        desc: 'Viaja a Norhaven y habla con el prior del templo.',
-        target: 1, progress: 0, reward: { food: 2, stone: 1 },
-        watch: null, isStory: true },
-      { id: 'story_ch2', title: 'Ritual de protección',
-        desc: 'Lleva al templo 5 comida y 3 piedra.',
-        target: 8, progress: 0, reward: { food: 5, stone: 2 },
-        watch: null, isStory: true },
-      { id: 'story_ch3', title: '¡Norhaven ha sido salvada!',
-        desc: 'El ritual se ha completado y la villa está preparada.',
-        target: 1, progress: 1, reward: {},
-        watch: null, isStory: true, done: true }
-    ];
-  }
-  return [
-    null,
-    { id: 'story_ch1', title: 'El aviso del Anciano',
-      desc: 'Viaja a Nínagara y habla con la Sacerdotisa del Templo.',
-      target: 1, progress: 0, reward: { food: 2, stone: 1 },
-      watch: null, isStory: true },
-    { id: 'story_ch2', title: 'El Ritual de Protección',
-      desc: 'Lleva al templo 5 comida y 3 piedra. Habla con la Sacerdotisa.',
-      target: 8, progress: 0, reward: { food: 5, stone: 2 },
-      watch: null, isStory: true },
-    { id: 'story_ch3', title: '¡Nínagara ha sido salvada!',
-      desc: 'El ritual de Enlil se ha completado. El diluvio ha sido contenido.',
-      target: 1, progress: 1, reward: {},
-      watch: null, isStory: true, done: true }
-  ];
-}
+// (las misiones del guion por época viven en `game-engine-story-utils.js`)
 
 function getStoryChapterTitles(epochId) {
   if (epochId === 'urss') return ['', 'Acto I — El Telegrama', 'Acto II — La Tormenta', 'Epílogo — Novozarya Resiste'];
@@ -24934,9 +25764,10 @@ function getStoryChapterTitles(epochId) {
   return ['', 'Acto I — La Advertencia', 'Acto II — El Ritual', 'Epílogo — El Diluvio Se Aleja'];
 }
 
-let _STORY_QUESTS = buildStoryQuestsForEpoch(window._currentEpoch || 'mesopotamia');
+let _STORY_QUESTS = NARRATIVA ? buildStoryQuestsForEpoch(window._currentEpoch || 'mesopotamia') : [];
 
 function advanceStoryChapter(chapter) {
+  if (!NARRATIVA) return;                      // MODO COLONIA: sin capítulos.
   if (window._storyChapter >= chapter) return; // never regress
   window._storyChapter = chapter;
   // Remove any existing story quests and inject the new one at the top
@@ -25801,6 +26632,7 @@ function makeDraggable(el, handle) {
 // (y la llegada de Adapa no se entendía). Ahora van SEGUIDAS: primero el carruaje
 // y, cuando termina, el relato. Esta función espera a que la escena acabe.
 function iniciarIntroDeTextoCuandoToca(intentos) {
+  if (!NARRATIVA) return;   // MODO COLONIA: sin relato de arranque.
   const n = Number.isFinite(intentos) ? intentos : 40;
   try {
     const enMarcha = !!window._cartScene;
@@ -25818,6 +26650,7 @@ function iniciarIntroDeTextoCuandoToca(intentos) {
 }
 
 function startIntroSequence() {
+  if (!NARRATIVA) { window._introSeq = null; return; }   // MODO COLONIA: sin relato.
   window._introSeq = { phase: 0, phaseStart: performance.now(), done: false, musicStarted: false };
   // Música de la intro (WAV y, si carga, el MIDI): desactivada de momento, ver
   // `musicaActiva()`. Sin música, el relato funciona igual (avanza a clics).
@@ -25896,147 +26729,8 @@ function skipIntro() {
   if (window._introSeq && !window._introSeq.done) window._introSeq.done = true;
 }
 
-function drawAnimatedUSSRFlagSequence(ctx, W, H, t, isLastPhase) {
-  // USSR flag construction animation
-  const flagCx = W / 2;
-  const flagCy = H / 2 - 60;
-  const flagWidth = 180;
-  const flagHeight = 120;
-  
-  // Animation progress (0 to 1)
-  const animDuration = isLastPhase ? 3000 : 2800;
-  const animProgress = Math.min(1, t / animDuration);
-  
-  // Phase 1: Red background appears
-  ctx.fillStyle = '#E63946';
-  ctx.fillRect(flagCx - flagWidth/2, flagCy - flagHeight/2, flagWidth * Math.min(1, animProgress * 1.2), flagHeight);
-  
-  // Phase 2: Yellow hammer and sickle appear (after 40% done)
-  if (animProgress > 0.4) {
-    const hammerProgress = Math.min(1, (animProgress - 0.4) / 0.4);
-    ctx.fillStyle = '#FFD60A';
-    ctx.globalAlpha = 0.9;
-    
-    // Draw simplified hammer
-    const hammerX = flagCx - 40;
-    const hammerY = flagCy - 20;
-    const hammerSize = 25 * hammerProgress;
-    
-    // Hammer handle
-    ctx.fillRect(hammerX, hammerY + hammerSize * 0.6, hammerSize * 0.8, hammerSize * 0.4);
-    // Hammer head
-    ctx.fillRect(hammerX - hammerSize * 0.3, hammerY, hammerSize * 0.8, hammerSize * 0.5);
-    
-    // Draw simplified sickle (crescent)
-    const sickleX = flagCx + 35;
-    const sickleY = flagCy - 15;
-    const sickleRadius = 20 * hammerProgress;
-    
-    ctx.beginPath();
-    ctx.arc(sickleX, sickleY, sickleRadius, 0, Math.PI * 2);
-    ctx.fillStyle = '#FFD60A';
-    ctx.fill();
-    
-    // Inner arc to create sickle shape
-    ctx.fillStyle = '#000000';
-    ctx.globalAlpha = 0.96;
-    ctx.beginPath();
-    ctx.arc(sickleX + sickleRadius * 0.4, sickleY, sickleRadius * 0.6, 0, Math.PI * 2);
-    ctx.fill();
-    
-    ctx.globalAlpha = 1.0;
-  }
-  
-  // Phase 3: Star appears at top (after 70% done)
-  if (animProgress > 0.7) {
-    const starProgress = Math.min(1, (animProgress - 0.7) / 0.3);
-    ctx.fillStyle = '#FFD60A';
-    ctx.globalAlpha = starProgress;
-    
-    // Draw 5-pointed star
-    const starX = flagCx;
-    const starY = flagCy - flagHeight/2 + 25;
-    const starSize = 18 * starProgress;
-    
-    ctx.beginPath();
-    for (let i = 0; i < 5; i++) {
-      const angle = (i * 4 * Math.PI) / 5 - Math.PI / 2;
-      const radius = i % 2 === 0 ? starSize : starSize * 0.4;
-      const x = starX + radius * Math.cos(angle);
-      const y = starY + radius * Math.sin(angle);
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.closePath();
-    ctx.fill();
-    ctx.globalAlpha = 1.0;
-  }
-  
-  // At the end, show title text
-  if (animProgress > 0.85) {
-    const textAlpha = Math.min(1, (animProgress - 0.85) / 0.15);
-    ctx.globalAlpha = textAlpha * 0.8;
-    ctx.textAlign = 'center';
-    ctx.font = 'bold 24px serif';
-    ctx.fillStyle = '#FFD60A';
-    ctx.fillText('NOVOZARYA', flagCx, H / 2 + 80);
-    ctx.font = '14px serif';
-    ctx.fillStyle = 'rgba(255,214,10,0.7)';
-    ctx.fillText('Under construction. The future is yours to build.', flagCx, H / 2 + 110);
-    ctx.globalAlpha = 1.0;
-  }
-}
-
 // ── INTRODUCCIÓN AL MUNDO (última fase del relato de arranque) ───────────────
-// Pedido: «hacer una breve introducción al mundo cuando comienza una partida,
-// mostrando sitios importantes y contando el contexto». El contenido sale del
-// canon narrativo (docs/GUION-NARRATIVO.md) y va POR ÉPOCA, para que el jugador
-// sepa qué lugares le esperan y qué está en juego antes de tomar el control.
-function introWorldBriefing(epoch) {
-  if (epoch === 'urss') {
-    return {
-      titulo: 'NOVOZARYA Y ALREDEDORES',
-      contexto: [
-        'Nieve, acero y una red frágil de trenes y hornos: el distrito depende',
-        'de que los suministros sigan llegando antes de la ventisca.'
-      ],
-      lugares: [
-        { n: 'Novozarya', d: 'tu pueblo: la central, el koljós y las casas de los obreros.' },
-        { n: 'El río Don', d: 'la vía de agua que trae la crecida anunciada.' },
-        { n: 'La estación', d: 'único enlace con el distrito; si se corta, queda aislado.' },
-        { n: 'La comisaría', d: 'Markova manda aquí: sin su permiso no hay víveres.' }
-      ]
-    };
-  }
-  if (epoch === 'medieval') {
-    return {
-      titulo: 'EL REINO DEL NORTE',
-      contexto: [
-        'Caminos, ríos y aldeas que viven del clima y del comercio.',
-        'Las murallas protegen, pero la tormenta que viene no entiende de muros.'
-      ],
-      lugares: [
-        { n: 'Tu casa', d: 'el hogar que debes asegurar antes de partir.' },
-        { n: 'El priorato', d: 'donde el anciano leyó las señales en el cielo.' },
-        { n: 'Las villas del norte', d: 'adonde debe llegar el aviso a tiempo.' }
-      ]
-    };
-  }
-  return {
-    titulo: 'EL MUNDO DE MESOPOTAMIA',
-    contexto: [
-      'El Éufrates crece cada primavera: quien controla el agua, controla la cosecha.',
-      'Aldeas de barro y cebada viven a la sombra de las ciudades amuralladas.'
-    ],
-    lugares: [
-      { n: 'Kidu-Lam', d: 'tu aldea: la casa de tu familia, los graneros y el pozo.' },
-      { n: 'El Éufrates', d: 'el río que da de comer y que ahora anuncia la gran crecida.' },
-      { n: 'Nínagara', d: 'la ciudad del rey Ur-Nammu, al norte: adonde debes llevar el aviso.' },
-      { n: 'El templo de Enlil', d: 'la sacerdotisa Enlil-Ama guarda allí los presagios.' }
-    ]
-  };
-}
-
+// (el texto por época y la bandera viven en `game-engine-story-utils.js`)
 // Pinta el briefing del mundo centrado y escalado con la ALTURA del lienzo (en
 // ventanas pequeñas no se sale de la pantalla). Sin dependencias: sólo texto.
 function dibujarBriefingDelMundo(ctx, W, H, brief) {
@@ -26244,133 +26938,7 @@ function drawIntroSequence(ctx, W, H) {
   ctx.restore();
 }
 
-function getMapSceneScript(trigger) {
-  try {
-    const epochNow = window._currentEpoch || 'mesopotamia';
-    const name = (trigger && trigger.villageName) || 'el lugar';
-    switch ((trigger && trigger.scriptId) || '') {
-      case 'origin-memory':
-        if (epochNow === 'urss') {
-          return [
-            'Las brasas se han apagado, pero el olor a combustible mojado sigue en el aire.',
-            `Aquí empezó todo: ${name} aún resiste entre nieve, barro y silencio.`,
-            'Las tablas chamuscadas y los sacos rotos recuerdan por qué no puedes detenerte.',
-            'Cada hora que pierdes aquí acerca la crecida a quienes aún dependen de ti.'
-          ];
-        }
-        if (epochNow === 'medieval') {
-          return [
-            'Los cercados rotos y las cenizas hablan por sí solas.',
-            `En ${name}, el saqueo aún parece reciente.`,
-            'No queda gloria aquí: solo la obligación de seguir el camino y avisar al norte.',
-            'Tus pasos pesan, pero la tormenta pesará más si nadie actúa.'
-          ];
-        }
-        return [
-          'La tierra conserva huellas de la incursión y del fuego.',
-          `Las ruinas de ${name} te recuerdan la deuda que has jurado saldar.`,
-          'No puedes reconstruir este lugar todavía, pero sí impedir que el diluvio borre otros.',
-          'Respiras hondo. El camino al norte sigue abierto.'
-        ];
-      case 'capital-arrival':
-        if (epochNow === 'urss') {
-          return [
-            `Los accesos de ${name} están saturados de camiones, centinelas y órdenes gritadas al viento.`,
-            'Detrás de los focos y las garitas, toda la ciudad funciona como una máquina a punto de romperse.',
-            'Aquí se decidirá si la región aguanta la crecida o cae en el desorden.',
-            'Debes entrar, escuchar y convencer a quien todavía conserve mando.'
-          ];
-        }
-        if (epochNow === 'medieval') {
-          return [
-            `Las murallas de ${name} se alzan sobre el camino como una promesa de refugio.`,
-            'Mercaderes, monjes y guardias cruzan las puertas sin saber que la tormenta ya viene.',
-            'Si el prior escucha tu aviso, aún habrá tiempo para preparar graneros y barcas.',
-            'Si no, toda esta villa acabará aislada.'
-          ];
-        }
-        return [
-          `Nínagara — ${name} para sus gentes — respira bajo polvo, bronce y plegarias.`,
-          'Las puertas monumentales y los patios abarrotados esconden una ciudad confiada.',
-          'Nadie aquí imagina todavía la magnitud del diluvio.',
-          'Tu aviso debe llegar al templo antes de que el río hable más alto que tú.'
-        ];
-      case 'trading-post-rumors':
-        if (epochNow === 'urss') {
-          return [
-            'Bajo los toldos se cambian latas, piezas de motor y rumores por igual.',
-            'Un carretero jura haber visto el canal del norte reventar dos compuertas en una sola noche.',
-            'Otro habla de convoyes militares saliendo al amanecer hacia una base del distrito.',
-            'Si necesitas información, este puesto comercial oye antes que nadie el crujido del sistema.'
-          ];
-        }
-        if (epochNow === 'medieval') {
-          return [
-            'Los viajeros regatean pan, hierro y noticias con el mismo gesto cansado.',
-            'Un peregrino habla de puentes anegados río arriba; un carretero menciona un fuerte movilizado.',
-            'Las rutas aún no están cortadas, pero el miedo ya viaja más rápido que las mulas.',
-            'Aquí las historias son advertencias si sabes escuchar.'
-          ];
-        }
-        return [
-          'Las caravanas traen sal, grano y presagios.',
-          'Los mercaderes hablan de niveles extraños en el río y de campamentos reforzando rutas al norte.',
-          'A veces el comercio detecta antes que los reyes cuándo el mundo está a punto de cambiar.',
-          'Quizá convenga seguir esas voces antes de que el camino desaparezca.'
-        ];
-      case 'military-perimeter':
-        if (epochNow === 'urss') {
-          return [
-            `La base de ${name} no parece un barrio: parece una orden convertida en hormigón.`,
-            'Las patrullas siguen rutas precisas, los focos barren el fango y cada garita observa el canal.',
-            'Aquí el distrito guarda combustible, radios y hombres suficientes para sostener una retirada o imponer disciplina.',
-            'Si la situación empeora, este lugar será bisagra entre evacuación y ley marcial.'
-          ];
-        }
-        if (epochNow === 'medieval') {
-          return [
-            `El fuerte de ${name} domina la llanura con una calma áspera.`,
-            'Centinelas recorren almenas y patio interior mientras los establos y almacenes se preparan para un asedio.',
-            'No es una villa: es una frontera armada, lista para cerrar el paso o abrir un corredor de auxilio.',
-            'Si el reino cae en pánico, aquí se decidirá quién cruza y quién queda atrás.'
-          ];
-        }
-        return [
-          `La guarnición de ${name} ha convertido la ribera en un tablero de vigilancia.`,
-          'Arqueros, torres y depósitos protegidos anuncian que el poder también teme al agua.',
-          'No es un mercado ni un templo: es un punto de contención, hecho para resistir y mandar.',
-          'Tal vez, cuando llegue el caos, la salvación pase primero por aquí.'
-        ];
-      case 'river-crossing':
-        if (epochNow === 'urss') {
-          return [
-            'El canal central baja cargado de hielo oscuro, troncos y basura de media región.',
-            'Si esta corriente sube un palmo más, las orillas empezarán a tragarse caminos y depósitos.',
-            'Ahora mismo el mapa aún respira; pronto podría convertirse en una cadena de islas rotas.',
-            'Necesitas aliados antes de que el agua decida por todos.'
-          ];
-        }
-        if (epochNow === 'medieval') {
-          return [
-            'El agua corre más rápida de lo que debería para esta estación.',
-            'Los juncos se inclinan como si ya conocieran la tormenta que viene detrás.',
-            'Cruzar todavía es posible. Mañana, quizá no.',
-            'Memoriza el cauce: pronto será juez del viaje.'
-          ];
-        }
-        return [
-          'El río parece tranquilo solo a distancia.',
-          'De cerca, el barro reciente y la corriente tensa cuentan otra historia.',
-          'Los ancianos tenían razón: las aguas están reuniendo fuerza.',
-          'Cuando vuelvas por aquí, este paso quizá ya no exista.'
-        ];
-      default:
-        return ['El lugar guarda más historia de la que muestra a simple vista.'];
-    }
-  } catch (e) {
-    return ['El lugar guarda más historia de la que muestra a simple vista.'];
-  }
-}
+// (el guion de las escenas del mapa vive en `game-engine-story-utils.js`)
 
 function isMapSceneAvailable(trigger) {
   try {
@@ -26998,6 +27566,7 @@ function opcionesDeMision(npc, mission, dlg) {
 // ¿Se cuela un encargo en esta conversación? Aleatorio (no todas las charlas con
 // un vecino «con encargo» acaban en favor) y con calma entre uno y otro.
 function colarMisionEnDialogo(npc, dlg) {
+  if (!NARRATIVA) return false;   // MODO COLONIA: los vecinos no reparten encargos de guion.
   try {
     if (!npc || !dlg || npc.isStoryNPC) return false;
     // Los VIGÍAS de la zona no reparten encargos: ellos son el obstáculo.
@@ -28679,7 +29248,11 @@ canvas.addEventListener('mousedown', e => {
       return;
     }
 
-    if (!editMode) {
+    // MODO COLONIA: con una herramienta de construcción en la mano el clic del
+    // ratón construye (antes sólo se construía en modo edición, así que el bucle
+    // de colonia quedaba fuera del juego). Sin herramienta, el clic sigue siendo
+    // lo de siempre (talar, esconderse, seleccionar…).
+    if (!editMode && !(CONSTRUIR_EN_JUEGO && selectedTool)) {
       if ((player.equipped || '') === 'stone-hoe') {
         isHoeDragging = true;
         hoeDragStart = { col: Math.floor(col), row: Math.floor(row) };
@@ -28797,7 +29370,7 @@ document.addEventListener('mouseup', (e) => {
 
   if (isBuildDragging) {
     try {
-      if (editMode && buildDragRect) {
+      if ((editMode || CONSTRUIR_EN_JUEGO) && buildDragRect) {
         const isSingleCell = buildDragRect.minC === buildDragRect.maxC && buildDragRect.minR === buildDragRect.maxR;
         if (selectedTool === 'demolish') {
           for (let rr = buildDragRect.minR; rr <= buildDragRect.maxR; rr++) {
@@ -29915,7 +30488,7 @@ function init() {
   try {
     document.querySelectorAll('.build-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        if (!editMode) { notify('Activa el modo edición para construir.'); return; }
+        if (!editMode && !CONSTRUIR_EN_JUEGO) { notify('Activa el modo edición para construir.'); return; }
         if (mapEditorEnabled) setMapEditorEnabled(false, { silent: true });
         const type = btn.dataset.type;
         if (!type) return;
@@ -30244,6 +30817,23 @@ function createTimeControlWidget() {
 }
 
 function postMapInit() {
+  // ── MODO COLONIA: limpieza de restos del guion ───────────────────────────
+  // Al entrar en el mundo (partida nueva o cargada) los NPCs de historia vuelven
+  // a ser vecinos normales, se quitan las misiones de guion y el contador de
+  // capítulos se queda a cero. Es lo que impide que una partida vieja traiga el
+  // relato de vuelta por la puerta de atrás.
+  if (!NARRATIVA) {
+    try {
+      (entities || []).forEach(en => {
+        if (en && (en.isStoryNPC || en._storyLines)) { en.isStoryNPC = false; en._storyLines = null; }
+      });
+      if (Array.isArray(window._missions)) window._missions = window._missions.filter(m => m && !m.isStory);
+      window._storyChapter = 0;
+      window._storySceneFlags = {};
+      window._mapSceneTriggers = [];
+      if (window._homePrologue) window._homePrologue.active = false;
+    } catch (e) {}
+  }
   // Marca de mundo listo: el bucle de dibujado no pinta el terreno hasta aquí
   // (mientras, enseña «Generando mundo…» en vez de una rejilla a medias).
   try { window._worldReadyAt = window._worldReadyAt || Date.now(); } catch (e) {}
@@ -30260,6 +30850,9 @@ function postMapInit() {
     if (!window._externalMenu) setupCharacterSelection();
   } catch (e) {}
   try { ensurePlayerActionsButton(); } catch (e) {}
+  // MODO COLONIA: HUD propio, hitos aplicados a la paleta y fuera el cromo del
+  // otro juego (botón de autor, lista de gestos, panel de objetivo vacío).
+  try { if (MODO_COLONIA) { crearHudDeColonia(); actualizarHitoDeColonia(); aplicarHitosAlMenuConstruccion(); ocultarChromeNoColonia(); limpiarCrecidaDeSesionAnterior(); evaluarObjetivosDeColonia(false); actualizarHudDeColonia(); mostrarBriefingDeColonia(); } } catch (e) {}
   // Caballos y postes de amarre (junto a algunas casas).
   try { ensureHorsesAndPosts(); } catch (e) {}
   try { _gameStartedAt = Date.now(); window._gameStartedAt = _gameStartedAt; } catch (e) {}

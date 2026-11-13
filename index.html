@@ -189,6 +189,17 @@
           </div>
         </button>
 
+        <!-- MURO (DIQUE): pieza clave de la colonia. `data-fijo` porque no entra
+             en la correspondencia por posición de los ocho primeros puestos de la
+             paleta; se enseña cuando la época lo incluye y el hito lo desbloquea. -->
+        <button class="build-btn" data-type="wall_segment" data-fijo="wall_segment" id="btn-wall" title="Muro de adobe: frena el agua de la crecida (dique)">
+          <canvas class="bicon" id="icon-wall" width="22" height="22"></canvas>
+          <div>
+            <span class="bname">Muro (dique)</span>
+            <span class="bcost">&#x1F9F1; 3 &#x1F33E; 0</span>
+          </div>
+        </button>
+
         <button id="btn-demolish" data-type="demolish">
           <span style="font-size:1.1em;">&#x2716;</span>
           <div>
@@ -389,13 +400,13 @@
   <div id="main-menu-box">
     <header class="mm-hero">
       <h1>MesoBuilder</h1>
-      <p class="mm-tagline">Ciudad, imperio y una anomal&iacute;a bajo el r&iacute;o</p>
+      <p class="mm-tagline">Funda tu ciudad junto al r&iacute;o, p&aacute;cela y defi&eacute;ndela</p>
     </header>
 
     <nav class="mm-actions" aria-label="Acciones del menú">
       <button id="menu-new" class="mm-btn">
         <span class="mm-label">Nueva partida</span>
-        <span class="mm-hint">Elige &eacute;poca, gobernante y mundo</span>
+        <span class="mm-hint">Una colonia nueva en Mesopotamia</span>
       </button>
       <button id="menu-load" class="mm-btn">
         <span class="mm-label">Cargar partida</span>
@@ -411,7 +422,7 @@
       </button>
       <button id="menu-options" class="mm-btn">
         <span class="mm-label">Opciones</span>
-        <span class="mm-hint">Audio, densidades, &eacute;poca y dise&ntilde;o del mapa</span>
+        <span class="mm-hint">Audio, densidades y dise&ntilde;o del mapa</span>
       </button>
     </nav>
 
@@ -437,16 +448,18 @@
   <div id="menu-startup-modal" style="position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:100000">
     <div style="background:rgba(10,10,10,0.96);padding:18px;border-radius:10px;border:1px solid rgba(255,255,255,0.04);width:700px;max-width:95vw;color:#fff">
       <h3 style="margin:0 0 8px 0">Nueva partida</h3>
-      <!-- Modo de juego: HISTORIA (personaje y época fijos, manda el guion) o
-           LIBRE (editor de personaje, época y mundo a medida). -->
-      <div id="menu-mode-row" class="mm-modes">
+      <!-- MODO DE JUEGO (congelado el 2026-10-13): el proyecto se queda con la
+           COLONIA sin narrativa. Los botones se quedan en el DOM (el JS los
+           consulta) pero la fila va oculta: no hay «modo historia» ni época que
+           elegir hasta que el bucle de colonia esté terminado. -->
+      <div id="menu-mode-row" class="mm-modes" style="display:none">
         <button type="button" id="menu-mode-story" class="mm-mode" data-mode="story">
           <b>Modo historia</b>
-          <small>Adapa y el diluvio · personaje y época fijados por el guion, tres actos</small>
+          <small>Congelado.</small>
         </button>
-        <button type="button" id="menu-mode-free" class="mm-mode" data-mode="free">
-          <b>Modo libre</b>
-          <small>Crea tu gobernante, elige época y ajusta el mundo</small>
+        <button type="button" id="menu-mode-free" class="mm-mode is-active" data-mode="free">
+          <b>Colonia</b>
+          <small>Construye, produce y defiende.</small>
         </button>
       </div>
       <div style="display:flex;gap:8px;margin-bottom:10px">
@@ -493,14 +506,14 @@
         </div>
       </div>
       <div id="menu-panel-options" style="display:none;grid-template-columns:1fr 1fr;gap:10px">
-        <div style="grid-column:1 / span 2">
+        <div style="grid-column:1 / span 2;display:none">
           <label style="font-size:13px">Época</label>
           <select id="menu-epoch" style="width:100%;padding:8px;border-radius:6px;background:#111;border:1px solid rgba(255,255,255,0.04);color:#fff">
             <option value="mesopotamia">Mesopotamia</option>
             <option value="urss">Antigua URSS</option>
             <option value="medieval">Edad Media</option>
           </select>
-          <div style="font-size:12px;color:#c8b87a;margin-top:4px">La época se aplicará al crear la partida.</div>
+          <div style="font-size:12px;color:#c8b87a;margin-top:4px">Congelado: la partida se juega en Mesopotamia.</div>
         </div>
         <div>
           <label style="font-size:13px">Preset de mundo</label>
@@ -1455,9 +1468,10 @@
     const URSS_NAMES = { scribe:'Konstantin Markov', scout:'Nadezhda Sokolova', builder:'Gavril Denisov', priest:'Arkady Volkov', merchant:'Irina Petrova' };
     const URSS_TITLES = { scribe:'Línea Dura del Partido', scout:'Exploradora de Frontera', builder:'Reformista Campesino', priest:'Mariscal de Acero', merchant:'Intendente Estatal' };
 
-    // Modo de juego elegido en el modal (historia = personaje y época fijos).
+    // Modo de juego. MODO COLONIA (2026-10-13): siempre «libre» (colonia sin
+    // narrativa); el modo historia queda congelado.
     function getMenuMode() {
-      try { return localStorage.getItem('meso.gameMode') || 'story'; } catch (e) { return 'story'; }
+      return 'free';
     }
 
     function getMenuPresets() {
@@ -1495,8 +1509,8 @@
      * · libre: se puede elegir oficio, colores, ropa, nombre y época.
      */
     function setMenuMode(mode) {
-      const story = (mode || 'story') === 'story';
-      try { localStorage.setItem('meso.gameMode', story ? 'story' : 'free'); } catch (e) {}
+      const story = false;   // MODO COLONIA: el modo historia queda congelado.
+      try { localStorage.setItem('meso.gameMode', 'free'); } catch (e) {}
 
       const bStory = document.getElementById('menu-mode-story');
       const bFree = document.getElementById('menu-mode-free');
@@ -2154,8 +2168,7 @@
                        (function () { try { return localStorage.getItem('meso.gameMode'); } catch (e) { return null; } })() || 'story';
       try { localStorage.setItem('meso.gameMode', gameMode); } catch (e) {}
       try {
-        let epoch = (epochSelect && epochSelect.value) ? epochSelect.value : 'mesopotamia';
-        if (gameMode === 'story') epoch = 'mesopotamia';   // la época la marca el guion
+        const epoch = 'mesopotamia';   // MODO COLONIA: una sola época (URSS y medieval congeladas).
         localStorage.setItem('meso.currentEpoch', epoch);
       } catch (e) {}
       try { localStorage.setItem('meso.menuDensities', JSON.stringify(densities)); } catch (e) {}

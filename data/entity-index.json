@@ -1,7 +1,7 @@
 {
-  "generado": "2026-10-05T13:09:14.922Z",
+  "generado": "2026-10-09T11:21:51.650Z",
   "nota": "Generado por tools/build-entity-index.mjs. Es la lista que enseña el editor de entidades (npm run editor).",
-  "total": 124,
+  "total": 125,
   "grupos": [
     {
       "nombre": "Suelos (baldosas)",
@@ -29,7 +29,7 @@
     },
     {
       "nombre": "Edificios",
-      "cuantos": 42
+      "cuantos": 43
     },
     {
       "nombre": "URSS",
@@ -7002,7 +7002,14 @@
       "clave": "wall_segment_v",
       "grupo": "Edificios",
       "origen": "json",
-      "pixels": 3072,
+      "pixels": 2560,
+      "nota": ""
+    },
+    {
+      "clave": "wall_side",
+      "grupo": "Edificios",
+      "origen": "json",
+      "pixels": 2560,
       "nota": ""
     },
     {

@@ -66,8 +66,14 @@ justo antes de `function render()`.
   `window._terrainCacheShownOnce`, con límite de 25 s de cortesía por si la caché
   no llegara nunca.
 - **Chequeo de color barato**: `vigilanteTerreno()` leía los 968×727 px del
-  lienzo para comprobar que el terreno no está plano; ahora lee una muestra de
-  160×120 (y deja de avisar del `willReadFrequently`).
+  lienzo para comprobar que el terreno no está plano; ahora lee una muestra
+  pequeña (y deja de avisar del `willReadFrequently`).
+  **OJO (arreglado el 2026-10-08)**: esa muestra era la esquina superior izquierda
+  (`getImageData(0,0,160,120)`), donde el motor pinta la tarjeta del objetivo y la
+  guía rápida: salía «plana» casi siempre y el vigilante apagaba la caché de terreno
+  para toda la sesión (de 0,6 ms a 20-50 ms por fotograma). Ahora `lienzoParecePlano()`
+  muestrea cinco puntos alrededor del **centro** y hacen falta dos confirmaciones
+  seguidas. Ver `docs/RENDIMIENTO.md` §9.
 - El vigilante sigue existiendo: si el lienzo sale plano, repinta la caché y, como
   último recurso, activa `window._noTerrainCacheBlit`. `MESO_DEBUG.testDraw.world.diag()`
   dice en un vistazo qué está pasando (semilla, biomas, entidades, cachés, vigilante).

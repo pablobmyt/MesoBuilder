@@ -251,6 +251,54 @@ ahí el «parece que repite la misma sección». Ahora:
 Comprobado: dos partidas nuevas seguidas dan semillas distintas y repartos de
 biomas distintos (antes eran idénticos).
 
+### 1.b La rejilla se VACÍA antes de generar (`limpiarMundoParaGenerar`) 2026-10-09
+
+> Síntoma reportado: «la generación de murallas está mal, hay **varias filas de
+> muros**». Se veían dos murallas paralelas pegadas (dos anillos de ciudad
+> solapados) y compuestos amurallados por todo el mapa.
+
+**Causa.** El mapa se levantaba **encima** del que ya hubiera en la rejilla:
+`grid` se crea UNA vez al arrancar el motor y nadie la vaciaba al generar. Si
+antes de la «Nueva partida» el arranque había restaurado una partida (o ya se
+había generado un mundo en la sesión), sus edificios y sus **muros** seguían
+ahí; el mundo nuevo se colocaba en los huecos y los dos acababan pegados. Como
+cada generación trae la muralla de su capital, el resultado eran dos (o más)
+hileras paralelas de lienzos.
+
+La limpieza existía, pero **a mano y sólo en uno de los caminos** (el modal
+interno «Generar partida»: `grid[x][y] = null`, `entities.length = 0`, …). Los
+otros dos —menú externo (`forceNewGame`, `index.html`) y mundo de reemplazo de
+`asegurarMundoCargado()`— sembraban sobre el mundo anterior.
+
+**Arreglo.** La limpieza es ahora cosa del generador:
+
+```js
+function generateMapInner(mapType, opts) {
+  // Partida NUEVA ⇒ mundo nuevo desde cero. Nunca sobre la rejilla anterior.
+  if (opts && opts.freshSeed) limpiarMundoParaGenerar();
+```
+
+`limpiarMundoParaGenerar()` (junto a `generateMap`) vacía la rejilla, las
+entidades (árboles, recursos, ambientales, NPCs), conejos/zorros/tumbas,
+`window._ENEMIES`, partículas, proyectiles, los conjuntos de estructura, la
+lista de pueblos (`window._VILLAGES`), las puertas, la niebla, el mundo guardado
+en memoria y las cachés de mapa. Los tres caminos de «partida nueva» pasan ya
+por ahí; el modal interno se queda con una sola línea (`generateMap('random',
+{freshSeed: true})`).
+
+**Medido** (mismo camino que el jugador: cargar partida → menú → «Nueva
+partida»):
+
+| | Antes | Después |
+|---|---|---|
+| Lienzos en la rejilla antes del primer asentamiento planificado | 110 (restos del mundo anterior) | 89 (sólo el anillo de la capital recién generada) |
+| Muros totales | 1506 (mundo del usuario, 9 compuestos) | 374 (3 compuestos: capital, base militar y recinto de sigilo) |
+| Anillos solapados en la capital | 2 (filas 5–24 y 25–52) | 1 (filas 13–56, completo) |
+
+Comprobación rápida desde la consola: `window.MESO_DEBUG.getGrid()` y contar
+celdas `wall_segment`; el anillo de la capital son ~216 lienzos + 12 torres, la
+base militar ~86 + 6, y el recinto de sigilo ~86.
+
 ### 2. Frecuencias del ruido y umbrales de bioma (`engine/terrain-generator.js`)
 
 El ruido se evaluaba con frecuencias de **3.1 / 4.4** sobre coordenadas

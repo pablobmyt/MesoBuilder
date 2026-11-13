@@ -1,3 +1,9 @@
+> ⚠️ **CONGELADO (2026-10-13).** El juego ya no cuenta una historia: este documento
+> se conserva como archivo de lo que hubo (y como fuente de piezas sueltas: un NPC, una
+> escena, un motivo). Lo que manda hoy es `docs/DISEÑO.md` (colonia en tiempo real, sin
+> narrativa). El guion se apaga en el motor con `NARRATIVA = false` (arriba de
+> `engine/game-engine.js`), no se ha borrado.
+
 GUION NARRATIVO — ADAPA Y EL DILUVIO
 =====================================
 Operación Zigurat · canon único · revisión 2026-09-28
@@ -292,7 +298,7 @@ NOTAS DE IMPLEMENTACIÓN Y PENDIENTES
 Lo que ya está en el motor (canon, no tocar sin querer)
   1. Tres épocas con la misma estructura de capítulos: Mesopotamia (Kidu-Lam →
      Nínagara), URSS (Kidu-Lam → Novozarya) y medieval (Norhaven). Los textos se
-     eligen por época en `buildStoryQuestsForEpoch()`.
+     eligen por época en `buildStoryQuestsForEpoch()` (`engine/game-engine-story-utils.js`).
   2. Prólogo en casa con máquina de estados propia (`window._homePrologue`):
      campo → familia → dormir → briefing militar → Acto I. Los objetivos libres se
      registran al empezar (ver §7.1).

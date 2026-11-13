@@ -92,7 +92,9 @@ El archivo se puede reemplazar con una música real en formato .wav o .mp3 si lo
 3. Los archivos de hasta ~3-4 MB funcionan bien
 
 ### Para modificar la animación de la bandera:
-Edita la función `drawAnimatedUSSRFlagSequence()` en `engine/game-engine.js` alrededor de la línea 14691
+Edita la función `drawAnimatedUSSRFlagSequence()` en `engine/game-engine-story-utils.js`
+(antes vivía en `engine/game-engine.js`; se extrajo el 2026-10-09, ver
+`docs/REFACTOR-MONOLITO.md`)
 
 ### Para cambiar los textos de lore:
 Los textos están en `drawIntroSequence()` alrededor de la línea 14791, dentro de los arrays `lore`

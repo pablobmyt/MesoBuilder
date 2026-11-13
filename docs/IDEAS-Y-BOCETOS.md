@@ -1,5 +1,8 @@
 # IDEAS Y BOCETOS — Adapa y el diluvio
 
+> ⚠️ **CONGELADO (2026-10-13).** El juego ya no tiene narrativa: estos bocetos quedan
+> como archivo, no como plan. El planteamiento vigente está en `docs/DISEÑO.md`.
+
 > Documento de **trabajo**: aquí van las ideas, los bocetos de escena y las
 > decisiones que aún no son canon. No describe código ni sistemas: sólo guion.
 >

@@ -367,7 +367,8 @@ const P = window.MESO_DEBUG.testDraw.perf;
 P.info();          // cacheTerrenoLista, cuerposEnCache, arbolesEnCache, mbSprites
 window._perfSections = true; P.sections(true);
 P.frame(15);       // { min, mediana, max }
-P.sections();      // { pre, tiles, terreno, arboles, edificios, entidades, animales, fx, cola, noche, deferred, hud }
+P.sections();      // { pre, tiles, terreno, arboles, edificios, entidades, animales, fx, cola, noche,
+                   //   filtro, deferred, sim, ui, diag, hud }
 window._perfSections = false;
 // Cambio de vista (reconstruye la caché de terreno de la otra vista):
 window.MESO_DEBUG.testDraw.world.view('iso');   // o 'ortho'
@@ -375,3 +376,327 @@ window.MESO_DEBUG.testDraw.world.view('iso');   // o 'ortho'
 
 `cuerposEnCache` y `arbolesEnCache` son los tamaños de las dos cachés nuevas: si
 crecen sin parar, hay demasiadas combinaciones (firma demasiado fina).
+---
+
+## 9. La caché de terreno se apagaba sola (2026-10-08)
+
+Síntoma del usuario: «hay algo que va muy mal, el juego va ralentizado en todo
+momento». **Reproducido y medido**: la partida arranca a ~9 ms por fotograma y, unos
+segundos después, cae a 30-50 ms y se queda así para siempre.
+
+### 9.1 La causa: un falso positivo del vigilante del terreno
+
+`vigilanteTerreno()` incluye una comprobación de color para detectar GPUs en las que
+el volcado de la caché (`drawImage` de un lienzo enorme) falla en silencio. Si el
+lienzo «no tiene color» se activa `window._noTerrainCacheBlit` y el terreno pasa a
+pintarse **celda a celda, cada fotograma**.
+
+La muestra era `ctx.getImageData(0, 0, 160, 120)`: **la esquina superior izquierda**,
+que es justo donde el motor pinta la tarjeta del objetivo y la guía rápida (y donde
+el menú Dev pone sus paneles). Durante los primeros segundos de partida esa zona es
+interfaz: 2-3 tonos. La comprobación salía «plana» casi siempre, y con una segunda
+confirmación dejaba el juego en el camino caro de forma permanente.
+
+| | terreno / fotograma | fotograma completo | FPS |
+| --- | --- | --- | --- |
+| Caché activa (lo normal) | **0,6-1,1 ms** (1 `drawImage` recortado) | 9-14 ms | 80-140 |
+| `_noTerrainCacheBlit` activado por error | **20,7-50,7 ms** | 31-66 ms | **15-30** |
+
+Consola del caso malo (una sola vez, fácil de pasar por alto):
+
+```
+[terreno] el lienzo sale de un solo color (3 tono/s)
+[terreno] se desactiva el volcado de caché y se pinta por celdas
+```
+
+### 9.2 El arreglo
+
+* `lienzoParecePlano()` muestrea **cinco puntos alrededor del CENTRO** del lienzo
+  (siempre mundo, nunca interfaz) y suma los tonos de todos ellos. Sigue siendo
+  barato (5 lecturas de 24×24 px) y sólo corre una vez, pasados 7 s del arranque.
+* Hacen falta **dos confirmaciones seguidas** (separadas por una reconstrucción de la
+  caché) para activar el modo celda a celda. Un fotograma raro (un cartel, una
+  cinemática) ya no condena la sesión.
+* La caída real (GPU que no puede volcar el lienzo grande) sigue detectándose: en ese
+  caso la zona central también sale plana.
+
+### 9.3 Otras cosas que se tocaron
+
+* **Escaneo de interacción** (Entrar / Recoger / Hablar / Talar): recorre las ~1.500
+  entidades cada 120 ms calculando `Math.hypot` de todas. Ahora se descarta con una
+  caja de ±1,6 celdas (el alcance máximo de todos sus umbrales) antes de la raíz:
+  del orden de 1.500 `hypot` a un puñado por escaneo. Comportamiento idéntico
+  (verificado: «Recoger stone» junto a una piedra y «Recoger weed» junto a una mata).
+* **Marcas de perfilado nuevas**: `sim` (tareas y AI de NPC + eco automático),
+  `ui` (enemigos, niebla, minimapa y HUD de lienzo), `diag` (panel de estado DOM y
+  HUD de rendimiento) y `filtro` (el pixelado de la sección 10). Todas son no-ops si
+  `window._perfSections` está apagado.
+
+### 9.4 Cómo comprobar que no ha vuelto
+
+```js
+const P = window.MESO_DEBUG.testDraw.perf;
+window._noTerrainCacheBlit;        // debe ser false/undefined
+window._terrainPlanoVeces;         // 0 si todo va bien
+P.info().terreno;                  // repintados, msUltimo, edadMs
+P.stats();                         // { fps, ms, ms95 }
+```
+
+---
+
+## 10. Filtro de pixelado del mundo (`PIXELADO`)
+
+El arte mezcla sprites de densidades muy distintas (píxeles de arte de 16, 24, 32…
+y edificios a densidad 4 o 16): al lado de una casa dibujada «gorda» el resto parecía
+de otra resolución. El mundo entero se baja a un búfer más pequeño y se vuelve a
+subir **sin suavizado**, así que cada bloque queda uniforme y todo se lee como un
+solo juego.
+
+* **Cuándo**: justo cuando el mundo está terminado (después de la viñeta de noche y
+  de la cola de textos diferidos) y **antes** de los textos del mundo y del HUD. Todo
+  lo que se pinta después —nombres, bocadillos, avisos «E», marcadores de misión,
+  aviso de acción, minimapa, barras de supervivencia, objetivo, diálogos, guía— sale
+  nítido: es lo que hay que **leer**.
+* **Cómo**: `drawImage` del lienzo a un búfer de `W/bloque × H/bloque` con suavizado
+  (cada bloque promedia su zona) y vuelta al lienzo con `imageSmoothingEnabled = false`.
+* **Intensidad (`mezcla`)**: si vale `1` se vuelca con `globalCompositeOperation = 'copy'`
+  (el fotograma se reemplaza por el búfer). Si es menor (por defecto **0,85**) se vuelca
+  con `'source-over'` y `globalAlpha = mezcla`, de modo que el mundo queda pixelado pero
+  **conserva un 15 % del detalle original**: el pixelado se nota suave, no «plastificado».
+* **Ajuste**: `PIXELADO.bloque = 2` (leve) · 3-4 más marcado. En caliente:
+  `MESO_PIXELADO.bloque(3)`, `MESO_PIXELADO.mezcla(0.9)` (más suave, hasta `1` = total),
+  o se apaga en **DEV ▸ «Pixelado suave»**. En el menú DEV hay además dos botones,
+  **«Pixelado más leve» / «más fuerte»**, que mueven la mezcla en pasos de 0,1.
+  La elección se guarda en `localStorage` (`meso.pixelado`, `meso.pixeladoBloque`,
+  `meso.pixeladoMezcla`).
+* **Coste medido**: **0,4-0,8 ms** por fotograma en un lienzo de 1260×840
+  (sección `filtro` del perfilador).
+* **Comprobación**: con el filtro, el **100 %** de los bloques 2×2 de la zona central
+  del lienzo son de un solo color (sin filtro, el 83,9 %); los cambios horizontales
+  de píxel bajan del 12,7 % al 7,6 %.
+
+### 10.1 Los textos no se filtran (cola `textoMundo`)
+
+Un texto pixelado deja de leerse, así que **nada que haya que leer pasa por el filtro**.
+Como los nombres se pintan dentro del recorrido de entidades (mucho antes de que el
+filtro exista), se **aparcan** en una cola y se ejecutan después:
+
+```js
+textoMundo(() => dibujarEtiquetaMundo(ctx, …));   // si el filtro está activo, se aplaza
+```
+
+* Se diferencia todo lo que se dibuja en el espacio del mundo con texto:
+  **nombres** de jugador, aldeanos, mascotas (conejo, zorro) y lápidas, los **bocadillos
+  «E»** del árbol/epitafio y los **textos flotantes** (daños, avisos).
+* `render()` vuelca la cola con `dibujarColaTextoMundo()` **después** de
+  `aplicarPixeladoMundo()`, junto con `dibujarTextosFlotantes()` (que se sacó del bloque
+  de efectos por el mismo motivo), los indicadores de oclusión y los marcadores de misión.
+  Todo eso se marca en la sección **`textos`** del perfilador (**0,6 ms** medidos).
+* Con el filtro apagado `textoMundo()` ejecuta la función en el acto: el orden de pintado
+  es exactamente el de antes, sin cola.
+* `window._textosDiferidos` dice cuántos textos se aplazaron en el último fotograma
+  (0 si el filtro está apagado). Es la comprobación barata y determinista de que la cola
+  funciona, mucho más fiable que comparar píxeles sobre un mundo animado.
+
+```js
+MESO_PIXELADO.activar(false);   // ver el mundo sin filtrar (A/B)
+MESO_PIXELADO.bloque(3);        // más marcado
+MESO_PIXELADO.mezcla(0.95);     // pixelado más leve (1 = total)
+window._pixeladoFrames;         // fotogramas filtrados
+window._textosDiferidos;        // textos aplazados en el último fotograma
+```
+
+---
+
+## 11. Segunda pasada (2026-10-09)
+
+### 11.1 El bosque: se recorría la rejilla de píxeles de cada árbol, cada fotograma
+
+`getRegisteredSpriteAspect(name)` saca la proporción del sprite recorriendo **todos
+sus píxeles** para calcular la caja. Los recortes del PNG son enormes (`tree0_sup`:
+**12.169 píxeles**) y la función se llamaba **por árbol y por fotograma** en el pase
+del bosque: el resultado es siempre el mismo número.
+
+Medido (lienzo 1260×840, zoom 1,5, mismo sitio):
+
+| Zona | `arboles` antes | `arboles` después |
+| --- | --- | --- |
+| Bosque (mismo encuadre) | **9,02 ms** | **1,20 ms** |
+| Zona sin bosque cercano | 3,57 ms | 0,34 ms |
+| *Coste extra por estar en bosque* | *5,45 ms* | ***0,86 ms*** |
+
+Arreglado con dos `WeakMap` (uno por imagen y otro por la matriz de píxeles): si el
+sprite se vuelve a registrar, la clave es un objeto nuevo y se recalcula solo, así
+que no hay que invalidar nada a mano. También se cachea la **caja de cada plantilla
+de árbol** (`cajaDePlantilla`), que se recalculaba entera en `alturaArteArbol` y en
+`drawTreeTemplateSway` para cada árbol.
+
+### 11.2 La simulación de NPC se ejecutaba 60 veces por segundo
+
+Las tareas y la AI de los NPC (paseo, huida, habla) vivían **dentro de `render()`**:
+recorrían las ~1.500 entidades en cada fotograma. Cada NPC ya lleva su propio freno
+interno (`shouldUpdateEntity`, 800-1.000 ms), así que el bucle sólo servía para
+gastar 1,3-2 ms por fotograma.
+
+Ahora ese bloque va **a ~5 Hz** (`_npcSimAt`, 200 ms). Medido: la sección `sim` baja
+de 1,3-2 ms a 0,6-0,8 ms de media. Comprobado que los NPC siguen moviéndose (3/3
+visibles cambiaron de posición) y que siguen hablando.
+
+### 11.3 Archivos: `game-engine.js` empieza a adelgazar
+
+Ver `docs/REFACTOR-MONOLITO.md`. En esta pasada salieron ~490 líneas a dos módulos
+`game-engine-icons.js` y `game-engine-story-utils.js` (0 dependencias, movimiento
+directo) y se añadió `tools/refactor-deps.mjs` para medir las dependencias **antes**
+de mover nada. **Partir ficheros no cambia los FPS**; el rendimiento de esta pasada
+es 11.1 y 11.2.
+
+---
+
+## 12. Tercera pasada (2026-10-09): el pixelado se afina y los textos se libran
+
+El filtro de la sección 10 hacía su trabajo, pero quedaba **demasiado plano** (todo el
+mundo igual de emborronado) y **se comía los textos**: los nombres sobre las cabezas y
+los avisos «E» salían tan pixelados como la hierba. Dos cambios, ninguno de los cuales
+cuesta rendimiento (al contrario):
+
+| | Antes | Ahora |
+| --- | --- | --- |
+| Volcado del filtro | `globalCompositeOperation='copy'` (mundo sustituido) | `'source-over'` + `globalAlpha = 0,85` **si `mezcla < 1`** |
+| Detalle del mundo tras el filtro | 0 % | **15 %** (mezcla por defecto 0,85) |
+| Nombres, bocadillos, «E», daños | pixelados | **nítidos** (se pintan después del filtro) |
+| Sección `filtro` del perfil | 0,7-0,8 ms | **0,4-0,8 ms** |
+| Sección `textos` del perfil | — | **0,6 ms** |
+
+1. **`mezcla`**: con `1` el volcado reemplaza el fotograma (`'copy'`); con valores
+   menores se superpone con alfa, así que el mundo queda uniforme pero conserva
+   detalle. Por defecto **0,85**, ajustable en caliente con `MESO_PIXELADO.mezcla(0.9)`
+   (más suave) o desde el menú DEV (**«Pixelado más leve» / «más fuerte»**, pasos de
+   0,1). Se guarda en `localStorage` (`meso.pixeladoMezcla`).
+2. **Cola `textoMundo`**: los textos del mundo se dibujan dentro del recorrido de
+   entidades, mucho antes de que exista el filtro, así que se **aparcan** en
+   `_colaTextoMundo` y `render()` los vuelca con `dibujarColaTextoMundo()` justo
+   después de `aplicarPixeladoMundo()`, junto con `dibujarTextosFlotantes()` (sacado
+   del bloque de efectos por el mismo motivo), los indicadores de oclusión y los
+   marcadores de misión. Con el filtro apagado el texto se dibuja en el acto, sin cola.
+   Detalle en 10.1.
+
+**Cómo comprobarlo sin fiarse de los píxeles**: `window._textosDiferidos` vale **> 0**
+con el filtro encendido (2-3 en un fotograma normal) y **0** al apagarlo con
+`MESO_PIXELADO.activar(false)`. Comparar recuadros de píxeles sobre un mundo animado
+(NPC que caminan, cámara que se recoloca) da números contradictorios: no sirve.
+
+---
+
+## 13. LOS TIRONES: `getImageData` dentro del bucle de dibujado (2026-10-09)
+
+Esta es la causa de los «tirones muy importantes» que se notaban jugando, y no tenía
+nada que ver con cuánto costaba dibujar: el fotograma **medio** ya bajaba de 8-12 ms.
+El problema era que cada 350 ms el juego se congelaba.
+
+### 13.1 La causa, medida
+
+`pintarAvisoDeAccion()` elige el color del texto del aviso (claro u oscuro) según lo
+claro que sea el fondo, y para saberlo **leía los píxeles del lienzo**:
+
+```js
+const datos = ctx.getImageData(cx, cy, 75, 20).data;   // ← 350 ms, siempre
+```
+
+El lienzo del juego lo tiene la GPU. Leerlo obliga a **sincronizar** con la CPU, y en
+este equipo cada lectura costaba entre **40 y 95 ms**. Medido con una sonda sobre
+`Canvas2D.getImageData` durante 80 fotogramas:
+
+| | Antes | Ahora |
+| --- | --- | --- |
+| Lecturas de píxeles por 80 fotogramas | 2 (75×20 cada una) | **0** |
+| Tiempo en esas lecturas | **135,5 ms** (39,7 + 95,8) | **0 ms** |
+| Peor fotograma de 60 | **97,7 ms** (`deferred` 85,6 ms) | **15,9 ms** (`deferred` 2,2 ms) |
+| Segundo peor de 60 | **61,3 ms** (`deferred` 48 ms) | 15,9 ms |
+
+O sea: el juego iba a 8 ms por fotograma y **tres veces por segundo** se paraba casi
+un décimo de segundo. Eso es exactamente un tirón.
+
+Chrome además avisaba por consola de que `getImageData` repetido quiere
+`willReadFrequently`, pero ese atributo obliga a que TODO el canvas del juego sea
+software, y se pinta miles de veces por fotograma: no compensa.
+
+### 13.2 El arreglo
+
+`luminanciaBajoElAviso()` ya no lee nada: calcula la luminancia del suelo **por datos**
+(`luminanciaDeCelda()`: color del bioma de la celda del jugador, y un valor oscuro fijo
+si hay un edificio, porque muros y tejados son oscuros en todas las épocas). Se sigue
+suavizando el cambio de color para que al cruzar de celda no salte de golpe.
+
+De paso, el vigilante del terreno (`lienzoParecePlano`, sección 9) hacía **cinco**
+`getImageData` seguidos: ahora hace **una** lectura del rectángulo que cubre las cinco
+muestras y mira dentro. Una sola sincronización en vez de cinco (medido: 208 ms → una
+vez por partida, a los pocos segundos de cargar; antes eran ~5×).
+
+**Regla que queda para el futuro**: `getImageData` NO se usa en el camino de dibujado.
+Sólo lo usan herramientas de diagnóstico que corren una vez o a petición
+(`lienzoParecePlano`, `cacheHash`, los editores de hojas).
+
+### 13.3 Foto de cómo quedó
+
+| Sección del perfil | Antes (peor fotograma) | Ahora (peor de 80) |
+| --- | --- | --- |
+| `deferred` (escaneo + aviso) | **85,6 ms** | 2,2 ms |
+| `edificios` | 2,3 ms | 8,5 ms (una vez, caché fría) |
+| `entidades` | 9,4 ms | 7,0 ms |
+| `cola` | 8,5 ms | 2,2 ms |
+| Fotograma | mediana 8,3 ms · peor **97,7 ms** | mediana **8,3 ms** · peor **15,9 ms** |
+
+### 13.4 Lo que queda (medido, pendiente)
+
+Midiendo de forma sintética (muchos `render()` seguidos, sin que el navegador
+componga entre medias) siguen apareciendo picos aislados: de 250 fotogramas, 11 pasan
+de 25 ms y **uno** llega a ~200-250 ms, casi siempre en la sección `cola` (árboles y
+edificios diferidos) o en `ui`. Comprobado que **no son de este arreglo ni del
+pixelado**: con el filtro apagado (mis colas no hacen nada) salen igual o peores, y el
+montón de memoria se queda plano (177 MB, no es el recolector). Lo más probable es que
+sean artefactos de medir en bucle cerrado: al dibujar cientos de fotogramas
+seguidos, el compositor acaba bloqueando el hilo principal, y ese bloqueo cae dentro de
+la sección que estuviera corriendo. En partida real (con el navegador compaginando a 60
+fps) no se ha podido medir porque la pestaña de pruebas está oculta y `rAF` se congela.
+Si vuelven a notarse tirones, el siguiente sitio donde mirar es la construcción
+perezosa de cachés de `cola` (`drawTreeTemplateSway`, `dibujarArbolArteDirecto`,
+`drawBuilding`).
+
+---
+
+## 14. Cuarta pasada (2026-10-09): los personajes tampoco se filtran
+
+El pixelado se quedaba con el jugador, los aldeanos, el perro y los conejos. Son los
+sprites de más densidad del juego y el jugador es justo lo que hay que distinguir
+siempre, así que ahora van aparte, igual que los textos:
+
+* **`spriteSinFiltro(z, fn)`** — segunda cola (`_colaSpriteSinFiltro`), con la clave de
+  **profundidad** de cada sprite, así que al vaciarla se respeta el orden entre ellos
+  (un aldeano que va delante del jugador lo sigue tapando).
+* **`render()`**: `filtro` → `sprites` (`dibujarColaSpritesSinFiltro()` + re-pintado de
+  las tapas) → `textos`. Sección nueva `sprites` en el perfilador: **0,55 ms**.
+* Van a la cola: `drawPlayer()` (con el caballo, la ropa y la herramienta), el sprite de
+  los aldeanos (con la armadura del guardia y la caña del pescador), el perro y los
+  conejos, con sus sombras. Los **cadáveres** y los **zorros** siguen filtrándose.
+* Contadores para comprobarlo: `window._spritesDiferidos` y
+  `window._tapasRepintadas` (también en `testDraw.perf.info().pixelado`).
+
+### 14.1 La oclusión sigue funcionando: `_ocluirTrasSprites`
+
+Como el jugador se pinta **después** de los árboles que tiene delante, sin más cambios
+se le vería **subido a las copas** (flotando sobre el bosque) y el puntero dorado de
+oclusión aparecería sin motivo. Mientras se pinta la cola diferida se apunta qué
+cacharro de delante toca la caja del jugador y, en cuanto se ha pintado el sprite
+nítido, se **vuelven a pintar encima** (`redibujarTapasDelJugador()` →
+`redibujarElementoDeCola()`). La oclusión queda exactamente igual que siempre.
+
+Los **edificios NO se re-pintan**: ellos ya tienen su «círculo de rescate»
+(`drawOccludedReveals`, translúcido a través del muro) y re-pintar el edificio encima lo
+taparía, dejando al jugador invisible otra vez.
+
+### 14.2 Y el pixelado, un poco más leve
+
+`PIXELADO.mezcla` pasa de **0,85 a 0,9**: el mundo conserva un **10 %** del detalle
+original en vez de un 15 %. Se ajusta en **DEV ▸ «Pixelado más leve» / «más fuerte»**
+(pasos de 0,1) o con `MESO_PIXELADO.mezcla(0.95)`.
+

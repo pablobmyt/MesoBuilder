@@ -289,6 +289,14 @@ export function createDebugTools(deps) {
   }
   function spriteKeyOf(ref) {
     if (!ref || typeof ref !== 'object') return null;
+    // El MOTOR dice con qué clave dibuja DE VERDAD esta entidad. Los árboles, por
+    // ejemplo, no se pintan con su `variant` sino con el arte que resuelve
+    // `resolveTreeSpriteVariant` (`treeN_sup`/`treeN_iso` o el `treeN` de turno):
+    // con la clave antigua el ajuste se guardaba en una entrada que el dibujado no
+    // consultaba nunca, así que «ajusto la escala y no pasa nada».
+    if (typeof deps.resolveEntitySpriteKey === 'function') {
+      try { const k = deps.resolveEntitySpriteKey(ref); if (k) return k; } catch (e) {}
+    }
     if (ref._dbg && ref._dbg.sprite) return ref._dbg.sprite;
     if (ref.sprite) return ref.sprite;   // entidades de previsualización del modo debug
     if (ref.kind === 'tree') return ref.variant || 'tree0';
@@ -760,7 +768,10 @@ export function createDebugTools(deps) {
     const [lo, hi] = clampMap[field] || [-4, 4];
     const base = num(t.obj[field], field === 'scale' || field === 'alpha' ? 1 : 0);
     t.obj[field] = clamp(base + delta, lo, hi);
-    if (t.scope === 'sprite') syncGlobals();
+    // SIEMPRE: al primer ajuste la tabla local estaba vacía y `syncGlobals()` sólo
+    // se llamaba para los sprites de entidad, así que `window._mesoDbgBuilding`
+    // seguía siendo null y `drawBuilding` no veía nunca el ajuste de un edificio.
+    syncGlobals();
     persist();
     refreshPanel();
     try { deps.render(); } catch (e) {}
@@ -771,7 +782,7 @@ export function createDebugTools(deps) {
     const t = currentAdjustTarget(true);
     if (!t || !t.obj) return;
     t.obj[field] = num(value, t.obj[field]);
-    if (t.scope === 'sprite') syncGlobals();
+    syncGlobals();
     persist();
     refreshPanel();
     try { deps.render(); } catch (e) {}
@@ -1523,7 +1534,7 @@ export function createDebugTools(deps) {
             if (t && t.obj) {
               t.obj.scale = 1; t.obj.offsetX = 0; t.obj.offsetY = 0;
               if ('alpha' in t.obj) t.obj.alpha = 1;
-              if (t.scope === 'sprite') syncGlobals();
+              syncGlobals();
               persist(); refreshPanel(); try { deps.render(); } catch (e) {}
             }
           } else if (act === 'applyToAll') {

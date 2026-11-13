@@ -28,16 +28,27 @@
 
 ## 1. Visión del proyecto
 
-**MesoBuilder** es un juego de exploración y supervivencia ambientado en la Mesopotamia (~2350 a.C.), con elementos de rol y narrativa sencilla. El jugador encarna a **Adapa**, un superviviente cuya aldea fue destruida, que debe cruzar el mundo antiguo para llevar un aviso urgente: el gran diluvio se acerca.
+> **Planteamiento vigente (2026-10-13): `docs/DISEÑO.md`.** MesoBuilder es una **colonia
+> en tiempo real en Mesopotamia**, sin narrativa: fundas una aldea junto al río, la haces
+> crecer con tus manos y la defiendes. Toda la historia (prólogo en casa, actos,
+> cinemáticas, NPCs de guion) está apagada por el interruptor `NARRATIVA = false` del
+> motor, y las épocas URSS y medieval quedan congeladas (una sola época: Mesopotamia).
+
+**MesoBuilder** es un juego de construcción y gestión de una colonia ambientado en la
+Mesopotamia (~2350 a.C.). El jugador es el fundador de un asentamiento nuevo: coloca
+edificios, mira cómo producen cada día, hace crecer la población y protege lo construido.
 
 ### Pilares de diseño
 
 | Pilar | Descripción |
 |---|---|
-| **Exploración** | Mundo generado proceduralmente con biomas, ríos y ciudades |
-| **Supervivencia** | Hambre, sed, stamina, HP con regen pasivo |
-| **Narrativa** | Historia principal con NPCs de historia y diálogos cinemáticos |
-| **Ambiente** | Ciclo día/noche, clima, iluminación con torch vignette |
+| **Construcción** | Paleta de 48 edificios con coste en cebada y adobe; se construye en partida |
+| **Producción** | Cada día (120 s reales) los edificios rinden; la población consume cebada |
+| **Crecimiento** | La población es la puntuación: aldea → villa → ciudad (hitos por definir) |
+| **Ambiente** | Ciclo día/noche, ríos, niebla, mundo que crece, sonido |
+
+*(Lo que había antes —exploración narrativa con Adapa y el aviso del diluvio— sigue en
+`docs/GUION-NARRATIVO.md`, congelado.)*
 
 ---
 
@@ -446,18 +457,21 @@ Detalles que marcan la diferencia:
 
 ### 5.9 Murallas, puertas y torres
 
-Murallas y torres llevan sprite (`wall_segment_h`, `wall_segment_v`,
+Murallas y torres llevan sprite (`wall_segment_h`, `wall_side`,
 `wall_tower`), dibujado a densidad 4 como el resto del arte:
 
 | Sprite | Rejilla | Detalle |
 |---|---|---|
 | `wall_segment_h` | 4×10 (huella 1×1) | muro que corre de izquierda a derecha: parapeto macizo, aspilleras oscuras, hiladas y zócalo |
-| `wall_segment_v` | 4×12 (huella 1×1) | muro que corre en profundidad: remate, costado iluminado por la izquierda, aspilleras y juntas |
+| `wall_side` | 4×10 (huella 1×1) | **el lateral** (muro que corre en profundidad, de norte a sur): remate, costado iluminado, aspilleras y juntas. Entidad propia para poder ajustarla a mano; si falta, el motor usa `wall_segment_v`. **Tiene que medir lo MISMO de alto que el horizontal**: con 4×12 el motor lo encoge para meterlo en la casilla y los segmentos quedan separados (26,7 px de arte en una casilla de 32) |
 | `wall_tower` | 8×14 (huella 2×2) | cuatro almenas, adarve, tronera y zócalo; sobresale 3,5 celdas |
 
 `drawBuilding` lee la orientación guardada en la celda (`grid[fila][col].orient`,
 `'h'` o `'v'`) y usa el sprite correspondiente; si el sprite no existe, cae al
-dibujo procedural anterior.
+dibujo procedural anterior. Con arte **nuevo** (recortes de la hoja) la clave lleva
+además la vista (`wall_segment_h_iso`, `wall_side_iso`…): si dos rectángulos de
+`data/entity-views.json` apuntan al mismo panel de la hoja, el muro de los laterales
+sale con el dibujo del de arriba (ver `docs/EDITOR-DE-ENTIDADES.md`).
 
 > **La silueta de un muro no puede tener transparencias.** Con almenas separadas
 > por huecos transparentes, dos celdas seguidas parecían bloques sueltos («hay
@@ -653,6 +667,10 @@ jugar: `MESO_DEBUG.testDraw.dialogo.*`.
 ---
 
 ## 7. Historia principal
+
+> ⚠️ **CONGELADO (2026-10-13).** El juego ya no cuenta una historia (ver `docs/DISEÑO.md`).
+> Lo de abajo se conserva como referencia de lo que hubo; en el motor está apagado con
+> `NARRATIVA = false`.
 
 ### Sinopsis
 

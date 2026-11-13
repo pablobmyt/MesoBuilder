@@ -1,5 +1,5 @@
 {
-  "generado": "2026-10-07T07:58:03.772Z",
+  "generado": "2026-10-09T08:56:47.022Z",
   "nota": "Generado por tools/build-docs-index.mjs. Es la lista que enseña la guía del juego (F1).",
   "docs": [
     {
@@ -136,6 +136,13 @@
       "lineas": 127
     },
     {
+      "archivo": "docs/REFACTOR-MONOLITO.md",
+      "titulo": "Partir el monolito — MesoBuilder",
+      "grupo": "Sistemas",
+      "descripcion": "Partir engine/game-engine.js en varios ficheros no mejora los FPS.",
+      "lineas": 107
+    },
+    {
       "archivo": "docs/RENDERIZADO-PIXEL.md",
       "titulo": "Sistema de Renderizado Pixel-Art de MesoBuilder — Guía Completa",
       "grupo": "Sistemas",
@@ -196,7 +203,7 @@
       "titulo": "Arranque, guardado y interfaz flotante",
       "grupo": "Desarrollo",
       "descripcion": "engine/game-engine.js es un módulo ES.",
-      "lineas": 179
+      "lineas": 185
     },
     {
       "archivo": "docs/AUDITORIA.md",
@@ -210,7 +217,7 @@
       "titulo": "Introducción Cinematográfica de MesoBuilder",
       "grupo": "Desarrollo",
       "descripcion": "modified: 2026-05-29T11:37:25.487Z",
-      "lineas": 136
+      "lineas": 138
     },
     {
       "archivo": "docs/EDITOR-DE-ENTIDADES.md",
@@ -238,14 +245,14 @@
       "titulo": "Modo Debug / Inspector visual — MesoBuilder",
       "grupo": "Desarrollo",
       "descripcion": "Herramientas de depuración: inspector, MESO_DEBUG y atajos de pruebas.",
-      "lineas": 156
+      "lineas": 173
     },
     {
       "archivo": "docs/RENDIMIENTO.md",
       "titulo": "Rendimiento — MesoBuilder",
       "grupo": "Desarrollo",
       "descripcion": "tillFieldRect llamaba a setBuildingCells() por celda, y cada llamada",
-      "lineas": 378
+      "lineas": 521
     },
     {
       "archivo": "TODO.md",
