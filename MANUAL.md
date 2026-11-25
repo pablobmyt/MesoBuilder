@@ -297,6 +297,15 @@ Los tres últimos salen del **planificador de asentamientos** (ver §5.6).
 definida y ocupaban **una sola celda** (el sprite se dibujaba minúsculo y los
 edificios cabían dentro de otros). Ya están corregidos.
 
+> **La huella no se pierde al cargar el JSON.** Las medidas canónicas viven en el
+> catálogo `BUILDINGS` del motor y `data/entities-defs.json` sólo debe pisar los
+> campos que define: la mezcla es *por clave* (`mergeBuildingDefs`, en
+> `game-engine-entity-def-utils.js`). Antes se hacía `Object.assign({}, BUILDINGS, json)`,
+> que sustituía la definición ENTERA; como el JSON no guarda `size` en casi ningún
+> caso, `farm`, `market` y `granary` se quedaban **sin huella** y volvían a dibujarse
+> en una sola celda. Con la mezcla por clave, una entrada del JSON sin `size` conserva
+> la huella del motor y sólo la sobrescribe si la especifica.
+
 **`BUILDING_SCALE = 1.0`**: el sprite se dibuja exactamente en el footprint de colisión. Cambiar a > 1.0 hará que el sprite sobresalga visualmente de la hitbox.
 
 ### 5.4 Profundidad (depth sort)

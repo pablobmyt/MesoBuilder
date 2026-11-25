@@ -622,6 +622,13 @@ const graves = [];     // tumbas (entidades especiales)
 | `size` | Tamaño en tiles `{w, h}` |
 | `attackRange`, `attackDmg`, `attackCooldown` | Solo para torres defensivas |
 
+**El JSON sólo sobrescribe los campos que escribe.** La carga mezcla *por clave* cada
+entrada con la definición del catálogo `BUILDINGS` del motor (`mergeBuildingDefs` en
+`game-engine-entity-def-utils.js`): un edificio del JSON sin `size` conserva la huella
+del motor. No se usa `Object.assign({}, BUILDINGS, json)`, porque eso reemplazaba la
+definición entera y dejaba a `farm`, `market` y `granary` sin huella (se dibujaban en
+una sola celda).
+
 ---
 
 ## 13. Consejos de Rendimiento

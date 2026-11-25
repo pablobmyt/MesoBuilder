@@ -27,6 +27,21 @@ export function initializeEntityRuntimeCaches() {
   window._unitCommandTarget = window._unitCommandTarget || null;
 }
 
+// Mezcla POR CLAVE las definiciones del motor con las del JSON. Antes se hacía
+// `Object.assign({}, BUILDINGS, json)`, que reemplazaba la definición ENTERA de
+// cada edificio: como el JSON no guarda `size` en muchos casos, la granja (y el
+// mercado, el granero, la granja colectiva…) se quedaban SIN huella y el motor
+// las dibujaba en una sola casilla, diminutas. Aquí cada entrada del JSON sólo
+// pisa los campos que realmente define, conservando el resto por defecto.
+function mergeBuildingDefs(base, extra) {
+  const out = {};
+  try {
+    for (const k of Object.keys(base || {})) out[k] = Object.assign({}, base[k]);
+    for (const k of Object.keys(extra || {})) out[k] = Object.assign({}, out[k] || {}, extra[k]);
+  } catch (e) {}
+  return out;
+}
+
 export async function loadEntityDefinitions(progress, deps) {
   const {
     BUILDINGS,
@@ -71,7 +86,7 @@ export async function loadEntityDefinitions(progress, deps) {
       return;
     }
     window._ENTITY_DEFS = window._ENTITY_DEFS || {};
-    window._ENTITY_DEFS.buildings = Object.assign({}, BUILDINGS, j.buildings || {});
+    window._ENTITY_DEFS.buildings = mergeBuildingDefs(BUILDINGS, j.buildings || {});
     window._ENTITY_DEFS.trees = Array.isArray(j.trees) ? j.trees.slice() : (window._ENTITY_DEFS.trees || []);
     window._ENTITY_DEFS.animals = Object.assign({}, j.animals || {});
     window._ENTITY_DEFS.enemies = Object.assign({}, DEFAULT_ENEMY_DEFS, j.enemies || {});
@@ -90,7 +105,7 @@ export function importEntityDefinitionsFromObject(obj, deps) {
   try {
     if (!obj) return false;
     window._ENTITY_DEFS = window._ENTITY_DEFS || {};
-    if (obj.buildings) window._ENTITY_DEFS.buildings = Object.assign({}, window._ENTITY_DEFS.buildings || {}, obj.buildings);
+    if (obj.buildings) window._ENTITY_DEFS.buildings = mergeBuildingDefs(window._ENTITY_DEFS.buildings || {}, obj.buildings);
     if (obj.trees) window._ENTITY_DEFS.trees = Array.isArray(obj.trees) ? obj.trees.slice() : (window._ENTITY_DEFS.trees || []);
     if (obj.animals) window._ENTITY_DEFS.animals = Object.assign({}, window._ENTITY_DEFS.animals || {}, obj.animals);
     if (obj.enemies) window._ENTITY_DEFS.enemies = Object.assign({}, DEFAULT_ENEMY_DEFS, window._ENTITY_DEFS.enemies || {}, obj.enemies);
