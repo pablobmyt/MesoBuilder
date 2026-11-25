@@ -552,7 +552,10 @@ function bitmapFor(kind, state, bucket, back, opts) {
  * @param {number} x centro horizontal (px de pantalla)
  * @param {number} yBase base (px de pantalla, donde apoya las patas)
  * @param {number} ancho ancho deseado en px
- * @param {object} [opts] { state, phase01, flip, now, ent, variant, mounted, back }
+ * @param {object} [opts] { state, phase01, flip, now, ent, variant, mounted, back, dir }
+ *   `dir` ('up'|'down'|'left'|'right') lo usa el arte externo con vistas por
+ *   dirección; `flip`/`back` se conservan para el arte procedural y para las
+ *   hojas que sólo traen perfil.
  *   `variant` y `mounted` los usa el proveedor de arte externo (el pelaje del
  *   caballo y si lleva silla). El arte procedural los ignora.
  */
@@ -574,10 +577,13 @@ export function drawAnimal(ctx, kind, x, yBase, ancho, opts = {}) {
   const h = Math.max(6, Math.round(w * (bmp.h / bmp.w)));
   const px = Math.round(x - w / 2);
   const py = Math.round(yBase - h);
+  // El arte externo puede venir ya dibujado en la dirección pedida (`noFlip`):
+  // entonces no se voltea, o se vería al revés.
+  const flip = bmp.noFlip ? false : !!opts.flip;
   try {
     ctx.save();
     ctx.imageSmoothingEnabled = false;
-    if (opts.flip) {
+    if (flip) {
       ctx.translate(x, yBase);
       ctx.scale(-1, 1);
       ctx.drawImage(bmp.canvas, -w / 2, -h, w, h);

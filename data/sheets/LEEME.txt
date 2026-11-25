@@ -21,25 +21,23 @@ Formatos: PNG con fondo transparente (lo transparente se ignora al recortar).
 CABALLOS (hoja de animaciones, no del editor de entidades)
 ----------------------------------------------------------
 `data/sheets/Caballos.png` es la hoja de caballos del usuario: se usa para
-ANIMAR el caballo del juego (paso, trote, galope, pastar, encabritarse…).
+ANIMAR el caballo del juego (paso, trote, galope y las cuatro direcciones).
 
+- Rejilla 4x8 de celdas de 128x128, CON canal alfa (no hay damero que quitar):
+  filas 1-3 galope (11 fotogramas), fila 4 quieto en cuatro direcciones
+  [arriba, izquierda, abajo, derecha] y filas 5-8 andar por detrás, a la
+  izquierda, de frente y a la derecha.
 - No la lleva el editor de entidades: su rejilla la mide
-  `tools/build-horse-sheet.py`, que escribe `data/horse-sheet.json` (las bandas con
-  sus rectángulos por pelaje, el dibujo base del rig y la tabla de animaciones).
-- OJO: NO es una tira de fotogramas. Las columnas son PELAJES y las filas POSES; y
-  las bandas con montura (7-10) son el mismo caballo con SILLAS DISTINTAS. El motor
-  coge UN solo dibujo base y lo anima por partes (patas + tronco), así que el
-  caballo es siempre el mismo y no "cambia de caballo" al moverse.
-- El motor la lee en `engine/horse-sheet-art.js`, que le quita al vuelo el DAMERO,
-  la SOMBRA y el HALO de mezcla del contorno (van cocidos en el PNG, sin canal
-  alfa): propagación desde los bordes + dos pasadas de borde + quitado de las
-  "bolsas" de damero encerradas (tope `bolsasMaxPx`). Sin eso salían manchones
-  blancos en el caballo (en la garganta, sobre todo) y un reborde blanquecino.
-  La sombra importa: es la que tapa los huecos entre las patas y sin quitarla no
-  se pueden separar para animarlas.
+  `tools/build-horse-sheet.py`, que escribe `data/horse-sheet.json` (un clip por
+  animación y dirección, con su fps, y el lienzo común de todos los recortes).
+- El motor la lee en `engine/horse-sheet-art.js`, que recorta el fotograma que
+  toca y lo dibuja tal cual: ya no hay que partir el dibujo en tronco y patas.
+  Las poses que la hoja no trae (encabritarse, tumbarse, sacudirse) se componen
+  con el dibujo de quieto; pastar, beber y relinchar se quedan como el quieto.
+- La hoja anterior (20 pelajes, un solo dibujo animado por partes) se conserva
+  como `data/sheets/Caballos_clasico_20pelajes.png` por si hay que volver atrás.
 - Si la hoja o el JSON faltan, el caballo se sigue dibujando procedural
   (`engine/animal-art.js`): el juego nunca se queda sin caballos.
 - En Crear partida ▸ Opciones ▸ «Estilo de arte» = clásico, se usa el caballo
   procedural aunque la hoja esté.
 Guía: docs/CABALLO-HOJA-DE-SPRITES.md
-

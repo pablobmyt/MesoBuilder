@@ -189,8 +189,10 @@ export function createStandaloneEditorUtils(deps) {
       const { canvas, rect } = cr;
       const world = deps.worldToScreen(col, row);
       if (!world || typeof world.x !== 'number' || typeof world.y !== 'number') return null;
-      const scaleX = rect.width / Math.max(1, canvas.width);
-      const scaleY = rect.height / Math.max(1, canvas.height);
+      // `world` ya viene en píxeles CSS (el búfer del lienzo está a resolución
+      // física, pero el motor dibuja en CSS), así que no hay que reescalar.
+      const scaleX = 1;
+      const scaleY = 1;
       const mode = (typeof deps.getViewMode === 'function') ? deps.getViewMode() : 'ortho';
       if (mode === 'iso' && typeof deps.getIsoTileSize === 'function') {
         const iso = deps.getIsoTileSize() || { w: 32, h: 18 };
@@ -223,9 +225,8 @@ export function createStandaloneEditorUtils(deps) {
       const localCssX = Number(clientX) - rect.left;
       const localCssY = Number(clientY) - rect.top;
       if (localCssX < 0 || localCssY < 0 || localCssX > rect.width || localCssY > rect.height) return null;
-      const sx = localCssX * (canvas.width / rect.width);
-      const sy = localCssY * (canvas.height / rect.height);
-      const world = deps.screenToWorld(sx, sy);
+      // Coordenadas CSS = coordenadas del motor (ver `getCellClientFrame`).
+      const world = deps.screenToWorld(localCssX, localCssY);
       if (!world || typeof world.col !== 'number' || typeof world.row !== 'number') return null;
       const cell = clampCell(world.col, world.row);
       const building = pickBuildingAtCell(cell.col, cell.row);

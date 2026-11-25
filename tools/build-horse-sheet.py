@@ -1,28 +1,33 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Genera `data/horse-sheet.json` a partir de una hoja de sprites de caballos.
+Genera `data/horse-sheet.json` (formato 2) a partir de la hoja de caballos.
 
-La hoja de caballos del usuario ("Pixel Art Horse Sprite Sheet") NO es una rejilla
-uniforme: los sprites van empaquetados a mano. Este script la mide por píxeles:
+LA HOJA (rejilla 4 x 8, celdas de 128x128)
+==========================================
+    filas 1-3  ->  ciclo de GALOPE, 11 fotogramas seguidos (4 + 4 + 3),
+                   el caballo de perfil mirando a la DERECHA
+    fila  4    ->  QUIETO, una vista por direccion: [arriba, izquierda, abajo, derecha]
+    fila  5    ->  ANDAR visto por DETRAS (direccion «arriba»), 4 fotogramas
+    fila  6    ->  ANDAR de perfil mirando a la IZQUIERDA, 4 fotogramas
+    fila  7    ->  ANDAR de FRENTE (direccion «abajo»), 4 fotogramas
+    fila  8    ->  ANDAR de perfil mirando a la DERECHA, 4 fotogramas
 
-  1. Detecta el fondo (el damero claro que algunas hojas traen "cocido" en el PNG,
-     sin canal alfa) y lo separa con un relleno por difusión desde los bordes: así
-     los caballos blancos NO se confunden con el fondo (están encerrados por su
-     contorno y el relleno no llega a ellos).
-  2. Etiqueta cada sprite por componentes conexas y fusiona las piezas sueltas
-     (alguna crin separada, sombras pegadas…).
-  3. Agrupa los sprites en BANDAS (filas de la hoja).
-  4. Escribe el JSON que consume `engine/horse-sheet-art.js`: las bandas con el
-     rectángulo de cada variante y la tabla de animaciones (banda/fps/bucle).
-
-La limpieza real del damero (quitarle el fondo) la hace el MOTOR al cargar, en el
-navegador (`engine/horse-sheet-art.js`), para no duplicar el PNG en disco.
+Lo que hace este script
+=======================
+1. Detecta el fondo: si el PNG trae canal alfa, ese alfa manda; si no (hoja con el
+   damero «cocido», como la clasica), se separa con un relleno por difusion desde
+   los bordes.
+2. Mide cada fotograma por pixeles (caja del contenido, ignorando motas de 1 px).
+3. Calcula UN lienzo comun para todos los recortes: misma anchura y altura, con
+   la base (los cascos) en el borde inferior y el contenido centrado. Asi el
+   caballo no cambia de tamano ni «baila» al pasar de andar a galopar.
+4. Escribe el JSON que consume `engine/horse-sheet-art.js`.
 
 Uso:
     python tools/build-horse-sheet.py [ruta_hoja] [ruta_salida]
 
-Requiere Pillow (`python -m pip install pillow`). Es una herramienta de PREPARACIÓN
+Requiere Pillow (`python -m pip install pillow`). Es una herramienta de PREPARACION
 de arte: se ejecuta a mano cuando cambia la hoja, no en el arranque del juego.
 """
 import json
@@ -40,230 +45,247 @@ RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HOJA = sys.argv[1] if len(sys.argv) > 1 else os.path.join(RAIZ, "data", "sheets", "Caballos.png")
 SALIDA = sys.argv[2] if len(sys.argv) > 2 else os.path.join(RAIZ, "data", "horse-sheet.json")
 
-# Umbrales del fondo. OJO: no es sólo el damero. Cada caballo trae una SOMBRA
-# gris debajo, y esa sombra es la que TAPA los huecos entre las patas (y por eso
-# el caballo parecía una mancha maciza sin patas que separar). La sombra va de
-# ~110 a ~250 de brillo, así que el fondo es "gris neutro y no muy oscuro":
-# así entra el damero Y la sombra, y NO entran ni el contorno del caballo
-# (brillo < 60) ni su pelo (saturado).
-LUM_FONDO = 105      # brillo mínimo para considerar "fondo o sombra"
-SAT_FONDO = 30       # diferencia máx/mín de canales (fondo y sombra son grises)
-# Tope de tamaño (px) de una "bolsa" de damero encerrada dentro del caballo. Las
-# bolsas medidas miden 21-72 px y las manchas blancas pintadas 143-426, así que
-# 120 las separa. Si salen manchones claros en el caballo, bajar este número; si
-# desaparecen manchas blancas del dibujo, subirlo.
-BOLSAS_MAX_PX = 120
+ALFA_MIN = 24          # por debajo de esto el pixel es fondo
+MIN_PX_FILA = 2        # motas de 1 px (restos de la rejilla) no cuentan como contenido
+COLUMNAS = 4
+FILAS = 8
 
-# ── Tabla de animaciones ─────────────────────────────────────────────────────
-# El motor pide estos nombres desde `horseStateFor()` (game-engine.js).
-#
-# OJO, LECCIÓN APRENDIDA: las bandas 0-3 son el MISMO caballo con variaciones
-# mínimas (no un ciclo) y las bandas 7-10 son el MISMO caballo con CUATRO SILLAS
-# DISTINTAS. Recorrerlas como "fotogramas" hacía que el caballo pareciese ir
-# ROTANDO entre varios caballos (y al ir montado, cambiaba de silla en cada
-# fotograma). Por eso:
-#
-#   · `tipo: rig`  → se dibuja UNA sola banda (`base` / `baseMontura`) y el motor
-#     la anima POR PARTES (patas + tronco): el caballo es siempre el mismo dibujo.
-#   · `tipo: hoja` → poses completas y distintas de verdad (pastar, encabritarse,
-#     tumbarse): ahí sí se cambia de banda, porque es el mismo caballo en otra pose.
-ANIMS = [
-    # nombre        tipo    fps  bucle  modo        (hoja: filas)
-    ("idle",        "rig",   4,   True,  "reposo",   None),
-    ("walk",        "rig",   9,   True,  "paso",     None),
-    ("trot",        "rig",  13,   True,  "trote",    None),
-    ("gallop",      "rig",  18,   True,  "galope",   None),
-    ("paw",         "rig",  10,   True,  "piafar",   None),
-    ("shake",       "rig",  12,   True,  "sacudir",  None),
-    ("graze",       "hoja",  2,   True,  "pastar",   [4]),
-    ("drink",       "hoja",  2,   True,  "beber",    [4]),
-    ("rear",        "hoja",  4,   False, "encabritar", [5]),
-    ("neigh",       "hoja",  4,   False, "relinchar",  [5]),
-    ("lie",         "hoja",  2,   True,  "tumbarse", [6]),
-]
+FILAS_GALOPE = 3                       # las tres primeras filas son el ciclo de galope
+VISTAS_IDLE = ["up", "left", "down", "right"]
+FILAS_ANDAR = ["up", "left", "down", "right"]
 
-# Bandas que sirven de DIBUJO BASE para el rig (la pose neutra, de perfil).
-BANDA_BASE = 0            # sin montura
-BANDA_BASE_MONTURA = 7    # con montura (silla rojiza)
+FPS = {"idle": 4, "walk": 9, "gallop": 18}
 
-# Pelaje por defecto: el MISMO caballo para todos (lo pidió el usuario).
-PELAJE_POR_DEFECTO = 0
 
-# Nombre legible de cada banda (para documentar y para la API de depuración).
-POSES = {
-    0: "de pie (base del rig)", 1: "de pie, variante 2", 2: "de pie, variante 3",
-    3: "de pie, variante 4",
-    4: "pastando", 5: "encabritado", 6: "tumbado",
-    7: "con silla rojiza (base del rig montado)", 8: "con silla roja y oro",
-    9: "con silla perfilada en rojo", 10: "con manta clara",
-    11: "con brida de gala", 12: "con silla sencilla",
-    13: "potros y objetos", 14: "potros y objetos (2)",
-}
+# ── Fondo ────────────────────────────────────────────────────────────────────
+def quitar_damero(im, lum=105, sat=30, bolsas_max=120):
+    """RGBA con el damero y la sombra del fondo en alfa 0.
+
+    Se marca como candidato todo gris neutro y no oscuro y se propaga desde los
+    bordes: el caballo (blanco incluido) queda encerrado por su contorno y no se
+    alcanza. Despues se quitan las «bolsas» de damero encerradas dentro del
+    dibujo (los huecos entre las patas).
+    """
+    im = im.convert("RGBA")
+    w, h = im.size
+    px = im.load()
+    candidato = bytearray(w * h)
+    for y in range(h):
+        for x in range(w):
+            r, g, b, a = px[x, y]
+            if a == 0:
+                candidato[y * w + x] = 1
+                continue
+            mx, mn = max(r, g, b), min(r, g, b)
+            if (mx - mn) < sat and (r + g + b) / 3 > lum:
+                candidato[y * w + x] = 1
+
+    fondo = bytearray(w * h)
+    cola = deque()
+
+    def mete(x, y):
+        p = y * w + x
+        if candidato[p] and not fondo[p]:
+            fondo[p] = 1
+            cola.append(p)
+
+    for x in range(w):
+        mete(x, 0); mete(x, h - 1)
+    for y in range(h):
+        mete(0, y); mete(w - 1, y)
+    while cola:
+        p = cola.popleft()
+        x, y = p % w, p // w
+        if x > 0: mete(x - 1, y)
+        if x < w - 1: mete(x + 1, y)
+        if y > 0: mete(x, y - 1)
+        if y < h - 1: mete(x, y + 1)
+
+    visto = bytearray(w * h)
+    for y in range(h):
+        for x in range(w):
+            p = y * w + x
+            if not candidato[p] or fondo[p] or visto[p]:
+                continue
+            grupo = []
+            q = deque([p])
+            visto[p] = 1
+            while q:
+                c = q.popleft()
+                grupo.append(c)
+                cx, cy = c % w, c // w
+                for nx, ny in ((cx - 1, cy), (cx + 1, cy), (cx, cy - 1), (cx, cy + 1)):
+                    if 0 <= nx < w and 0 <= ny < h:
+                        n = ny * w + nx
+                        if candidato[n] and not visto[n]:
+                            visto[n] = 1
+                            q.append(n)
+            if len(grupo) <= bolsas_max:
+                for c in grupo:
+                    fondo[c] = 1
+
+    for y in range(h):
+        for x in range(w):
+            if fondo[y * w + x]:
+                r, g, b, _ = px[x, y]
+                px[x, y] = (r, g, b, 0)
+    return im
+
+
+def preparar(im):
+    """Devuelve (imagen RGBA con fondo transparente, tenia_alfa)."""
+    im = im.convert("RGBA")
+    tenia_alfa = im.getchannel("A").getextrema()[0] < 250
+    if tenia_alfa:
+        return im, True
+    return quitar_damero(im), False
+
+
+# ── Medicion ─────────────────────────────────────────────────────────────────
+def medir_celdas(im):
+    """Caja del contenido de cada celda de la rejilla, en px de la hoja."""
+    w, h = im.size
+    cw, ch = w // COLUMNAS, h // FILAS
+    alfa = im.getchannel("A").load()
+    out = []
+    for fy in range(FILAS):
+        fila = []
+        for fx in range(COLUMNAS):
+            x0, y0 = fx * cw, fy * ch
+            minx, miny, maxx, maxy = cw, ch, -1, -1
+            for y in range(ch):
+                n = sum(1 for x in range(cw) if alfa[x0 + x, y0 + y] > ALFA_MIN)
+                if n < MIN_PX_FILA:
+                    continue
+                for x in range(cw):
+                    if alfa[x0 + x, y0 + y] > ALFA_MIN:
+                        if x < minx: minx = x
+                        if x > maxx: maxx = x
+                if y < miny: miny = y
+                if y > maxy: maxy = y
+            fila.append(None if maxx < 0 else (x0 + minx, y0 + miny, maxx - minx + 1, maxy - miny + 1))
+        out.append(fila)
+    return out, (cw, ch)
+
+
+def local(caja, celda, f, c):
+    """Caja del contenido en coordenadas DENTRO de su celda."""
+    cw, ch = celda
+    x, y, w, h = caja
+    return (x - c * cw, y - f * ch, w, h)
+
+
+def rects_de_clip(clip, cajas, celda, lienzo, anclaje):
+    """Rectangulos de los fotogramas de un clip, TODOS con el mismo tamano y el
+    mismo desplazamiento dentro de su celda.
+
+    Asi el caballo no cambia de tamano ni de sitio al pasar de una animacion a
+    otra, y el movimiento de las patas es el que dibujo el artista.
+    """
+    cw, ch = celda
+    LW, LH = lienzo
+    rx, ry = anclaje
+    rects = []
+    for f, c in clip:
+        if not cajas[f][c]:
+            continue
+        rects.append([c * cw + rx, f * ch + ry, LW, LH])
+    return rects
+
+
+def anclaje_de_familia(clips, cajas, celda, lienzo):
+    """Desplazamiento comun (rx, ry) dentro de la celda para una familia de clips.
+
+    La base se alinea con el borde inferior del lienzo. OJO: las filas de la hoja
+    no estan dibujadas exactamente a la misma altura (hasta 12 px de diferencia
+    entre las tres filas del galope), asi que se toma la base de la familia
+    entera; si no, el caballo pegaria saltos verticales al pasar de fila.
+    """
+    cw, ch = celda
+    LW, LH = lienzo
+    bases, minxs, maxxs = [], [], []
+    for clip in clips:
+        for f, c in clip:
+            caja = cajas[f][c]
+            if not caja:
+                continue
+            x, y, w, h = local(caja, celda, f, c)
+            bases.append(y + h)
+            minxs.append(x)
+            maxxs.append(x + w)
+    base = max(bases)
+    centro = (min(minxs) + max(maxxs)) / 2
+    rx = int(round(centro - LW / 2))
+    ry = base - LH
+    # Sin salirse de la celda (no puede comerse al vecino).
+    rx = max(0, min(rx, cw - LW))
+    ry = max(0, min(ry, ch - LH))
+    return rx, ry
 
 
 def main():
-    im = Image.open(HOJA).convert("RGB")
-    W, H = im.size
-    px = im.load()
-    print(f"Hoja: {os.path.relpath(HOJA, RAIZ)}  {W}x{H}")
+    im, tenia_alfa = preparar(Image.open(HOJA))
+    cajas, celda = medir_celdas(im)
+    print("hoja:", os.path.relpath(HOJA, RAIZ).replace("\\", "/"), im.size, "alfa:", tenia_alfa)
 
-    # 1 · mapa de "esto parece damero"
-    fondo = bytearray(W * H)
-    for y in range(H):
-        base = y * W
-        for x in range(W):
-            r, g, b = px[x, y]
-            if (max(r, g, b) - min(r, g, b)) < SAT_FONDO and (r + g + b) / 3 > LUM_FONDO:
-                fondo[base + x] = 1
+    todos = [c for fila in cajas for c in fila if c]
+    LW = max(c[2] for c in todos)
+    LH = max(c[3] for c in todos)
+    lienzo = (LW, LH)
 
-    # 2 · relleno por difusión desde el borde: sólo el damero EXTERIOR es fondo
-    marca = bytearray(W * H)
-    cola = deque()
-    for x in range(W):
-        for y in (0, H - 1):
-            i = y * W + x
-            if fondo[i] and not marca[i]:
-                marca[i] = 1
-                cola.append((x, y))
-    for y in range(H):
-        for x in (0, W - 1):
-            i = y * W + x
-            if fondo[i] and not marca[i]:
-                marca[i] = 1
-                cola.append((x, y))
-    while cola:
-        x, y = cola.popleft()
-        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-            nx, ny = x + dx, y + dy
-            if 0 <= nx < W and 0 <= ny < H:
-                j = ny * W + nx
-                if fondo[j] and not marca[j]:
-                    marca[j] = 1
-                    cola.append((nx, ny))
+    # Cada familia agrupa los clips que se dibujan con la MISMA base y escala:
+    # pasar de quieto a andar no puede mover ni encoger el caballo.
+    clips_def = {}
+    galope = [(f, c) for f in range(FILAS_GALOPE) for c in range(COLUMNAS) if cajas[f][c]]
+    clips_def["gallop"] = (galope, FPS["gallop"])
+    for i, vista in enumerate(VISTAS_IDLE):
+        clips_def["idle_" + vista] = ([(FILAS_GALOPE, i)], FPS["idle"])
+    for i, vista in enumerate(FILAS_ANDAR):
+        fila = FILAS_GALOPE + 1 + i
+        clips_def["walk_" + vista] = ([(fila, c) for c in range(COLUMNAS) if cajas[fila][c]], FPS["walk"])
 
-    # 3 · componentes conexas de lo que NO es fondo
-    comp = [0] * (W * H)
-    cajas = []
-    actual = 0
-    for y in range(H):
-        for x in range(W):
-            i = y * W + x
-            if marca[i] or comp[i]:
-                continue
-            actual += 1
-            comp[i] = actual
-            cola = deque([(x, y)])
-            x0 = x1 = x
-            y0 = y1 = y
-            n = 0
-            while cola:
-                cx, cy = cola.popleft()
-                n += 1
-                if cx < x0: x0 = cx
-                if cx > x1: x1 = cx
-                if cy < y0: y0 = cy
-                if cy > y1: y1 = cy
-                for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-                    nx, ny = cx + dx, cy + dy
-                    if 0 <= nx < W and 0 <= ny < H:
-                        j = ny * W + nx
-                        if not marca[j] and not comp[j]:
-                            comp[j] = actual
-                            cola.append((nx, ny))
-            cajas.append([x0, y0, x1, y1, n])
+    familias = {
+        "side": ["gallop", "idle_left", "idle_right", "walk_left", "walk_right"],
+        "up": ["idle_up", "walk_up"],
+        "down": ["idle_down", "walk_down"],
+    }
+    anclaje = {}
+    for nombre, miembros in familias.items():
+        anclaje[nombre] = anclaje_de_familia([clips_def[m][0] for m in miembros], cajas, celda, lienzo)
+        print("familia %-5s anclaje %s" % (nombre, anclaje[nombre]))
 
-    # 4 · fusionar piezas que casi se tocan (mismo bicho)
-    def juntas(a, b, g=5):
-        return not (a[2] + g < b[0] or b[2] + g < a[0] or a[3] + g < b[1] or b[3] + g < a[1])
+    familia_de = {}
+    for nombre, miembros in familias.items():
+        for m in miembros:
+            familia_de[m] = nombre
 
-    fusionando = True
-    while fusionando:
-        fusionando = False
-        for i in range(len(cajas)):
-            if cajas[i] is None:
-                continue
-            for j in range(i + 1, len(cajas)):
-                if cajas[j] is None:
-                    continue
-                if juntas(cajas[i], cajas[j]):
-                    a, b = cajas[i], cajas[j]
-                    cajas[i] = [min(a[0], b[0]), min(a[1], b[1]),
-                                max(a[2], b[2]), max(a[3], b[3]), a[4] + b[4]]
-                    cajas[j] = None
-                    fusionando = True
-        cajas = [c for c in cajas if c is not None]
+    clips = {}
+    for nombre, (fotos, fps) in clips_def.items():
+        familia = familia_de.get(nombre, "side")
+        clips[nombre] = {"fps": fps,
+                         "cuadros": rects_de_clip(fotos, cajas, celda, lienzo, anclaje[familia])}
 
-    # ruido (motas del damero que quedaron sueltas)
-    cajas = [c for c in cajas if c[4] > 60]
-
-    # 5 · agrupar en bandas por la fila
-    cajas.sort(key=lambda c: c[1])
-    bandas = []
-    for c in cajas:
-        for b in bandas:
-            if c[1] >= b["y0"] - 8 and c[3] <= b["y1"] + 8:
-                b["items"].append(c)
-                b["y0"] = min(b["y0"], c[1])
-                b["y1"] = max(b["y1"], c[3])
-                break
-        else:
-            bandas.append({"y0": c[1], "y1": c[3], "items": [c]})
-    for b in bandas:
-        b["items"].sort(key=lambda c: c[0])
-    bandas.sort(key=lambda b: b["y0"])
-
-    # 6 · color "de pelo" de cada columna (media del cuerpo, sin contorno)
-    variantes = []
-    # Columnas = nº de pelajes de las bandas del caballo (las dos últimas traen
-    # potros y objetos, que no forman parte de la rejilla de 20 pelajes).
-    n_cols = max((len(b["items"]) for b in bandas[:13]), default=0)
-    for col in range(n_cols):
-        tot = [0, 0, 0]
-        n = 0
-        for b in bandas[:6]:                       # primeras poses: sin montura
-            if col >= len(b["items"]):
-                continue
-            x0, y0, x1, y1, _n = b["items"][col]
-            for y in range(y0, y1 + 1, 2):
-                for x in range(x0, x1 + 1, 2):
-                    r, g, b2 = px[x, y]
-                    if (max(r, g, b2) - min(r, g, b2)) > 30 or (r + g + b2) / 3 < 140:
-                        tot[0] += r; tot[1] += g; tot[2] += b2; n += 1
-        if n:
-            hexcol = '#%02x%02x%02x' % (tot[0] // n, tot[1] // n, tot[2] // n)
-        else:
-            hexcol = '#8e5a28'
-        variantes.append({"id": "pelaje%d" % col, "col": col, "color": hexcol})
-
-    salida = {
+    datos = {
         "_nota": "Generado por tools/build-horse-sheet.py. Coordenadas en px sobre la hoja.",
-        "hoja": "data/sheets/" + os.path.basename(HOJA),
-        "ancho": W, "alto": H,
-        "fondo": {"luminancia": LUM_FONDO, "saturacion": SAT_FONDO, "bolsasMaxPx": BOLSAS_MAX_PX},
-        "columnas": n_cols,
-        "variantes": variantes,
-        "base": BANDA_BASE,
-        "baseMontura": BANDA_BASE_MONTURA,
-        "pelajePorDefecto": PELAJE_POR_DEFECTO,
-        "bandas": [
-            {"id": i, "pose": POSES.get(i, ""), "y0": b["y0"], "y1": b["y1"],
-             "cuadros": [[c[0], c[1], c[2] - c[0] + 1, c[3] - c[1] + 1] for c in b["items"]]}
-            for i, b in enumerate(bandas)
-        ],
-        "anims": {
-            nombre: {"tipo": tipo, "fps": fps, "bucle": bucle, "modo": modo,
-                     **({"filas": filas} if filas else {})}
-            for (nombre, tipo, fps, bucle, modo, filas) in ANIMS
-        },
+        "formato": 2,
+        "hoja": os.path.relpath(HOJA, RAIZ).replace("\\", "/"),
+        "ancho": im.size[0],
+        "alto": im.size[1],
+        "alfa": bool(tenia_alfa),
+        "lienzo": {"w": LW, "h": LH},
+        "columnas": 1,
+        "pelajePorDefecto": 0,
+        "clips": clips,
     }
 
-    os.makedirs(os.path.dirname(SALIDA), exist_ok=True)
     with open(SALIDA, "w", encoding="utf-8") as fh:
-        json.dump(salida, fh, ensure_ascii=False, indent=1)
-    print(f"Bandas: {len(bandas)}  Columnas (pelajes): {n_cols}")
-    for i, b in enumerate(bandas):
-        print(f"  banda {i:2d}  y {b['y0']:4d}-{b['y1']:4d}  sprites={len(b['items']):2d}  {POSES.get(i, '')}")
-    print("Escrito:", os.path.relpath(SALIDA, RAIZ))
+        json.dump(datos, fh, ensure_ascii=False, indent=1)
+
+    print("lienzo comun:", LW, "x", LH)
+    for nombre, c in clips.items():
+        print("  %-12s %2d fotogramas @ %d fps  primero=%s" %
+              (nombre, len(c["cuadros"]), c["fps"], c["cuadros"][0] if c["cuadros"] else None))
+    print("ok", os.path.relpath(SALIDA, RAIZ).replace("\\", "/"))
 
 
 if __name__ == "__main__":

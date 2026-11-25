@@ -137,7 +137,7 @@ prefiere si existen. Eso significa que volver al arte de siempre es un interrupt
 
 **El interruptor está EN EL JUEGO, no en el editor** (a propósito: es cosa del
 jugador, no del que recorta los sprites): en el menú principal,
-**Nueva partida → Opciones → «Estilo de arte»**:
+**Opciones (menú principal) → Aspecto → «Estilo de arte»**:
 
 | Opción | Qué hace el juego |
 | --- | --- |
@@ -167,9 +167,9 @@ valor por defecto del proyecto (sin el campo se entiende `nuevo`).
 > **Por defecto del proyecto: `"estilo": "nuevo"` (2026-10-02).** Antes venía
 > `"clasico"` como red de seguridad mientras los recortes arrastraban el «parche
 > de suelo» de la hoja (ver más abajo). El jugador puede volver a «Clásico»
-> cuando quiera desde **Nueva partida → Opciones → Estilo de arte**; los sprites
+> cuando quiera desde **Opciones (menú principal) → Aspecto → Estilo de arte**; los sprites
 > clásicos nunca se borran. Si aparece el problema del parche de suelo, la vuelta
-> atrás es poner ese campo a `"clasico"` o elegir «Clásico» en el desplegable.
+> atrás es poner ese campo a `"clasico"` o elegir «Clásico» en el selector de estilo.
 
 Orden de prioridad del estilo (de más a menos):
 

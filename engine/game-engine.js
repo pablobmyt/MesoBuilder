@@ -60,7 +60,8 @@ import { drawRegisteredIcon, drawItemIcon } from './game-engine-icons.js';
 // bandera del relato de arranque: datos y dibujo puros, sin estado del motor.
 import { drawAnimatedUSSRFlagSequence, introWorldBriefing, getMapSceneScript, buildStoryQuestsForEpoch } from './game-engine-story-utils.js';
 // CABALLOS CON HOJA DE SPRITES: recorta el caballo de `data/sheets/Caballos.png`
-// (medido por `tools/build-horse-sheet.py`) y se lo sirve a `animal-art.js`. Si la
+// (rejilla 4x8 con fotogramas en las cuatro direcciones, medida por
+// `tools/build-horse-sheet.py`) y se lo sirve a `animal-art.js`. Si la
 // hoja falta, el caballo se sigue generando procedural.
 import { initHorseSheet, horseSheetProvider, horseSheetDefaultCoat } from './horse-sheet-art.js';
 // Volumen 2.5D de los edificios: SÓLO en la vista isométrica (ver el módulo).
@@ -867,12 +868,15 @@ function _updateSelectionOverlay(rect) {
 
 function getCanvasPointerPosition(ev) {
   const rect = canvas.getBoundingClientRect();
-  const scaleX = rect.width > 0 ? (canvas.width / rect.width) : 1;
-  const scaleY = rect.height > 0 ? (canvas.height / rect.height) : 1;
+  // El búfer está en píxeles físicos, pero TODO el juego (cámara, HUD, textos)
+  // trabaja en píxeles CSS: el ratón se pasa a ese mismo sistema.
+  const anchoLogico = anchoVista(), altoLogico = altoVista();
+  const scaleX = rect.width > 0 ? (anchoLogico / rect.width) : 1;
+  const scaleY = rect.height > 0 ? (altoLogico / rect.height) : 1;
   const cssX = ev.clientX - rect.left;
   const cssY = ev.clientY - rect.top;
-  const x = Math.max(0, Math.min(canvas.width, cssX * scaleX));
-  const y = Math.max(0, Math.min(canvas.height, cssY * scaleY));
+  const x = Math.max(0, Math.min(anchoLogico, cssX * scaleX));
+  const y = Math.max(0, Math.min(altoLogico, cssY * scaleY));
   return { x, y, cssX, cssY, rect, scaleX, scaleY };
 }
 
@@ -1660,7 +1664,7 @@ function terrainUpdatePaintPct() {
 function visibleTerrainCellRect(pad) {
   const p = Math.max(0, pad || 0);
   try {
-    const w = canvas.width, h = canvas.height;
+    const w = anchoVista(), h = altoVista();
     const esquinas = [screenToWorld(0, 0), screenToWorld(w, 0), screenToWorld(0, h), screenToWorld(w, h)];
     let c0 = Infinity, r0 = Infinity, c1 = -Infinity, r1 = -Infinity;
     for (const q of esquinas) {
@@ -3549,7 +3553,7 @@ function getPetRadialCenterScreen() {
     const p = worldToScreen(player.x + 0.5, player.y + 0.5);
     return { x: p.x, y: p.y };
   } catch (e) {
-    return { x: canvas.width * 0.5, y: canvas.height * 0.5 };
+    return { x: anchoVista() * 0.5, y: altoVista() * 0.5 };
   }
 }
 
@@ -3965,10 +3969,12 @@ function pintarModoVision(ctx, W, H) {
   try {
     if (!visionActiva()) return;
     ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    aplicarEscalaRender(ctx);   // coords CSS sobre el búfer a resolución física
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
     // Blanco y negro + difuminado: se vuelca el propio lienzo con filtro.
+    // `drawImage(canvas, 0, 0, W, H)` escala el búfer ENTERO al rectángulo
+    // lógico, así que sigue siendo un volcado completo.
     try {
       ctx.filter = 'grayscale(1) blur(2px)';
       ctx.drawImage(canvas, 0, 0, W, H);
@@ -4589,6 +4595,202 @@ function gateGuardDialogueLines(npc) {
   ];
 }
 
+// ── CONTRABANDO EN EL CONTROL DE PASO ───────────────────────────────────────
+// La guardia no deja entrar comida ni materias primas sin declarar. El jugador
+// se las deja a su perro, que se queda esperando fuera de la muralla, y puede
+// recuperarlas hablando con él cuando vuelva a salir.
+const GATE_CONTRABAND_KEYS = [
+  'food', 'wheat', 'cebada', 'meat', 'water',
+  'wood', 'madera', 'stone', 'brick', 'seed', 'plank', 'stick'
+];
+const GATE_CONTRABAND_LABELS = {
+  food: 'comida', wheat: 'grano', cebada: 'cebada', meat: 'carne', water: 'agua',
+  wood: 'madera', madera: 'madera', stone: 'piedra', brick: 'adobe',
+  seed: 'semillas', plank: 'tablón', stick: 'palo'
+};
+
+function gateContrabandItems() {
+  const out = [];
+  const inv = (typeof inventory === 'object' && inventory) ? inventory : {};
+  for (const k of GATE_CONTRABAND_KEYS) {
+    const q = Math.max(0, Number(inv[k]) || 0);
+    if (q > 0) out.push({ k, q, label: GATE_CONTRABAND_LABELS[k] || etiquetaBotin(k) });
+  }
+  return out;
+}
+
+function gateContrabandSummary(items) {
+  return (items || []).map(it => `${it.q} ${it.label}`).join(', ');
+}
+
+// Arranca el control: para al jugador, abre el diálogo de la guardia y, si
+// lleva carga prohibida, encadena la entrega al perro al cerrar el diálogo.
+function startGateCheckpoint(gate) {
+  try {
+    if (!gate || player._gateCheckLock || window._activeDialogue) return false;
+    if (window.currentInterior) return false;
+    const items = gateContrabandItems();
+    const guardNpc = (entities || []).find(e => e && e._gateId === gate.id && e.isGateGuard) || null;
+    // Sin guardias no hay control: la puerta queda libre.
+    if (!guardNpc) return false;
+    const urss = (window._currentEpoch || 'mesopotamia') === 'urss';
+    const dog = getActivePetDog();
+    const dogName = (dog && dog.name) || DEFAULT_PET_DOG_NAME;
+    const lines = [];
+    if (items.length) {
+      lines.push(urss ? '¡Alto! Registro de entrada. Enseña la carga.' : '¡Alto! Registro de entrada. Veamos qué llevas.');
+      lines.push(`Llevas ${gateContrabandSummary(items)}. Eso no entra en la ciudad.`);
+      lines.push(`Dáselo a ${dogName}, tu perro. Él espera fuera de la muralla.`);
+    } else {
+      lines.push(urss ? '¡Alto! Registro de entrada. Revisión rápida...' : '¡Alto! Registro de entrada. Veamos qué llevas.');
+      lines.push('No llevas nada fuera de lo permitido. Puedes pasar.');
+    }
+    player._gateCheckLock = true;
+    player._gateCheckStartedAt = Date.now();
+    gate._armed = false;
+    gate.hailed = true;
+    try { movePath = null; moveTarget = null; } catch (e) {}
+    if (guardNpc) {
+      const dx = (player.x || 0) - (guardNpc.x || guardNpc.col || 0);
+      const dy = (player.y || 0) - (guardNpc.y || guardNpc.row || 0);
+      guardNpc.dir = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 'left' : 'right') : (dy < 0 ? 'up' : 'down');
+    }
+    window._activeDialogue = {
+      lines, idx: 0,
+      npcName: guardNpc ? (guardNpc.name || 'Guardia de la puerta') : 'Guardia de la puerta',
+      npcType: 'gate_guard',
+      npcRef: guardNpc,
+      onComplete: () => {
+        if (items.length) {
+          try { setTimeout(() => runGateDogHandoff(gate, items), 80); }
+          catch (e) { player._gateCheckLock = false; }
+        } else {
+          player._gateCheckLock = false;
+          try { if (window.spawnFloatingText) window.spawnFloatingText(gate.c + 0.5, gate.r - 0.15, 'Puedes pasar.', '#FFD27A'); } catch (e) {}
+        }
+      }
+    };
+    document.body.classList.add('dialogue-active');
+    return true;
+  } catch (e) {
+    try { player._gateCheckLock = false; } catch (_) {}
+    return false;
+  }
+}
+
+function runGateDogHandoff(gate, items) {
+  try {
+    window._gateDogHandoffActive = true;
+    const dog = ensurePetDogCompanion();
+    if (!dog) {
+      window._gateDogHandoffActive = false;
+      player._gateCheckLock = false;
+      notify('No encuentras a tu perro para dejar la carga. La guardia te deja pasar esta vez.');
+      return;
+    }
+    const spot = findFreeStandSpot(Math.floor(player.x) + 1, Math.floor(player.y), 3)
+      || findFreeStandSpot(Math.floor(player.x) - 1, Math.floor(player.y) + 1, 3)
+      || { c: Math.floor(player.x || 0), r: Math.floor(player.y || 0) };
+    dog.col = spot.c;
+    dog.row = spot.r;
+    dog.x = spot.c + 0.5;
+    dog.y = spot.r + 0.5;
+    delete dog.moveTarget;
+    dog.behavior = 'stay';
+    dog._gateStashHold = gate.id;
+    dog._petUntil = Date.now() + 2400;
+    dog._petJumpUntil = Date.now() + 520;
+    dog._lastX = dog.x + (player.x < dog.x ? 0.1 : -0.1);
+    try { fx.burst(dog.x, dog.y, { count: 9, colors: ['#C9B27A', '#A89850', '#E8D5A3'], speed: 0.035, life: 480, size: 1.7, gravity: 0.012, jitter: 0.28 }); } catch (e) {}
+    try { setPlayerPose('pick', 900); } catch (e) {}
+    const firstItem = (items && items[0]) ? items[0].k : 'food';
+    const lista = window._lanzamientos || (window._lanzamientos = []);
+    lista.push({
+      id: 'gate-handoff-' + Date.now().toString(36),
+      item: firstItem,
+      handoff: true,
+      puntos: [
+        { x: player.x, y: player.y - 0.15 },
+        { x: dog.x, y: dog.y - 0.15 }
+      ],
+      dur: 760,
+      startedAt: Date.now(),
+      onEnd: () => afterGateDogHandoff(gate, dog, items)
+    });
+    if (lista.length > 8) lista.splice(0, lista.length - 8);
+  } catch (e) {
+    window._gateDogHandoffActive = false;
+    player._gateCheckLock = false;
+  }
+}
+
+function afterGateDogHandoff(gate, dog, items) {
+  try {
+    if (!dog._stash) dog._stash = {};
+    let movidos = 0;
+    const entregados = [];
+    for (const it of (items || [])) {
+      const q = Math.max(0, Number(inventory[it.k]) || 0);
+      if (!q) continue;
+      dog._stash[it.k] = (dog._stash[it.k] || 0) + q;
+      try { delete inventory[it.k]; } catch (e) {}
+      entregados.push({ k: it.k, q, label: it.label });
+      movidos += q;
+    }
+    const resumen = gateContrabandSummary(entregados);
+    dog._petUntil = Date.now() + 2400;
+    dog._petJumpUntil = Date.now() + 520;
+    try { sfx('dogBark2', { volume: 0.95 }); } catch (e) {}
+    try { setTimeout(() => { try { sfx('dogBark3', { volume: 0.7 }); } catch (e) {} }, 380); } catch (e) {}
+    try { if (window.spawnFloatingText) window.spawnFloatingText(dog.x + 0.1, dog.y - 0.35, '¡Guau!', { color: '#FFD27A', force: true }); } catch (e) {}
+    try { if (window.spawnFloatingText) window.spawnFloatingText(dog.x + 0.1, dog.y - 0.12, '', { icono: 'corazon', color: '#FF7BA8', force: true }); } catch (e) {}
+    if (movidos > 0) {
+      notify(`${dog.name || 'El perro'} se queda con ${resumen}. Espera fuera de la muralla.`);
+      addLog(`Dejas ${resumen} a ${dog.name || 'tu perro'} en la puerta.`);
+    }
+    updateInventory();
+    updateUI();
+    try { updateCharCard(); } catch (e) {}
+    saveAppStateDebounced();
+    try { if (window.spawnFloatingText && gate) window.spawnFloatingText(gate.c + 0.5, gate.r - 0.15, 'Puedes pasar.', '#FFD27A'); } catch (e) {}
+  } catch (e) {}
+  window._gateDogHandoffActive = false;
+  player._gateCheckLock = false;
+}
+
+// Recoge lo que el perro se quedó cuidando en la puerta.
+function recoverDogStash(dog) {
+  try {
+    const pet = dog || getActivePetDog();
+    if (!pet) return false;
+    const stash = pet._stash;
+    if (!stash || !Object.keys(stash).length) {
+      notify(`${pet.name || 'El perro'} no lleva nada tuyo.`);
+      return false;
+    }
+    const partes = [];
+    for (const k of Object.keys(stash)) {
+      const q = Math.max(0, Number(stash[k]) || 0);
+      if (!q) continue;
+      addToInventory(k, q, { silencioso: true });
+      partes.push(`${q} ${GATE_CONTRABAND_LABELS[k] || etiquetaBotin(k)}`);
+    }
+    pet._stash = {};
+    delete pet._gateStashHold;
+    pet.behavior = 'follow';
+    if (!partes.length) {
+      notify(`${pet.name || 'El perro'} no lleva nada tuyo.`);
+      return false;
+    }
+    notify(`${pet.name || 'El perro'} te devuelve ${partes.join(', ')}.`);
+    addLog(`Recoges la carga que dejaste con ${pet.name || 'el perro'}.`);
+    updateInventory();
+    updateUI();
+    saveAppStateDebounced();
+    return true;
+  } catch (e) { return false; }
+}
+
 /**
  * Monta el CONTROL DE PASO de una puerta: dos garitas a los lados del camino y
  * dos soldados con armadura que patrullan a través del vano (no dos figuritas
@@ -4812,24 +5014,45 @@ function updateGateGuards(now) {
   try {
     const gates = window._GATES || [];
     if (!gates.length) return;
+    // Red de seguridad: si el diálogo se cerró por otra vía, el jugador no
+    // puede quedarse clavado en la puerta para siempre.
+    if (player._gateCheckLock && !window._activeDialogue && !window._gateDogHandoffActive &&
+        now - (player._gateCheckStartedAt || 0) > 900) {
+      player._gateCheckLock = false;
+    }
     for (let i = 0; i < gates.length; i++) {
       const g = gates[i];
-      if (!g || g.hailed) continue;
-      const d = Math.hypot((g.c + 0.5) - (player.x || 0), (g.r + 0.5) - (player.y || 0));
-      if (d > 7) continue;
-      g.hailed = true;
-      const urss = (window._currentEpoch || 'mesopotamia') === 'urss';
-      const txt = urss ? '¡Alto! Control de paso.' : '¡Alto! Control de la puerta.';
-      try { if (window.spawnFloatingText) window.spawnFloatingText(g.c + 0.5, g.r - 0.15, txt, '#FFD27A'); } catch (e) {}
-      try {
-        (entities || []).forEach(en => {
-          if (!en || en._gateId !== g.id) return;
-          const dx = (player.x || 0) - (en.x || en.col || 0);
-          const dy = (player.y || 0) - (en.y || en.row || 0);
-          if (Math.abs(dx) > Math.abs(dy)) en.dir = dx < 0 ? 'left' : 'right';
-          else en.dir = dy < 0 ? 'up' : 'down';
-        });
-      } catch (e) {}
+      if (!g) continue;
+      const dx = (g.c + 0.5) - (player.x || 0);
+      const dy = (g.r + 0.5) - (player.y || 0);
+      const d = Math.hypot(dx, dy);
+      // Al alejarse lo suficiente la puerta vuelve a "armarse": el control se
+      // hace una vez por aproximación, no cada fotograma.
+      if (d > 9) { g._armed = true; continue; }
+      // Primer aviso al acercarse.
+      if (!g.hailed && d <= 7) {
+        g.hailed = true;
+        const urss = (window._currentEpoch || 'mesopotamia') === 'urss';
+        const txt = urss ? '¡Alto! Control de paso.' : '¡Alto! Control de la puerta.';
+        try { if (window.spawnFloatingText) window.spawnFloatingText(g.c + 0.5, g.r - 0.15, txt, '#FFD27A'); } catch (e) {}
+        try {
+          (entities || []).forEach(en => {
+            if (!en || en._gateId !== g.id) return;
+            const ddx = (player.x || 0) - (en.x || en.col || 0);
+            const ddy = (player.y || 0) - (en.y || en.row || 0);
+            if (Math.abs(ddx) > Math.abs(ddy)) en.dir = ddx < 0 ? 'left' : 'right';
+            else en.dir = ddy < 0 ? 'up' : 'down';
+          });
+        } catch (e) {}
+      }
+      // ¿Está el jugador pasando ENTRE los dos guardias, en el vano?
+      const enVano = (g.orient === 'v')
+        ? (Math.abs(dx) < 1.7 && Math.abs(dy) < 2.2)
+        : (Math.abs(dx) < 2.2 && Math.abs(dy) < 1.7);
+      if (!enVano || g._armed === false) continue;
+      if (player._gateCheckLock || window._activeDialogue || window.currentInterior) continue;
+      try { if (isPlayerDowned(now) || isCinematicActive()) continue; } catch (e) {}
+      if (startGateCheckpoint(g)) return;
     }
   } catch (e) {}
 }
@@ -6303,8 +6526,8 @@ const debugTools = createDebugTools({
           const ts = getTileSize();
           px = (col + 0.5) * ts; py = (row + 0.5) * ts;
         }
-        const cx = canvas.width / 2 - px;
-        const cy = canvas.height / 2 - py;
+        const cx = anchoVista() / 2 - px;
+        const cy = altoVista() / 2 - py;
         camX = cx; camY = cy;
         try { targetCam.x = cx; targetCam.y = cy; } catch (e) {}
         return { camX: Math.round(camX), camY: Math.round(camY), tileSize: getTileSize() };
@@ -6314,7 +6537,7 @@ const debugTools = createDebugTools({
     // coordenadas de pantalla y se puedan leer los píxeles desde fuera.
     drawSprite: (name, x, y, w, h) => {
       try {
-        ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.save(); aplicarEscalaRender(ctx);
         drawEntitySpriteAt(name, x, y, w, h, { ignoreEntityScale: true });
         ctx.restore();
         return true;
@@ -6322,7 +6545,7 @@ const debugTools = createDebugTools({
     },
     drawBuilding: (col, row, type, alpha) => {
       try {
-        ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.save(); aplicarEscalaRender(ctx);
         drawBuilding(col, row, type, alpha);
         ctx.restore();
         return true;
@@ -6866,10 +7089,27 @@ function markCameraInput() {
   lastCameraInputAt = Date.now();
 }
 
+// Una sola vez por sesión, y con un respiro para no competir con el arranque:
+// deja lista la fuente de todos los sprites fuera del bucle de dibujado.
+let _prewarmPedido = false;
+function programarPrewarmSprites() {
+  if (_prewarmPedido) return;
+  _prewarmPedido = true;
+  setTimeout(async () => {
+    try {
+      if (!window.ENTITY_PIXEL_LIBRARY) return;
+      const t = performance.now();
+      const n = await prewarmSpriteSources();
+      console.log('[sprites] ' + n + ' fuentes precargadas en ' + Math.round(performance.now() - t) + ' ms');
+    } catch (e) { /* opcional: nunca impide jugar */ }
+  }, 600);
+}
+
 function startRenderLoop() {
   if (_renderLoopActive) return;
   _renderLoopActive = true;
   try { window._rafPendiente = true; } catch (e) {}
+  try { programarPrewarmSprites(); } catch (e) {}
   requestAnimationFrame(render);
 }
 
@@ -8460,6 +8700,7 @@ function clearSpriteBitmaps() {
     _spriteBitmapBytes = 0;
   } catch (e) {}
   try { clearSwayBitmaps(); } catch (e) {}
+  try { _plantaTechoCache.clear(); } catch (e) {}
   try { _arbolSwayCache.clear(); } catch (e) {}
   try { _sueloVariantes.clear(); } catch (e) {}
   try { clearCuerpoCache(); } catch (e) {}
@@ -8583,11 +8824,39 @@ function getSpriteSourceBitmap(name, pixels, gw, gh) {
       const cv = document.createElement('canvas');
       cv.width = sw; cv.height = sh;
       const g = cv.getContext('2d');
-      for (let i = 0; i < usados.length; i++) {
-        const p = usados[i];
-        if (!p || !p[2]) continue;
-        g.fillStyle = p[2];
-        g.fillRect(p[0] | 0, p[1] | 0, 1, 1);
+      // RÁPIDO: un `putImageData` en vez de un `fillRect` por píxel. Un árbol
+      // recortado del PNG son ~12.000 píxeles y pintarlos uno a uno costaba
+      // ~40 ms por sprite (la precarga de 170 sprites tardaba 10 s). Escribiendo
+      // los bytes y volcando de una vez baja a ~1 ms.
+      let img = null;
+      const nPx = sw * sh;
+      if (nPx > 0 && nPx <= 4194304) { try { img = g.createImageData(sw, sh); } catch (e) { img = null; } }
+      if (img) {
+        const d = img.data;
+        const rarezas = [];
+        for (let i = 0; i < usados.length; i++) {
+          const p = usados[i];
+          if (!p || !p[2]) continue;
+          const x = p[0] | 0, y = p[1] | 0;
+          if (x < 0 || y < 0 || x >= sw || y >= sh) continue;
+          const c = colorRgbaDeHex(p[2]);
+          if (!c) { rarezas.push(p); continue; }   // color no-hex: se pinta aparte
+          const o = (y * sw + x) * 4;
+          d[o] = c[0]; d[o + 1] = c[1]; d[o + 2] = c[2]; d[o + 3] = 255;
+        }
+        g.putImageData(img, 0, 0);
+        for (let i = 0; i < rarezas.length; i++) {
+          const p = rarezas[i];
+          g.fillStyle = p[2];
+          g.fillRect(p[0] | 0, p[1] | 0, 1, 1);
+        }
+      } else {
+        for (let i = 0; i < usados.length; i++) {
+          const p = usados[i];
+          if (!p || !p[2]) continue;
+          g.fillStyle = p[2];
+          g.fillRect(p[0] | 0, p[1] | 0, 1, 1);
+        }
       }
       out = { cv, w: sw, h: sh };
     }
@@ -8595,6 +8864,53 @@ function getSpriteSourceBitmap(name, pixels, gw, gh) {
   _spriteSourceBitmaps.set(clave, out);
   return out;
 }
+
+// '#rgb' / '#rrggbb' → [r, g, b, 255]. Devuelve null para cualquier otro formato
+// (la librería usa hex; si alguna entrada trae un nombre, se pinta con fillRect).
+function colorRgbaDeHex(hex) {
+  if (typeof hex !== 'string' || hex.charCodeAt(0) !== 35) return null;
+  if (hex.length === 7) {
+    const n = parseInt(hex.slice(1), 16);
+    if (!Number.isFinite(n)) return null;
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255, 255];
+  }
+  if (hex.length === 4) {
+    const r = parseInt(hex[1] + hex[1], 16), g = parseInt(hex[2] + hex[2], 16), b = parseInt(hex[3] + hex[3], 16);
+    if (!Number.isFinite(r) || !Number.isFinite(g) || !Number.isFinite(b)) return null;
+    return [r, g, b, 255];
+  }
+  return null;
+}
+
+// Precalienta la fuente (arte a 1 px) de TODOS los sprites de la biblioteca.
+// Sin esto, la primera vez que un sprite entra en pantalla se rasteriza en medio
+// del fotograma: es lo que produce los picos de 25-40 ms al abrir una zona nueva.
+// `getSpriteSourceBitmap` pinta con `putImageData` (una pasada), así que los ~170
+// sprites caben en menos de un segundo y se hace mientras se ve la carga.
+async function prewarmSpriteSources() {
+  const lib = window.ENTITY_PIXEL_LIBRARY || {};
+  const keys = Object.keys(lib);
+  let n = 0;
+  for (const k of keys) {
+    try {
+      const def = lib[k];
+      if (!def || !Array.isArray(def.pixels) || !def.pixels.length) continue;
+      getSpriteSourceBitmap(k, def.pixels, def.gridW || def.grid || 9, def.gridH || def.grid || 9);
+      n++;
+    } catch (e) { /* un sprite raro no puede impedir cargar el resto */ }
+    // De pocos en pocos y en tiempo muerto: la precarga no puede robar fotogramas.
+    if ((n % 8) === 0) {
+      try {
+        await new Promise((res) => {
+          if (window.requestIdleCallback) requestIdleCallback(() => res(), { timeout: 400 });
+          else setTimeout(res, 0);
+        });
+      } catch (e) { /* sin tiempo muerto: se sigue igual */ }
+    }
+  }
+  return n;
+}
+try { window.prewarmSpriteSources = prewarmSpriteSources; } catch (e) {}
 
 // Sprite ya rasterizado al tamaño de dibujo (píxeles de pantalla).
 // Admite ESCALAS FRACCIONARIAS: el arte de alta densidad se reduce al solar y, al
@@ -9170,8 +9486,11 @@ function getSwayBitmapFinal(name, def, gw, gh, ancho, alto, bendPx) {
   } catch (e) { return null; }
 }
 
-function resolveBuildingSpriteKey(type) {
-  const aliases = {
+// Alias de arte por tipo de edificio. Estaba DENTRO de `resolveBuildingSpriteKey`,
+// que se llama por edificio y fotograma: crear el objeto literal cada vez eran
+// cientos de asignaciones por fotograma tiradas a la basura (el perfilador lo
+// medía como parte del 17 % de tiempo en recolector).
+const BUILDING_SPRITE_ALIASES = Object.freeze({
     house_small: 'house',
     house_large: 'house',
     house_garden: 'house_garden',
@@ -9199,9 +9518,11 @@ function resolveBuildingSpriteKey(type) {
     ,sheepfold: 'sheepfold'
     ,dock: 'dock'
     ,watchtower: 'watchtower'
-  };
+});
+
+function resolveBuildingSpriteKey(type) {
   if (hasRegisteredSprite(type)) return type;
-  const alias = aliases[type];
+  const alias = BUILDING_SPRITE_ALIASES[type];
   return alias && hasRegisteredSprite(alias) ? alias : null;
 }
 
@@ -9327,6 +9648,18 @@ const _vistasRegistradas = [];
 // no existe, se cae a «andar» y, sin nada, al recorte fijo de la vista de siempre.
 const _hojasCache = new Map();     // ruta → { img, cv, ctx } (la comparten vistas y animaciones)
 const _hojasMalas = new Set();     // rutas que no cargan: se avisa una vez, no por entidad
+// Cargas EN CURSO por ruta: al precargar las hojas en paralelo, varias entidades
+// piden la misma hoja antes de que la primera termine. Sin esto se descargaría y
+// decodificaría el mismo PNG (2-3 MB) una vez por entidad.
+const _hojasEnCurso = new Map();
+// Byte → dos dígitos hexadecimales. Recortar las vistas de los PNG construía el
+// color con `[r,g,b].map(v => v.toString(16).padStart(2,'0')).join('')` POR PÍXEL:
+// millones de arrays y cadenas temporales que costaban varios segundos de carga.
+const _HEX2_BYTES = (() => {
+  const a = new Array(256);
+  for (let i = 0; i < 256; i++) a[i] = (i < 16 ? '0' : '') + i.toString(16);
+  return a;
+})();
 const _animEntidades = {
   personaje: null,      // { hoja, animaciones } del arte de personajes
   porClave: {},         // clave de edificio → { hoja, animaciones }
@@ -9553,16 +9886,28 @@ async function cargarVistasDeEntidades() {
   const hojasMalas = _hojasMalas;
   const abrirHoja = async (ruta) => {
     if (hojasCache.has(ruta)) return hojasCache.get(ruta);
+    // Una sola carga por hoja aunque la pidan veinte entidades a la vez.
+    const enCurso = _hojasEnCurso.get(ruta);
+    if (enCurso) return enCurso;
+    const promesa = (async () => {
     let rec = null;
     try {
       const img = new Image();
       img.crossOrigin = 'anonymous';
+      // ANTES se añadía `?v=Date.now()` a CADA hoja en CADA arranque: eso anulaba
+      // la caché HTTP y volvía a bajar y decodificar los ~38 MB de PNG de
+      // `data/sheets/` siempre. Ahora la URL es estable (el dev-server manda
+      // `no-store` y `meso-local://` no cachea, así que en desarrollo no cambia
+      // nada) y sólo se fuerza la recarga al recargar el arte a mano.
+      const forzar = !!window._mesoForzarRecargaHojas;
+      const url = (window.__mesoPreload && window.__mesoPreload.isElectron) ? 'meso-local://' + ruta : ruta;
+      img.src = forzar ? (url + (url.indexOf('?') < 0 ? '?v=' + Date.now() : '')) : url;
       await new Promise((res, rej) => {
         img.onload = res; img.onerror = () => rej(new Error('no carga'));
-        // En Electron, `meso-local://` salta el CORS de file://
-        const url = (window.__mesoPreload && window.__mesoPreload.isElectron) ? 'meso-local://' + ruta : ruta;
-        img.src = url + (url.indexOf('?') < 0 ? '?v=' + Date.now() : '');
       });
+      // Decodificar AHORA (aquí ya se esperaba) evita que el primer `drawImage`
+      // de una hoja de 3 MB se coma el fotograma.
+      try { if (img.decode) await img.decode(); } catch (e) { /* decodifica al dibujar */ }
       const cv = document.createElement('canvas');
       cv.width = img.width; cv.height = img.height;
       const ctx = cv.getContext('2d', { willReadFrequently: true });
@@ -9585,21 +9930,31 @@ async function cargarVistasDeEntidades() {
     }
     hojasCache.set(ruta, rec);
     return rec;
+    })();
+    _hojasEnCurso.set(ruta, promesa);
+    try { return await promesa; } finally { _hojasEnCurso.delete(ruta); }
   };
 
-  const recortar = (hoja, r, margen) => {
+  // Recorta una vista. `datosHoja` (opcional) son los píxeles de la hoja ENTERA
+  // leídos de una vez: así las ~50 vistas no hacen ~50 `getImageData` (cada uno
+  // sincroniza con la GPU) sino uno por PNG.
+  const recortar = (hoja, r, margen, datosHoja, anchoHoja) => {
     const w = Math.max(1, Math.round(r.w)), h = Math.max(1, Math.round(r.h));
-    let datos = null;
-    try { datos = hoja.ctx.getImageData(r.x, r.y, w, h).data; } catch (e) { return null; }
+    const x0 = Math.max(0, Math.floor(r.x)), y0 = Math.max(0, Math.floor(r.y));
+    let datos = datosHoja || null;
+    let stride = anchoHoja || 0, bx = x0, by = y0;
+    if (!datos) {
+      try { datos = hoja.ctx.getImageData(x0, y0, w, h).data; } catch (e) { return null; }
+      stride = w; bx = 0; by = 0;
+    }
     const mx = Math.round(w * margen), my = Math.round(h * margen);
     const pixels = [];
     for (let y = 0; y < h; y++) {
+      const fila = ((by + y) * stride + bx) * 4;
       for (let x = 0; x < w; x++) {
-        const i = (y * w + x) * 4;
+        const i = fila + x * 4;
         if (datos[i + 3] < 24) continue;                 // casi transparente: fuera
-        const hex = '#' + [datos[i], datos[i + 1], datos[i + 2]]
-          .map((v) => v.toString(16).padStart(2, '0')).join('');
-        pixels.push([x + mx, y + my, hex]);
+        pixels.push([x + mx, y + my, '#' + _HEX2_BYTES[datos[i]] + _HEX2_BYTES[datos[i + 1]] + _HEX2_BYTES[datos[i + 2]]]);
       }
     }
     if (!pixels.length) return null;
@@ -9608,45 +9963,84 @@ async function cargarVistasDeEntidades() {
 
   let registradas = 0;
   const claves = Object.keys(mapa);
+  // De qué PNG salen los recortes de una entidad. `e.hoja` manda; si no, la
+  // primera vista que traiga una.
+  const hojaDe = (e) => {
+    if (e.hoja) return e.hoja;
+    const vs = e.vistas || {};
+    for (const k of Object.keys(vs)) if (vs[k] && vs[k].hoja) return vs[k].hoja;
+    return null;
+  };
+  // PRECARGA EN PARALELO: antes cada entidad esperaba su hoja en serie, así que
+  // abrir el juego encadenaba 17 PNG de 1,2-3,7 MB uno detrás de otro (varios
+  // segundos de «Cargando…» sin que se viera avanzar nada). Ahora se piden todas
+  // a la vez y, cuando termina el `Promise.all`, recortar cada vista es sólo CPU.
+  try {
+    const rutasHojas = new Set();
+    for (const clave of claves) {
+      const e = mapa[clave] || {};
+      if (e.sistema !== 'nuevo' || !e.vistas) continue;
+      const r = hojaDe(e);
+      if (r) rutasHojas.add(r);
+    }
+    if (rutasHojas.size) {
+      const t0 = performance.now();
+      await Promise.all(Array.from(rutasHojas, (r) => abrirHoja(r)));
+      console.log('[vistas] ' + rutasHojas.size + ' hojas precargadas en ' + Math.round(performance.now() - t0) + ' ms');
+    }
+  } catch (e) { /* alguna hoja falla: el bucle de abajo lo avisa una vez */ }
+  // Agrupadas por hoja: se leen los píxeles del PNG UNA vez y se recortan todas
+  // sus vistas de esa copia (y se cede el hilo cada pocas para que la barra de
+  // carga no se congele).
+  const porHoja = new Map();
   for (const clave of claves) {
     const e = mapa[clave] || {};
     if (e.sistema !== 'nuevo' || !e.vistas) continue;
     const esPersonaje = /^character$/i.test(clave) || /^(PERSONAJE|NPC|PERRO|CABALLO|LOBO|CONEJO|ZORRO)$/.test(clave);
-    const hojas = e.hoja ? [e.hoja] : [];
-    if (!hojas.length) {
-      // sin hoja propia: probar con la primera vista que traiga una
-      for (const k of Object.keys(e.vistas)) if (e.vistas[k] && e.vistas[k].hoja) { hojas.push(e.vistas[k].hoja); break; }
-    }
-    if (!hojas.length) {
+    const hoja = hojaDe(e);
+    if (!hoja) {
       console.warn('[vistas] «' + clave + '» no dice de qué PNG salen sus recortes (falta "hoja")');
       continue;
     }
     // De dónde salen las animaciones de esta entidad (misma hoja que sus vistas).
-    _animEntidades.indexar(clave, { hoja: e.hoja || hojas[0], animaciones: e.animaciones });
-    for (const ruta of hojas) {
-      const hoja = await abrirHoja(ruta);
-      if (!hoja) continue;
+    _animEntidades.indexar(clave, { hoja: e.hoja || hoja, animaciones: e.animaciones });
+    if (!porHoja.has(hoja)) porHoja.set(hoja, []);
+    porHoja.get(hoja).push({ clave, e, esPersonaje });
+  }
+  const _tRecorte = performance.now();
+  let vistasHechas = 0;
+  for (const [ruta, lista] of porHoja) {
+    const hoja = _hojasCache.get(ruta);
+    if (!hoja) continue;
+    let datosHoja = null, anchoHoja = 0;
+    try {
+      datosHoja = hoja.ctx.getImageData(0, 0, hoja.cv.width, hoja.cv.height).data;
+      anchoHoja = hoja.cv.width;
+    } catch (e) { datosHoja = null; }   // lienzo sucio: se recorta vista a vista
+    for (const item of lista) {
+      const e = item.e;
       for (const vista of Object.keys(e.vistas)) {
         const r = e.vistas[vista];
         if (!r || !(r.w > 0) || !(r.h > 0)) continue;
         const margen = (e.ajusteHuella !== false && vista === 'sup') ? 0.125 : 0;
-        const def = recortar(hoja, r, margen);
+        const def = recortar(hoja, r, margen, datosHoja, anchoHoja);
         if (!def) continue;
-        if (esPersonaje) {
+        if (item.esPersonaje) {
           const dir = { sur: 'down', norte: 'up', este: 'right', oeste: 'left' }[vista] || vista;
           lib['character_' + vista] = { grid: Math.max(def.gridW, def.gridH), gridW: def.gridW, gridH: def.gridH, pixels: def.pixels };
           lib['character_' + dir] = lib['character_' + vista];
           _vistasRegistradas.push('character_' + vista, 'character_' + dir);
         } else {
           const sufijo = vista === 'sup' ? '_sup' : '_iso';
-          lib[clave + sufijo] = { grid: Math.max(def.gridW, def.gridH), gridW: def.gridW, gridH: def.gridH, pixels: def.pixels };
-          _vistasRegistradas.push(clave + sufijo);
+          lib[item.clave + sufijo] = { grid: Math.max(def.gridW, def.gridH), gridW: def.gridW, gridH: def.gridH, pixels: def.pixels };
+          _vistasRegistradas.push(item.clave + sufijo);
         }
         registradas++;
+        if ((++vistasHechas % 4) === 0) { try { await cederHilo(); } catch (e) {} }
       }
-      break;   // una hoja por entidad basta
     }
   }
+  if (registradas) console.log('[vistas] recorte de ' + registradas + ' vistas en ' + Math.round(performance.now() - _tRecorte) + ' ms');
   if (registradas) {
     try { clearSpriteBitmaps(); } catch (e) {}
     try { mapCacheDirty = true; } catch (e) {}
@@ -9656,7 +10050,19 @@ async function cargarVistasDeEntidades() {
 }
 try {
   window.MesoEntityViews = {
-    recargar: cargarVistasDeEntidades,
+    // Fuerza la recarga del JSON y de las HOJAS (vacía la caché y pide los PNG
+    // con `?v=`). Es lo que hace falta tras guardar desde el editor de entidades.
+    recargar: (forzarHojas) => {
+      try {
+        if (forzarHojas !== false) {
+          _hojasCache.clear();
+          _hojasMalas.clear();
+          window._mesoForzarRecargaHojas = true;
+        }
+      } catch (e) {}
+      return Promise.resolve(cargarVistasDeEntidades())
+        .finally(() => { try { window._mesoForzarRecargaHojas = false; } catch (e) {} });
+    },
     fichero: 'data/entity-views.json',
     // Cambiar de estilo EN CALIENTE (sin tocar ficheros ni reiniciar):
     //   MesoEntityViews.estilo('clasico')  → sprites originales
@@ -10866,14 +11272,79 @@ function drawPortrait(ctx, w, h) {
 // ═══════════════════════════════════════════════════════════════
 //  CANVAS RENDERING
 // ═══════════════════════════════════════════════════════════════
+// ── RESOLUCIÓN FÍSICA DEL LIENZO (NITIDEZ DEL TEXTO) ────────────────────────
+// El búfer del lienzo se crea a la resolución FÍSICA de la pantalla y el
+// contexto se escala UNA vez por fotograma, así que todo el código del motor
+// sigue midiendo en píxeles CSS (cámara, ratón, HUD, textos…). Sin esto, en una
+// pantalla al 150 % el búfer era de 1× y el navegador lo estiraba 1,5× al
+// componer: TODO lo que se dibuja con `fillText` (el aviso «Recoger [E]», los
+// nombres sobre las cabezas, el HUD, los diálogos) salía interpolado y borroso.
+// Con el búfer a resolución real las letras se rasterizan a pantalla completa y
+// se ven nítidas de verdad, no «suavizadas».
+const ESCALA_RENDER_MAX = 2;   // tope: 2× cubre cualquier pantalla HiDPI actual
+let ESCALA_RENDER = 1;         // píxeles físicos por píxel CSS
+let VISTA_W = 0, VISTA_H = 0;  // tamaño lógico del lienzo (px CSS)
+
+// La nitidez se puede apagar (Dev ▸ «Texto nítido»): en un equipo con poca GPU
+// el relleno a resolución física cuesta más y siempre es mejor poder volver al
+// 1× que perder fotogramas. Se recuerda la elección.
+const NITIDEZ_CFG = { activa: true };
+try { if (localStorage.getItem('meso.nitidez') === '0') NITIDEZ_CFG.activa = false; } catch (e) {}
+try {
+  window.MESO_NITIDEZ = {
+    activa: () => NITIDEZ_CFG.activa,
+    escala: () => ESCALA_RENDER,
+    activar: (v) => {
+      NITIDEZ_CFG.activa = !!v;
+      try { localStorage.setItem('meso.nitidez', NITIDEZ_CFG.activa ? '1' : '0'); } catch (e) {}
+      try { resizeCanvas(); } catch (e) {}
+      return NITIDEZ_CFG.activa;
+    }
+  };
+} catch (e) {}
+
+// Tamaño lógico de la ventana de dibujo: es el que usan la cámara, el ratón y
+// el HUD. `canvas.width` ya NO sirve para eso (está en píxeles físicos).
+function anchoVista() { return VISTA_W > 0 ? VISTA_W : canvas.width; }
+function altoVista() { return VISTA_H > 0 ? VISTA_H : canvas.height; }
+
+// Aplica al contexto la escala del búfer. Se llama al empezar cada fotograma y
+// en cualquier punto que necesite volver a «coordenadas CSS» (tras un
+// `setTransform` de un post-proceso).
+function aplicarEscalaRender(g) {
+  try { (g || ctx).setTransform(ESCALA_RENDER, 0, 0, ESCALA_RENDER, 0, 0); } catch (e) {}
+}
+
+// Escala que pide la pantalla ahora mismo (1 si la nitidez está apagada).
+function escalaDeseada() {
+  const dprPantalla = window.devicePixelRatio || 1;
+  if (!NITIDEZ_CFG.activa || dprPantalla <= 1) return 1;
+  return Math.max(1, Math.min(ESCALA_RENDER_MAX, dprPantalla));
+}
+
 function resizeCanvas() {
   const main = document.getElementById('main');
   const panel = document.getElementById('panel');
   const floatingPanels = document.body.classList.contains('floating-panels');
-  canvas.width  = floatingPanels ? main.clientWidth : main.clientWidth - panel.offsetWidth;
-  canvas.height = main.clientHeight;
+  const cssW = Math.max(1, Math.floor(floatingPanels ? main.clientWidth : main.clientWidth - panel.offsetWidth));
+  const cssH = Math.max(1, Math.floor(main.clientHeight));
+  const dpr = escalaDeseada();
+  ESCALA_RENDER = dpr;
+  VISTA_W = cssW; VISTA_H = cssH;
+  const bufW = Math.round(cssW * dpr), bufH = Math.round(cssH * dpr);
+  // Redimensionar el lienzo SIEMPRE borra su contenido: sólo se hace si cambia
+  // de verdad (el observador de tamaño avisa mucho más a menudo que un resize).
+  if (canvas.width !== bufW || canvas.height !== bufH) {
+    canvas.width = bufW;
+    canvas.height = bufH;
+  }
   clampCamera();
-  render();
+  // OJO: con el bucle de dibujado VIVO no se llama a `render()` desde aquí.
+  // `render()` termina armando otro `requestAnimationFrame`, así que invocarlo a
+  // mano DUPLICA la cadena: cada resize dejaba dos (o más) bucles pintando el
+  // mismo fotograma — el doble de trabajo por fotograma. Con el bucle vivo basta
+  // con cambiar el tamaño; el siguiente fotograma ya usa el búfer nuevo (≤16 ms).
+  if (!_renderLoopActive) { try { render(); } catch (e) {} }
 }
 
 function getTileSize() {
@@ -10941,17 +11412,17 @@ function clampCamera() {
   const bounds = getWorldBounds();
   const mapW = bounds.maxX - bounds.minX;
   const mapH = bounds.maxY - bounds.minY;
-  if (mapW <= canvas.width - padding * 2) {
-    camX = Math.round((canvas.width - mapW) * 0.5 - bounds.minX);
+  if (mapW <= anchoVista() - padding * 2) {
+    camX = Math.round((anchoVista() - mapW) * 0.5 - bounds.minX);
   } else {
-    const minCamX = canvas.width - padding - bounds.maxX;
+    const minCamX = anchoVista() - padding - bounds.maxX;
     const maxCamX = padding - bounds.minX;
     camX = Math.max(minCamX, Math.min(maxCamX, camX));
   }
-  if (mapH <= canvas.height - padding * 2) {
-    camY = Math.round((canvas.height - mapH) * 0.5 - bounds.minY);
+  if (mapH <= altoVista() - padding * 2) {
+    camY = Math.round((altoVista() - mapH) * 0.5 - bounds.minY);
   } else {
-    const minCamY = canvas.height - padding - bounds.maxY;
+    const minCamY = altoVista() - padding - bounds.maxY;
     const maxCamY = padding - bounds.minY;
     camY = Math.max(minCamY, Math.min(maxCamY, camY));
   }
@@ -10959,15 +11430,15 @@ function clampCamera() {
 
 function centerCamera() {
   const bounds = getWorldBounds();
-  camX = (canvas.width - (bounds.maxX - bounds.minX)) / 2 - bounds.minX;
-  camY = (canvas.height - (bounds.maxY - bounds.minY)) / 2 - bounds.minY;
+  camX = (anchoVista() - (bounds.maxX - bounds.minX)) / 2 - bounds.minX;
+  camY = (altoVista() - (bounds.maxY - bounds.minY)) / 2 - bounds.minY;
   clampCamera();
 }
 
 function centerCameraSmooth() {
   const bounds = getWorldBounds();
-  const tx = (canvas.width - (bounds.maxX - bounds.minX)) / 2 - bounds.minX;
-  const ty = (canvas.height - (bounds.maxY - bounds.minY)) / 2 - bounds.minY;
+  const tx = (anchoVista() - (bounds.maxX - bounds.minX)) / 2 - bounds.minX;
+  const ty = (altoVista() - (bounds.maxY - bounds.minY)) / 2 - bounds.minY;
   targetCam = { x: tx, y: ty };
 }
 
@@ -11475,10 +11946,10 @@ function centerCameraOnWorld(col, row) {
     const cy = Number(row) || 0;
     if (viewMode === 'iso') {
       const p = projectIso(cx, cy);
-      targetCam = { x: canvas.width / 2 - p.x, y: canvas.height / 2 - p.y };
+      targetCam = { x: anchoVista() / 2 - p.x, y: altoVista() / 2 - p.y };
     } else {
       const tileSize = getTileSize();
-      targetCam = { x: canvas.width / 2 - cx * tileSize, y: canvas.height / 2 - cy * tileSize };
+      targetCam = { x: anchoVista() / 2 - cx * tileSize, y: altoVista() / 2 - cy * tileSize };
     }
     followPlayer = false;
     markCameraInput();
@@ -14210,6 +14681,45 @@ function generateMapInner(mapType, opts) {
 
 
 
+// ── CONSTANTES DEL DIBUJADO DE EDIFICIOS ────────────────────────────────────
+// Antes vivían DENTRO de `drawBuilding`, que se ejecuta una vez por edificio y
+// fotograma: dos `new Set(...)` y un objeto de opciones por edificio. Con ~700
+// edificios visibles eran ~2.100 asignaciones por fotograma que sólo servían
+// para alimentar al recolector de basura (17 % del tiempo en el perfilador).
+const SEAMLESS_BUILDINGS = new Set([
+  'road', 'concrete_road', 'wall_segment', 'wall_tower',
+  'mesopotamian_arch', 'mesopotamian_gate_v', 'farm_plot',
+  'steel_foundry', 'soviet_streetlight'
+]);
+const HOUSE_TYPES = new Set([
+  'house', 'house_small', 'house_large', 'house_garden', 'longhouse', 'stone_house',
+  'soviet_block', 'mesopotamian_villa_detailed', 'mesopotamian_house',
+  'mesopotamian_arch', 'mesopotamian_baths', 'house_isolated'
+]);
+// Opciones de `drawEntitySpriteAt` reutilizadas: dentro sólo se LEEN.
+const _SPRITE_OPTS_BUILDING = Object.freeze({ ignoreEntityScale: true });
+const _SPRITE_OPTS_BUILDING_NOSHADOW = Object.freeze({ ignoreEntityScale: true, noShadow: true });
+
+// La PLANTA del tejado (vista de arriba) se pintaba con 15-20 `fillRect` por
+// edificio y fotograma. Es idéntica para todos los edificios del mismo tipo y
+// tamaño, así que se rasteriza UNA vez y luego es un `drawImage`.
+const _plantaTechoCache = new Map();   // clave de arte → { w, h, cv }
+function plantaTechoCanvas(useKey, mat, w, h) {
+  const W = Math.max(2, Math.round(w)), H = Math.max(2, Math.round(h));
+  const hit = _plantaTechoCache.get(useKey);
+  if (hit && hit.w === W && hit.h === H) return hit.cv;
+  let cv = null;
+  try {
+    cv = document.createElement('canvas');
+    cv.width = W; cv.height = H;
+    drawPlantaTecho(cv.getContext('2d'), 0, 0, W, H, mat);
+  } catch (e) { cv = null; }
+  // Una entrada por arte: si cambia el zoom (y con él el tamaño) se vuelve a
+  // rasterizar, igual que antes pero sólo una vez por edificio y fotograma.
+  _plantaTechoCache.set(useKey, { w: W, h: H, cv });
+  return cv;
+}
+
 // Draw a single building on the canvas
 function drawBuilding(col, row, type, alpha) {
   const b = getBuildingDef(type);
@@ -14231,11 +14741,6 @@ function drawBuilding(col, row, type, alpha) {
   // Per-building visual scale tweaks (render-only; does not change footprint/collision)
   let visualScale = 1;
   // Infraestructura que debe encajar celda a celda (sin solaparse con la vecina).
-  const SEAMLESS_BUILDINGS = new Set([
-    'road', 'concrete_road', 'wall_segment', 'wall_tower',
-    'mesopotamian_arch', 'mesopotamian_gate_v', 'farm_plot',
-    'steel_foundry', 'soviet_streetlight'
-  ]);
   if (!SEAMLESS_BUILDINGS.has(type)) visualScale = BUILDING_VISUAL_SCALE;
   // Un bloque soviético es más alto que su huella, pero 4,5× lo dibujaba de
   // 13,5 celdas de ancho: se comía las manzanas vecinas enteras.
@@ -14266,8 +14771,6 @@ function drawBuilding(col, row, type, alpha) {
   // (Previously inserted isometric face rendering removed — depth should be
   // represented by sprite artwork in data/entity-pixels.json instead.)
 
-  const houseTypes = new Set(['house', 'house_small', 'house_large', 'house_garden', 'longhouse', 'stone_house', 'soviet_block', 'mesopotamian_villa_detailed', 'mesopotamian_house', 'mesopotamian_arch', 'mesopotamian_baths']);
-  houseTypes.add('house_isolated');
   const spriteKey = resolveBuildingSpriteKey(type);
 
   // ── COMPLEJO METALÚRGICO (retícula de módulos) ───────────────────────────
@@ -14283,7 +14786,7 @@ function drawBuilding(col, row, type, alpha) {
         for (let rx = 0; rx < modW; rx++) {
           const bx = x + rx * DT * 2;
           const by = y + ry * DT * 2;
-          drawEntitySpriteAt('foundry_module', bx + DT, by + DT * 2, DT * 2, DT * 2, { ignoreEntityScale: true });
+          drawEntitySpriteAt('foundry_module', bx + DT, by + DT * 2, DT * 2, DT * 2, _SPRITE_OPTS_BUILDING);
         }
       }
       // Sombra de contacto del recinto y banda de terreno al pie.
@@ -14306,7 +14809,7 @@ function drawBuilding(col, row, type, alpha) {
   // casa del Soviet, granja colectiva, puerta de control, complejo
   // metalúrgico, alfarería, pozo…) se dibujaba como NADA: sólo su sombra.
   // Los caminos quedan fuera: son suelo y se pintan con textura (drawPathCell).
-  if (!PATH_BUILDING_TYPES.has(type) && (spriteKey || houseTypes.has(type))) {
+  if (!PATH_BUILDING_TYPES.has(type) && (spriteKey || HOUSE_TYPES.has(type))) {
     // Prefer shaded variants when available
     const shadedAlias = type === 'mesopotamian_house' ? 'mesopotamian_house_shaded' : type;
     let useKey = hasRegisteredSprite(shadedAlias) ? shadedAlias : spriteKey;
@@ -14356,7 +14859,11 @@ function drawBuilding(col, row, type, alpha) {
             // centro de la huella para no descolgarse de su casilla.
             const pw = ts * size.w * dbgBuildingScale;
             const ph = ts * size.h * dbgBuildingScale;
-            drawPlantaTecho(ctx, x - (pw - ts * size.w) / 2, y - (ph - ts * size.h) / 2, pw, ph, mat);
+            const px = Math.round(x - (pw - ts * size.w) / 2);
+            const py = Math.round(y - (ph - ts * size.h) / 2);
+            const planta = plantaTechoCanvas(useKey, mat, pw, ph);
+            if (planta) ctx.drawImage(planta, px, py);
+            else drawPlantaTecho(ctx, px, py, pw, ph, mat);
             ctx.restore();
             return;
           } catch (e) { /* si algo falla, sigue con el sprite de siempre */ }
@@ -14380,7 +14887,8 @@ function drawBuilding(col, row, type, alpha) {
           ctx.restore();
         } catch (e) {}
       } else {
-        drawEntitySpriteAt(useKey, x + W * 0.5, spriteAnchorY, spriteW, spriteH, { ignoreEntityScale: true, noShadow: type === 'house_isolated' });
+        drawEntitySpriteAt(useKey, x + W * 0.5, spriteAnchorY, spriteW, spriteH,
+          type === 'house_isolated' ? _SPRITE_OPTS_BUILDING_NOSHADOW : _SPRITE_OPTS_BUILDING);
       }
       ctx.restore();
       return;
@@ -15085,7 +15593,7 @@ function drawPlayer() {
       ctx.restore();
       drawAnimal(ctx, 'horse', cxM, cyM, spriteW * 1.5, {
         state: mountedHorseState(now),
-        flip: (dir === 'left'), back: (dir === 'up'), now,
+        flip: (dir === 'left'), back: (dir === 'up'), dir, now,
         variant: horseCoatOf(player._mount), mounted: true
       });
       player._mountStrideSeenIso = player._walkTime || 0;
@@ -15112,7 +15620,7 @@ function drawPlayer() {
     // mismo estilo que las etiquetas de los NPC, ver `dibujarEtiquetaMundo`).
     try {
       if (player && player.name) {
-        textoMundo(() => dibujarEtiquetaMundo(ctx, x + spriteW * 0.5, py - 2, player.name, { size: 12, maxAncho: 150 }));
+        textoMundo(() => dibujarEtiquetaMundo(ctx, x + spriteW * 0.5, py - 2, player.name, { size: 13, maxAncho: 165 }));
       }
     } catch (e) {}
       // draw equipped item on player (simple overlay near hands)
@@ -15177,7 +15685,7 @@ function drawPlayer() {
       ctx.restore();
       drawAnimal(ctx, 'horse', cxM, cyM, spriteW * 1.5, {
         state: mountedHorseState(now),
-        flip: (dir === 'left'), back: (dir === 'up'), now,
+        flip: (dir === 'left'), back: (dir === 'up'), dir, now,
         variant: horseCoatOf(player._mount), mounted: true
       });
       player._mountStrideSeen = player._walkTime || 0;
@@ -15229,7 +15737,7 @@ function drawPlayer() {
     // Nombre del jugador (vista ortogonal): mismo estilo que los NPC.
     try {
       if (player && player.name) {
-        textoMundo(() => dibujarEtiquetaMundo(ctx, x + tileSize * 0.5, py - 2, player.name, { size: 12, maxAncho: 150 }));
+        textoMundo(() => dibujarEtiquetaMundo(ctx, x + tileSize * 0.5, py - 2, player.name, { size: 13, maxAncho: 165 }));
       }
     } catch (e) {}
   }
@@ -15256,7 +15764,7 @@ function drawPlayerHealth() {
   if (char._flashUntil && now < char._flashUntil) {
     const ft = 1 - (now - (char._flashUntil - 280)) / 280;
     ctx.fillStyle = `rgba(220,20,20,${(ft * 0.35).toFixed(3)})`;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillRect(0, 0, anchoVista(), altoVista());
   }
   if (!showHp && !showSt) return;
 
@@ -15619,7 +16127,7 @@ function drawCartWelcomeScene(ctx, W, H) {
     const horseW = Math.round(W * 0.13);
     try {
       drawAnimal(ctx, 'horse', cartX + Math.round(horseW * 0.72), cartY + 4 + bote, horseW,
-        { state: rodando ? 'run' : 'idle', phase01: (now * 0.004) % 1, now, flip: true,
+          { state: rodando ? 'run' : 'idle', phase01: (now * 0.004) % 1, now, flip: true, dir: 'left',
           variant: window._cartHorseCoat || 0, mounted: true });
     } catch (e) {}
     // Lanzas del carro
@@ -15718,8 +16226,11 @@ function drawCartWelcomeScene(ctx, W, H) {
 function aplicarPixeladoMundo() {
   try {
     if (!PIXELADO.activo) return;
-    const b = Math.max(2, Math.round(PIXELADO.bloque || 2));
+    // Todo el filtro trabaja en PÍXELES FÍSICOS (identidad), porque reduce y
+    // vuelve a volcar el búfer entero del lienzo. El bloque se mide en píxeles
+    // CSS: así al 150 % el bloque sigue midiendo lo mismo en pantalla.
     const W = canvas.width, H = canvas.height;
+    const b = Math.max(2, Math.round((PIXELADO.bloque || 2) * ESCALA_RENDER));
     if (W < 32 || H < 32) return;
     let mw = Math.ceil(W / b), mh = Math.ceil(H / b);
     // En pantallas enormes se sube el bloque para no crear un búfer gigante.
@@ -15736,6 +16247,8 @@ function aplicarPixeladoMundo() {
       _pixeladoCv.width = mw; _pixeladoCv.height = mh;
     }
     const g = _pixeladoCtx;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);   // el filtro va en píxeles físicos
     // 1) Reducir CON suavizado: cada bloque sale de promediar su zona (bloque
     //    limpio, sin aliasing) y es una sola operación de la GPU.
     g.imageSmoothingEnabled = true;
@@ -15758,11 +16271,12 @@ function aplicarPixeladoMundo() {
       ctx.drawImage(_pixeladoCv, 0, 0, mw, mh, 0, 0, mw * b, mh * b);
       ctx.globalAlpha = 1;
     }
-    ctx.globalCompositeOperation = 'source-over';
+    ctx.restore();   // devuelve el recorte, el alfa Y la escala del fotograma
     try { window._pixeladoFrames = (window._pixeladoFrames || 0) + 1; } catch (e) {}
   } catch (e) {
     // Si el filtro falla alguna vez, se apaga y el juego sigue igual que antes.
     PIXELADO.activo = false;
+    try { ctx.restore(); } catch (e2) {}
     try { ctx.globalCompositeOperation = 'source-over'; } catch (e2) {}
     try { ctx.globalAlpha = 1; } catch (e2) {}
   }
@@ -15886,6 +16400,7 @@ function dibujarTextosFlotantes(W, H, tileSize, nowEff, cinematicActive) {
       const cx = (typeof ft.x === 'number') ? ft.x : 0;
       const cy = (typeof ft.y === 'number') ? ft.y : 0;
       const prevSmoothing = ctx.imageSmoothingEnabled;
+      const prevTextAlign = ctx.textAlign;
       ctx.imageSmoothingEnabled = true;
       try { ctx.imageSmoothingQuality = 'high'; } catch(e){}
       ctx.globalAlpha = alpha;
@@ -15901,12 +16416,17 @@ function dibujarTextosFlotantes(W, H, tileSize, nowEff, cinematicActive) {
 
       ctx.font = 'bold 13px sans-serif';
       ctx.textBaseline = 'alphabetic';
+      // `fillText` heredaba el `textAlign` que hubiera dejado el último que
+      // dibujó (casi siempre 'center' del HUD): el texto se pintaba centrado
+      // sobre una x calculada como si fuera alineación izquierda y el bocadillo
+      // se desbordaba. Aquí se fija a mano y se restaura al salir.
+      ctx.textAlign = 'left';
       // El ancho útil se fija ANTES de medir y el texto se envuelve a ese ancho:
       // así nunca puede ser más ancho que su bocadillo. Y se limita a 3 líneas
       // con puntos suspensivos: una parrafada no puede tapar media pantalla.
       const maxAncho = Math.max(72, Math.min(220, Math.round(W * 0.32)));
       const filas = envolverTexto(ctx, ft.text || '', maxAncho, { maxFilas: 3 });
-      if (!filas.length) { ctx.globalAlpha = 1; ctx.imageSmoothingEnabled = prevSmoothing; continue; }
+      if (!filas.length) { ctx.globalAlpha = 1; ctx.imageSmoothingEnabled = prevSmoothing; ctx.textAlign = prevTextAlign; continue; }
       let anchoMax = 0;
       for (const f of filas) anchoMax = Math.max(anchoMax, ctx.measureText(f).width);
       const padX = 10, padY = 6, lineH = 16;
@@ -15946,6 +16466,7 @@ function dibujarTextosFlotantes(W, H, tileSize, nowEff, cinematicActive) {
       } catch (e) {}
       ctx.globalAlpha = 1;
       ctx.imageSmoothingEnabled = prevSmoothing;
+      ctx.textAlign = prevTextAlign;
     }
     // Y no se dejan más de 10 a la vez: varios vecinos hablando a la vez
     // llenaban la pantalla de carteles.
@@ -16231,7 +16752,7 @@ function dibujarEtiquetaMundo(ctx, sx, sy, texto, opts) {
   const size = Math.max(8, o.size || 12);
   const padX = 5, padY = 3, lineH = size + 3;
   let anchoLienzo = Number(o.anchoLienzo) || 0;
-  if (!anchoLienzo) { try { anchoLienzo = canvas.width; } catch (e) { anchoLienzo = 640; } }
+  if (!anchoLienzo) { try { anchoLienzo = anchoVista(); } catch (e) { anchoLienzo = 640; } }
   anchoLienzo = Math.max(80, anchoLienzo);
   const maxAncho = Math.max(48, Math.min(o.maxAncho || 150, anchoLienzo - 14));
   ctx.save();
@@ -16330,10 +16851,14 @@ function pintarAvisoDeAccion(dt) {
 
     const tileSize = getTileSize();
     const screen = worldToScreen((player.x || 0) + 0.5, (player.y || 0));
-    const fuenteTexto = '600 13px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
-    const fuenteTecla = '700 12px ui-monospace, SFMono-Regular, Menlo, monospace';
+    // Aviso de acción: 14 px en negrita y CONTORNO opaco (antes un `shadowBlur`,
+    // que difumina el borde de las letras y ensucia los huecos de la «e» o la
+    // «o»). Con el búfer a resolución física y las posiciones en píxel entero, se
+    // lee nítido sobre arena, agua, hierba o piedra.
+    const fuenteTexto = '700 14px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+    const fuenteTecla = '800 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
     const tecla = '[' + _avisoTecla + ']';
-    const sep = 8;
+    const sep = 9;
     ctx.save();
     ctx.font = fuenteTexto;
     const textoW = ctx.measureText(_avisoTexto).width;
@@ -16345,29 +16870,39 @@ function pintarAvisoDeAccion(dt) {
     ctx.globalAlpha = Math.max(0, Math.min(1, _avisoAlpha));
     ctx.translate(0, Math.round((1 - _avisoAlpha) * 6));     // entra subiendo
 
-    // Color según el FONDO: claro → texto oscuro; oscuro → texto claro.
+    // Color según el FONDO: claro → texto oscuro; oscuro → texto claro. El
+    // contorno va del color contrario, que es lo que lo hace legible sobre
+    // cualquier terreno (y sin emborronar la letra).
     const lum = luminanciaBajoElAviso();
     const sobreClaro = lum > 0.56;
-    const colorTexto = sobreClaro ? '#15171C' : '#F7F4EA';
-    const colorTecla = sobreClaro ? '#6E4E0C' : '#FFD27A';
-    const halo = sobreClaro ? 'rgba(255,255,255,0.80)' : 'rgba(0,0,0,0.85)';
+    const colorTexto = sobreClaro ? '#14161A' : '#FFFFFF';
+    const colorTecla = sobreClaro ? '#6B4A08' : '#FFD27A';
+    const contorno = sobreClaro ? 'rgba(255,255,255,0.92)' : 'rgba(0,0,0,0.92)';
 
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
-    ctx.shadowColor = halo;      // el halo es la garantía de legibilidad
-    ctx.shadowBlur = 5;
-    ctx.shadowOffsetY = 0;
+    ctx.lineJoin = 'round';
+    ctx.miterLimit = 2;
+    const xTecla = Math.round(x + textoW + sep);
+    // Primero TODOS los contornos y después los rellenos: así el borde de una
+    // pieza no se come el relleno de la otra.
+    ctx.strokeStyle = contorno;
+    ctx.lineWidth = 3;
     ctx.font = fuenteTexto;
-    ctx.fillStyle = colorTexto;
-    ctx.fillText(_avisoTexto, x, y);
+    ctx.strokeText(_avisoTexto, x, y);
     ctx.font = fuenteTecla;
+    ctx.strokeText(tecla, xTecla, y);
+    ctx.fillStyle = colorTexto;
+    ctx.font = fuenteTexto;
+    ctx.fillText(_avisoTexto, x, y);
     ctx.fillStyle = colorTecla;
-    ctx.fillText(tecla, x + textoW + sep, y);
+    ctx.font = fuenteTecla;
+    ctx.fillText(tecla, xTecla, y);
     ctx.restore();
   } catch (e) {}
 }
 function render() {
-  const W = canvas.width, H = canvas.height;
+  const W = anchoVista(), H = altoVista();
   const _ptStart = window._perfSections ? performance.now() : 0;
   const now = Date.now();
   try { window._lastRenderAt = now; window._rafPendiente = false; } catch (e) {}
@@ -16404,7 +16939,9 @@ function render() {
     window._terrCacheBusy && (Date.now() - (window._worldReadyAt || Date.now())) < 15000;
   if (!window._worldReadyAt || _esperandoTerreno) {
     try {
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      // Escala del búfer (no `setTransform(1,…)`): si no, en pantallas al 150 %
+      // el cartel se dibujaría en la esquina superior izquierda.
+      aplicarEscalaRender(ctx);
       ctx.fillStyle = '#0b0803';
       ctx.fillRect(0, 0, W, H);
       ctx.fillStyle = '#FFD27A';
@@ -16490,6 +17027,8 @@ function render() {
         console.debug('DEBUG camera', { camX, camY, zoom });
       }
     } catch (e) {}
+    // Escala del búfer: todo el fotograma se dibuja en píxeles CSS.
+    aplicarEscalaRender(ctx);
     ctx.clearRect(0, 0, W, H);
 
     let _shakeOffX = 0, _shakeOffY = 0;
@@ -16543,7 +17082,7 @@ function render() {
     try { drawMountainsBackground(ctx, W, H); } catch (e) {}
 
   // Update player movement in free mode (continuous)
-  if (!editMode && !worldMapOverlayVisible && !observatory.estaAbierto() && !isPlayerDowned(now) && !isPrologueMovementLocked()) {
+  if (!editMode && !worldMapOverlayVisible && !observatory.estaAbierto() && !isPlayerDowned(now) && !isPrologueMovementLocked() && !player._gateCheckLock) {
     // move player by tiles in small steps to avoid skipping collisions when sprinting
     function applyPlayerMoveTiles(dxTiles, dyTiles) {
       try {
@@ -16725,7 +17264,7 @@ function render() {
   // Objetivos libres del prólogo (se completan solos al cumplir su condición)
   try { updateFreeObjectives(now); } catch (e) {}
   // Control de paso: el alto de los soldados de la puerta (una vez por vano)
-  try { if (!_gateTickAt || now - _gateTickAt > 700) { _gateTickAt = now; updateGateGuards(now); } } catch (e) {}
+  try { if (!_gateTickAt || now - _gateTickAt > 300) { _gateTickAt = now; updateGateGuards(now); } } catch (e) {}
   // Mundo que crece: si el jugador se acerca a un borde, se añade terreno nuevo
   try {
     if (!_worldTickAt || now - _worldTickAt > 800) {
@@ -17022,7 +17561,7 @@ function render() {
       ctx.fillStyle = colorReloj;
       try { dibujarIcono(ctx, isDaytime ? 'sol' : 'luna', hx + 19, hy + cabecera / 2 + 1, 13, colorReloj); } catch (e) {}
       ctx.fillText(timeStr, hx + 30, hy + cabecera / 2 + 1);
-      ctx.font = '600 9px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+      ctx.font = '700 10px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
       ctx.textAlign = 'right';
       ctx.fillStyle = 'rgba(255,255,255,0.30)';
       ctx.fillText(isDaytime ? 'DÍA' : 'NOCHE', hx + hudW - 13, hy + cabecera / 2 + 1);
@@ -17064,7 +17603,7 @@ function render() {
           ctx.globalAlpha = 1;
         }
         // valor
-        ctx.font = '600 9.5px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+        ctx.font = '700 10.5px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
         ctx.textAlign = 'right';
         ctx.fillStyle = b.icon === 'infeccion' ? 'rgba(190,215,140,0.85)' : 'rgba(255,255,255,0.48)';
         ctx.fillText(b.valor != null ? String(b.valor) : String(Math.round(b.pct * 100)), hx + hudW - 13, y - 1);
@@ -17086,7 +17625,7 @@ function render() {
       const iCols = interior.width || (interior.tiles && interior.tiles[0] ? interior.tiles[0].length : 8);
       const iRows = interior.height || (interior.tiles ? interior.tiles.length : 6);
       const nowInt = Date.now();
-      const W = canvas.width, H = canvas.height;
+      const W = anchoVista(), H = altoVista();
 
       if (window._interiorFadeOut) {
         const fo = window._interiorFadeOut;
@@ -17446,7 +17985,7 @@ function render() {
     const destX0 = (viewMode === 'iso' && _mc._isoOffset) ? _mc._isoOffset.minX * scale + camX : camX;
     const destY0 = (viewMode === 'iso' && _mc._isoOffset) ? _mc._isoOffset.minY * scale + camY : camY;
     if (viewMode !== 'iso' || _mc._isoOffset) {
-      const visW = canvas.width, visH = canvas.height;
+      const visW = anchoVista(), visH = altoVista();
       // Intersección del rectángulo destino con la ventana.
       const ix0 = Math.max(0, destX0), iy0 = Math.max(0, destY0);
       const ix1 = Math.min(visW, destX0 + _mc.width * scale);
@@ -18383,7 +18922,7 @@ function render() {
         const dist = Math.hypot(ent.x - player.x, ent.y - player.y);
         if (dist <= NAME_MAX_DIST && ent.name && !ent.isStoryNPC) { // Don't draw name for story NPCs here, handled by dialogue
           const p = worldToScreen(ent.x + 0.5, ent.y - 0.2);
-          textoMundo(() => dibujarEtiquetaMundo(ctx, p.x, p.y - 4, ent.name, { size: 12, maxAncho: 150 }));
+          textoMundo(() => dibujarEtiquetaMundo(ctx, p.x, p.y - 4, ent.name, { size: 13, maxAncho: 165 }));
         }
       } catch (e) {}
       // highlight NPC if selected
@@ -18419,6 +18958,17 @@ function render() {
       const cyH = y + tileSizeH * 0.92;
       const miraIzq = !!(ent.moveTarget && ent.moveTarget.x < ent.x) || (ent._lastX !== undefined && ent.x < ent._lastX);
       const haciaArriba = (ent._lastY !== undefined && ent.y > ent._lastY + 0.0005);
+      // Dirección de la VISTA para el arte de cuatro lados: la marca el eje en el
+      // que más se ha movido; quieto, se queda con la última. (`haciaArriba` no
+      // sirve: mira si la Y crece, que en pantalla es moverse hacia ABAJO.)
+      const dxMov = (ent._lastX !== undefined) ? (ent.x - ent._lastX) : 0;
+      const dyMov = (ent._lastY !== undefined) ? (ent.y - ent._lastY) : 0;
+      if (Math.abs(dxMov) > 0.0005 || Math.abs(dyMov) > 0.0005) {
+        ent._dirVista = (Math.abs(dyMov) > Math.abs(dxMov))
+          ? (dyMov > 0 ? 'down' : 'up')
+          : (dxMov < 0 ? 'left' : 'right');
+      }
+      const dirH = ent._dirVista || (miraIzq ? 'left' : 'right');
       ent._lastX = ent.x;
       ent._lastY = ent.y;
       ctx.save();
@@ -18437,7 +18987,7 @@ function render() {
       } catch (e) {}
       drawAnimal(ctx, 'horse', cxH, cyH, anchoH, {
         state: horseStateFor(ent, now), phase01: horseActPhase(ent, now),
-        flip: miraIzq, back: haciaArriba, now,
+        flip: (dirH === 'left'), back: (dirH === 'up'), dir: dirH, now,
         variant: horseCoatOf(ent), mounted: (ent === player._mount)
       });
       // Cuerda al poste si esta amarrado
@@ -18530,7 +19080,7 @@ function render() {
         const dist = Math.hypot((ent.x || ent.col) - player.x, (ent.y || ent.row) - player.y);
         if (dist <= NAME_MAX_DIST && ent.name) {
           const p = worldToScreen((ent.x || ent.col) + 0.1, (ent.y || ent.row) - 0.25);
-          textoMundo(() => dibujarEtiquetaMundo(ctx, p.x, p.y - 4, ent.name, { size: 12, maxAncho: 150 }));
+          textoMundo(() => dibujarEtiquetaMundo(ctx, p.x, p.y - 4, ent.name, { size: 13, maxAncho: 165 }));
         }
       } catch (e) {}
     } else if (ent.kind === 'ambient' && ent.subtype === 'soviet_fighter_jet') {
@@ -18840,7 +19390,7 @@ function render() {
       const dist = Math.hypot(rab.x - player.x, rab.y - player.y);
       if (dist <= NAME_MAX_DIST && rab.name) {
         const p = worldToScreen(rab.x + 0.5, rab.y - 0.2);
-        textoMundo(() => dibujarEtiquetaMundo(ctx, p.x, p.y - 4, rab.name, { size: 12, maxAncho: 150 }));
+        textoMundo(() => dibujarEtiquetaMundo(ctx, p.x, p.y - 4, rab.name, { size: 13, maxAncho: 165 }));
       }
     } catch (e) {}
     // highlight if selected
@@ -18966,7 +19516,7 @@ function render() {
         const dist = Math.hypot(fox.col - player.x, fox.row - player.y);
         if (dist <= NAME_MAX_DIST && fox.name) {
           const p = worldToScreen(fox.col + 0.5, fox.row - 0.2);
-          textoMundo(() => dibujarEtiquetaMundo(ctx, p.x, p.y - 4, fox.name, { size: 12, maxAncho: 150 }));
+          textoMundo(() => dibujarEtiquetaMundo(ctx, p.x, p.y - 4, fox.name, { size: 13, maxAncho: 165 }));
         }
       } catch (e) {}
     });
@@ -19063,7 +19613,7 @@ function render() {
         const dist = Math.hypot((grave.x || grave.col) - player.x, (grave.y || grave.row) - player.y);
         if (zoom >= nameZoom && dist <= maxDist) {
           const p = worldToScreen(grave.x, grave.y - 0.3);
-          textoMundo(() => dibujarEtiquetaMundo(ctx, p.x, p.y - 6, grave.name, { size: 11, maxAncho: 160, color: '#DDD' }));
+          textoMundo(() => dibujarEtiquetaMundo(ctx, p.x, p.y - 6, grave.name, { size: 12, maxAncho: 175, color: '#DDD' }));
         }
       } catch (e) {}
       
@@ -19503,9 +20053,9 @@ function render() {
     const tileSize = getTileSize();
     if (viewMode === 'iso') {
       const p = projectIso(player.x, player.y);
-      targetCam = { x: canvas.width/2 - p.x, y: canvas.height/2 - p.y };
+      targetCam = { x: anchoVista()/2 - p.x, y: altoVista()/2 - p.y };
     } else {
-      targetCam = { x: canvas.width/2 - player.x * tileSize, y: canvas.height/2 - player.y * tileSize };
+      targetCam = { x: anchoVista()/2 - player.x * tileSize, y: altoVista()/2 - player.y * tileSize };
     }
   }
 
@@ -19870,6 +20420,10 @@ function render() {
         else if (bestGrave) _interactionScanCache = { kind: 'grave', ref: bestGrave, actionText: `Leer: ${bestGrave.name}`, showPrompt: true };
         else if (bestScene) _interactionScanCache = { kind: 'map-scene', ref: bestScene, actionText: bestScene.prompt || 'Examinar', showPrompt: true };
         else if (bestNpc) _interactionScanCache = { kind: 'player', ref: bestNpc, actionText: 'Hablar', showPrompt: true };
+        else if (bestPet) {
+          const llevaCarga = !!(bestPet._stash && Object.keys(bestPet._stash).length);
+          _interactionScanCache = { kind: 'pet', ref: bestPet, actionText: llevaCarga ? 'Recoger carga del perro' : `Acariciar a ${bestPet.name || 'Kidu'}`, showPrompt: true };
+        }
         else if (bestRes) _interactionScanCache = { kind: 'resource', ref: bestRes, actionText: bestRes.subtype ? ('Recoger ' + bestRes.subtype) : 'Recoger', showPrompt: true };
         else if (bestTree) _interactionScanCache = { kind: 'tree', ref: bestTree, actionText: 'Talar', showPrompt: false };
         else _interactionScanCache = null;
@@ -20474,6 +21028,7 @@ function render() {
     // draw error message to canvas for debugging
     console.error(err);
     try {
+      aplicarEscalaRender(ctx);
       ctx.clearRect(0,0,W,H);
       ctx.fillStyle = 'rgba(40,40,40,0.95)';
       ctx.fillRect(0,0,W,H);
@@ -23128,6 +23683,13 @@ function createMenuBar() {
   pixMas.addEventListener('click', () => { try { MESO_PIXELADO.mezcla(PIXELADO.mezcla + 0.1); } catch (err) {} });
   pixRow.appendChild(pixMenos); pixRow.appendChild(pixMas);
   devMenu.appendChild(pixRow);
+  // Texto nítido: el lienzo se dibuja a la resolución física de la pantalla, así
+  // que los textos (avisos, nombres, HUD) se ven nítidos y no interpolados. Si
+  // el equipo se queda corto de GPU, aquí se vuelve al 1×.
+  const optNitidez = document.createElement('label'); optNitidez.style.display='block'; optNitidez.style.cursor='pointer'; optNitidez.style.marginTop='6px';
+  optNitidez.innerHTML = `<input type='checkbox' ${NITIDEZ_CFG.activa ? 'checked' : ''}> Texto nítido (resolución de pantalla)`;
+  optNitidez.querySelector('input').addEventListener('change', (e) => { try { window.MESO_NITIDEZ.activar(!!e.target.checked); } catch (err) {} });
+  devMenu.appendChild(optNitidez);
   // Niebla de guerra: todo lo no explorado se ve negro (para probar el efecto)
   const optFog = document.createElement('label'); optFog.style.display='block'; optFog.style.cursor='pointer'; optFog.style.marginTop='6px';
   optFog.innerHTML = `<input type='checkbox' ${window._fogEnabled ? 'checked' : ''}> Niebla de guerra (sólo mapa explorado)`;
@@ -24140,6 +24702,12 @@ function showEntityInfo(ent) {
     lines.push(`<div>Modo combate: <b>${ent.combatMode ? 'Activo' : 'Pasivo'}</b></div>`);
     lines.push(`<div>Lealtad: <b>${Math.max(0, Math.min(100, Math.floor(ent.loyalty || 60)))}/100</b></div>`);
     lines.push(`<div>HP: <b>${ent.hp || 0}/${ent.maxHp || 0}</b></div>`);
+    if (ent._stash && Object.keys(ent._stash).length) {
+      const carga = Object.keys(ent._stash)
+        .map(k => `${ent._stash[k]} ${GATE_CONTRABAND_LABELS[k] || k}`)
+        .join(', ');
+      lines.push(`<div>Carga guardada: <b>${carga}</b></div>`);
+    }
     lines.push(`<div>Pos: ${Math.floor(ent.col || 0)},${Math.floor(ent.row || 0)}</div>`);
   } else if (ent.kind === 'player') {
     try { assignSovietVillagerProfile(ent); } catch (e) {}
@@ -24382,7 +24950,7 @@ function drawTreesVisible() {
   const TREE_TEMPLATES = GLOBAL_TREE_TEMPLATES;
   const nowTrees = Date.now();
   const windTrees = windStrength();
-  const W = canvas.width, H = canvas.height;
+  const W = anchoVista(), H = altoVista();
   let minC, maxC, minR, maxR;
   if (viewMode === 'iso') {
     // compute visible tile rectangle in world coords using float math
@@ -24645,14 +25213,14 @@ function drawMissionMarker() {
     
     // Only show marker if target is off-screen
     const targetScreenPos = worldToScreen(mission.target.col, mission.target.row);
-    if (targetScreenPos.x >= 0 && targetScreenPos.x <= canvas.width 
-        && targetScreenPos.y >= 0 && targetScreenPos.y <= canvas.height) {
+    if (targetScreenPos.x >= 0 && targetScreenPos.x <= anchoVista() 
+        && targetScreenPos.y >= 0 && targetScreenPos.y <= altoVista()) {
       return; // Target is on screen, don't show marker
     }
     
     // Draw direction arrow from screen center towards mission
-    const cx = canvas.width / 2;
-    const cy = canvas.height / 2;
+    const cx = anchoVista() / 2;
+    const cy = altoVista() / 2;
     const angle = Math.atan2(targetScreenPos.y - cy, targetScreenPos.x - cx);
     const arrowDist = 40;
     const arrowX = cx + Math.cos(angle) * arrowDist;
@@ -24677,12 +25245,17 @@ function drawMissionMarker() {
     
     // Draw mission name
     ctx.rotate(-angle);
-    ctx.fillStyle = '#E8D5A3';
-    ctx.font = 'bold 11px Arial';
+    ctx.font = '700 12px ' + FUENTE_ETIQUETA;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'bottom';
-    ctx.shadowColor = 'rgba(0,0,0,0.8)';
-    ctx.shadowBlur = 4;
+    // Contorno opaco en vez de `shadowBlur`: con el desenfoque el nombre de la
+    // misión (11 px) se veía sucio sobre cualquier fondo.
+    ctx.lineJoin = 'round';
+    ctx.miterLimit = 2;
+    ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+    ctx.lineWidth = 3;
+    ctx.strokeText(mission.title || 'Misión', 0, -14);
+    ctx.fillStyle = '#E8D5A3';
     ctx.fillText(mission.title || 'Misión', 0, -14);
     
     ctx.restore();
@@ -24705,12 +25278,12 @@ function drawMissionStatus() {
     ctx.strokeRect(10, 10, 220, 50);
     
     ctx.fillStyle = '#FFD700';
-    ctx.font = 'bold 12px Arial';
+    ctx.font = '700 13px ' + FUENTE_ETIQUETA;
     ctx.textAlign = 'left';
     ctx.fillText('MISIÓN:', 16, 26);
     
     ctx.fillStyle = '#E8D5A3';
-    ctx.font = 'normal 11px Arial';
+    ctx.font = '12px ' + FUENTE_ETIQUETA;
     ctx.fillText(mission.title || 'Sin título', 16, 41);
     if (mission.description) ctx.fillText(mission.description, 16, 53);
     
@@ -26134,13 +26707,15 @@ function drawCompactGuideOverlay(ctx, W, H) {
     ctx.beginPath();
     ctx.roundRect(x + 0.5, y + 0.5, boxW - 1, boxH - 1, 12);
     ctx.stroke();
-    ctx.fillStyle = 'rgba(227,201,140,0.78)';
-    ctx.font = '600 10px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+    ctx.fillStyle = 'rgba(227,201,140,0.90)';
+    ctx.font = '700 11px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
     ctx.fillText('GUÍA RÁPIDA', x + pad, y + 19);
-    ctx.fillStyle = 'rgba(206,213,226,0.72)';
-    ctx.font = '11px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+    // 12 px y algo más de contraste: era el texto más pequeño del HUD y el que
+    // más costaba leer sobre el terreno.
+    ctx.fillStyle = 'rgba(226,232,242,0.88)';
+    ctx.font = '12px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
     for (let i = 0; i < lines.length; i++) {
       let text = lines[i];
       const maxW = boxW - pad * 2;
@@ -26199,40 +26774,51 @@ function interactWithPet(dog) {
       document.body.classList.remove('dialogue-active');
     }
     
+    const opciones = [
+      { text: 'Acariciar', action: () => {
+        const dlg = window._activeDialogue;
+        if (!dlg.petPettingStarted) {
+          dlg.petPettingStarted = true;
+          dlg.lines = [`${petName} menea la cola alegremente...`, '¡Le encanta que lo acaricies!'];
+          dlg.idx = 0;
+          dlg.options = null;
+          dlg.onComplete = () => {
+            closeDialoguePanel();
+          };
+        }
+      }},
+      { text: 'Jugar', action: () => {
+        const dlg = window._activeDialogue;
+        const petRef = dlg.petRef;
+        closeDialoguePanel();
+
+        if (petRef) {
+          notify(`¡${petName} está listo para jugar! Lleva al perro cerca de donde quieras que busque.`);
+          petRef.playMode = true;
+          petRef.playTimeout = Date.now() + 3000;
+        }
+      }}
+    ];
+    // Lo que el perro se quedó cuidando en la puerta se recupera desde aquí.
+    if (dog._stash && Object.keys(dog._stash).length) {
+      const total = Object.values(dog._stash).reduce((n, q) => n + (Number(q) || 0), 0);
+      opciones.push({ text: `Recoger carga (${total})`, action: () => {
+        closeDialoguePanel();
+        recoverDogStash(dog);
+      }});
+    }
+    opciones.push({ text: 'Dejar', action: () => {
+      closeDialoguePanel();
+    }});
+    opciones.forEach((o, i) => { o.num = i + 1; });
+
     window._activeDialogue = {
       lines,
       idx: 0,
       npcName: 'Tú',
       isPetInteraction: true,
       petRef: dog,
-      options: [
-        { num: 1, text: 'Acariciar', action: () => {
-          const dlg = window._activeDialogue;
-          if (!dlg.petPettingStarted) {
-            dlg.petPettingStarted = true;
-            dlg.lines = [`${petName} menea la cola alegremente...`, '¡Le encanta que lo acaricies!'];
-            dlg.idx = 0;
-            dlg.options = null;
-            dlg.onComplete = () => {
-              closeDialoguePanel();
-            };
-          }
-        }},
-        { num: 2, text: 'Jugar', action: () => {
-          const dlg = window._activeDialogue;
-          const petRef = dlg.petRef;
-          closeDialoguePanel();
-          
-          if (petRef) {
-            notify(`¡${petName} está listo para jugar! Lleva al perro cerca de donde quieras que busque.`);
-            petRef.playMode = true;
-            petRef.playTimeout = Date.now() + 3000;
-          }
-        }},
-        { num: 3, text: 'Dejar', action: () => {
-          closeDialoguePanel();
-        }}
-      ]
+      options: opciones
     };
     document.body.classList.add('dialogue-active');
   } catch (e) {
@@ -28034,11 +28620,13 @@ function drawDialoguePanel(ctx, W, H) {
   const line = dlg.lines[dlg.idx] || '';
   const hasOptions = opcionesDialogoActivas(dlg);
   const panW = Math.min(W - 40, 720);
-  const px = (W - panW) / 2;
+  // ENTEROS: con la `px` fraccionaria (W impar) cada letra se dibujaba sobre un
+  // borde de píxel y el texto del diálogo salía medio borroso.
+  const px = Math.round((W - panW) / 2);
   // Las OPCIONES se ENVUELVEN y el panel crece con ellas. Antes se dibujaban en
   // una sola línea a 12 px: una respuesta de más de ~90 caracteres (lo normal al
   // elegir lo que dice el personaje) se salía por la derecha y se cortaba.
-  const optFont = '12px sans-serif';
+  const optFont = '600 13px ' + FUENTE_ETIQUETA;
   const optMaxW = panW - 46;
   const optWrap = [];
   let optLines = 0;
@@ -28063,7 +28651,7 @@ function drawDialoguePanel(ctx, W, H) {
   const altoMax = Math.max(140, H - 20);
   let fuenteTexto = 15, lineH = 22, filasTexto = [];
   for (let i = 0; i < 4; i++) {
-    ctx.font = fuenteTexto + 'px sans-serif';
+    ctx.font = fuenteTexto + 'px ' + FUENTE_ETIQUETA;
     filasTexto = envolverTexto(ctx, line, panW - 28);
     const alto = cabeceraH + filasTexto.length * lineH + 10 + optBlockH + pieH;
     if (alto <= altoMax || fuenteTexto <= 12) break;
@@ -28101,7 +28689,7 @@ function drawDialoguePanel(ctx, W, H) {
   ctx.closePath(); ctx.fill(); ctx.stroke();
   // NPC name header
   ctx.fillStyle = theme.header;
-  ctx.font = 'bold 14px sans-serif';
+  ctx.font = '700 15px ' + FUENTE_ETIQUETA;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
   ctx.fillText(dlg.npcName, px + 14, py + 24);
@@ -28112,7 +28700,7 @@ function drawDialoguePanel(ctx, W, H) {
   // Texto del NPC: se dibujan TODAS las líneas medidas arriba (antes se
   // descartaban sin aviso las que no cabían en el alto fijo del panel).
   ctx.fillStyle = theme.text;
-  ctx.font = fuenteTexto + 'px sans-serif';
+  ctx.font = fuenteTexto + 'px ' + FUENTE_ETIQUETA;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
   let ty = py + 56;
@@ -28363,16 +28951,16 @@ function drawFogOfWar(now) {
       // el coste más alto del isométrico con el mundo grande.
       const ts = getTileSize();
       const vc0 = Math.max(0, Math.floor((-camX) / ts) - 3);
-      const vc1 = Math.min(COLS - 1, Math.ceil((canvas.width - camX) / ts) + 3);
+      const vc1 = Math.min(COLS - 1, Math.ceil((anchoVista() - camX) / ts) + 3);
       const vr0 = Math.max(0, Math.floor((-camY) / ts) - 3);
-      const vr1 = Math.min(ROWS - 1, Math.ceil((canvas.height - camY) / ts) + 3);
+      const vr1 = Math.min(ROWS - 1, Math.ceil((altoVista() - camY) / ts) + 3);
       ctx.save();
       ctx.fillStyle = '#000';
       for (let r = vr0; r <= vr1; r++) {
         for (let c = vc0; c <= vc1; c++) {
           if (ex[r * COLS + c]) continue;
           const p = worldToScreen(c, r);
-          if (p.x + w < 0 || p.x - w > canvas.width || p.y + h < 0 || p.y > canvas.height) continue;
+          if (p.x + w < 0 || p.x - w > anchoVista() || p.y + h < 0 || p.y > altoVista()) continue;
           ctx.beginPath();
           ctx.moveTo(p.x, p.y);
           ctx.lineTo(p.x + w / 2, p.y + h / 2);
@@ -28476,13 +29064,13 @@ function drawMiniMap(ctx, W, H) {
     const hh = Math.floor(dayHour);
     const mm = Math.floor((dayHour - hh) * 60);
     const timeStr = `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
-    ctx.font = '9px sans-serif';
-    ctx.fillStyle = 'rgba(255,240,180,0.9)';
+    ctx.font = '700 10px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+    ctx.fillStyle = 'rgba(255,240,180,0.95)';
     ctx.textAlign = 'left';
     ctx.fillText(timeStr, ox + 3, oy + 10);
     // Pie: recuerda que con M se abre el mapa cenital a lo grande.
-    ctx.font = '9px sans-serif';
-    ctx.fillStyle = 'rgba(255,240,180,0.72)';
+    ctx.font = '600 10.5px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+    ctx.fillStyle = 'rgba(255,240,180,0.82)';
     ctx.textAlign = 'right';
     ctx.fillText('M · mapa grande', ox + mapW - 3, oy + mapH + 12);
   } catch(e){}
@@ -28783,7 +29371,13 @@ function actualizarLanzamientos(now) {
     const t = (now - l.startedAt) / Math.max(1, l.dur);
     if (t >= 1) {
       lista.splice(i, 1);
-      try { impactoDeLanzamiento(l); } catch (e) {}
+      if (l.handoff) {
+        // Entrega al perro: no es un lanzamiento de combate, no hace ruido ni
+        // golpea a nadie; sólo avisa a quien espera el final de la animación.
+        try { if (typeof l.onEnd === 'function') l.onEnd(); } catch (e) {}
+      } else {
+        try { impactoDeLanzamiento(l); } catch (e) {}
+      }
     }
   }
 }
@@ -28961,6 +29555,24 @@ function dibujarPolilinea(ctx, puntos) {
   }
 }
 
+// Lienzo pequeño con el icono real de un objeto (se cachea: la entrega al perro
+// se dibuja cada fotograma y no puede crear un canvas nuevo cada vez).
+const _iconosItemParaVuelo = new Map();
+function iconoCanvasParaItem(item, size) {
+  const key = String(item) + '|' + size;
+  if (_iconosItemParaVuelo.has(key)) return _iconosItemParaVuelo.get(key);
+  try {
+    const cv = document.createElement('canvas');
+    cv.width = size; cv.height = size;
+    drawItemIcon(cv.getContext('2d'), item, size, size);
+    _iconosItemParaVuelo.set(key, cv);
+    return cv;
+  } catch (e) {
+    _iconosItemParaVuelo.set(key, null);
+    return null;
+  }
+}
+
 function dibujarLanzamientos(ctx) {
   const lista = window._lanzamientos;
   if (!Array.isArray(lista) || !lista.length) return;
@@ -28980,13 +29592,25 @@ function dibujarLanzamientos(ctx) {
       ctx.beginPath();
       ctx.ellipse(s.x, s.y + 2, 3.2, 1.6, 0, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = l.item === 'stone' ? '#B9B2A6' : '#C79A5B';
-      ctx.beginPath();
-      ctx.arc(sx, sy, 3.4, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(0,0,0,0.45)';
-      ctx.lineWidth = 0.8;
-      ctx.stroke();
+      if (l.handoff) {
+        // Entrega al perro: el objeto viaja con su icono de inventario.
+        const size = Math.max(12, Math.round(tile * 0.42));
+        const icon = iconoCanvasParaItem(l.item, size);
+        if (icon) ctx.drawImage(icon, Math.round(sx - size / 2), Math.round(sy - size / 2));
+        else {
+          ctx.fillStyle = '#C79A5B';
+          ctx.beginPath(); ctx.arc(sx, sy, 3.4, 0, Math.PI * 2); ctx.fill();
+          ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = 0.8; ctx.stroke();
+        }
+      } else {
+        ctx.fillStyle = l.item === 'stone' ? '#B9B2A6' : '#C79A5B';
+        ctx.beginPath();
+        ctx.arc(sx, sy, 3.4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+        ctx.lineWidth = 0.8;
+        ctx.stroke();
+      }
       ctx.restore();
     } catch (e) {}
   }
@@ -29627,8 +30251,8 @@ function fitMapToViewSmooth(duration = 600) {
   const ocLeft = (taskEl && floating && getComputedStyle(taskEl).display !== 'none') ? taskEl.offsetWidth : 0;
   const ocRight = (panelEl && floating && getComputedStyle(panelEl).display !== 'none') ? panelEl.offsetWidth : 0;
   const ocTop = (topbar && getComputedStyle(topbar).display !== 'none') ? topbar.offsetHeight : 0;
-  const effectiveW = Math.max(100, canvas.width - ocLeft - ocRight - 16);
-  const effectiveH = Math.max(100, canvas.height - ocTop - 16);
+  const effectiveW = Math.max(100, anchoVista() - ocLeft - ocRight - 16);
+  const effectiveH = Math.max(100, altoVista() - ocTop - 16);
   let targetZoom = Math.min((effectiveW * margin) / mapW1, (effectiveH * margin) / mapH1);
   targetZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, targetZoom));
 
@@ -29643,8 +30267,8 @@ function fitMapToViewSmooth(duration = 600) {
   })();
   const mapW = bounds.maxX - bounds.minX;
   const mapH = bounds.maxY - bounds.minY;
-  const visCenterX = (canvas.width + ocLeft - ocRight) / 2;
-  const visCenterY = (ocTop + (canvas.height - ocTop) / 2);
+  const visCenterX = (anchoVista() + ocLeft - ocRight) / 2;
+  const visCenterY = (ocTop + (altoVista() - ocTop) / 2);
   const desiredCamX = visCenterX - (bounds.minX + mapW / 2);
   const desiredCamY = visCenterY - (bounds.minY + mapH / 2);
 
@@ -29727,9 +30351,9 @@ function setCameraFollow(on, opts = {}) {
       const tileSize = getTileSize();
       if (viewMode === 'iso') {
         const p = projectIso(player.x, player.y);
-        targetCam = { x: canvas.width / 2 - p.x, y: canvas.height / 2 - p.y };
+        targetCam = { x: anchoVista() / 2 - p.x, y: altoVista() / 2 - p.y };
       } else {
-        targetCam = { x: canvas.width / 2 - player.x * tileSize, y: canvas.height / 2 - player.y * tileSize };
+        targetCam = { x: anchoVista() / 2 - player.x * tileSize, y: altoVista() / 2 - player.y * tileSize };
       }
     } catch (e) {}
   } else {
@@ -29754,12 +30378,12 @@ function centerCameraOnPlayer() {
     if (viewMode === 'iso') {
       const p = projectIso(player.x, player.y);
       const { w, h } = getIsoTileSize();
-      camX = canvas.width / 2 - (p.x + w / 2);
-      camY = canvas.height / 2 - (p.y + h);
+      camX = anchoVista() / 2 - (p.x + w / 2);
+      camY = altoVista() / 2 - (p.y + h);
     } else {
       // In ortho mode: center on player without clamping to allow full interior view
-      camX = canvas.width / 2 - (player.x * tileSize + tileSize / 2);
-      camY = canvas.height / 2 - (player.y * tileSize + tileSize / 2);
+      camX = anchoVista() / 2 - (player.x * tileSize + tileSize / 2);
+      camY = altoVista() / 2 - (player.y * tileSize + tileSize / 2);
     }
     return;
   }
@@ -29768,12 +30392,12 @@ function centerCameraOnPlayer() {
     const p = projectIso(player.x, player.y);
     const { w, h } = getIsoTileSize();
     // center camera on player's feet (bottom vertex of the iso diamond)
-    camX = canvas.width / 2 - (p.x + w / 2);
-    camY = canvas.height / 2 - (p.y + h);
+    camX = anchoVista() / 2 - (p.x + w / 2);
+    camY = altoVista() / 2 - (p.y + h);
   } else {
     // center on tile center in ortho mode
-    camX = canvas.width / 2 - (player.x * tileSize + tileSize / 2);
-    camY = canvas.height / 2 - (player.y * tileSize + tileSize / 2);
+    camX = anchoVista() / 2 - (player.x * tileSize + tileSize / 2);
+    camY = altoVista() / 2 - (player.y * tileSize + tileSize / 2);
   }
   clampCamera();
 }
@@ -29802,8 +30426,8 @@ function fitMapToView() {
   const ocLeft = (taskEl && floating && getComputedStyle(taskEl).display !== 'none') ? taskEl.offsetWidth : 0;
   const ocRight = (panelEl && floating && getComputedStyle(panelEl).display !== 'none') ? panelEl.offsetWidth : 0;
   const ocTop = (topbar && getComputedStyle(topbar).display !== 'none') ? topbar.offsetHeight : 0;
-  const effectiveW = Math.max(100, canvas.width - ocLeft - ocRight - 16);
-  const effectiveH = Math.max(100, canvas.height - ocTop - 16);
+  const effectiveW = Math.max(100, anchoVista() - ocLeft - ocRight - 16);
+  const effectiveH = Math.max(100, altoVista() - ocTop - 16);
   // choose zoom to fit into available visible area with margin
   let targetZoom = Math.min((effectiveW * margin) / mapW1, (effectiveH * margin) / mapH1);
   targetZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, targetZoom));
@@ -29813,8 +30437,8 @@ function fitMapToView() {
   const mapW = bounds.maxX - bounds.minX;
   const mapH = bounds.maxY - bounds.minY;
   // center inside visible region (account for occlusions)
-  const visCenterX = (canvas.width + ocLeft - ocRight) / 2;
-  const visCenterY = (ocTop + (canvas.height - ocTop) / 2);
+  const visCenterX = (anchoVista() + ocLeft - ocRight) / 2;
+  const visCenterY = (ocTop + (altoVista() - ocTop) / 2);
   camX = visCenterX - (bounds.minX + mapW / 2);
   camY = visCenterY - (bounds.minY + mapH / 2);
   clampCamera();
@@ -30364,6 +30988,16 @@ document.addEventListener('keydown', e => {
         e.preventDefault();
         return;
       }
+      // Perro: si guarda la carga que le dejaste en la puerta, te la devuelve;
+      // si no, se le acaricia como siempre.
+      if (it.kind === 'pet' && it.ref) {
+        try {
+          if (it.ref._stash && Object.keys(it.ref._stash).length) recoverDogStash(it.ref);
+          else { setPlayerPose('pet', 1800); interactWithPetDog('pet', it.ref); }
+        } catch (ee) {}
+        e.preventDefault();
+        return;
+      }
       if (editMode) { notify('Interacciones deshabilitadas en modo edición (excepto puertas)'); e.preventDefault(); return; }
       if (it.kind === 'resource' && it.ref) {
         try {
@@ -30429,6 +31063,33 @@ window.addEventListener('blur', () => { try { savePlayerPos(true); } catch (err)
 document.addEventListener('visibilitychange', () => { try { if (document.hidden) savePlayerPos(true); } catch (err) {} });
 
 window.addEventListener('resize', resizeCanvas);
+
+// El lienzo tiene que medir SIEMPRE lo mismo que su hueco: si el panel se
+// pliega, se abren paneles flotantes o el sistema cambia el escalado de la
+// pantalla (p. ej. mover la ventana a otro monitor), el búfer se quedaba con el
+// tamaño viejo y el navegador lo estiraba → todo el texto salía borroso. El
+// `resize` de la ventana no avisa de nada de eso, así que se vigila el contenedor.
+try {
+  const mainEl = document.getElementById('main');
+  if (mainEl && typeof ResizeObserver !== 'undefined') {
+    let _reajustePendiente = false;
+    new ResizeObserver(() => {
+      if (_reajustePendiente) return;
+      _reajustePendiente = true;
+      requestAnimationFrame(() => {
+        _reajustePendiente = false;
+        try {
+          const panel = document.getElementById('panel');
+          const flotantes = document.body.classList.contains('floating-panels');
+          const cssW = Math.max(1, Math.floor(flotantes ? mainEl.clientWidth : mainEl.clientWidth - panel.offsetWidth));
+          const cssH = Math.max(1, Math.floor(mainEl.clientHeight));
+          if (cssW === VISTA_W && cssH === VISTA_H && ESCALA_RENDER === escalaDeseada()) return;
+          resizeCanvas();
+        } catch (e) {}
+      });
+    }).observe(mainEl);
+  }
+} catch (e) {}
 
 // ═══════════════════════════════════════════════════════════════
 //  INIT

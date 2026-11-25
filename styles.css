@@ -384,43 +384,15 @@ body.theme-urss #btn-endturn {
 #menu-map-editor,
 #menu-options,
 #menu-credits,
-#menu-exit,
-#menu-char-random,
-#menu-char-reset,
-#menu-start-cancel,
-#menu-start-confirm,
-#menu-start-tab-character,
-#menu-start-tab-options,
-#menu-map-design-open-editor,
-#menu-map-design-load,
-#menu-map-design-clear {
+#menu-exit {
   font-family: inherit !important;
   text-transform: none;
   letter-spacing: normal;
   transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
 }
 
-/* Sólo los botones del modal llevan el dorado del tema: las acciones del menú
-   usan el azul «río» (.mm-btn-primary) para que se vea cuál es la principal. */
-#menu-start-confirm,
-#menu-start-tab-character {
-  background: linear-gradient(180deg, var(--sand-mid), var(--sand-dark)) !important;
-  border: 1px solid #f0d790 !important;
-  color: #1a1208 !important;
-  box-shadow: inset 0 1px 0 rgba(255,245,220,0.4);
-}
-
-#menu-char-random,
-#menu-char-reset,
-#menu-start-cancel,
-#menu-start-tab-options,
-#menu-map-design-open-editor,
-#menu-map-design-load,
-#menu-map-design-clear {
-  background: rgba(255,255,255,0.05) !important;
-  border: 1px solid rgba(255,255,255,0.14) !important;
-  color: var(--ui-text) !important;
-}
+/* Los botones del modal de Nueva partida y de Ajustes se visten con el UI Kit
+   (ui-kit.css): aquí no se les impone ningún color. */
 
 #menu-new:hover,
 #menu-load:hover,
@@ -428,16 +400,7 @@ body.theme-urss #btn-endturn {
 #menu-map-editor:hover,
 #menu-options:hover,
 #menu-credits:hover,
-#menu-exit:hover,
-#menu-char-random:hover,
-#menu-char-reset:hover,
-#menu-start-cancel:hover,
-#menu-start-confirm:hover,
-#menu-start-tab-character:hover,
-#menu-start-tab-options:hover,
-#menu-map-design-open-editor:hover,
-#menu-map-design-load:hover,
-#menu-map-design-clear:hover {
+#menu-exit:hover {
   border-color: var(--sand-light) !important;
   transform: translateY(-1px);
 }
@@ -456,43 +419,9 @@ body.theme-urss #btn-endturn {
   color: var(--ui-text) !important;
 }
 
-#menu-startup-modal {
-  background: rgba(0,0,0,0.48);
-  backdrop-filter: blur(3px);
-}
-
-#menu-startup-modal > div {
-  background: linear-gradient(180deg, rgba(20,26,38,0.96), rgba(11,16,25,0.98)) !important;
-  border: 1px solid rgba(255,255,255,0.09) !important;
-  border-radius: 18px !important;
-  box-shadow: 0 30px 80px rgba(0,0,0,0.7) !important;
-}
-
-#menu-startup-modal h3,
-#menu-startup-modal label,
-#menu-startup-modal div,
-#menu-startup-modal span {
-  color: var(--ui-text);
-}
-
-#menu-char-name,
-#menu-char-preset,
-#menu-char-cloth,
-#menu-density-preset,
-#menu-density-npcs,
-#menu-density-animals,
-#menu-density-vegetation {
-  accent-color: var(--sand-mid);
-}
-
-#menu-char-name,
-#menu-char-preset,
-#menu-density-preset {
-  background: rgba(0,0,0,0.42) !important;
-  border: 1px solid rgba(255,255,255,0.12) !important;
-  border-radius: 10px !important;
-  color: var(--sand-light) !important;
-}
+/* El modal «Nueva partida» y la pantalla de Ajustes viven en ui-kit.css.
+   Aquí sólo queda el lienzo del menú; sus viejos estilos de formulario se
+   retiraron para no competir con el UI Kit (docs/DIRECCION-UI.md). */
 
 /* â”€â”€ TOP BAR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #topbar {
@@ -623,6 +552,12 @@ body.theme-urss #btn-endturn {
   display: block;
   cursor: crosshair;
   image-rendering: auto;
+  /* El búfer del lienzo se dibuja a resolución física (devicePixelRatio), así
+     que su `width`/`height` internos son mayores que su hueco en CSS. Sin estos
+     dos mínimos, el tamaño intrínseco del canvas lo haría crecer de más y
+     rompería el reparto del flex. */
+  min-width: 0;
+  min-height: 0;
 }
 
 /* â”€â”€ RIGHT PANEL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -1518,7 +1453,9 @@ body.theme-urw #main {
 
 body.theme-urw #gameCanvas {
   background: linear-gradient(180deg, #ece8d6 0%, #cfcab6 100%);
-  image-rendering: pixelated;
+  /* El búfer ya va a la resolución física de la pantalla: no hay reescalado que
+     «pixelar», y forzarlo sólo dejaba dientes de sierra en los textos. */
+  image-rendering: auto;
 }
 
 body.theme-urw #panel {
@@ -1940,42 +1877,10 @@ body.theme-urw #notif {
   .mm-modes { grid-template-columns: 1fr; }
 }
 
-/* ── Modal «Nueva partida»: estética de la referencia (limpia, con tarjetas) ── */
-#menu-startup-modal { background: rgba(4, 7, 12, 0.72) !important; backdrop-filter: blur(4px); }
-#menu-startup-modal > div {
-  width: min(840px, 94vw) !important;
-  max-height: 92vh;
-  overflow: auto;
-  padding: 22px !important;
-  border-radius: 18px !important;
-  border: 1px solid rgba(255, 255, 255, 0.09) !important;
-  background: linear-gradient(180deg, rgba(20, 26, 38, 0.96), rgba(11, 16, 25, 0.98)) !important;
-  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.7) !important;
-}
-#menu-startup-modal h3 { margin: 0 0 14px 0 !important; font-size: 20px; font-weight: 800; letter-spacing: 0.3px; }
-#menu-start-tab-character,
-#menu-start-tab-options { padding: 8px 16px !important; border-radius: 999px !important; cursor: pointer; }
-#menu-start-tab-options { color: var(--ui-dim, #8B7355) !important; }
-#menu-startup-modal input[type="text"],
-#menu-startup-modal select {
-  background: rgba(0, 0, 0, 0.42) !important;
-  border: 1px solid rgba(255, 255, 255, 0.12) !important;
-  border-radius: 10px !important;
-}
-#menu-startup-modal input[type="range"] { accent-color: var(--wheat, #DAA520); }
-#menu-startup-modal button { cursor: pointer; }
-#menu-startup-modal button:hover { filter: brightness(1.1); }
-#menu-start-confirm {
-  padding: 10px 20px !important;
-  border-radius: 10px !important;
-  background: linear-gradient(150deg, var(--river-light, #4A9FD4), var(--river, #2E6FA3)) !important;
-}
-#menu-start-cancel { border-radius: 10px !important; }
-/* Botones de apariencia/color que genera el JS del modal. */
-#menu-char-presets button,
-#menu-char-outfits button,
-#menu-color-rows button { border-radius: 10px !important; }
-#menu-char-canvas { border-radius: 10px !important; }
+/* ── Modal «Nueva partida» y Ajustes ──────────────────────────────────────
+   La composición y todos los controles viven ahora en ui-kit.css, que se carga
+   después de esta hoja. Los estilos de formulario que había aquí duplicaban el
+   UI Kit y competían con él, así que se retiraron (docs/DIRECCION-UI.md §17). */
 
 /* ============================================================================
    MENÚ PRINCIPAL — composición tipo «Mafia: The Old Country» (2ª versión)

@@ -27,7 +27,7 @@ const SALIDA = path.join(RAIZ, 'docs', 'indice.json');
 const DESARROLLO = new Set([
   'ideas.md', 'TODO.md', 'ACTUALIZACIONES.md', 'CINEMATICAS_README.md', 'CLAUDE.md', 'AGENTS.md',
   'docs/AUDITORIA.md', 'docs/IDEAS-Y-BOCETOS.md', 'docs/MODO-DEBUG.md', 'docs/EDITOR-DE-ENTIDADES.md',
-  'docs/RENDIMIENTO.md', 'docs/ARRANQUE-GUARDADO-E-INTERFAZ.md'
+  'docs/RENDIMIENTO.md', 'docs/ARRANQUE-GUARDADO-E-INTERFAZ.md', 'docs/DIRECCION-UI.md'
 ]);
 // Los primeros de la lista, en este orden.
 const PRIMEROS = ['MANUAL.md', 'README.md'];
@@ -43,6 +43,7 @@ const DESCRIPCIONES = {
   'docs/GUIA-EN-EL-JUEGO.md': 'Cómo se abre esta guía (F1), qué enseña y cómo se genera la lista de documentos.',
   'docs/MODO-DEBUG.md': 'Herramientas de depuración: inspector, MESO_DEBUG y atajos de pruebas.',
   'docs/IDEAS-Y-BOCETOS.md': 'Ideas y bocetos pendientes de decidir.',
+  'docs/DIRECCION-UI.md': 'Dirección de diseño de menús e interfaces: materiales, transparencias, componentes y criterios de aceptación.',
   'TODO.md': 'Pendientes anotados del proyecto.'
 };
 

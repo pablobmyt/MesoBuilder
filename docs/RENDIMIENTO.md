@@ -700,3 +700,174 @@ taparía, dejando al jugador invisible otra vez.
 original en vez de un 15 %. Se ajusta en **DEV ▸ «Pixelado más leve» / «más fuerte»**
 (pasos de 0,1) o con `MESO_PIXELADO.mezcla(0.95)`.
 
+---
+
+## 15. Quinta campaña (2026-11-25): asignaciones por fotograma y carga de los PNG
+
+Queja: «para lo simple que es, tiene unos bajones de FPS terribles; no tiene sentido
+que se quede enganchado cuando sólo carga imágenes».
+
+### 15.1 Cómo se midió
+
+En el navegador (dev-server, `?debug=1`), con `MESO_DEBUG.testDraw.perf`:
+
+```js
+const P = window.MESO_DEBUG.testDraw.perf;
+P.info();                    // cacheTerrenoLista, mapCacheDirty, spritesEnCache…
+P.pausar(true);              // medir sin que el rAF interfiera
+P.sections(true);
+P.frame(60);                 // mediana del fotograma completo
+P.sections();                // media por sección
+P.pausar(false);
+```
+
+Además se perfiló con el **profiler de CPU de Chrome** (CDP) durante 4 s de juego y
+se aisló el coste de una llamada concreta:
+
+```js
+window.MESO_DEBUG.testDraw.drawBuilding(110, 30, 'house');   // (col, row, type)
+```
+
+### 15.2 Lo que salió
+
+| Hallazgo | Evidencia |
+| --- | --- |
+| **17 % del tiempo en el recolector de basura** | perfil de CPU en una colonia de 500 casas |
+| `drawBuilding` creaba **dos `Set` y un objeto de 30 alias por edificio y fotograma** | `new Set(SEAMLESS_BUILDINGS)` y `const aliases = {…}` dentro de la función |
+| La planta del tejado se pintaba con **15-20 `fillRect` por edificio y fotograma** | `drawPlantaTecho` dentro de `drawBuilding` |
+| El filtro de pixelado se llevaba **picos de 100-500 ms** | desglose por sección: `filtro=472 ms` |
+
+Los picos no eran del filtro en sí (dos `drawImage` cuestan ~0 ms): el
+`drawImage(canvas grande → búfer)` **fuerza a vaciar la cola de la GPU**, así que
+allí caía todo el trabajo pendiente del mundo más la recolección de basura. Al bajar
+las asignaciones, los picos de 500 ms desaparecieron (máx. medido: 58 ms, y en
+`entidades`, no en `filtro`).
+
+### 15.3 Cambios
+
+1. **Constantes fuera de `drawBuilding`**: `SEAMLESS_BUILDINGS`, `HOUSE_TYPES` y
+   `BUILDING_SPRITE_ALIASES` son de módulo. Cero asignaciones por edificio.
+2. **Caché de la planta del tejado** (`plantaTechoCanvas`): se rasteriza una vez por
+   arte y tamaño; después es **un `drawImage`**. Se vacía con `clearSpriteBitmaps()`.
+3. **Opciones de sprite reutilizadas** (`_SPRITE_OPTS_BUILDING`), sin crear el objeto
+   por llamada.
+4. **`getSpriteSourceBitmap` con `putImageData`** en vez de un `fillRect` por píxel
+   (y `colorRgbaDeHex` con tabla). Un árbol de 12.000 píxeles pasaba de ~40 ms a ~1 ms.
+5. **Precarga de fuentes de sprites** (`prewarmSpriteSources`) 600 ms después de
+   arrancar el bucle: 122-166 sprites listos fuera del fotograma (antes cada zona
+   nueva llegaba con una ráfaga de rasterizados).
+6. **Hojas PNG en paralelo**: las 14 hojas de `data/sheets/` se piden con un solo
+   `Promise.all` (antes cada entidad esperaba su PNG en serie) y se decodifican con
+   `img.decode()`.
+7. **Sin `?v=Date.now()` en cada hoja**: la URL es estable (se fuerza sólo al
+   recargar el arte desde el editor con `MesoEntityViews.recargar()`).
+8. **Recorte de vistas**: un `getImageData` por PNG (no uno por vista), tabla de
+   bytes→hex y cesión del hilo cada 4 vistas.
+
+### 15.4 Resultado medido
+
+| Medida | Antes | Ahora |
+| --- | --- | --- |
+| `drawBuilding('house')` (llamada aislada) | **39,4 µs** | **12,5 µs** (3,2×) |
+| `drawBuilding('temple')` (llamada aislada) | **84,9 µs** | **13,8 µs** (6,2×) |
+| Sección `edificios` (colonia de ~700 edificios) | 7-29 ms | **1,7-2,3 ms** |
+| Peor fotograma con el filtro de pixelado activo | **300-500 ms** | **58 ms** |
+| Recorte de las 48 vistas de `entity-views.json` | **~8,1 s** | **~2,4 s** |
+| Precarga de las fuentes de sprites | 9,7 s (hecha a mano) | **0,8 s** |
+
+Comprobado que el juego arranca sin errores de página, que el terreno sigue viniendo
+de la caché (`mapCacheDirty === false`, `noCacheTerrainBlit === false`) y que los
+edificios siguen dibujándose con su planta (captura de pantalla).
+
+### 15.5 Qué queda
+
+* `entidades` (8-11 ms con ~500 sprites a zoom 0.4) y `cola` (5-8 ms): son el
+  siguiente objetivo. Cada entidad hace su `ctx.save()`/`restore()` y una sombra con
+  `ellipse()`; agrupar sombras o cachearlas por tamaño ahorraría un par de ms.
+* El recorte de vistas sigue en ~2,4 s porque guarda cada píxel como
+  `[x, y, '#rrggbb']`. Pasar a un formato plano (o registrar el recorte como lienzo)
+  lo bajaría a decenas de ms, pero toca a todos los consumidores de la librería.
+
+---
+
+## 16. Nitidez del texto: el lienzo a resolución física (2026-11-25)
+
+Queja: «el texto del juego (por ejemplo *Recoger objeto [E]*) se ve un poco borroso;
+tienen que verse con la mayor nitidez posible».
+
+### 16.1 La causa
+
+El búfer del lienzo se creaba con el tamaño **en píxeles CSS**:
+
+```js
+canvas.width  = main.clientWidth - panel.offsetWidth;   // 1× — el tamaño del hueco
+```
+
+En un equipo con el escalado de Windows al **150 %** (`devicePixelRatio = 1,5`,
+`AppliedDPI = 144`) la pantalla tiene 1,5 píxeles físicos por píxel CSS, así que el
+navegador **estiraba el lienzo 1,5× al componer la página**. Todo lo que se dibuja con
+`fillText` (aviso de acción, nombres sobre las cabezas, HUD, diálogos, guía) se
+rasterizaba a 1× y luego se interpolaba: letras blandas y, en el tema `urw`, dientes de
+sierra porque el elemento llevaba `image-rendering: pixelated`.
+
+El aviso de acción añadía su propio problema: el halo se hacía con `shadowBlur = 5`,
+que difumina el contorno de la letra y ensucia los huecos de la «e» o la «o».
+
+### 16.2 El arreglo
+
+1. **Búfer a resolución física** (`resizeCanvas`): `canvas.width = round(cssW × dpr)` y
+   el contexto se escala **una sola vez por fotograma** con
+   `aplicarEscalaRender(ctx)` (`setTransform(dpr, 0, 0, dpr, 0, 0)`). Todo el motor
+   —cámara, `worldToScreen`, HUD, textos, ratón— sigue midiendo en **píxeles CSS**.
+2. **`anchoVista()` / `altoVista()`**: el tamaño lógico del lienzo. `canvas.width` ya no
+   sirve para maquetar (está en píxeles físicos); se cambiaron los ~50 sitios que lo
+   usaban para centrar cámara, culling, marcadores y minimapa.
+3. **Ratón**: `getCanvasPointerPosition()`, el overlay del editor y el *picking* del
+   editor independiente trabajan en píxeles CSS (sin escalar).
+4. **Post-procesos en píxeles físicos**: el filtro de pixelado (`aplicarPixeladoMundo`)
+   entra con `setTransform(1,0,0,1,0,0)` y mide el bloque en píxeles CSS × `dpr`. El
+   modo visión (`pintarModoVision`) usa la escala del fotograma para volcar el lienzo.
+5. **`ResizeObserver` sobre `#main`**: el `resize` de la ventana no avisa cuando se
+   pliega el panel, se abren paneles flotantes o cambia el escalado de la pantalla. Se
+   llegó a medir un búfer de **426×369** en un hueco de **718×456** (estirado 1,7× y
+   1,2×, texto doblemente borroso).
+6. **Texto del aviso**: 14 px en negrita y **contorno opaco** (`strokeText` de 3 px)
+   en lugar de `shadowBlur`; posiciones en píxel entero.
+7. **Textos de interfaz**: diálogos con `px` entero y fuente `system-ui` (15/13 px),
+   guía rápida 12 px con más contraste, minimapa 10-10,5 px, etiquetas de nombre 13 px,
+   etiquetas de tumba 12 px, nombre de misión con contorno en vez de `shadowBlur`.
+
+### 16.3 Resultado medido (Iris Xe, ventana de 1004×748 CSS, `dpr = 1,5`)
+
+| Medida | Antes (1×) | Ahora (1,5×) |
+| --- | --- | --- |
+| Nitidez del aviso «Entrar [E]» (media del laplaciano en la caja del texto) | **46,9** | **88,7** (×1,9) |
+| Fotograma mediano (JS del bucle, escena tranquila) | 4,7 ms | 3,5 ms |
+| Fotogramas en 5 s | 312 (~62 fps) | 232 (~46 fps) |
+
+El coste no está en el hilo principal (que incluso baja) sino en el relleno de la GPU:
+el búfer tiene 2,25× más píxeles. Por eso la nitidez se puede apagar:
+
+```js
+window.MESO_NITIDEZ.activa();     // true/false
+window.MESO_NITIDEZ.escala();     // 1 o 1,5 (píxeles físicos por píxel CSS)
+window.MESO_NITIDEZ.activar(false);   // vuelve al 1× y recuerda la elección
+```
+
+…o desde **DEV ▸ «Texto nítido (resolución de pantalla)»**. Se guarda en
+`localStorage` (`meso.nitidez`) y el tope es 2× para no cuadruplicar el relleno en
+pantallas al 200 %.
+
+### 16.4 Cómo comprobar que sigue nítido
+
+```js
+// en la consola del juego
+window.MESO_NITIDEZ.escala();                                   // debe ser 1,5 (o 2)
+document.getElementById('gameCanvas').width / 
+  document.getElementById('gameCanvas').getBoundingClientRect().width;   // == escala
+```
+
+Si ese cociente es **1** en una pantalla escalada, algo ha dejado el búfer en 1× (o la
+nitidez está apagada). La comprobación visual rápida: el aviso «Entrar [E]» debe
+tener el contorno negro limpio, sin halo gris, y los huecos de las letras abiertos.
+

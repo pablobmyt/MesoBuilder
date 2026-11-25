@@ -105,8 +105,10 @@ export function createDebugTools(deps) {
       try {
         const canvas = deps.getCanvas();
         const rect = canvas.getBoundingClientRect();
-        const sx = (Number(clientX) - rect.left) * (canvas.width / Math.max(1, rect.width));
-        const sy = (Number(clientY) - rect.top) * (canvas.height / Math.max(1, rect.height));
+        // El motor dibuja en píxeles CSS (el búfer está a resolución física), así
+        // que las coordenadas del ratón se pasan TAL CUAL, sin escalar.
+        const sx = Number(clientX) - rect.left;
+        const sy = Number(clientY) - rect.top;
         const hit = pickAt(sx, sy, {});
         return hit ? { type: hit.type, label: hit.label, collection: hit.collection || null } : null;
       } catch (e) { return null; }
@@ -844,9 +846,8 @@ export function createDebugTools(deps) {
       const cssX = ev.clientX - rect.left;
       const cssY = ev.clientY - rect.top;
       if (cssX < 0 || cssY < 0 || cssX > rect.width || cssY > rect.height) return null;
-      const sx = canvas.width / Math.max(1, rect.width);
-      const sy = canvas.height / Math.max(1, rect.height);
-      return { x: cssX * sx, y: cssY * sy };
+      // Coordenadas CSS = coordenadas del motor (el búfer es el doble de grande).
+      return { x: cssX, y: cssY };
     } catch (e) { return null; }
   }
 
@@ -1632,9 +1633,16 @@ export function createDebugTools(deps) {
       try { refreshCursorReadout(); } catch (e) {}
       if (!syncOverlaySize()) return;
       const ctx = dom.ctx;
-      const W = dom.overlay.width, H = dom.overlay.height;
-      ctx.clearRect(0, 0, W, H);
+      // El overlay se dimensiona como el lienzo del juego (búfer a resolución
+      // física = píxeles por `devicePixelRatio`), pero todo se calcula en píxeles
+      // CSS (`worldToScreen`): se aplica la misma escala al dibujar.
+      const caja = dom.overlay.getBoundingClientRect();
+      const escala = caja.width > 1 ? (dom.overlay.width / caja.width) : 1;
+      const W = Math.round(dom.overlay.width / escala), H = Math.round(dom.overlay.height / escala);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, dom.overlay.width, dom.overlay.height);
       ctx.save();
+      ctx.setTransform(escala, 0, 0, escala, 0, 0);
       ctx.imageSmoothingEnabled = false;
       ctx.font = '11px Consolas, monospace';
       ctx.textBaseline = 'top';

@@ -1,5 +1,5 @@
 {
-  "generado": "2026-10-09T08:56:47.022Z",
+  "generado": "2026-11-25T16:21:00.670Z",
   "nota": "Generado por tools/build-docs-index.mjs. Es la lista que enseña la guía del juego (F1).",
   "docs": [
     {
@@ -7,7 +7,7 @@
       "titulo": "Manual del jugador",
       "grupo": "Cómo jugar",
       "descripcion": "Controles, supervivencia, construcción, agricultura, edición y problemas conocidos.",
-      "lineas": 1605
+      "lineas": 1623
     },
     {
       "archivo": "docs/ACCIONES-Y-ANIMACIONES.md",
@@ -39,10 +39,10 @@
     },
     {
       "archivo": "docs/CABALLO-HOJA-DE-SPRITES.md",
-      "titulo": "El caballo con hoja de sprites (un solo caballo, animado por partes)",
+      "titulo": "El caballo con hoja de sprites (formato 2: fotogramas de verdad, cuatro lados)",
       "grupo": "Sistemas",
-      "descripcion": "El caballo se dibujaba procedural: engine/animal-art.js lo generaba por",
-      "lineas": 179
+      "descripcion": "El caballo se dibujaba procedural: engine/animal-art.js lo generaba por formas.",
+      "lineas": 172
     },
     {
       "archivo": "docs/CADAVERES.md",
@@ -59,6 +59,13 @@
       "lineas": 214
     },
     {
+      "archivo": "docs/DISEÑO.md",
+      "titulo": "DISEÑO — MesoBuilder (colonia en tiempo real)",
+      "grupo": "Sistemas",
+      "descripcion": "Sin protagonista con nombre, sin profecía y sin diálogos que cuenten una historia: el",
+      "lineas": 135
+    },
+    {
       "archivo": "docs/EDIFICIOS-VOLUMEN-Y-CRECIMIENTO.md",
       "titulo": "Edificios con volumen (2.5D) y crecimiento del mundo",
       "grupo": "Sistemas",
@@ -73,6 +80,13 @@
       "lineas": 213
     },
     {
+      "archivo": "FICHA-TECNICA.md",
+      "titulo": "MesoBuilder — Ficha técnica",
+      "grupo": "Sistemas",
+      "descripcion": "crecida del río cada 6 días y los saqueos.",
+      "lineas": 260
+    },
+    {
       "archivo": "docs/GUIA-EN-EL-JUEGO.md",
       "titulo": "Guía dentro del juego (todos los markdown, a un F1)",
       "grupo": "Sistemas",
@@ -84,7 +98,7 @@
       "titulo": "GUION NARRATIVO",
       "grupo": "Sistemas",
       "descripcion": "GUION NARRATIVO — ADAPA Y EL DILUVIO",
-      "lineas": 364
+      "lineas": 370
     },
     {
       "archivo": "docs/HERIDAS-Y-CABALLO.md",
@@ -175,7 +189,7 @@
       "titulo": "Terreno coherente y mundo que crece — MesoBuilder",
       "grupo": "Sistemas",
       "descripcion": "El del editor es mejor (coherente, reproducible y con transiciones suaves), así",
-      "lineas": 386
+      "lineas": 434
     },
     {
       "archivo": "docs/UN-SPRITE-POR-VISTA.md",
@@ -220,18 +234,25 @@
       "lineas": 138
     },
     {
+      "archivo": "docs/DIRECCION-UI.md",
+      "titulo": "Dirección de diseño de menús e interfaces del juego",
+      "grupo": "Desarrollo",
+      "descripcion": "Dirección de diseño de menús e interfaces: materiales, transparencias, componentes y criterios de aceptación.",
+      "lineas": 1680
+    },
+    {
       "archivo": "docs/EDITOR-DE-ENTIDADES.md",
       "titulo": "Editor de entidades (elegir sistema y recortar las vistas del PNG)",
       "grupo": "Desarrollo",
       "descripcion": "La lista completa de sprites, los grupos, recortar cada vista y montar animaciones.",
-      "lineas": 738
+      "lineas": 795
     },
     {
       "archivo": "docs/IDEAS-Y-BOCETOS.md",
       "titulo": "IDEAS Y BOCETOS — Adapa y el diluvio",
       "grupo": "Desarrollo",
       "descripcion": "Ideas y bocetos pendientes de decidir.",
-      "lineas": 351
+      "lineas": 354
     },
     {
       "archivo": "ideas.md",
@@ -252,7 +273,7 @@
       "titulo": "Rendimiento — MesoBuilder",
       "grupo": "Desarrollo",
       "descripcion": "tillFieldRect llamaba a setBuildingCells() por celda, y cada llamada",
-      "lineas": 521
+      "lineas": 791
     },
     {
       "archivo": "TODO.md",

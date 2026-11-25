@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MesoBuilder</title>
 <link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="ui-kit.css">
 <!-- Web Audio Libraries for MIDI playback (deferred to avoid blocking render) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/tone.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/jsmidparser@0.16.1/build/index.min.js" defer></script>
@@ -422,7 +423,7 @@
       </button>
       <button id="menu-options" class="mm-btn">
         <span class="mm-label">Opciones</span>
-        <span class="mm-hint">Audio, densidades y dise&ntilde;o del mapa</span>
+        <span class="mm-hint">Audio y aspecto del juego</span>
       </button>
     </nav>
 
@@ -444,144 +445,273 @@
     </footer>
   </div>
 
-  <!-- Startup params modal (hidden) -->
-  <div id="menu-startup-modal" style="position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:100000">
-    <div style="background:rgba(10,10,10,0.96);padding:18px;border-radius:10px;border:1px solid rgba(255,255,255,0.04);width:700px;max-width:95vw;color:#fff">
-      <h3 style="margin:0 0 8px 0">Nueva partida</h3>
-      <!-- MODO DE JUEGO (congelado el 2026-10-13): el proyecto se queda con la
-           COLONIA sin narrativa. Los botones se quedan en el DOM (el JS los
-           consulta) pero la fila va oculta: no hay «modo historia» ni época que
-           elegir hasta que el bucle de colonia esté terminado. -->
-      <div id="menu-mode-row" class="mm-modes" style="display:none">
-        <button type="button" id="menu-mode-story" class="mm-mode" data-mode="story">
-          <b>Modo historia</b>
-          <small>Congelado.</small>
-        </button>
-        <button type="button" id="menu-mode-free" class="mm-mode is-active" data-mode="free">
-          <b>Colonia</b>
-          <small>Construye, produce y defiende.</small>
-        </button>
-      </div>
-      <div style="display:flex;gap:8px;margin-bottom:10px">
-        <button id="menu-start-tab-character" style="padding:8px 12px;background:#2E6FA3;border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#fff;font-weight:700">Creación de personaje</button>
-        <button id="menu-start-tab-options" style="padding:8px 12px;background:transparent;border:1px solid rgba(255,255,255,0.08);border-radius:8px;color:#fff">Opciones</button>
-      </div>
-      <div id="menu-panel-character" style="display:grid;grid-template-columns:1fr auto;gap:14px;align-items:start">
-        <!-- Left: customisation fields -->
-        <div style="display:flex;flex-direction:column;gap:10px">
-          <div id="menu-char-name-wrap">
-            <label style="font-size:12px;color:#c8b87a;display:block;margin-bottom:4px">Nombre del gobernante</label>
-            <input id="menu-char-name" type="text" maxlength="14" placeholder="Tu nombre" style="width:100%;padding:8px;border-radius:6px;background:#111;border:1px solid rgba(255,255,255,0.08);color:#fff;box-sizing:border-box">
-          </div>
-          <div>
-            <label style="font-size:12px;color:#c8b87a;display:block;margin-bottom:5px">Apariencia</label>
-            <div id="menu-char-presets" style="display:flex;flex-wrap:wrap;gap:5px"></div>
-          </div>
-          <div id="menu-urss-intro" style="display:none;padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.08);background:rgba(0,0,0,0.22);font-size:12px;color:#d8d8d8;line-height:1.35"></div>
-          <div>
-            <label style="font-size:12px;color:#c8b87a;display:block;margin-bottom:5px">Colores</label>
-            <div id="menu-color-rows" style="display:flex;flex-direction:column;gap:5px"></div>
-          </div>
-          <div>
-            <label style="font-size:12px;color:#c8b87a;display:block;margin-bottom:5px">Vestimenta</label>
-            <div id="menu-char-outfits" style="display:flex;flex-wrap:wrap;gap:5px"></div>
-          </div>
-          <div style="display:flex;gap:8px;margin-top:2px">
-            <button id="menu-char-random" style="padding:7px 12px;background:transparent;border:1px solid rgba(255,255,255,0.08);border-radius:8px;color:#c8b87a;cursor:pointer">Aleatorizar</button>
-            <button id="menu-char-reset" style="padding:7px 12px;background:transparent;border:1px solid rgba(255,255,255,0.08);border-radius:8px;color:#c8b87a;cursor:pointer">Restablecer</button>
-          </div>
-        </div>
-        <!-- Right: live preview -->
-        <div style="display:flex;flex-direction:column;align-items:center;gap:5px;min-width:130px">
-          <div id="menu-preview-name" style="font-size:13px;color:#DAA520;font-weight:700;text-align:center">Gobernante</div>
-          <div id="menu-preview-title" style="font-size:11px;color:#c8b87a;text-align:center">Maestro de obras</div>
-          <canvas id="menu-char-canvas" width="112" height="112" style="image-rendering:pixelated;border:1px solid rgba(200,184,122,0.25);border-radius:4px;background:#0d0d08"></canvas>
-          <div style="display:flex;gap:3px">
-            <button class="mpc-dir" data-dir="left" style="padding:4px 7px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:4px;color:#c8b87a;cursor:pointer;font-size:11px">&#9664;</button>
-            <button class="mpc-dir" data-dir="up" style="padding:4px 7px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:4px;color:#c8b87a;cursor:pointer;font-size:11px">&#9650;</button>
-            <button class="mpc-dir" data-dir="down" style="padding:4px 7px;background:rgba(46,111,163,0.7);border:1px solid #5a9fd4;border-radius:4px;color:#fff;cursor:pointer;font-size:11px">&#9660;</button>
-            <button class="mpc-dir" data-dir="right" style="padding:4px 7px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:4px;color:#c8b87a;cursor:pointer;font-size:11px">&#9654;</button>
-          </div>
-          <div id="menu-preview-outfit" style="font-size:11px;color:#c8b87a;text-align:center">T&uacute;nica</div>
-        </div>
-      </div>
-      <div id="menu-panel-options" style="display:none;grid-template-columns:1fr 1fr;gap:10px">
-        <div style="grid-column:1 / span 2;display:none">
-          <label style="font-size:13px">Época</label>
-          <select id="menu-epoch" style="width:100%;padding:8px;border-radius:6px;background:#111;border:1px solid rgba(255,255,255,0.04);color:#fff">
-            <option value="mesopotamia">Mesopotamia</option>
-            <option value="urss">Antigua URSS</option>
-            <option value="medieval">Edad Media</option>
-          </select>
-          <div style="font-size:12px;color:#c8b87a;margin-top:4px">Congelado: la partida se juega en Mesopotamia.</div>
-        </div>
+  <!-- ══ NUEVA PARTIDA ═════════════════════════════════════════════════════
+       Pantalla por pasos (docs/DIRECCION-UI.md §13): Personaje, Mundo,
+       Reglas y Resumen. Lo que se ve son controles del UI Kit (ui-kit.css);
+       los controles nativos que el código necesita (density, audio, epoch,
+       estilo de arte) siguen en el DOM como depósito de valor, ocultos. -->
+  <div id="menu-startup-modal" class="ui-overlay" role="dialog" aria-modal="true" aria-labelledby="ng-title" style="display:none">
+    <div class="ui-screen">
+      <header class="ui-screen__head">
         <div>
-          <label style="font-size:13px">Preset de mundo</label>
-          <select id="menu-density-preset" style="width:100%;padding:8px;border-radius:6px;background:#111;border:1px solid rgba(255,255,255,0.04);color:#fff">
-            <option value="custom">Personalizado</option>
-            <option value="calm">Tranquilo</option>
-            <option value="balanced">Equilibrado</option>
-            <option value="alive">Muy vivo</option>
-          </select>
+          <h3 id="ng-title" class="ui-screen__title">Nueva partida</h3>
+          <p class="ui-screen__sub">Una colonia junto al r&iacute;o. Decide qui&eacute;n la gobierna y c&oacute;mo ser&aacute; el mundo.</p>
         </div>
-        <div style="font-size:12px;color:#c8b87a;display:flex;align-items:flex-end">Los cambios afectan a la generación inicial del mundo.</div>
-        <div style="grid-column:1 / span 2;padding:10px 12px;border:1px solid rgba(255,255,255,0.08);border-radius:8px;background:rgba(0,0,0,0.18)">
-          <div style="font-size:13px;font-weight:700;color:#f0d790">Audio</div>
-          <div style="font-size:12px;color:#c8b87a;margin-top:4px">Configura volumen general, música y efectos del juego.</div>
-          <div style="display:grid;grid-template-columns:1fr;gap:8px;margin-top:10px">
-            <div>
-              <label style="font-size:13px">Volumen general: <span id="label-audio-master">70%</span></label>
-              <input id="menu-audio-master" type="range" min="0" max="100" step="1" value="70" style="width:100%">
+        <button type="button" id="menu-start-close" class="ui-btn ui-btn--icon" aria-label="Cerrar">&times;</button>
+      </header>
+
+      <nav id="ng-steps" class="ui-steps" aria-label="Pasos de la nueva partida">
+        <button type="button" class="ui-step is-active" data-step="character"><span class="ui-step__label">Personaje</span></button>
+        <button type="button" class="ui-step" data-step="world"><span class="ui-step__label">Mundo</span></button>
+        <button type="button" class="ui-step" data-step="rules"><span class="ui-step__label">Reglas</span></button>
+        <button type="button" class="ui-step" data-step="summary"><span class="ui-step__label">Resumen</span></button>
+      </nav>
+
+      <div class="ui-screen__body ui-scroll" id="ng-body">
+
+        <!-- I · Personaje -->
+        <section id="menu-panel-character" class="ng-panel is-active" data-panel="character" data-display="grid" style="display:grid">
+          <div class="ng-char-fields">
+            <div id="menu-char-name-wrap" class="ui-field-wrap">
+              <label class="ui-field__label" for="menu-char-name">Nombre del gobernante</label>
+              <input id="menu-char-name" class="ui-field" type="text" maxlength="14" placeholder="Tu nombre" autocomplete="off">
             </div>
-            <div>
-              <label style="font-size:13px">Volumen música: <span id="label-audio-music">34%</span></label>
-              <input id="menu-audio-music" type="range" min="0" max="100" step="1" value="34" style="width:100%">
-              <div style="font-size:11px;color:#a8987a;margin-top:2px">Música desactivada de momento durante el desarrollo.</div>
+            <div class="ui-section ui-section--tight">
+              <h4 class="ui-section__title">Apariencia</h4>
+              <div id="menu-char-presets" class="ui-chiprow"></div>
             </div>
-            <label style="font-size:13px;display:flex;align-items:center;gap:8px;color:#fff">
-              <input id="menu-audio-sfx-enabled" type="checkbox" checked>
-              Activar efectos de sonido (SFX)
-            </label>
+            <div id="menu-urss-intro" class="ui-plate" style="display:none"></div>
+            <div class="ui-section ui-section--tight">
+              <h4 class="ui-section__title">Vestimenta</h4>
+              <div id="menu-char-outfits" class="ui-chiprow"></div>
+            </div>
+            <div class="ui-btnrow">
+              <button type="button" id="menu-char-random" class="ui-btn ui-btn--sm">Aleatorizar</button>
+              <button type="button" id="menu-char-reset" class="ui-btn ui-btn--sm">Restablecer</button>
+            </div>
           </div>
-        </div>
-        <div>
-          <label style="font-size:13px">Densidad NPCs: <span id="label-npc">1.0</span></label>
-          <input id="menu-density-npcs" type="range" min="0.2" max="3.0" step="0.1" value="1.0" style="width:100%">
-        </div>
-        <div>
-          <label style="font-size:13px">Densidad animales: <span id="label-animals">1.0</span></label>
-          <input id="menu-density-animals" type="range" min="0.2" max="3.0" step="0.1" value="1.0" style="width:100%">
-        </div>
-        <div style="grid-column:1 / span 2">
-          <label style="font-size:13px">Densidad vegetación: <span id="label-veg">1.0</span></label>
-          <input id="menu-density-vegetation" type="range" min="0.2" max="3.0" step="0.1" value="1.0" style="width:100%">
-        </div>
-        <div style="grid-column:1 / span 2;padding:10px 12px;border:1px solid rgba(255,255,255,0.08);border-radius:8px;background:rgba(0,0,0,0.18)">
-          <div style="font-size:13px;font-weight:700;color:#f0d790">Estilo de arte</div>
-          <div style="font-size:12px;color:#c8b87a;margin-top:4px">«Clásico» dibuja los sprites originales del juego; «Nuevo» usa las vistas recortadas de los PNG
-          (<span style="font-family:ui-monospace,monospace">data/entity-views.json</span>). Los sprites clásicos <b>no se borran</b>: puedes cambiar de estilo cuando quieras.</div>
-          <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
-            <select id="menu-art-style" style="flex:1;padding:8px;border-radius:6px;background:#111;border:1px solid rgba(255,255,255,0.04);color:#fff">
-              <option value="nuevo">Nuevo · arte recortado del PNG</option>
-              <option value="clasico">Clásico · sprites originales</option>
+          <aside class="ng-portrait ui-plate">
+            <div id="menu-preview-name" class="ng-portrait__name">Gobernante</div>
+            <div id="menu-preview-title" class="ng-portrait__title">Maestro de obras</div>
+            <canvas id="menu-char-canvas" width="112" height="112"></canvas>
+            <div class="ui-dirbtns">
+              <button type="button" class="mpc-dir ui-dir" data-dir="left" aria-label="Mirar a la izquierda">&#9664;</button>
+              <button type="button" class="mpc-dir ui-dir" data-dir="up" aria-label="Mirar hacia arriba">&#9650;</button>
+              <button type="button" class="mpc-dir ui-dir is-active" data-dir="down" aria-label="Mirar hacia abajo">&#9660;</button>
+              <button type="button" class="mpc-dir ui-dir" data-dir="right" aria-label="Mirar a la derecha">&#9654;</button>
+            </div>
+            <div id="menu-preview-outfit" class="ng-portrait__outfit">T&uacute;nica</div>
+
+            <!-- Colores: un único desplegable bajo la imagen; al abrirlo repite
+                 la composición de siempre (una fila de muestras por parte). -->
+            <div class="ng-colors">
+              <button type="button" id="menu-colors-toggle" class="ng-colors__trigger" aria-expanded="false" aria-controls="menu-colors-pop">
+                <span>Colores</span>
+                <span class="ng-colors__chev" aria-hidden="true"></span>
+              </button>
+              <div id="menu-colors-pop" class="ng-colors__pop" hidden>
+                <div id="menu-color-rows" class="ui-swatch-rows"></div>
+              </div>
+            </div>
+          </aside>
+        </section>
+
+        <!-- II · Mundo -->
+        <section id="menu-panel-world" class="ng-panel" data-panel="world" data-display="block" style="display:none">
+          <div class="ui-section">
+            <h4 class="ui-section__title">Preset del mundo</h4>
+            <p class="ui-section__note">Fija de golpe poblaci&oacute;n, fauna y vegetaci&oacute;n. Despu&eacute;s puedes ajustar cada una por separado.</p>
+            <div class="ui-cards" data-for="menu-density-preset" role="radiogroup" aria-label="Preset del mundo">
+              <button type="button" class="ui-card" role="radio" data-value="calm">
+                <span class="ui-card__name">Tranquilo</span>
+                <span class="ui-card__desc">Un valle silencioso: pocos vecinos, poca caza y tiempo para observar.</span>
+                <span class="ui-card__mods">Poblaci&oacute;n escasa &middot; Fauna escasa</span>
+              </button>
+              <button type="button" class="ui-card is-active" role="radio" data-value="balanced">
+                <span class="ui-card__name">Equilibrado</span>
+                <span class="ui-card__desc">La aldea respira: manos suficientes para producir y defender.</span>
+                <span class="ui-card__mods">Poblaci&oacute;n media &middot; Fauna media</span>
+              </button>
+              <button type="button" class="ui-card" role="radio" data-value="alive">
+                <span class="ui-card__name">Muy vivo</span>
+                <span class="ui-card__desc">R&iacute;o lleno de vida. M&aacute;s manos, m&aacute;s bocas y m&aacute;s animales.</span>
+                <span class="ui-card__mods">Poblaci&oacute;n alta &middot; Fauna alta</span>
+              </button>
+              <button type="button" class="ui-card" role="radio" data-value="custom">
+                <span class="ui-card__name">Personalizado</span>
+                <span class="ui-card__desc">Ajusta cada densidad a mano.</span>
+                <span class="ui-card__mods">Lo decides t&uacute;</span>
+              </button>
+            </div>
+            <select id="menu-density-preset" hidden aria-hidden="true">
+              <option value="custom">Personalizado</option>
+              <option value="calm">Tranquilo</option>
+              <option value="balanced">Equilibrado</option>
+              <option value="alive">Muy vivo</option>
             </select>
-            <span id="menu-art-style-note" style="font-size:12px;color:#c8b87a"></span>
           </div>
-        </div>
-        <div id="menu-map-design-box" style="grid-column:1 / span 2;padding:10px 12px;border:1px solid rgba(255,255,255,0.08);border-radius:8px;background:rgba(0,0,0,0.18)">
-          <div style="font-size:13px;font-weight:700;color:#f0d790">Diseño manual del mapa</div>
-          <div id="menu-map-design-status" style="margin-top:6px;font-size:12px;color:#c8b87a">Sin diseño manual activo. Se usará la generación procedural.</div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
-            <button id="menu-map-design-open-editor" type="button" style="padding:8px 12px;background:transparent;border:1px solid rgba(255,255,255,0.08);border-radius:8px;color:#fff">Abrir editor</button>
-            <button id="menu-map-design-load" type="button" style="padding:8px 12px;background:transparent;border:1px solid rgba(255,255,255,0.08);border-radius:8px;color:#fff">Cargar JSON</button>
-            <button id="menu-map-design-clear" type="button" style="padding:8px 12px;background:transparent;border:1px solid rgba(255,255,255,0.08);border-radius:8px;color:#fff">Limpiar</button>
+
+          <div class="ui-section">
+            <h4 class="ui-section__title">Densidad del mundo</h4>
+            <div class="ui-row">
+              <span class="ui-row__label">Poblaci&oacute;n</span>
+              <div class="ui-seg" data-for="menu-density-npcs" role="radiogroup" aria-label="Poblaci&oacute;n">
+                <button type="button" class="ui-seg__opt" role="radio" data-value="0.7">Escasa</button>
+                <button type="button" class="ui-seg__opt is-active" role="radio" data-value="1">Equilibrada</button>
+                <button type="button" class="ui-seg__opt" role="radio" data-value="1.6">Abundante</button>
+              </div>
+              <span id="label-npc" class="ui-value">1.0</span>
+              <input id="menu-density-npcs" type="range" min="0.2" max="3.0" step="0.1" value="1.0" hidden aria-hidden="true">
+            </div>
+            <div class="ui-row">
+              <span class="ui-row__label">Fauna</span>
+              <div class="ui-seg" data-for="menu-density-animals" role="radiogroup" aria-label="Fauna">
+                <button type="button" class="ui-seg__opt" role="radio" data-value="0.7">Escasa</button>
+                <button type="button" class="ui-seg__opt is-active" role="radio" data-value="1">Equilibrada</button>
+                <button type="button" class="ui-seg__opt" role="radio" data-value="1.5">Abundante</button>
+              </div>
+              <span id="label-animals" class="ui-value">1.0</span>
+              <input id="menu-density-animals" type="range" min="0.2" max="3.0" step="0.1" value="1.0" hidden aria-hidden="true">
+            </div>
+            <div class="ui-row">
+              <span class="ui-row__label">Vegetaci&oacute;n</span>
+              <div class="ui-seg" data-for="menu-density-vegetation" role="radiogroup" aria-label="Vegetaci&oacute;n">
+                <button type="button" class="ui-seg__opt" role="radio" data-value="0.9">Escasa</button>
+                <button type="button" class="ui-seg__opt is-active" role="radio" data-value="1">Equilibrada</button>
+                <button type="button" class="ui-seg__opt" role="radio" data-value="1.4">Abundante</button>
+              </div>
+              <span id="label-veg" class="ui-value">1.0</span>
+              <input id="menu-density-vegetation" type="range" min="0.2" max="3.0" step="0.1" value="1.0" hidden aria-hidden="true">
+            </div>
           </div>
+
+          <div class="ui-section">
+            <h4 class="ui-section__title">Dise&ntilde;o manual del mapa</h4>
+            <p id="menu-map-design-status" class="ui-plate">Sin dise&ntilde;o manual activo. Se usar&aacute; la generaci&oacute;n procedural.</p>
+            <div class="ui-btnrow" style="margin-top:10px">
+              <button type="button" id="menu-map-design-open-editor" class="ui-btn ui-btn--sm">Abrir editor</button>
+              <button type="button" id="menu-map-design-load" class="ui-btn ui-btn--sm">Cargar JSON</button>
+              <button type="button" id="menu-map-design-clear" class="ui-btn ui-btn--sm">Limpiar</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- III · Reglas -->
+        <section id="menu-panel-rules" class="ng-panel" data-panel="rules" data-display="block" style="display:none">
+          <div class="ui-section">
+            <h4 class="ui-section__title">Modo de juego</h4>
+            <div id="menu-mode-row" class="ui-cards" role="radiogroup" aria-label="Modo de juego">
+              <button type="button" id="menu-mode-free" class="ui-card is-active" data-mode="free" role="radio">
+                <span class="ui-card__name">Colonia</span>
+                <span class="ui-card__desc">Construye, produce y defiende. Es el modo activo del proyecto.</span>
+                <span class="ui-card__mods">Disponible</span>
+              </button>
+              <button type="button" id="menu-mode-story" class="ui-card is-blocked" data-mode="story" role="radio" disabled aria-disabled="true">
+                <span class="ui-card__name">Historia</span>
+                <span class="ui-card__desc">Adapa y el guion narrativo. Congelado hasta cerrar el bucle de colonia.</span>
+                <span class="ui-badge">No disponible</span>
+              </button>
+            </div>
+            <select id="menu-epoch" hidden aria-hidden="true">
+              <option value="mesopotamia">Mesopotamia</option>
+              <option value="urss">Antigua URSS</option>
+              <option value="medieval">Edad Media</option>
+            </select>
+          </div>
+          <div class="ui-section">
+            <h4 class="ui-section__title">Reglas fijas</h4>
+            <div class="ui-summary">
+              <div class="ui-summary__row"><span class="ui-summary__key">&Eacute;poca</span><span class="ui-summary__val">Mesopotamia &mdash; valle del r&iacute;o</span></div>
+              <div class="ui-summary__row"><span class="ui-summary__key">Mundo</span><span class="ui-summary__val">Generaci&oacute;n procedural, salvo que cargues un dise&ntilde;o manual.</span></div>
+              <div class="ui-summary__row"><span class="ui-summary__key">Progreso</span><span class="ui-summary__val">Se guarda en la cach&eacute; local y sustituye a la partida anterior.</span></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- IV · Resumen -->
+        <section id="menu-panel-summary" class="ng-panel" data-panel="summary" data-display="block" style="display:none">
+          <div class="ui-section">
+            <h4 class="ui-section__title">As&iacute; empezar&aacute; tu mundo</h4>
+            <div class="ui-summary">
+              <div class="ui-summary__row"><span class="ui-summary__key">Gobernante</span><span class="ui-summary__val" id="ng-sum-name">&mdash;</span></div>
+              <div class="ui-summary__row"><span class="ui-summary__key">Preset</span><span class="ui-summary__val" id="ng-sum-preset">&mdash;</span></div>
+              <div class="ui-summary__row"><span class="ui-summary__key">Poblaci&oacute;n</span><span class="ui-summary__val" id="ng-sum-npc">&mdash;</span></div>
+              <div class="ui-summary__row"><span class="ui-summary__key">Fauna</span><span class="ui-summary__val" id="ng-sum-animals">&mdash;</span></div>
+              <div class="ui-summary__row"><span class="ui-summary__key">Vegetaci&oacute;n</span><span class="ui-summary__val" id="ng-sum-veg">&mdash;</span></div>
+              <div class="ui-summary__row"><span class="ui-summary__key">Mapa</span><span class="ui-summary__val" id="ng-sum-map">&mdash;</span></div>
+              <div class="ui-summary__row"><span class="ui-summary__key">Modo</span><span class="ui-summary__val" id="ng-sum-mode">&mdash;</span></div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <footer class="ui-screen__foot">
+        <p class="ui-screen__hint" id="ng-foot-hint">Al confirmar se genera un mundo nuevo y se sustituye la partida en curso.</p>
+        <div class="ui-btnrow ui-btnrow--end">
+          <button type="button" id="menu-start-cancel" class="ui-btn">Cancelar</button>
+          <button type="button" id="menu-start-confirm" class="ui-btn ui-btn--primary">Continuar</button>
         </div>
+      </footer>
+    </div>
+  </div>
+
+  <!-- ══ AJUSTES ══════════════════════════════════════════════════════════
+       El audio y el aspecto salen de «Nueva partida» (DIRECCION-UI §13.4):
+       aquí sólo viven opciones que no afectan a la generación del mundo. -->
+  <div id="settings-modal" class="ui-overlay" role="dialog" aria-modal="true" aria-labelledby="st-title" style="display:none">
+    <div class="ui-screen ui-screen--narrow">
+      <header class="ui-screen__head">
+        <div>
+          <h3 id="st-title" class="ui-screen__title">Ajustes</h3>
+          <p class="ui-screen__sub">Audio y aspecto. Se aplican al instante y se guardan solos.</p>
+        </div>
+        <button type="button" id="settings-close" class="ui-btn ui-btn--icon" aria-label="Cerrar">&times;</button>
+      </header>
+      <div class="ui-screen__body ui-scroll">
+        <section class="ui-section">
+          <h4 class="ui-section__title">Audio</h4>
+          <div class="ui-row">
+            <label class="ui-row__label" for="menu-audio-master">Volumen general</label>
+            <div class="ui-row__control"><input id="menu-audio-master" class="ui-slider" type="range" min="0" max="100" step="1" value="70"></div>
+            <span id="label-audio-master" class="ui-value">70%</span>
+          </div>
+          <div class="ui-row">
+            <label class="ui-row__label" for="menu-audio-music">M&uacute;sica</label>
+            <div class="ui-row__control"><input id="menu-audio-music" class="ui-slider" type="range" min="0" max="100" step="1" value="34"></div>
+            <span id="label-audio-music" class="ui-value">34%</span>
+          </div>
+          <div class="ui-row">
+            <label class="ui-row__label" for="menu-audio-sfx-enabled">Efectos de sonido</label>
+            <div class="ui-row__control"><input id="menu-audio-sfx-enabled" class="ui-switch" type="checkbox" checked></div>
+            <span></span>
+          </div>
+          <p class="ui-section__note" style="margin-top:8px">La m&uacute;sica est&aacute; desactivada de momento durante el desarrollo.</p>
+        </section>
+        <section class="ui-section">
+          <h4 class="ui-section__title">Aspecto</h4>
+          <div class="ui-row">
+            <span class="ui-row__label">Estilo de arte</span>
+            <div class="ui-row__control">
+              <div class="ui-seg" data-for="menu-art-style" role="radiogroup" aria-label="Estilo de arte">
+                <button type="button" class="ui-seg__opt" role="radio" data-value="nuevo">Nuevo &middot; PNG</button>
+                <button type="button" class="ui-seg__opt" role="radio" data-value="clasico">Cl&aacute;sico</button>
+              </div>
+            </div>
+            <span id="menu-art-style-note" class="ui-value">&mdash;</span>
+          </div>
+          <p class="ui-section__note" style="margin-top:8px">&laquo;Cl&aacute;sico&raquo; dibuja los sprites originales; &laquo;Nuevo&raquo; usa las vistas recortadas de los PNG. Se puede cambiar en cualquier momento.</p>
+          <select id="menu-art-style" hidden aria-hidden="true">
+            <option value="nuevo">Nuevo &middot; arte recortado del PNG</option>
+            <option value="clasico">Cl&aacute;sico &middot; sprites originales</option>
+          </select>
+        </section>
       </div>
-      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
-        <button id="menu-start-cancel" style="padding:8px 12px;background:transparent;border:1px solid rgba(255,255,255,0.06);border-radius:8px;color:#fff">Cancelar</button>
-        <button id="menu-start-confirm" style="padding:8px 14px;background:#2E6FA3;border:none;border-radius:8px;color:#fff;font-weight:700">Comenzar</button>
-      </div>
+      <footer class="ui-screen__foot">
+        <p class="ui-screen__hint">Los ajustes se guardan en este dispositivo.</p>
+        <div class="ui-btnrow ui-btnrow--end">
+          <button type="button" id="settings-done" class="ui-btn ui-btn--primary">Listo</button>
+        </div>
+      </footer>
     </div>
   </div>
 
@@ -598,10 +728,14 @@
       return !!root && root.isConnected;
     }
     function modalAbierto() {
-      var m = document.getElementById('menu-startup-modal');
-      if (!m) return false;
-      var st = window.getComputedStyle(m);
-      return st.display !== 'none' && st.visibility !== 'hidden';
+      var ids = ['menu-startup-modal', 'settings-modal'];
+      for (var i = 0; i < ids.length; i++) {
+        var m = document.getElementById(ids[i]);
+        if (!m) continue;
+        var st = window.getComputedStyle(m);
+        if (st.display !== 'none' && st.visibility !== 'hidden') return true;
+      }
+      return false;
     }
     document.addEventListener('keydown', function (ev) {
       try {
@@ -1211,31 +1345,282 @@
     }
   }
 
-  // show startup params when user clicks New
-  function showStartupModal(tab) {
+  // ── NUEVA PARTIDA · pantalla por pasos (docs/DIRECCION-UI.md §13) ─────────
+  // Personaje → Mundo → Reglas → Resumen. Los controles visibles pertenecen al
+  // UI Kit (ui-kit.css); el estado real sigue viviendo en los controles nativos
+  // (selects, ranges y checkbox) que quedan ocultos en el DOM.
+  const NG_STEPS = ['character', 'world', 'rules', 'summary'];
+  const NG_PRESET_LABELS = { calm: 'Tranquilo', balanced: 'Equilibrado', alive: 'Muy vivo', custom: 'Personalizado' };
+  let ngStepIndex = 0;
+
+  function syncUiKitControls(root) {
+    const scope = root || document;
+    // Segmentados y tarjetas: leen siempre el valor real del control nativo.
+    scope.querySelectorAll('.ui-seg[data-for], .ui-cards[data-for]').forEach(group => {
+      const native = document.getElementById(group.dataset.for);
+      if (!native) return;
+      const value = String(native.value);
+      let matched = false;
+      group.querySelectorAll('[data-value]').forEach(opt => {
+        const on = String(opt.dataset.value) === value;
+        opt.classList.toggle('is-active', on);
+        if (opt.getAttribute('role') === 'radio') opt.setAttribute('aria-checked', on ? 'true' : 'false');
+        if (on) matched = true;
+      });
+      group.classList.toggle('is-unset', !matched);
+    });
+    // Sliders: el bronce marca el recorrido ya elegido.
+    scope.querySelectorAll('input.ui-slider').forEach(el => {
+      const min = parseFloat(el.min || '0');
+      const max = parseFloat(el.max || '100');
+      const val = parseFloat(el.value || '0');
+      const pct = max > min ? ((val - min) / (max - min)) * 100 : 0;
+      el.style.setProperty('--k-fill', pct.toFixed(2) + '%');
+    });
+    // Modo de juego: las tarjetas las pinta setMenuMode(); aquí sólo se publica
+    // el estado accesible, que ese código no toca.
+    scope.querySelectorAll('#menu-mode-row .ui-card').forEach(card => {
+      card.setAttribute('aria-checked', card.classList.contains('is-active') ? 'true' : 'false');
+    });
+  }
+
+  function writeNativeValue(native, value) {
+    if (!native) return;
+    native.value = value;
+    try { native.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {}
+    try { native.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {}
+  }
+
+  function closeTopScreen(id) {
+    if (id === 'settings-modal') { closeSettings(); return; }
+    closeNewGame();
+  }
+
+  function closeColorsDropdown() {
+    const toggle = document.getElementById('menu-colors-toggle');
+    const pop = document.getElementById('menu-colors-pop');
+    if (toggle) toggle.setAttribute('aria-expanded', 'false');
+    if (pop) pop.hidden = true;
+  }
+
+  function visibleModal() {
+    const settings = document.getElementById('settings-modal');
+    if (settings && getComputedStyle(settings).display !== 'none') return settings;
+    const newGame = document.getElementById('menu-startup-modal');
+    if (newGame && getComputedStyle(newGame).display !== 'none') return newGame;
+    return null;
+  }
+
+  (function bindUiKitControls() {
+    document.querySelectorAll('.ui-seg[data-for], .ui-cards[data-for]').forEach(group => {
+      group.addEventListener('click', ev => {
+        const opt = ev.target && ev.target.closest ? ev.target.closest('[data-value]') : null;
+        if (!opt || !group.contains(opt) || opt.disabled) return;
+        const native = document.getElementById(group.dataset.for);
+        if (!native) return;
+        writeNativeValue(native, opt.dataset.value);
+        syncUiKitControls(document);
+        try { playMenuUiSfx('click'); } catch (e) {}
+      });
+      // Un grupo de radios se recorre con las flechas, no con Tab.
+      group.addEventListener('keydown', ev => {
+        if (ev.key !== 'ArrowLeft' && ev.key !== 'ArrowRight') return;
+        const opts = Array.prototype.slice.call(group.querySelectorAll('[data-value]:not([disabled])'));
+        const idx = opts.indexOf(document.activeElement);
+        if (idx < 0) return;
+        ev.preventDefault();
+        const next = opts[(idx + (ev.key === 'ArrowRight' ? 1 : opts.length - 1)) % opts.length];
+        next.focus();
+        next.click();
+      });
+    });
+    // Cualquier cambio en un control nativo (incluidos los que provoca el preset
+    // sobre las densidades) repinta los controles visuales.
+    document.addEventListener('input', ev => { if (ev.target && ev.target.id) syncUiKitControls(document); });
+    document.addEventListener('change', ev => { if (ev.target && ev.target.id) syncUiKitControls(document); });
+
+    document.querySelectorAll('#ng-steps .ui-step').forEach((btn, i) => {
+      btn.addEventListener('click', () => { showNewGameStep(i); try { playMenuUiSfx('click'); } catch (e) {} });
+    });
+
+    // Desplegable de colores del personaje.
+    const colorsToggle = document.getElementById('menu-colors-toggle');
+    const colorsPop = document.getElementById('menu-colors-pop');
+    if (colorsToggle && colorsPop) {
+      colorsToggle.addEventListener('click', () => {
+        const open = colorsPop.hidden;
+        colorsToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+        colorsPop.hidden = !open;
+        if (open) {
+          const first = colorsPop.querySelector('.ui-swatch');
+          if (first) first.focus({ preventScroll: true });
+        }
+      });
+      document.addEventListener('click', ev => {
+        if (colorsPop.hidden) return;
+        const t = ev.target;
+        // Al elegir una muestra, renderMenuColorRows vuelve a pintar la lista y
+        // el nodo pulsado ya no está en el documento: ese clic era de dentro.
+        if (t && t.isConnected === false) return;
+        if (t && t.closest && t.closest('.ng-colors')) return;
+        closeColorsDropdown();
+      });
+    }
+    ['menu-start-close', 'settings-close', 'settings-done'].forEach(id => {
+      const btn = document.getElementById(id);
+      if (btn) btn.addEventListener('click', id === 'menu-start-close' ? closeNewGame : closeSettings);
+    });
+    ['menu-startup-modal', 'settings-modal'].forEach(id => {
+      const modal = document.getElementById(id);
+      if (!modal) return;
+      // El clic al aire sólo cierra Ajustes; el flujo de nueva partida no se
+      // abandona por un clic despistado, únicamente recoge el desplegable.
+      modal.addEventListener('click', ev => {
+        if (ev.target !== modal) return;
+        if (id === 'settings-modal') { closeTopScreen(id); return; }
+        const pop = document.getElementById('menu-colors-pop');
+        if (pop && !pop.hidden) closeColorsDropdown();
+      });
+    });
+
+    // Escape y el foco retenido viven en `document`: si el jugador hace clic en
+    // el fondo, el foco se va al body y un listener del panel no llegaría.
+    document.addEventListener('keydown', ev => {
+      const modal = visibleModal();
+      if (!modal) return;
+      if (ev.key === 'Escape') {
+        ev.stopPropagation();
+        const pop = document.getElementById('menu-colors-pop');
+        if (pop && !pop.hidden && modal.id === 'menu-startup-modal') { closeColorsDropdown(); return; }
+        closeTopScreen(modal.id);
+        return;
+      }
+      if (ev.key !== 'Tab') return;
+      const focusables = Array.prototype.slice.call(modal.querySelectorAll(
+        'button:not([disabled]), [href], input:not([disabled]):not([hidden]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )).filter(el => el.offsetParent !== null);
+      if (!focusables.length) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (!modal.contains(document.activeElement)) { ev.preventDefault(); first.focus(); return; }
+      if (!ev.shiftKey && document.activeElement === last) { ev.preventDefault(); first.focus(); }
+      else if (ev.shiftKey && document.activeElement === first) { ev.preventDefault(); last.focus(); }
+    }, true);
+
+    syncUiKitControls(document);
+  })();
+
+  function ngPanel(step) {
+    return document.querySelector('#menu-startup-modal .ng-panel[data-panel="' + step + '"]');
+  }
+
+  function ngDensityWord(value, low, mid, high) {
+    const v = parseFloat(value || '1');
+    if (v <= 0.85) return low;
+    if (v >= 1.25) return high;
+    return mid;
+  }
+
+  // El resumen muestra las consecuencias reales de lo elegido (§11.5, §18.3).
+  function refreshNewGameSummary() {
+    try {
+      const preset = document.getElementById('menu-density-preset');
+      const dn = document.getElementById('menu-density-npcs');
+      const da = document.getElementById('menu-density-animals');
+      const dv = document.getElementById('menu-density-vegetation');
+      const nameInput = document.getElementById('menu-char-name');
+      const mc = window._menuChar || {};
+      const meta = (typeof getPendingMapDesignMeta === 'function') ? getPendingMapDesignMeta() : null;
+      const name = (nameInput && nameInput.value.trim()) || mc.name || 'Gobernante';
+      const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+      set('ng-sum-name', mc.title ? name + ' \u00b7 ' + mc.title : name);
+      set('ng-sum-preset', NG_PRESET_LABELS[(preset && preset.value) || 'balanced'] || 'Personalizado');
+      set('ng-sum-npc', ngDensityWord(dn && dn.value, 'Escasa', 'Equilibrada', 'Abundante') + ' \u00b7 ' + ((dn && dn.value) || '1.0'));
+      set('ng-sum-animals', ngDensityWord(da && da.value, 'Escasa', 'Equilibrada', 'Abundante') + ' \u00b7 ' + ((da && da.value) || '1.0'));
+      set('ng-sum-veg', ngDensityWord(dv && dv.value, 'Escasa', 'Equilibrada', 'Abundante') + ' \u00b7 ' + ((dv && dv.value) || '1.0'));
+      set('ng-sum-map', (meta && meta.name) ? 'Dise\u00f1o manual \u00b7 ' + meta.name : 'Generaci\u00f3n procedural');
+      set('ng-sum-mode', 'Colonia \u00b7 Mesopotamia');
+    } catch (e) {}
+  }
+
+  function showNewGameStep(index) {
     const modal = document.getElementById('menu-startup-modal');
-    const charPanel = document.getElementById('menu-panel-character');
-    const optPanel = document.getElementById('menu-panel-options');
-    const charTab = document.getElementById('menu-start-tab-character');
-    const optTab = document.getElementById('menu-start-tab-options');
-    if (!modal || !charPanel || !optPanel || !charTab || !optTab) return;
-    const active = tab === 'options' ? 'options' : 'character';
-    charPanel.style.display = active === 'character' ? 'grid' : 'none';
-    optPanel.style.display = active === 'options' ? 'grid' : 'none';
-    charTab.style.background = active === 'character' ? '#2E6FA3' : 'transparent';
-    charTab.style.border = active === 'character' ? '1px solid rgba(255,255,255,0.12)' : '1px solid rgba(255,255,255,0.08)';
-    charTab.style.fontWeight = active === 'character' ? '700' : '400';
-    optTab.style.background = active === 'options' ? '#2E6FA3' : 'transparent';
-    optTab.style.border = active === 'options' ? '1px solid rgba(255,255,255,0.12)' : '1px solid rgba(255,255,255,0.08)';
-    optTab.style.fontWeight = active === 'options' ? '700' : '400';
-    try { if (window._renderMenuCharEditor) window._renderMenuCharEditor(); } catch (e) {}
+    if (!modal) return;
+    closeColorsDropdown();
+    ngStepIndex = Math.max(0, Math.min(NG_STEPS.length - 1, index));
+    const current = NG_STEPS[ngStepIndex];
+    NG_STEPS.forEach(step => {
+      const panel = ngPanel(step);
+      if (!panel) return;
+      const visible = step === current;
+      panel.classList.toggle('is-active', visible);
+      panel.style.display = visible ? (panel.dataset.display || 'grid') : 'none';
+    });
+    modal.querySelectorAll('#ng-steps .ui-step').forEach((btn, i) => {
+      btn.classList.toggle('is-active', i === ngStepIndex);
+      btn.classList.toggle('is-done', i < ngStepIndex);
+      if (i === ngStepIndex) btn.setAttribute('aria-current', 'step');
+      else btn.removeAttribute('aria-current');
+    });
+    const cancelBtn = document.getElementById('menu-start-cancel');
+    const confirmBtn = document.getElementById('menu-start-confirm');
+    const last = ngStepIndex === NG_STEPS.length - 1;
+    if (cancelBtn) cancelBtn.textContent = ngStepIndex === 0 ? 'Cancelar' : 'Atr\u00e1s';
+    if (confirmBtn) confirmBtn.textContent = last ? 'Crear mundo' : 'Continuar';
+    const hint = document.getElementById('ng-foot-hint');
+    if (hint) {
+      hint.textContent = last
+        ? 'Al confirmar se genera un mundo nuevo y se sustituye la partida en curso.'
+        : 'Nada se genera hasta confirmar: puedes volver atr\u00e1s cuando quieras.';
+    }
+    if (current === 'character') { try { if (window._renderMenuCharEditor) window._renderMenuCharEditor(); } catch (e) {} }
+    if (current === 'summary') refreshNewGameSummary();
+    const body = document.getElementById('ng-body');
+    if (body) body.scrollTop = 0;
+    syncUiKitControls(modal);
+  }
+
+  function openNewGame() {
+    const modal = document.getElementById('menu-startup-modal');
+    if (!modal) return;
+    closeSettings();
+    modal.style.display = 'flex';
+    modal.classList.add('is-open');
     try { if (window._syncMenuModeUi) window._syncMenuModeUi(); } catch (e) {}
     try { updateMapDesignStatus(); } catch (e) {}
-    modal.style.display = 'flex';
+    try { syncUiKitControls(modal); } catch (e) {}
+    showNewGameStep(0);
+    const first = document.getElementById('menu-start-close');
+    if (first) first.focus({ preventScroll: true });
   }
-  document.getElementById('menu-new').addEventListener('click', () => { showStartupModal('character'); });
+
+  function closeNewGame() {
+    const modal = document.getElementById('menu-startup-modal');
+    if (!modal) return;
+    modal.classList.remove('is-open');
+    modal.style.display = 'none';
+  }
+
+  function openSettings() {
+    const modal = document.getElementById('settings-modal');
+    if (!modal) return;
+    closeNewGame();
+    modal.style.display = 'flex';
+    modal.classList.add('is-open');
+    try { syncUiKitControls(modal); } catch (e) {}
+    const first = document.getElementById('settings-close');
+    if (first) first.focus({ preventScroll: true });
+  }
+
+  function closeSettings() {
+    const modal = document.getElementById('settings-modal');
+    if (!modal) return;
+    modal.classList.remove('is-open');
+    modal.style.display = 'none';
+  }
+  document.getElementById('menu-new').addEventListener('click', () => { openNewGame(); });
   document.getElementById('menu-map-editor').addEventListener('click', () => { openStandaloneMapEditor(); });
-  document.getElementById('menu-options').addEventListener('click', () => { showStartupModal('options'); });
+  document.getElementById('menu-options').addEventListener('click', () => { openSettings(); });
   // Load existing save directly
   document.getElementById('menu-load').addEventListener('click', () => {
     try {
@@ -1699,10 +2084,11 @@
       const presets = getMenuPresets();
       presets.forEach(p => {
         const btn = document.createElement('button');
+        btn.type = 'button';
         btn.textContent = p.name;
         const isActive = window._menuChar.preset === p.id;
-        btn.style.cssText = 'padding:5px 9px;border-radius:6px;cursor:pointer;font-size:12px;' +
-          (isActive ? 'background:#2E6FA3;border:1px solid #5a9fd4;color:#fff;font-weight:700;' : 'background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);color:#c8b87a;');
+        btn.className = 'ui-chip' + (isActive ? ' is-active' : '');
+        btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
         btn.addEventListener('click', () => {
           const ni = document.getElementById('menu-char-name');
           window._menuChar.preset = p.id;
@@ -1720,20 +2106,27 @@
     function renderMenuColorRows() {
       const cont = document.getElementById('menu-color-rows');
       if (!cont) return;
+      const focusedLabel = (document.activeElement && document.activeElement.getAttribute)
+        ? document.activeElement.getAttribute('aria-label')
+        : null;
+      const keepFocus = !!focusedLabel && cont.contains(document.activeElement);
       cont.innerHTML = '';
       const labels = { skin:'Piel', hair:'Cabello', cloth:'Ropa', trim:'Detalles' };
       Object.keys(MENU_PALETTE_OPTIONS).forEach(key => {
         const row = document.createElement('div');
-        row.style.cssText = 'display:flex;align-items:center;gap:5px';
+        row.className = 'ui-swatch-row';
         const lbl = document.createElement('span');
         lbl.textContent = labels[key];
-        lbl.style.cssText = 'font-size:11px;color:#c8b87a;width:52px;flex-shrink:0';
+        lbl.className = 'ui-swatch-row__label';
         row.appendChild(lbl);
         MENU_PALETTE_OPTIONS[key].forEach(color => {
-          const sw = document.createElement('div');
+          const sw = document.createElement('button');
+          sw.type = 'button';
           const isActive = window._menuChar.palette[key] === color;
-          sw.style.cssText = 'width:18px;height:18px;border-radius:3px;cursor:pointer;flex-shrink:0;background:' + color + ';' +
-            (isActive ? 'outline:2px solid #DAA520;outline-offset:1px;' : 'outline:1px solid rgba(255,255,255,0.1);');
+          sw.className = 'ui-swatch' + (isActive ? ' is-active' : '');
+          sw.style.background = color;
+          sw.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+          sw.setAttribute('aria-label', labels[key] + ': ' + color);
           sw.addEventListener('click', () => {
             if (getMenuEpoch() === 'urss') return;
             window._menuChar.palette = { ...window._menuChar.palette, [key]: color };
@@ -1744,6 +2137,13 @@
         });
         cont.appendChild(row);
       });
+      // La lista se ha vuelto a pintar: devolvemos el foco a la misma muestra
+      // para poder seguir eligiendo con el teclado.
+      if (keepFocus) {
+        const again = Array.prototype.slice.call(cont.querySelectorAll('.ui-swatch'))
+          .find(el => el.getAttribute('aria-label') === focusedLabel);
+        if (again) again.focus({ preventScroll: true });
+      }
     }
     function renderMenuOutfits() {
       const cont = document.getElementById('menu-char-outfits');
@@ -1751,10 +2151,11 @@
       cont.innerHTML = '';
       Object.keys(MENU_OUTFITS).forEach(id => {
         const btn = document.createElement('button');
+        btn.type = 'button';
         btn.textContent = MENU_OUTFITS[id].name;
         const isActive = window._menuChar.outfit === id;
-        btn.style.cssText = 'padding:5px 9px;border-radius:6px;cursor:pointer;font-size:12px;' +
-          (isActive ? 'background:#2E6FA3;border:1px solid #5a9fd4;color:#fff;font-weight:700;' : 'background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);color:#c8b87a;');
+        btn.className = 'ui-chip' + (isActive ? ' is-active' : '');
+        btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
         btn.addEventListener('click', () => {
           if (getMenuEpoch() === 'urss') return;
           window._menuChar.outfit = id;
@@ -1824,9 +2225,9 @@
           btn.addEventListener('click', () => {
             window._menuChar.dir = btn.dataset.dir;
             document.querySelectorAll('.mpc-dir').forEach(b => {
-              b.style.background = b.dataset.dir === window._menuChar.dir ? 'rgba(46,111,163,0.7)' : 'rgba(255,255,255,0.04)';
-              b.style.border = b.dataset.dir === window._menuChar.dir ? '1px solid #5a9fd4' : '1px solid rgba(255,255,255,0.1)';
-              b.style.color = b.dataset.dir === window._menuChar.dir ? '#fff' : '#c8b87a';
+              const on = b.dataset.dir === window._menuChar.dir;
+              b.classList.toggle('is-active', on);
+              b.setAttribute('aria-pressed', on ? 'true' : 'false');
             });
             updateMenuPreview();
           });
@@ -1876,8 +2277,6 @@
     const labelAudioMaster = document.getElementById('label-audio-master');
     const labelAudioMusic = document.getElementById('label-audio-music');
     const presetSelect = document.getElementById('menu-density-preset');
-    const tabCharacter = document.getElementById('menu-start-tab-character');
-    const tabOptions = document.getElementById('menu-start-tab-options');
     const charNameInput = document.getElementById('menu-char-name');
     const randomCharBtn = document.getElementById('menu-char-random');
     const resetCharBtn = document.getElementById('menu-char-reset');
@@ -2061,9 +2460,6 @@
     try { if (window._syncMenuCharacterUiForEpoch) window._syncMenuCharacterUiForEpoch(); } catch (e) {}
     try { updateMapDesignStatus(); } catch (e) {}
 
-    if (tabCharacter) tabCharacter.addEventListener('click', () => { showStartupModal('character'); });
-    if (tabOptions) tabOptions.addEventListener('click', () => { showStartupModal('options'); });
-
     if (mapDesignOpenBtn) mapDesignOpenBtn.addEventListener('click', () => { openStandaloneMapEditor(); });
     if (mapDesignLoadBtn && mapDesignFileInput) {
       mapDesignLoadBtn.addEventListener('click', () => {
@@ -2150,8 +2546,13 @@
       });
     }
 
-    document.getElementById('menu-start-cancel').addEventListener('click', () => { const m = document.getElementById('menu-startup-modal'); if (m) m.style.display = 'none'; });
-    document.getElementById('menu-start-confirm').addEventListener('click', () => {
+    const ngCancelBtn = document.getElementById('menu-start-cancel');
+    if (ngCancelBtn) ngCancelBtn.addEventListener('click', () => {
+      if (ngStepIndex > 0) { showNewGameStep(ngStepIndex - 1); return; }
+      closeNewGame();
+    });
+    // Cuerpo original de «Comenzar»: sólo corre al confirmar el resumen.
+    function beginNewGame() {
       // apply parameters to global so engine picks them up when loaded
       let densities = { npc: 1.0, animals: 1.0, vegetation: 1.0 };
       try {
@@ -2210,8 +2611,13 @@
       } catch (e) {}
       // force new map then load engine
       try { localStorage.setItem('meso.forceNew','1'); } catch (e) {}
-      const m = document.getElementById('menu-startup-modal'); if (m) m.style.display = 'none';
+      closeNewGame();
       loadEngineAndStart({ forceNew:true });
+    }
+    const ngConfirmBtn = document.getElementById('menu-start-confirm');
+    if (ngConfirmBtn) ngConfirmBtn.addEventListener('click', () => {
+      if (ngStepIndex < NG_STEPS.length - 1) { showNewGameStep(ngStepIndex + 1); return; }
+      beginNewGame();
     });
   } catch (e) { /* ignore modal hookup errors */ }
 
